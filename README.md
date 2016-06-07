@@ -1,3 +1,2 @@
 
-
-Beginner with unix and python, well and git/github. Soooo, I'll be putting simple stuff up here from time to time as I practice all :) 
+Novice with unix and python. I'll be putting up simple scripts I end up writing for odds and ends from time to time. 
