@@ -1,5 +1,5 @@
 ### Script that spits out a txt file of one column of the number of bases in each sequence of a fasta file ###
-### Useful for instance if calculating RPKM ###
+### Useful for instance if calculating TPM for transcriptomic data (also, if so, read this post: http://www.rna-seqblog.com/rpkm-fpkm-and-tpm-clearly-explained/ ###
 
 from Bio import SeqIO
 import argparse
