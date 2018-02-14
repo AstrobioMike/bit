@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 ### Script that spits out a tab-delimited file with two columns: header, and the number of bases, for each sequence of a fasta file ###
 ### Useful for instance if calculating TPM for transcriptomic data (also, if so, read this post: http://www.rna-seqblog.com/rpkm-fpkm-and-tpm-clearly-explained/ ###
 
