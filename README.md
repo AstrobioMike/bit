@@ -1,3 +1,3 @@
-Some bioinf scripts from a python and bash novice. 
+astrobiomike.github.io 
 
 @AstrobioMike
