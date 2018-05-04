@@ -7,7 +7,8 @@ from gzip import open as gzopen
 
 parser = argparse.ArgumentParser(description="A script for pulling out reads from paired, gzipped, fastq files based on headers. \
                                 Will create gzipped output files with same names but 'wanted_' prepended to them. \
-                                Example usage: parse_gzipped_paired_fastq_files_by_headers.py -f forward_reads.fq.gz -r reverse_reads.fq.gz -w wanted_seqs.txt")
+                                Example usage: parse_gzipped_paired_fastq_files_by_headers.py -f forward_reads.fq.gz \
+                                -r reverse_reads.fq.gz -w wanted_seqs.txt")
 
 parser.add_argument("-f", "--in_forward_fastq", help="Original forward read fastq file", action="store", dest="f_input_fastq", default=True, required=True)
 parser.add_argument("-r", "--in_reverse_fastq", help="Original reverse read fastq file", action="store", dest="r_input_fastq", default=True, required=True)
