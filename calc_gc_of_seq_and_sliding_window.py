@@ -1,0 +1,50 @@
+#!/usr/bin/env python
+
+from Bio import SeqIO
+import sys
+import argparse
+
+parser = argparse.ArgumentParser(description="This script is for nucleotide multifastas and will return a tab-delimited file with 4 columns: header, sequence length, gc of whole sequence, and gc of each window of the specified window size (-w) for each step of the specified step size (-s).")
+
+parser.add_argument("-i", "--input_fasta", help="fasta file", action="store", dest="input_fasta", default=True)
+parser.add_argument("-o", "--output_txt_file", help="Name of output txt file", action="store", dest="output_file", default=True)
+parser.add_argument("-w", "--window_size", help="Desired size of sliding window", action="store", dest="window", default=True)
+parser.add_argument("-s", "--step_size", help="Desired size of steps between each window", action="store", dest="step", default=True)
+
+args = parser.parse_args()
+
+in_fasta = open(args.input_fasta, "r")
+out_file = open(args.output_file, "w")
+window = int(args.window)
+step = int(args.step)
+
+out_file.write("header" + "\t" + "length" + "\t" + "gc" + "\t" +  "gc_per_window_of_size_" + str(window) + "_with_step_of_size_" + str(step) + "\n")
+
+values = []
+
+for cur_record in SeqIO.parse(in_fasta, "fasta"):
+  gene_name = cur_record.name
+  cur_record.seq = cur_record.seq.upper()
+  A_count = cur_record.seq.count('A')
+  C_count = cur_record.seq.count('C')
+  G_count = cur_record.seq.count('G')
+  T_count = cur_record.seq.count('T')
+  length = len(cur_record.seq)
+  gc_percentage = float(G_count + C_count) / length
+  gc_percentage = round(gc_percentage,2)
+  
+  for i in range(0, len(cur_record.seq), step):
+    s = cur_record.seq[i: i + window]
+    s = s.upper()
+    g = s.count('G')
+    c = s.count('C')
+    try:
+      window_gc_perc = float(g + c) / window
+    except ZeroDivisionError:
+      window_gc_perc = 0.0
+    values.append(window_gc_perc)
+    
+  out_file.write(str(gene_name)+"\t"+str(length)+"\t"+str(gc_percentage)+"\t"+str(values)+"\n")
+
+in_fasta.close()
+out_file.close()
