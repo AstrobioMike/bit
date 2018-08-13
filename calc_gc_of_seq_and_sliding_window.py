@@ -18,6 +18,8 @@ out_file = open(args.output_file, "w")
 window = int(args.window)
 step = int(args.step)
 
+half_window = int(window / 2)
+
 out_file.write("header" + "\t" + "length" + "\t" + "gc" + "\t" +  "gc_per_window_of_size_" + str(window) + "_with_step_of_size_" + str(step) + "\n")
 
 values = []
@@ -34,7 +36,7 @@ for cur_record in SeqIO.parse(in_fasta, "fasta"):
   gc_percentage = round(gc_percentage,2)
   
   for i in range(0, len(cur_record.seq), step):
-    s = cur_record.seq[i: i + window]
+    s = cur_record.seq[i - half_window : i + half_window]
     s = s.upper()
     g = s.count('G')
     c = s.count('C')
