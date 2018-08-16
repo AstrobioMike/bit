@@ -22,8 +22,6 @@ half_window = int(window / 2)
 
 out_file.write("header" + "\t" + "length" + "\t" + "gc" + "\t" +  "gc_per_window_of_size_" + str(window) + "_with_step_of_size_" + str(step) + "\n")
 
-values = []
-
 for cur_record in SeqIO.parse(in_fasta, "fasta"):
   gene_name = cur_record.name
   cur_record.seq = cur_record.seq.upper()
@@ -34,6 +32,8 @@ for cur_record in SeqIO.parse(in_fasta, "fasta"):
   length = len(cur_record.seq)
   gc_percentage = float(G_count + C_count) / length
   gc_percentage = round(gc_percentage,2)
+  
+  values = []
   
   for i in range(0, len(cur_record.seq), step):
     s = cur_record.seq[i - half_window : i + half_window]
