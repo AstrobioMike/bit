@@ -1,14 +1,16 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 
 from pybedtools import BedTool
 import sys
 import argparse
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(description='This script takes a multifasta file and tab-delimited file specifying which contigs and coordinates are wanted and returns a multifasta of the chopped out sequences. NOTE: It requires the python package "pybedtools".')
 
-parser.add_argument("-i", "--input_fasta", help="Starting fasta file", action="store", dest="input_fasta", default=True)
-parser.add_argument("-b", "--bed_file", help="Bed file of desired contigs and coordinates (3 columns – contig, start, end – no header, 0-based counting", dest="bed_file", default=True)
-parser.add_argument("-o", "--output_fasta", help="Name of output fasta file", action="store", dest="output_fasta", default=True)
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input_fasta", help="Starting fasta file", action="store", dest="input_fasta")
+required.add_argument("-b", "--bed_file", help="Bed file of desired contigs and coordinates (3 columns - contig, start, end - no header, 0-based counting", dest="bed_file")
+parser.add_argument("-o", "--output_fasta", help='Name of output fasta file (default: "Extracted_seqs.fa")', action="store", dest="output_fasta", default="Extracted_seqs.fa")
 
 args = parser.parse_args()
 

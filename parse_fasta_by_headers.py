@@ -8,9 +8,9 @@ parser = argparse.ArgumentParser(description='This script is for parsing a fasta
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_fasta", help="Original fasta file", action="store", dest="input_fasta", default=True, required=True)
-required.add_argument("-w", "--sequence_headers", help="Single-column file with sequence headers", action="store", dest="headers", default=True, required=True)
-required.add_argument("-o", "--output_fasta", help="Output fasta file", action="store", dest="output_fasta", default=True, required=True)
+required.add_argument("-i", "--input_fasta", help="Original fasta file", action="store", dest="input_fasta", required=True)
+required.add_argument("-w", "--sequence_headers", help="Single-column file with sequence headers", action="store", dest="headers", required=True)
+parser.add_argument("-o", "--output_fasta", help='Output fasta file default: "Wanted.fa"', action="store", dest="output_fasta", default="Wanted.fa")
 parser.add_argument("--inverse", help="Add this flag to pull out all sequences with headers NOT in the provided header file.", action="store_true")
 
 args = parser.parse_args()

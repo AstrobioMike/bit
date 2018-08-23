@@ -6,10 +6,12 @@ import argparse
 
 parser = argparse.ArgumentParser(description="This script is for nucleotide multifastas and will return a tab-delimited file with 4 columns: header, sequence length, gc of whole sequence, and gc of each window of the specified window size (-w) for each step of the specified step size (-s).")
 
-parser.add_argument("-i", "--input_fasta", help="fasta file", action="store", dest="input_fasta", default=True)
-parser.add_argument("-o", "--output_txt_file", help="Name of output txt file", action="store", dest="output_file", default=True)
-parser.add_argument("-w", "--window_size", help="Desired size of sliding window", action="store", dest="window", default=True)
-parser.add_argument("-s", "--step_size", help="Desired size of steps between each window", action="store", dest="step", default=True)
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input_fasta", help="fasta file", action="store", dest="input_fasta")
+required.add_argument("-o", "--output_txt_file", help="Name of output txt file", action="store", dest="output_file")
+parser.add_argument("-w", "--window_size", help="Desired size of sliding window (default: 100)", action="store", dest="window", default=100)
+parser.add_argument("-s", "--step_size", help="Desired size of steps between each window (default: 1)", action="store", dest="step", default=1)
 
 args = parser.parse_args()
 
@@ -32,10 +34,11 @@ for cur_record in SeqIO.parse(in_fasta, "fasta"):
   length = len(cur_record.seq)
   gc_percentage = float(G_count + C_count) / length
   gc_percentage = round(gc_percentage,2)
-  
+
   values = []
-  
+
   for i in range(0, len(cur_record.seq), step):
+
     s = cur_record.seq[i - half_window : i + half_window]
     s = s.upper()
     g = s.count('G')
@@ -45,7 +48,7 @@ for cur_record in SeqIO.parse(in_fasta, "fasta"):
     except ZeroDivisionError:
       window_gc_perc = 0.0
     values.append(window_gc_perc)
-    
+
   out_file.write(str(gene_name)+"\t"+str(length)+"\t"+str(gc_percentage)+"\t"+str(values)+"\n")
 
 in_fasta.close()

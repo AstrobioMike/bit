@@ -1,15 +1,15 @@
 #!/usr/bin/env python
 
-### this is for nucleotide multifastas and will return a tab-delimited file with 3 columns: header, sequence length, and gc 
-
 from Bio import SeqIO
 import sys
 import argparse
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(description="This script takes a nucleotide multifasta and returns a tab-delimited file with 3 columns: header, sequence length, and GC.")
 
-parser.add_argument("-i", "--input_fasta", help="fasta file", action="store", dest="input_fasta", default=True)
-parser.add_argument("-o", "--output_txt_file", help="Name of output txt file", action="store", dest="output_file", default=True)
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input_fasta", help="fasta file", action="store", dest="input_fasta")
+parser.add_argument("-o", "--output_txt_file", help='Name of output txt file (default: "GC_out.txt")', action="store", dest="output_file", default="GC_out.txt")
 
 args = parser.parse_args()
 

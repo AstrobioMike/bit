@@ -4,17 +4,19 @@ from Bio import SeqIO
 import sys
 import argparse
 
-parser = argparse.ArgumentParser()
+parser = argparse.ArgumentParser(description='This script will rename all sequences of a multifasta with the same name with an appended number to keep them unique.')
 
-parser.add_argument("-i", "--input_fasta", help="Starting fasta file", action="store", dest="input_fasta", default=True)
-parser.add_argument("-w", "--desired_name", help="Name to give seqs (will append a number to each)", action="store", dest="wanted_name", default=True)
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input_fasta", help="Starting fasta file", action="store", dest="input_fasta", required=True)
+parser.add_argument("-w", "--desired_name", help='Name to give seqs (default: "Seq"', action="store", dest="wanted_name", default="Seq")
+parser.add_argument("-o", "--output_prefix", help='Prefix added to output fasta (default: "Renamed").', dest="output_prefix", default="Renamed")
 
 args = parser.parse_args()
 
-
 in_fasta = open(args.input_fasta, "r")
 new_header = args.wanted_name
-out_fasta = open("Renamed_" + args.input_fasta, "w")
+out_fasta = open(args.output_prefix + "_" + args.input_fasta, "w")
 
 n = 0
 
