@@ -8,7 +8,7 @@ parser = argparse.ArgumentParser(description="This script takes a genbank file a
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_gb", help="Genbank file", action="store", dest="input_gb", required=True)
+required.add_argument("-i", "--input_gb", help='input Genbank file (e.g. "*.gbk", "*.gb", "*.gbff")', action="store", dest="input_gb", required=True)
 parser.add_argument("-s", "--annotation_source", help='Annotation source (default: "NCBI_PGAP")', action="store", dest="source", default="NCBI_PGAP")
 parser.add_argument("-v", "--annotation_version", help='Annotation source version (default: "v4.6")', action="store", dest="version", default="v4.6")
 parser.add_argument("-o", "--output_gene_calls_tsv", help='Output tsv file (default: "external_gene_calls.tsv")', action="store", dest="output_gene_calls_tsv", default="external_gene_calls.tsv")
