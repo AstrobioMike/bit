@@ -10,6 +10,7 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-i", "--input_gb", help="Genbank file", action="store", dest="input_gb", required=True)
 parser.add_argument("-s", "--annotation_source", help='Annotation source (default: "NCBI_PGAP")', action="store", dest="source", default="NCBI_PGAP")
+parser.add_argument("-v", "--annotation_version", help='Annotation source version (default: "v4.6")', action="store", dest="version", default="v4.6")
 parser.add_argument("-o", "--output_gene_calls_tsv", help='Output tsv file (default: "external_gene_calls.tsv")', action="store", dest="output_gene_calls_tsv", default="external_gene_calls.tsv")
 parser.add_argument("-a", "--output_functions_tsv", help='Output functions file (default: "functions.tsv")', action="store", dest="output_functions_tsv", default="functions.tsv")
 parser.add_argument("-f", "--output_fasta", help='Output fasta file with matching, simplified headers to be ready for `anvi-gen-contigs-db` (default: "clean.fa")', action="store", dest="output_fasta", default="clean.fa")
@@ -21,6 +22,7 @@ input_gb = open(args.input_gb, "r")
 output_fasta = open(args.output_fasta, "w")
 
 source = args.source
+version = args.version
 
 output_gene_calls = open(args.output_gene_calls_tsv, "w")
 output_gene_calls.write("gene_callers_id" + "\t" + "contig" + "\t" + "start" + "\t" + "stop" + "\t" + "direction" + "\t" + "partial" + "\t" + "source" + "\t" + "version" + "\n")
@@ -89,7 +91,7 @@ for rec in recs:
       gene_name=str(gene.qualifiers["gene"][0])
       function = function + " (" + gene_name + ")"
 
-    output_gene_calls.write(str(num) + "\t" + rec.name + "\t" + str(start) + "\t" + str(end) + "\t" + str(strand) + "\t" + "0" + "\t" + str(source) +"\t" "v4.6" + "\n")
+    output_gene_calls.write(str(num) + "\t" + rec.name + "\t" + str(start) + "\t" + str(end) + "\t" + str(strand) + "\t" + "0" + "\t" + str(source) +"\t" + str(version) + "\n")
     output_functions.write(str(num) + "\t" + str(source) + "\t" + acc + "\t" + function + "\t" + "0" + "\n")
 
 input_gb.close()
