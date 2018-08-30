@@ -3,8 +3,8 @@ Here are some useful bioinformatics one-liners and scripts I use frequently enou
 
 If you clone or download this repository and add it to your PATH, they will available everywhere for you too. If you're not yet sure what your PATH is and what modifying it is all about, [see here](https://astrobiomike.github.io/bash/modifying_your_path#adding-a-directory-to-your-path) 🙂
 
-astrobiomike.github.io 
-@AstrobioMike
+[astrobiomike.github.io](https://astrobiomike.github.io/)  
+[@AstrobioMike](https://twitter.com/AstrobioMike)
 
 ## Commands and usage
 List and usage examples to come. But each has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. 
