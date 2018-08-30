@@ -9,18 +9,18 @@ If you clone or download this repository and add it to your PATH, they will avai
 ## Commands and usage
 Each has a help menu accessible by either entering the command alone or by providing `-h` as the only argument.  
 
-|command|purpose|
+|command|function|
 |:-----:|-----|
-|bit-remove-wraps|Remove line wraps from fasta file|
-|bit-count-bases|Count number of total bases in fasta file|
-|bit-count-bases-per-seq|Count number of bases per sequence|
-|bit-calc-gc-per-sequence|Calculate GC of sequences|
-|bit-calc-gc-sliding-window|Calculate rolling GC|
-|bit-extract-seqs-by-coords|Extract sequences by coordinates|
-|bit-parse-fasta-by-headers|Parse fasta by headers|
-|bit-simplify-fasta-headers|Simplify sequence headers|
-|bit-reorder-fasta|Reorder fasta by headers|
-|bit-calc|Save one step calling the command-line calculator (meh)|
+|[bit-remove-wraps](#remove-line-wraps-from-fasta-file)|Remove line wraps from fasta file|
+|[bit-count-bases]()|Count number of total bases in fasta file|
+|[bit-count-bases-per-seq]()|Count number of bases per sequence|
+|[bit-calc-gc-per-sequence]()|Calculate GC of sequences|
+|[bit-calc-gc-sliding-window]()|Calculate rolling GC|
+|[bit-extract-seqs-by-coords]()|Extract sequences by coordinates|
+|[bit-parse-fasta-by-headers]()|Parse fasta by headers|
+|[bit-simplify-fasta-headers]()|Simplify sequence headers|
+|[bit-reorder-fasta]()|Reorder fasta by headers|
+|[bit-calc]()|Save one step calling the command-line calculator (meh)|
 
 
 Count number of total bases in fasta file
