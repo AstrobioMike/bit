@@ -20,7 +20,7 @@ Each has a help menu accessible by either entering the command alone or by provi
 |[bit-parse-fasta-by-headers](#parse-fasta-by-headers)|Parse fasta by headers|
 |[bit-simplify-fasta-headers](#simplify-sequence-headers)|Simplify sequence headers|
 |[bit-reorder-fasta](#reorder-fasta-by-headers)|Reorder fasta by headers|
-|[bit-genbank-to-anvio](#generate-required-anvio-files-from-genbank-file)|Generate required [anvi'o](merenlab.org/software/anvio) files from genbank file|
+|[bit-genbank-to-anvio](#generate-required-anvio-files-from-genbank-file)|Generate required [anvi'o](http://merenlab.org/software/anvio/) files from genbank file|
 |[bit-calc](#calculator)|Save one step calling the command-line calculator (meh)|
 
 ## Usage
@@ -34,7 +34,8 @@ Usage:
 	 bit-remove-wraps input.fasta > new.fasta
 
 ```
---
+
+___
 
 ### Count number of total bases in fasta file
 
@@ -45,7 +46,7 @@ This script returns the total number of bases (or amino acids) in a fasta file.
 Usage:
 	 count-bases input.fasta
 ```
---
+___
 
 ### Count number of bases per sequence
 
@@ -210,7 +211,7 @@ required arguments:
 ```
 --
 
-### Generate required [anvi'o](merenlab.org/software/anvio) files from genbank file
+### Generate required [anvi'o](http://merenlab.org/software/anvio/) files from genbank file
 
 ```
 $ bit-genbank-to-anvio -h
