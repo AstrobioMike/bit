@@ -34,7 +34,7 @@ Usage:
 	 bit-remove-wraps input.fasta > new.fasta
 
 ```
-<hr>
+<br>
 
 ### Count number of total bases in fasta file
 
@@ -45,7 +45,7 @@ This script returns the total number of bases (or amino acids) in a fasta file.
 Usage:
 	 count-bases input.fasta
 ```
-<hr>
+<br>
 
 ### Count number of bases per sequence
 
@@ -65,7 +65,7 @@ required arguments:
   -i INPUT_FASTA, --input_fasta INPUT_FASTA
                         Original fasta file
 ```
---
+<br>
 
 ### Calculate GC of sequences
 
@@ -85,7 +85,7 @@ required arguments:
   -i INPUT_FASTA, --input_fasta INPUT_FASTA
                         fasta file
 ```
---
+<br>
 
 ### Calculate GC and sliding window
 
@@ -113,7 +113,7 @@ required arguments:
   -o OUTPUT_FILE, --output_txt_file OUTPUT_FILE
                         Name of output txt file
 ```
---
+<br>
 
 ### Extract sequences by coordinates
 
@@ -139,7 +139,7 @@ required arguments:
                         Bed file of desired contigs and coordinates (3 columns
                         - contig, start, end - no header, 0-based counting
 ```
---
+<br>
 
 ### Parse fasta by headers
 
@@ -165,7 +165,7 @@ required arguments:
   -w HEADERS, --sequence_headers HEADERS
                         Single-column file with sequence headers
 ```
---
+<br>
 
 ### Simplify sequence headers
 
@@ -188,7 +188,7 @@ required arguments:
   -i INPUT_FASTA, --input_fasta INPUT_FASTA
                         Starting fasta file
 ```
---
+<br>
 
 ### Reorder fasta by headers
 
@@ -208,7 +208,7 @@ required arguments:
   -w ORDERED_HEADERS, --wanted_sequence_order ORDERED_HEADERS
                         Single-column file with headers in desired order
 ```
---
+<br>
 
 ### Generate required [anvi'o](http://merenlab.org/software/anvio/) files from genbank file
 
@@ -240,7 +240,7 @@ required arguments:
   -i INPUT_GB, --input_gb INPUT_GB
                         input Genbank file (e.g. "*.gbk", "*.gb", "*.gbff")
 ```
---
+<br>
 
 ### Calculator
 
