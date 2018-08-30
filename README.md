@@ -34,8 +34,7 @@ Usage:
 	 bit-remove-wraps input.fasta > new.fasta
 
 ```
-
---
+<hr>
 
 ### Count number of total bases in fasta file
 
@@ -46,7 +45,7 @@ This script returns the total number of bases (or amino acids) in a fasta file.
 Usage:
 	 count-bases input.fasta
 ```
----
+<hr>
 
 ### Count number of bases per sequence
 
