@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+
+if [ "$#" == 0 ] || [ $1 == "-h" ]; then
+  printf "This script echoes the input into the bash program \`bc\` and returns the answer,\nsaving very little time compared to how much I waste.\n\n"
+  printf "Usage:\n\t bit-calc \"(5+5)/2\"\n\n"
+  exit
+fi
+
+echo "$1" | bc
