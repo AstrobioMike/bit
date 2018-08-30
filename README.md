@@ -7,7 +7,25 @@ If you clone or download this repository and add it to your PATH, they will avai
 [@AstrobioMike](https://twitter.com/AstrobioMike)
 
 ## Commands and usage
-List and usage examples to come. But each has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. 
+Each has a help menu accessible by either entering the command alone or by providing `-h` as the only argument.  
+
+|command|purpose|
+|:-----:|-----|
+|bit-remove-wraps|Remove line wraps from fasta file|
+|bit-count-bases|Count number of total bases in fasta file|
+|bit-count-bases-per-seq|Count number of bases per sequence|
+|bit-calc-gc-per-sequence|Calculate GC of sequences|
+|bit-calc-gc-sliding-window|Calculate rolling GC|
+|bit-extract-seqs-by-coords|Extract sequences by coordinates|
+|bit-parse-fasta-by-headers|Parse fasta by headers|
+|bit-simplify-fasta-headers|Simplify sequence headers|
+|bit-reorder-fasta|Reorder fasta by headers|
+|bit-calc|Save one step calling the command-line calculator (meh)|
+
+
+Count number of total bases in fasta file
+* Calculator
+* bit-calculate-
 
 ### Remove line wraps from fasta file
 ```
@@ -29,15 +47,23 @@ Usage:
 	 count-bases input.fasta
 ```
 
-### Calculator
+### Count number of bases per sequence
 
 ```
-$ bit-calc -h
-This script echoes the input into the bash program `bc` and returns the answer,
-saving very little time compared to how much I waste.
+$ bit-count-bases-per-seq -h
+usage: bit-count-bases-per-seq [-h] [-i INPUT_FASTA] [-o OUTPUT_FILE]
 
-Usage:
-	 bit-calc "(5+5)/2"
+This script takes a multifasta as input and returns a tab-delimited file with
+two columns, header and number of bases or amino acids, for each sequence.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -o OUTPUT_FILE, --output_txt_file OUTPUT_FILE
+                        Name of output txt file (default: "Num_bps.txt")
+
+required arguments:
+  -i INPUT_FASTA, --input_fasta INPUT_FASTA
+                        Original fasta file
 ```
 
 ### Calculate GC of sequences
@@ -62,8 +88,8 @@ required arguments:
 ### Calculate GC and sliding window
 
 ```
-$ bit-calc-gc-of-seq-and-sliding-window -h
-usage: bit-calc-gc-of-seq-and-sliding-window [-h] [-i INPUT_FASTA]
+$ bit-calc-gc-sliding-window -h
+usage: bit-calc-gc-sliding-window [-h] [-i INPUT_FASTA]
                                              [-o OUTPUT_FILE] [-w WINDOW]
                                              [-s STEP]
 
@@ -86,30 +112,11 @@ required arguments:
                         Name of output txt file
 ```
 
-### Count number of bases per sequence
-
-```
-$ bit-count-bases-per-sequence -h
-usage: bit-count-bases-per-sequence [-h] [-i INPUT_FASTA] [-o OUTPUT_FILE]
-
-This script takes a multifasta as input and returns a tab-delimited file with
-two columns, header and number of bases or amino acids, for each sequence.
-
-optional arguments:
-  -h, --help            show this help message and exit
-  -o OUTPUT_FILE, --output_txt_file OUTPUT_FILE
-                        Name of output txt file (default: "Num_bps.txt")
-
-required arguments:
-  -i INPUT_FASTA, --input_fasta INPUT_FASTA
-                        Original fasta file
-```
-
 ### Extract sequences by coordinates
 
 ```
-$ bit-extract-seqs-by-coordinates -h
-usage: bit-extract-seqs-by-coordinates [-h] [-i INPUT_FASTA] [-b BED_FILE]
+$ bit-extract-seqs-by-coords -h
+usage: bit-extract-seqs-by-coords [-h] [-i INPUT_FASTA] [-b BED_FILE]
                                        [-o OUTPUT_FASTA]
 
 This script takes a multifasta file and tab-delimited file specifying which
@@ -155,12 +162,12 @@ required arguments:
                         Single-column file with sequence headers
 ```
 
-### Rename sequence headers
+### Simplify sequence headers
 
 ```
-$ bit-rename-fasta-headers -h
-usage: bit-rename-fasta-headers [-h] -i INPUT_FASTA [-w WANTED_NAME]
-                                [-o OUTPUT_PREFIX]
+$ bit-simplify-fasta-headers -h
+usage: bit-simplify-fasta-headers [-h] -i INPUT_FASTA [-w WANTED_NAME]
+                                  [-o OUTPUT_PREFIX]
 
 This script will rename all sequences of a multifasta with the same name with
 an appended number to keep them unique.
@@ -194,4 +201,15 @@ required arguments:
                         Original fasta file
   -w ORDERED_HEADERS, --wanted_sequence_order ORDERED_HEADERS
                         Single-column file with headers in desired order
+```
+
+### Calculator
+
+```
+$ bit-calc -h
+This script echoes the input into the bash program `bc` and returns the answer,
+saving very little time compared to how much I waste.
+
+Usage:
+	 bit-calc "(5+5)/2"
 ```
