@@ -20,6 +20,7 @@ Each has a help menu accessible by either entering the command alone or by provi
 |[bit-parse-fasta-by-headers](#parse-fasta-by-headers)|Parse fasta by headers|
 |[bit-simplify-fasta-headers](#simplify-sequence-headers)|Simplify sequence headers|
 |[bit-reorder-fasta](#reorder-fasta-by-headers)|Reorder fasta by headers|
+|[bit-genbank-to-anvio](#generate-required-anvi-o-files-from-genbank-file)|Generate required [anvi'o](merenlab.org/software/anvio) files from genbank file|
 |[bit-calc](#calculator)|Save one step calling the command-line calculator (meh)|
 
 ## Usage
@@ -33,6 +34,7 @@ Usage:
 	 bit-remove-wraps input.fasta > new.fasta
 
 ```
+--
 
 ### Count number of total bases in fasta file
 
@@ -43,6 +45,7 @@ This script returns the total number of bases (or amino acids) in a fasta file.
 Usage:
 	 count-bases input.fasta
 ```
+--
 
 ### Count number of bases per sequence
 
@@ -62,6 +65,7 @@ required arguments:
   -i INPUT_FASTA, --input_fasta INPUT_FASTA
                         Original fasta file
 ```
+--
 
 ### Calculate GC of sequences
 
@@ -81,6 +85,7 @@ required arguments:
   -i INPUT_FASTA, --input_fasta INPUT_FASTA
                         fasta file
 ```
+--
 
 ### Calculate GC and sliding window
 
@@ -108,6 +113,7 @@ required arguments:
   -o OUTPUT_FILE, --output_txt_file OUTPUT_FILE
                         Name of output txt file
 ```
+--
 
 ### Extract sequences by coordinates
 
@@ -133,6 +139,7 @@ required arguments:
                         Bed file of desired contigs and coordinates (3 columns
                         - contig, start, end - no header, 0-based counting
 ```
+--
 
 ### Parse fasta by headers
 
@@ -158,6 +165,7 @@ required arguments:
   -w HEADERS, --sequence_headers HEADERS
                         Single-column file with sequence headers
 ```
+--
 
 ### Simplify sequence headers
 
@@ -180,6 +188,7 @@ required arguments:
   -i INPUT_FASTA, --input_fasta INPUT_FASTA
                         Starting fasta file
 ```
+--
 
 ### Reorder fasta by headers
 
@@ -199,6 +208,39 @@ required arguments:
   -w ORDERED_HEADERS, --wanted_sequence_order ORDERED_HEADERS
                         Single-column file with headers in desired order
 ```
+--
+
+### Generate required anvi'o files from genbank file
+
+```
+$ bit-genbank-to-anvio -h
+usage: bit-genbank-to-anvio [-h] -i INPUT_GB [-s SOURCE] [-v VERSION]
+                            [-o OUTPUT_GENE_CALLS_TSV]
+                            [-a OUTPUT_FUNCTIONS_TSV] [-f OUTPUT_FASTA]
+
+This script takes a genbank file and converts it into the format required for
+importing external gene calls and functions into anvi'o.
+
+optional arguments:
+  -h, --help            show this help message and exit
+  -s SOURCE, --annotation_source SOURCE
+                        Annotation source (default: "NCBI_PGAP")
+  -v VERSION, --annotation_version VERSION
+                        Annotation source version (default: "v4.6")
+  -o OUTPUT_GENE_CALLS_TSV, --output_gene_calls_tsv OUTPUT_GENE_CALLS_TSV
+                        Output tsv file (default: "external_gene_calls.tsv")
+  -a OUTPUT_FUNCTIONS_TSV, --output_functions_tsv OUTPUT_FUNCTIONS_TSV
+                        Output functions file (default: "functions.tsv")
+  -f OUTPUT_FASTA, --output_fasta OUTPUT_FASTA
+                        Output fasta file with matching, simplified headers to
+                        be ready for `anvi-gen-contigs-db` (default:
+                        "clean.fa")
+
+required arguments:
+  -i INPUT_GB, --input_gb INPUT_GB
+                        input Genbank file (e.g. "*.gbk", "*.gb", "*.gbff")
+```
+--
 
 ### Calculator
 
