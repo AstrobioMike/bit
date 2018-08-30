@@ -11,8 +11,6 @@ Many require [biopython](https://biopython.org/wiki/Download) (marked `*` in tab
 ## Commands
 Each has a help menu accessible by either entering the command alone or by providing `-h` as the only argument.  
 
-<center>
-
 |command|function|
 |:-----:|-----|
 |[bit-remove-wraps](#remove-line-wraps-from-fasta-file)|Remove line wraps from fasta file|
@@ -26,8 +24,6 @@ Each has a help menu accessible by either entering the command alone or by provi
 |[bit-reorder-fasta](#reorder-fasta-by-headers)|Reorder fasta by headers\*|
 |[bit-genbank-to-anvio](#generate-required-anvio-files-from-genbank-file)|Generate required [anvi'o](http://merenlab.org/software/anvio/) files from genbank file\*|
 |[bit-calc](#calculator)|Save one step calling the command-line calculator|
-
-</center>
 
 ## Usage
 
