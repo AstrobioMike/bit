@@ -6,26 +6,23 @@ If you clone or download this repository and add it to your PATH, they will avai
 [astrobiomike.github.io](https://astrobiomike.github.io/)  
 [@AstrobioMike](https://twitter.com/AstrobioMike)
 
-## Commands and usage
+## Commands
 Each has a help menu accessible by either entering the command alone or by providing `-h` as the only argument.  
 
 |command|function|
 |:-----:|-----|
 |[bit-remove-wraps](#remove-line-wraps-from-fasta-file)|Remove line wraps from fasta file|
-|[bit-count-bases]()|Count number of total bases in fasta file|
-|[bit-count-bases-per-seq]()|Count number of bases per sequence|
-|[bit-calc-gc-per-sequence]()|Calculate GC of sequences|
-|[bit-calc-gc-sliding-window]()|Calculate rolling GC|
-|[bit-extract-seqs-by-coords]()|Extract sequences by coordinates|
-|[bit-parse-fasta-by-headers]()|Parse fasta by headers|
-|[bit-simplify-fasta-headers]()|Simplify sequence headers|
-|[bit-reorder-fasta]()|Reorder fasta by headers|
-|[bit-calc]()|Save one step calling the command-line calculator (meh)|
+|[bit-count-bases](#count-number-of-total-bases-in-fasta-file)|Count number of total bases in fasta file|
+|[bit-count-bases-per-seq](#count-number-of-bases-per-sequence)|Count number of bases per sequence|
+|[bit-calc-gc-per-sequence](#calculate-gc-of-sequences)|Calculate GC of sequences|
+|[bit-calc-gc-sliding-window](#calculate-gc-and-sliding-window)|Calculate rolling GC|
+|[bit-extract-seqs-by-coords](#extract-sequences-by-coordinates)|Extract sequences by coordinates|
+|[bit-parse-fasta-by-headers](#parse-fasta-by-headers)|Parse fasta by headers|
+|[bit-simplify-fasta-headers](#simplify-sequence-headers)|Simplify sequence headers|
+|[bit-reorder-fasta](#reorder-fasta-by-headers)|Reorder fasta by headers|
+|[bit-calc](#calculator)|Save one step calling the command-line calculator (meh)|
 
-
-Count number of total bases in fasta file
-* Calculator
-* bit-calculate-
+## Usage
 
 ### Remove line wraps from fasta file
 ```
