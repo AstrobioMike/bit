@@ -2,6 +2,7 @@
 
 from Bio import SeqIO
 import argparse
+import sys
 
 parser = argparse.ArgumentParser(description="This script takes a multifasta as input and returns a tab-delimited file with two columns, header and number of bases or amino acids, for each sequence." )
 
@@ -9,6 +10,10 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-i", "--input_fasta", help="Original fasta file", action="store", dest="input_fasta")
 parser.add_argument("-o", "--output_txt_file", help='Name of output txt file (default: "Num_bps.txt")', action="store", dest="output_file", default="Num_bps.txt")
+
+if len(sys.argv)==1:
+  parser.print_help(sys.stderr)
+  sys.exit(1)
 
 args = parser.parse_args()
 

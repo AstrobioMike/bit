@@ -12,6 +12,10 @@ required.add_argument("-i", "--input_fasta", help="Starting fasta file", action=
 parser.add_argument("-w", "--desired_name", help='Name to give seqs (default: "Seq"', action="store", dest="wanted_name", default="Seq")
 parser.add_argument("-o", "--output_prefix", help='Prefix added to output fasta (default: "Renamed").', dest="output_prefix", default="Renamed")
 
+if len(sys.argv)==1:
+  parser.print_help(sys.stderr)
+  sys.exit(1)
+
 args = parser.parse_args()
 
 in_fasta = open(args.input_fasta, "r")

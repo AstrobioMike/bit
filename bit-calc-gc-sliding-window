@@ -13,6 +13,10 @@ required.add_argument("-o", "--output_txt_file", help="Name of output txt file",
 parser.add_argument("-w", "--window_size", help="Desired size of sliding window (default: 100)", action="store", dest="window", default=100)
 parser.add_argument("-s", "--step_size", help="Desired size of steps between each window (default: 1)", action="store", dest="step", default=1)
 
+if len(sys.argv)==1:
+  parser.print_help(sys.stderr)
+  sys.exit(1)
+
 args = parser.parse_args()
 
 in_fasta = open(args.input_fasta, "r")

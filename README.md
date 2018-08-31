@@ -1,12 +1,7 @@
 ## Bioinformatics Tools (bit)
-Here are some useful bioinformatics one-liners and scripts I use frequently enough that it's been worth it to me to have them instantly available everywhere. 
+These are a collection of one-liners and short scripts I use frequently enough that it's been worth it for me to have them instantly available anywhere. So I thought I'd share them too. This includes things like: removing those annoying line wraps from fasta files that keep you from doing things like `grep`-ing sequences of interest by header; quickly counting the number of bases or amino acids in a file; calculating GC; pulling out sequences by their coordinates; splitting a fasta file based on headers; and other such things that are just handy to have handy. Some require [biopython](https://biopython.org/wiki/Download){:target="_blank"} (marked `*` in the table below) and [pybedtools](https://pypi.org/project/pybedtools/){:target="_blank"} (marked with `**`). as marked in the table below
 
-If you clone or download this repository and add it to your PATH, they will available everywhere for you too. If you're not yet sure what your PATH is and what modifying it is all about, [see here](https://astrobiomike.github.io/bash/modifying_your_path#adding-a-directory-to-your-path) 🙂
-
-[astrobiomike.github.io](https://astrobiomike.github.io/)  
-[@AstrobioMike](https://twitter.com/AstrobioMike)
-
-Many require [biopython](https://biopython.org/wiki/Download) (marked `*` in table below), and as of now one requires [pybedtools](https://pypi.org/project/pybedtools/) (marked with `**`).
+If you're new to this stuff, you can find help on [installing these tools here](https://astrobiomike.github.io/bash/installing_tools#my-bioinformatics-tools-bit){:target="_blank"} and all other kinds of helpful things at [my site](https://astrobiomike.github.io){:target="_blank"} 🙂  
 
 ## Commands
 Each has a help menu accessible by either entering the command alone or by providing `-h` as the only argument.  

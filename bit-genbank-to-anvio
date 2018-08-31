@@ -3,6 +3,7 @@
 from Bio import SeqIO
 import argparse
 import re
+import sys
 
 parser = argparse.ArgumentParser(description="This script takes a genbank file and converts it into the format required for importing external gene calls and functions into anvi'o.")
 
@@ -14,6 +15,10 @@ parser.add_argument("-v", "--annotation_version", help='Annotation source versio
 parser.add_argument("-o", "--output_gene_calls_tsv", help='Output tsv file (default: "external_gene_calls.tsv")', action="store", dest="output_gene_calls_tsv", default="external_gene_calls.tsv")
 parser.add_argument("-a", "--output_functions_tsv", help='Output functions file (default: "functions.tsv")', action="store", dest="output_functions_tsv", default="functions.tsv")
 parser.add_argument("-f", "--output_fasta", help='Output fasta file with matching, simplified headers to be ready for `anvi-gen-contigs-db` (default: "clean.fa")', action="store", dest="output_fasta", default="clean.fa")
+
+if len(sys.argv)==1:
+  parser.print_help(sys.stderr)
+  sys.exit(1)
 
 args = parser.parse_args()
 
