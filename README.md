@@ -29,7 +29,6 @@ This script removes line wraps from a fasta file.
 
 Usage:
 	 bit-remove-wraps input.fasta > new.fasta
-
 ```
 <br>
 
