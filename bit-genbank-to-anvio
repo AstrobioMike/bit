@@ -86,13 +86,9 @@ for rec in recs:
       strand="r"
 
       # for accession, storing protein id if it has one, else the the locus tag, else "None"
-    if "protein_id" in gene.qualifiers:
-      acc = gene.qualifiers["protein_id"][0]
-    elif "locus_tag" in gene.qualifiers:
-      acc = gene.qualifiers["locus_tag"][0]
-    else:
-      acc = "None"
-
+    
+    acc = gene.qualifiers["locus_tag"][0]
+    
       # storing gene product annotation
     function = gene.qualifiers["product"][0]
 
