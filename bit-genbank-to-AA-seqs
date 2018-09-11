@@ -24,12 +24,12 @@ output_fasta = open(args.output_fasta, "w")
 
 recs = [rec for rec in SeqIO.parse(input_gb, "genbank")]
 
-note_terms_to_exclude = ["frameshifted", "internal stop", "incomplete"] # dumping gene if noted as these in the "note" section of the call
+note_terms_to_exclude = ["frameshifted", "internal stop", "incomplete"] # dumping gene if noted as these in the "note" section of the call to keep only complete genes
 location_terms_to_exclude = ["join", "<", ">"] # dumping gene if "location" section contains any of these: "join" means the gene call spans multiple contigs; "<" or ">" means the gene call runs off a contig
 
 for rec in recs:
 
-  genes = [gene for gene in rec.features if gene.type =="CDS"] # focusing on features annotated as "CDS" by NCBI's PGAP
+  genes = [gene for gene in rec.features if gene.type =="CDS"] # focusing on features annotated as "CDS"
 
   for gene in genes:
 
@@ -50,7 +50,7 @@ for rec in recs:
     if "transl_except" in gene.qualifiers:
       continue
 
-    output_fasta.write(">" + str(gene.qualifiers["locus_tag"][0])  + "\n" + str(gene.qualifiers["translation"][0]) + "\n") # writing out new fasta with clean headers ready for anvi'o
+    output_fasta.write(">" + str(gene.qualifiers["locus_tag"][0])  + "\n" + str(gene.qualifiers["translation"][0]) + "\n")
 
 input_gb.close()
 output_fasta.close()
