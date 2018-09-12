@@ -6,4 +6,4 @@ if [ "$#" == 0 ] || [ $1 == "-h" ]; then
   exit
 fi
 
-echo "$1" | bc
+awk "BEGIN { print $1 }"
