@@ -50,6 +50,10 @@ for rec in recs:
     if "transl_except" in gene.qualifiers:
       continue
 
+        # dumping if noted a pseudo gene
+    if "pseudo" in gene.qualifiers:
+      continue
+
     output_fasta.write(">" + str(gene.qualifiers["locus_tag"][0])  + "\n" + str(gene.qualifiers["translation"][0]) + "\n")
 
 input_gb.close()
