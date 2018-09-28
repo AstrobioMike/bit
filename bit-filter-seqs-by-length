@@ -1,0 +1,34 @@
+#!/usr/bin/env python
+
+from Bio import SeqIO
+import sys
+import argparse
+
+parser = argparse.ArgumentParser(description='This script will filter out all sequences shorter than a certain length (200 by default).')
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input_fasta", help="Starting fasta file", action="store", dest="input_fasta", required=True)
+parser.add_argument("-m", "--desired_min_length", help='Desired minimum contig length (default: 200)', action="store", dest="min_len", default="200")
+parser.add_argument("-o", "--output_prefix", help='Prefix added to output fasta (default: "Filtered").', dest="output_prefix", default="Filtered")
+
+if len(sys.argv)==1:
+  parser.print_help(sys.stderr)
+  sys.exit(1)
+
+args = parser.parse_args()
+
+in_fasta = open(args.input_fasta, "r")
+minimum_len = args.min_len
+out_fasta = open(args.output_prefix + "_" + args.input_fasta, "w")
+
+for seq_record in SeqIO.parse(in_fasta, "fasta"):
+  if len(seq_record.seq) > minimum_len:
+    out_fasta.write(">" + seq_record.id + "\n")
+    out_fasta.write(str(seq_record.seq) + "\n")
+
+  if len(seq_record.seq) <= 200:
+    print("  contig " + seq_record.id + " removed")
+
+in_fasta.close()
+out_fasta.close()
