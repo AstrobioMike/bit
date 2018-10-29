@@ -34,7 +34,7 @@ for seq_record in SeqIO.parse(in_fasta, "fasta"):
   if len(seq_record.seq) >= int(min_len) and len(seq_record.seq) <= int(max_len):
 
     kept+=1
-    out_file.write(">" + str(seq_record.id) + "\n" + str(seq_record.seq) + "\n")
+    out_file.write(">" + str(seq_record.description) + "\n" + str(seq_record.seq) + "\n")
 
 
 perc = round(float(kept) / float(total) * 100, 2)
