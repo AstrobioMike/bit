@@ -10,7 +10,7 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-i", "--input_fasta", help="Starting fasta file", action="store", dest="input_fasta", required=True)
 parser.add_argument("-w", "--desired_name", help='Name to give seqs (default: "Seq"', action="store", dest="wanted_name", default="Seq")
-parser.add_argument("-o", "--output_prefix", help='Prefix added to output fasta (default: "Renamed").', dest="output_prefix", default="Renamed")
+parser.add_argument("-o", "--output_fasta_name", help='Output fasta file (default: "Renamed.fasta").', dest="output_fasta_name", default="Renamed.fasta")
 
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
@@ -20,7 +20,7 @@ args = parser.parse_args()
 
 in_fasta = open(args.input_fasta, "r")
 new_header = args.wanted_name
-out_fasta = open(args.output_prefix + "_" + args.input_fasta, "w")
+out_fasta = open(args.output_fasta_name, "w")
 
 n = 0
 
