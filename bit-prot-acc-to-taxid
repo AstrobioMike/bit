@@ -58,13 +58,13 @@ print("\n")
 
 wanted_accs_list = list(wanted_accs_set)
 
-print('  Adding in "NA"s for those protein accessions not found...')
+print('  Adding in "NA"s for those protein accessions not found...\n')
 
 for acc in wanted_accs_list:
   if acc not in accs_found:
     output_file.write(acc + "\tNA\n")
 
-print(colors.GREEN + "  Done!" + colors.NC)
+print(colors.GREEN + "  Done!" + colors.NC + "\n")
 print("  You were looking for " + str(len(wanted_accs_list)) + " protein accessions.")
 print("  " + str(num_found) + ' were found. The rest were given taxids of "NA\".')
 
