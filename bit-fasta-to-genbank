@@ -1,63 +1,34 @@
 #!/usr/bin/env python
-# -*- coding: utf-8
 
+import argparse
 import sys
+from Bio import SeqIO
+from Bio.Alphabet import generic_dna
 
-import anvio
-import anvio.terminal as terminal
+parser = argparse.ArgumentParser(description="This script takes a fasta file and converts it into genbank format.")
 
-from anvio.errors import ConfigError, FilesNPathsError
+required = parser.add_argument_group('required arguments')
 
-__author__ = "Developers of anvi'o (see AUTHORS.txt)"
-__copyright__ = "Copyleft 2015-2018, the Meren Lab (http://merenlab.org/)"
-__credits__ = []
-__license__ = "GPL 3.0"
-__version__ = anvio.__version__
-__maintainer__ = "Mike Lee"
-__email__ = "michael.lee0517@gmail.com"
+required.add_argument('-i', '--input_fasta_file', action='store', dest='input_fasta', required=True, help='input fasta file')
 
+parser.add_argument("-o", "--output_genbank_file", action="store", dest="output_gb", default="new.gb", help='Output genbank file (default: "new.gb")')
 
-run = terminal.Run()
-progress = terminal.Progress()
+if len(sys.argv)==1:
+  parser.print_help(sys.stderr)
+  sys.exit(1)
 
+args = parser.parse_args()
 
-def fasta_to_genbank(args):
+input_fasta = open(args.input_fasta, "r")
 
-    input_fasta = open(args.input_fasta, "r")
+output_gb = open(args.output_gb, "w")
 
-    output_gb = open(args.output_gb, "w")
+sequences = list(SeqIO.parse(input_fasta, "fasta"))
 
-    sequences = list(SeqIO.parse(input_fasta, "fasta"))
+for seq in sequences:
+  seq.seq.alphabet = generic_dna
 
-    for seq in sequences:
-        seq.seq.alphabet = generic_dna
+SeqIO.write(sequences, output_gb, "genbank")
 
-    SeqIO.write(sequences, output_gb, "genbank")
-
-    input_fasta.close()
-    output_gb.close()
-
-if __name__ == '__main__':
-    import argparse
-    from Bio import SeqIO
-    from Bio.Alphabet import generic_dna
-
-    parser = argparse.ArgumentParser(description="This script takes a fasta file and converts it into\
-                                                genbank format.")
-
-    parser.add_argument('-i', '--input_fasta_file', action='store', dest='input_fasta', required=True,
-                        help='input fasta file')
-    parser.add_argument("-o", "--output_genbank_file", action="store", dest="output_gb",
-                        default="new.gb",\
-                        help='Output genbank file (default: "new.gb")')
-
-    args = anvio.get_args(parser)
-
-    try:
-        fasta_to_genbank(args)
-    except ConfigError as e:
-        print(e)
-        sys.exit(-1)
-    except FilesNPathsError as e:
-        print(e)
-        sys.exit(-2)
+input_fasta.close()
+output_gb.close()
