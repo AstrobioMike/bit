@@ -10,11 +10,7 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-i", "--input_fasta", help="Original fasta file", action="store", dest="input_fasta", required=True)
 required.add_argument("-w", "--wanted_sequence_order", help="Single-column file with headers in desired order", action="store", dest="ordered_headers", required=True)
-parser.add_argument("-o", "--output_prefix", help='Prefix added to output fasta (default: "Reordered").', dest="output_prefix", default="Reordered")
-
-if len(sys.argv)==1:
-  parser.print_help(sys.stderr)
-  sys.exit(1)
+parser.add_argument("-o", "--output_fasta", help='Reordered output fasta (default: "Reordered.fa").', dest="output_fasta", default="Reordered.fa")
 
 args = parser.parse_args()
 
@@ -24,7 +20,7 @@ ordered_list = list(line.strip() for line in ordered_seqs)
 
 fasta_dict = SeqIO.index(args.input_fasta, "fasta")
 
-fasta_out = open(args.output_prefix + "_" + args.input_fasta, "w")
+fasta_out = open(args.output_fasta, "w")
 
 for header in ordered_list:
   fasta_out.write(fasta_dict.get_raw(header))
