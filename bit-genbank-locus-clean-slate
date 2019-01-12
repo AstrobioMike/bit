@@ -1,0 +1,48 @@
+#!/usr/bin/env python
+
+import warnings
+warnings.filterwarnings("ignore")
+
+from Bio import SeqIO
+import argparse
+import sys
+import os
+import subprocess
+
+parser = argparse.ArgumentParser(description="Clean slate for LOCUS names in genbank files that are problematic (can be the case, for example, if annotated by NCBI but not officially released yet). Only helpful if original LOCUS names don't matter of course.")
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input_gb", help='Input Genbank file (e.g. "*.gbk", "*.gb", "*.gbff")', action="store", dest="input_gb", required=True)
+parser.add_argument("-w", "--desired_name", help='New locus name prefix  (default: "Unknown"', action="store", dest="wanted_name", default="Unknown")
+parser.add_argument("-o", "--output_gb", help='Output genbank file (default: "clean.gb")', action="store", dest="output_gb", default="clean.gb")
+
+
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(1)
+
+args = parser.parse_args()
+
+tmp_file = args.input_gb + ".tmp"
+new_name = args.wanted_name
+
+tmp = open(tmp_file, "w")
+
+subprocess.call(['sed', 's/^LOCUS.*$/LOCUS       noname          0 bp    DNA     linear   BCT 00-MIK-0000/', args.input_gb], stdout=tmp)
+tmp.close()
+
+output_gb = open(args.output_gb, "w")
+
+recs = [rec for rec in SeqIO.parse(args.input_gb + ".tmp", "genbank")]
+
+num = 0
+
+for rec in recs:
+    num += 1
+    rec.name = new_name + "_" + str(num)
+
+    output_gb.write(rec.format("genbank"))
+
+output_gb.close()
+os.remove(tmp_file)

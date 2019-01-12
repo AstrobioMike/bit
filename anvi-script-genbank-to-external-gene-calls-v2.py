@@ -1,4 +1,4 @@
-#!/Users/Mike_Lee/virtual-envs/anvio-5.2/bin/python3.6
+#!/usr/bin/env python3
 # -*- coding: utf-8
 
 import sys
