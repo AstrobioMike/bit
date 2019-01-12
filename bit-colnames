@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 
+GREEN='\033[0;32m'
+RED='\033[0;31m'
+NC='\033[0m'
+
 if [ "$#" == 0 ] || [ $1 == "-h" ]; then
   printf "This script returns the column names (with number) from a tab-separated file.\n\n"
   printf "Usage:\n\t bit-colnames input.tsv\n\n"
