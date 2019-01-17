@@ -5,7 +5,9 @@ from __future__ import print_function
 import sys
 import argparse
 
-parser = argparse.ArgumentParser(description='This script is for parsing NCBI\'s assembly summary file down to the provided accessions.')
+parser = argparse.ArgumentParser(description='This script is for parsing NCBI\'s assembly summary file down\
+                                              to the provided accessions. The assembly summary file can be\
+                                              downloaded with "bit-dl-ncbi-assembly-summaries".')
 
 required = parser.add_argument_group('required arguments')
 

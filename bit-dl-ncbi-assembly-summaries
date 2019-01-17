@@ -5,6 +5,13 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
 
+if [ "$#" == 0 ] || [ $1 == "-h" ]; then
+  printf "This script downloads ncbi assembly summary files.\n\n"
+  printf "Usage:\n\t bit-dl-ncbi-assembly-summaries\n\n"
+  exit
+fi
+
+
 printf "\n\t\t  Downloading GenBank assembly summaries...\n\n"
 curl --connect-timeout 30 --retry 10 ftp://ftp.ncbi.nlm.nih.gov/genomes/ASSEMBLY_REPORTS/assembly_summary_genbank.txt -o ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
 

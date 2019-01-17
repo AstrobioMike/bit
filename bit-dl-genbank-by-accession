@@ -5,9 +5,16 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-num=0
+if [ "$#" == 0 ] || [ $1 == "-h" ]; then
+  printf "This script downloads genbank files for ncbi genomes.\n"
+  printf "It needs as input the tsv produced by \"bit-parse-assembly-summary-file\".\n\n"
+  printf "Usage:\n\t bit-dl-genbank-files R_insidiosa_assemblies_info.tsv\"\n\n"
+  exit
+fi
+
 
 rm -f Failed_accessions.txt
+print "\n"
 
 while IFS=$'\t' read -r -a curr_line
 
