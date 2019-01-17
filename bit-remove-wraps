@@ -5,7 +5,7 @@ GREEN='\033[0;32m'
 NC='\033[0m'
 
 if [ "$#" == 0 ] || [ $1 == "-h" ]; then
-  printf "This script removes line wraps from a fasta file.\n\n"
+  printf "\nThis script removes line wraps from a fasta file.\n\n"
   printf "Usage:\n\t bit-remove-wraps input.fasta > new.fasta\n\n"
   exit
 fi

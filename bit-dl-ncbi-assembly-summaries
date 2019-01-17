@@ -5,8 +5,8 @@ GREEN='\033[0;32m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-if [ "$#" == 0 ] || [ $1 == "-h" ]; then
-  printf "This script downloads ncbi assembly summary files.\n\n"
+if [ $1 == "-h" ]; then
+  printf "\nThis script downloads ncbi assembly summary files.\n\n"
   printf "Usage:\n\t bit-dl-ncbi-assembly-summaries\n\n"
   exit
 fi
