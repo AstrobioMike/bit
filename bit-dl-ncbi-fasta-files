@@ -38,7 +38,7 @@ do
 
     else
         
-        printf "     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
+        printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
         printf "\t  $assembly's fasta file didn't download successfully.\n\n"
         printf "\t  Written to \"Failed_accessions.txt\".\n"
         printf "     ${RED}********************************************************************** ${NC}\n\n"

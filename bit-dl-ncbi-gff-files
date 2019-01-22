@@ -29,15 +29,15 @@ do
     end_path=$(basename $base_link)
 
     # attempting to download genes for assembly
-    curl --silent --retry 10 -o ${assembly}.gb.gz "${base_link}/${end_path}_genomic.gff.gz"
+    curl --silent --retry 10 -o ${assembly}.gff.gz "${base_link}/${end_path}_genomic.gff.gz"
 
     if [ -s ${assembly}.gff.gz ]; then
         gunzip ${assembly}.gff.gz
 
     else
         
-        printf "     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
-        printf "\t  $assembly's genbank file didn't download successfully.\n\n"
+        printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
+        printf "\t  $assembly's gff file didn't download successfully.\n\n"
         printf "\t  Written to \"Failed_accessions.txt\".\n"
         printf "     ${RED}********************************************************************** ${NC}\n\n"
 
