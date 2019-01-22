@@ -1,0 +1,96 @@
+#!/usr/bin/env python
+
+import argparse
+import re
+import sys
+
+parser = argparse.ArgumentParser(description="This script takes a gff file and converts it into the format required\
+                                              for importing external gene calls and functions into anvi'o. It was\
+                                              made based on the gff3 format.")
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input_gff", help='input gff file (e.g. "*.gff")', action="store", dest="input_gff", required=True)
+parser.add_argument("-s", "--annotation_source", help='Annotation source (default: "NCBI_PGAP")', action="store", dest="source", default="NCBI_PGAP")
+parser.add_argument("-v", "--annotation_version", help='Annotation source version (default: "v4.6")', action="store", dest="version", default="v4.6")
+parser.add_argument("-o", "--output_gene_calls_tsv", help='Output tsv file (default: "external_gene_calls.tsv")', action="store", dest="output_gene_calls_tsv", default="external_gene_calls.tsv")
+parser.add_argument("-a", "--output_functions_tsv", help='Output functions file (default: "functions.tsv")', action="store", dest="output_functions_tsv", default="functions.tsv")
+
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(1)
+
+args = parser.parse_args()
+
+source = args.source
+version = args.version
+
+output_gene_calls = open(args.output_gene_calls_tsv, "w")
+output_gene_calls.write("gene_callers_id" + "\t" + "contig" + "\t" + "start" + "\t" + "stop" + "\t" + "direction" + "\t" + "partial" + "\t" + "source" + "\t" + "version" + "\n")
+
+output_functions = open(args.output_functions_tsv, "w")
+output_functions.write("gene_callers_id" + "\t" + "source" + "\t" + "accession" + "\t" + "function" + "\t" + "e_value" + "\n")
+
+num = 0 # iterator for assigning "gene_callers_id"
+
+with open(args.input_gff, "r") as inputs:
+    for line in inputs:
+        line = line.strip()
+        if not line.startswith("#"):
+            line_split = line.split("\t")
+            if line_split[2] == "CDS":
+
+                num += 1
+
+                contig = line_split[0].split(".")[0]
+                start = int(line_split[3]) - 1
+                stop = line_split[4]
+
+                # setting strand to "f" or "r":
+                if line_split[6] == "+":
+                    strand="f"
+                else:
+                    strand="r"
+
+                info = line_split[8].split(";")
+
+
+                curr_dict = {}
+
+                for item in info:
+
+                    key = item.split("=")[0]
+                    value = item.split("=")[1]
+
+                    curr_dict[key] = value
+
+                if "protein_id" in curr_dict:
+                    accession = curr_dict["protein_id"]
+                elif "locus_tag" in curr_dict:
+                    accession = curr_dict["locus_tag"]
+                else:
+                    accession = "None"
+
+                if "product" in curr_dict:
+                    product = curr_dict["product"]
+                    product = re.sub('%2C', ',', product) # for some reason the commas in here are "%2C", so changing
+
+
+                else:
+                    product = "hypothetical protein"
+
+
+                if "gene" in curr_dict and product != "hypothetical protein":
+                    gene_name = curr_dict["gene"]
+                    product = str(product) + " (" + gene_name + ")"
+
+
+                output_gene_calls.write(str(num) + "\t" + str(contig) + "\t" + str(start) + "\t" + str(stop) + "\t" + str(strand) + "\t" + "0" + "\t" + str(source) + "\t" +  str(version) + "\n")
+
+                if product == "hypothetical protein":
+                    continue
+                else:
+                    output_functions.write(str(num) + "\t" + str(source) + "\t" + str(accession) + "\t" + str(product) + "\t" + "0" + "\n")
+
+output_gene_calls.close()
+output_functions.close()
