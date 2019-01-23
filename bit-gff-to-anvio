@@ -52,7 +52,6 @@ with open(args.input_gff, "r") as inputs:
                 max_stop = line_split[4]
 
             if line_split[2] == "CDS":
-                print(line_split)
 
                 if int(line_split[4]) > int(max_stop):
                     continue
@@ -68,7 +67,6 @@ with open(args.input_gff, "r") as inputs:
                     strand="r"
 
                 info = line_split[8].split(";")
-                print(info)
 
                 curr_dict = {}
 
