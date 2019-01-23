@@ -39,7 +39,7 @@ with open(args.input_gff, "r") as inputs:
         line = line.strip()
         if not line.startswith("#"):
             line_split = line.split("\t")
-
+            
             # this will remove those that extend beyond the end of the contig
             if line_split[2] == "region":
                 max_stop = line_split[4]
@@ -65,11 +65,12 @@ with open(args.input_gff, "r") as inputs:
                 curr_dict = {}
 
                 for item in info:
+                    if ";" in item and len(item.split("=") > 1):
 
-                    key = item.split("=")[0]
-                    value = item.split("=")[1]
+                        key = item.split("=")[0]
+                        value = item.split("=")[1]
 
-                    curr_dict[key] = value
+                        curr_dict[key] = value
 
                 # skipping if marked as pseudogene
                 if "pseudo" in curr_dict:
@@ -78,7 +79,7 @@ with open(args.input_gff, "r") as inputs:
 
                 # skipping if marked as partial
                 if "partial" in curr_dict:
-                    if curr_dict["partial"] == "true":
+                    if curr_dict["partial"] == "true" or curr_dict["partial"] == "00":
                         continue
 
                 if "protein_id" in curr_dict:
