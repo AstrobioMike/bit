@@ -61,11 +61,11 @@ with open(args.input_gff, "r") as inputs:
 
                 info = line_split[8].split(";")
 
-
                 curr_dict = {}
 
                 for item in info:
-                    if ";" in item and len(item.split("=") > 1):
+
+                    if "=" in item and int(len(item.split("=")) > 1):
 
                         key = item.split("=")[0]
                         value = item.split("=")[1]
