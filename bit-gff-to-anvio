@@ -86,15 +86,18 @@ with open(args.input_gff, "r") as inputs:
 
                 # skipping if marked as partial
                 if "partial" in curr_dict:
-                    if curr_dict["partial"] == "true" or curr_dict["partial"] == "00":
+                    if curr_dict["partial"] == "true" or curr_dict["partial"] == "01":
                         continue
 
                 if "protein_id" in curr_dict:
                     accession = curr_dict["protein_id"]
+
                 elif "locus_tag" in curr_dict:
-                    accession = curr_dict["locus_tag"]
+                    accession = curr_dict["locus_tab"]
+
                 else:
                     accession = "None"
+
 
                 if "product" in curr_dict:
                     product = curr_dict["product"]
@@ -111,7 +114,6 @@ with open(args.input_gff, "r") as inputs:
 
                 else:
                     product = "hypothetical protein"
-
 
                 if "gene" in curr_dict and product != "hypothetical protein":
                     gene_name = curr_dict["gene"]
