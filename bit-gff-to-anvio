@@ -36,6 +36,7 @@ output_functions = open(args.output_functions_tsv, "w")
 output_functions.write("gene_callers_id" + "\t" + "source" + "\t" + "accession" + "\t" + "function" + "\t" + "e_value" + "\n")
 
 num = 0 # iterator for assigning "gene_callers_id"
+max_stop = 0 # variable to ensure we don't keep gene calls that extend beyond the contig
 
 with open(args.input_gff, "r") as inputs:
     for line in inputs:
