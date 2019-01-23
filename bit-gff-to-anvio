@@ -1,5 +1,9 @@
 #!/usr/bin/env python
 
+## can't match anvio genbank parser perfectly because the gff files don't provide any info to let you know a gene spans two contigs
+## with the genbank files, this is noted as "join*" in the coordinates, but can't find any delineation of this in gff
+## this means gff files may have a few more genes come through than genbank files would, though seems very rare
+
 import argparse
 import re
 import sys
@@ -40,9 +44,7 @@ with open(args.input_gff, "r") as inputs:
             line_split = line.split("\t")
             if line_split[2] == "CDS":
 
-                num += 1
-
-                contig = line_split[0].split(".")[0]
+                contig = line_split[0].split(" ")[0]
                 start = int(line_split[3]) - 1
                 stop = line_split[4]
 
@@ -64,6 +66,11 @@ with open(args.input_gff, "r") as inputs:
 
                     curr_dict[key] = value
 
+                # skipping if marked as pseudogene
+                if "pseudo" in curr_dict:
+                    if curr_dict["pseudo"] == "true":
+                        continue
+
                 if "protein_id" in curr_dict:
                     accession = curr_dict["protein_id"]
                 elif "locus_tag" in curr_dict:
@@ -74,6 +81,14 @@ with open(args.input_gff, "r") as inputs:
                 if "product" in curr_dict:
                     product = curr_dict["product"]
                     product = re.sub('%2C', ',', product) # for some reason the commas in here are "%2C", so changing
+                    product = re.sub('%3B', ';', product) # these are dumb too
+                    ## some of these have different spaces due to odd characters, fixing to match what i get from my genbank-to-anvio parser
+                    product = re.sub(r'([0-9]), ([0-9])' , r'\1,\2', product) 
+                    product = re.sub(r"([0-9]),\r([0-9])" , r'\1,\2', product) 
+                    product = re.sub(r'([A-Za-z0-9])- ', r'\1-', product)
+                    product = re.sub(r' -([A-Za-z0-9])', r'-\1', product)
+                    product = product.replace('( ', '(')
+                    product = product.replace(' )', ')')
 
 
                 else:
@@ -85,9 +100,11 @@ with open(args.input_gff, "r") as inputs:
                     product = str(product) + " (" + gene_name + ")"
 
 
+                num += 1
+
                 output_gene_calls.write(str(num) + "\t" + str(contig) + "\t" + str(start) + "\t" + str(stop) + "\t" + str(strand) + "\t" + "0" + "\t" + str(source) + "\t" +  str(version) + "\n")
 
-                if product == "hypothetical protein":
+                if "hypothetical protein" in product:
                     continue
                 else:
                     output_functions.write(str(num) + "\t" + str(source) + "\t" + str(accession) + "\t" + str(product) + "\t" + "0" + "\n")

@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 
+## can't match anvio gff parser perfectly because the gff files don't provide any info to let you know a gene spans two contigs
+## with the genbank files, this is noted as "join*" in the coordinates, but can't find any delineation of this in gff
+## this means gff files may have a few more genes come through than genbank files would, though seems very rare
+
+
 from Bio import SeqIO
 import argparse
 import re
@@ -34,6 +39,7 @@ output_gene_calls.write("gene_callers_id" + "\t" + "contig" + "\t" + "start" + "
 
 output_functions = open(args.output_functions_tsv, "w")
 output_functions.write("gene_callers_id" + "\t" + "source" + "\t" + "accession" + "\t" + "function" + "\t" + "e_value" + "\n")
+
 
 recs = [rec for rec in SeqIO.parse(input_gb, "genbank")]
 
@@ -99,15 +105,16 @@ for rec in recs:
             function = gene.qualifiers["product"][0]
             # some things were separated with spaced oddly due to the original word wrapping/soft wraps ("\r" characters i think)
             function = re.sub(r'([0-9]), ([0-9])' , r'\1,\2', function) 
-            function = re.sub(r'([A-Za-z0-9])- ', r'\1-', function)
-            function = re.sub(r' -([A-Za-z0-9])', r'-\1', function)
+            function = re.sub(r"([0-9]),\r([0-9])" , r'\1,\2', function) 
+            function = re.sub(r'([A-Za-z0-9()])- ', r'\1-', function)
+            function = re.sub(r' -([A-Za-z0-9()])', r'-\1', function)
 
         # if present, adding gene name to product annotation:
         if "gene" in gene.qualifiers:
             gene_name=str(gene.qualifiers["gene"][0])
             function = function + " (" + gene_name + ")"
 
-        output_gene_calls.write(str(num) + "\t" + rec.name + "\t" + str(start) + "\t" + str(end) + "\t" + str(strand) + "\t" + "0" + "\t" + str(source) +"\t" + str(version) + "\n")
+        output_gene_calls.write(str(num) + "\t" + rec.id + "\t" + str(start) + "\t" + str(end) + "\t" + str(strand) + "\t" + "0" + "\t" + str(source) +"\t" + str(version) + "\n")
 
         # if no annotation, not writing out to functions table
         if "hypothetical protein" in function:
