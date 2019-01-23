@@ -1,10 +1,5 @@
 #!/usr/bin/env python
 
-## can't match anvio gff parser perfectly because the gff files don't provide any info to let you know a gene spans two contigs
-## with the genbank files, this is noted as "join*" in the coordinates, but can't find any delineation of this in gff
-## this means gff files may have a few more genes come through than genbank files would, though seems very rare
-
-
 from Bio import SeqIO
 import argparse
 import re

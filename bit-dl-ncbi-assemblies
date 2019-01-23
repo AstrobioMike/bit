@@ -88,7 +88,7 @@ fi
 ## downloading assembly summaries (if not present in cwd) ##
 if [ ! -s ncbi_assembly_info.tsv ]; then
 
-    printf "\n\t  ${GREEN}Downloading ncbi assembly summaries to be able to construct ftp links...${NC}\n\n"
+    printf "    ${GREEN}Downloading ncbi assembly summaries to be able to construct ftp links...${NC}\n\n"
     curl --connect-timeout 30 --retry 10 ftp://ftp.ncbi.nlm.nih.gov/genomes/ASSEMBLY_REPORTS/assembly_summary_genbank.txt -o ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
 
     # making sure file downloaded with no errors
@@ -112,6 +112,8 @@ if [ ! -s ncbi_assembly_info.tsv ]; then
         cat ncbi_RS_assembly_info.tmp >> ncbi_assembly_info.tsv
         rm ncbi_RS_assembly_info.tmp
     fi
+
+    printf "\n"
 fi
 
 
