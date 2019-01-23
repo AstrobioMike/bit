@@ -80,6 +80,11 @@ with open(args.input_gff, "r") as inputs:
                     if curr_dict["pseudo"] == "true":
                         continue
 
+                # skipping if marked as partial
+                if "partial" in curr_dict:
+                    if curr_dict["partial"] == "true":
+                        continue
+
                 if "protein_id" in curr_dict:
                     accession = curr_dict["protein_id"]
                 elif "locus_tag" in curr_dict:
