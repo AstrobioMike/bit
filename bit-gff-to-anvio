@@ -32,19 +32,27 @@ output_functions = open(args.output_functions_tsv, "w")
 output_functions.write("gene_callers_id" + "\t" + "source" + "\t" + "accession" + "\t" + "function" + "\t" + "e_value" + "\n")
 
 num = 0 # iterator for assigning "gene_callers_id"
-max_stop = 0 # variable to ensure we don't keep gene calls that extend beyond the contig
+max_stop = sys.maxsize # intializing variable to ensure we don't keep gene calls that extend beyond the contig (for those that have a "region" specified)
 
 with open(args.input_gff, "r") as inputs:
     for line in inputs:
         line = line.strip()
-        if not line.startswith("#"):
+        # resetting max_stop position if we passed comment lines (this means we moved onto a new gff file that was catted together)
+        # some gff files have "region" lines stating the length of the contig that holds the following genes, others do not, this is so
+        # this value is reset on a new gff file to the max, in case this file doesn't have that
+        if line.startswith("#"):
+            max_stop = sys.maxsize
+            continue
+
+        else:
             line_split = line.split("\t")
             
-            # this will remove those that extend beyond the end of the contig
+            # setting contig length value, this will enable us to filter out those that extend beyond the end of the contig, if "region" lines are present in the gff file
             if line_split[2] == "region":
                 max_stop = line_split[4]
 
             if line_split[2] == "CDS":
+                print(line_split)
 
                 if int(line_split[4]) > int(max_stop):
                     continue
@@ -60,6 +68,7 @@ with open(args.input_gff, "r") as inputs:
                     strand="r"
 
                 info = line_split[8].split(";")
+                print(info)
 
                 curr_dict = {}
 
