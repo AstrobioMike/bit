@@ -54,7 +54,17 @@ for rec in recs:
     if "pseudo" in gene.qualifiers:
       continue
 
-    output_fasta.write(">" + str(gene.qualifiers["locus_tag"][0])  + "\n" + str(gene.qualifiers["translation"][0]) + "\n")
+    if "locus_tag" in gene.qualifiers:
+      locus_tag = str(gene.qualifiers["locus_tag"][0])
+    else:
+      locus_tag = "No_locus_tag"
+
+    if "protein_id" in gene.qualifiers:
+      protein_id = str(gene.qualifiers["protein_id"][0])
+    else:
+      protein_id = "No_protein_id"
+
+    output_fasta.write(">" + locus_tag + "_" + protein_id + "\n" + str(gene.qualifiers["translation"][0]) + "\n")
 
 input_gb.close()
 output_fasta.close()
