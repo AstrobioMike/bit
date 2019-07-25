@@ -15,6 +15,7 @@ parser.add_argument("-s", "--annotation_source", help='Annotation source (defaul
 parser.add_argument("-v", "--annotation_version", help='Annotation source version (default: "v4.6")', action="store", dest="version", default="v4.6")
 parser.add_argument("-o", "--output_gene_calls_tsv", help='Output tsv file (default: "external_gene_calls.tsv")', action="store", dest="output_gene_calls_tsv", default="external_gene_calls.tsv")
 parser.add_argument("-a", "--output_functions_tsv", help='Output functions file (default: "functions.tsv")', action="store", dest="output_functions_tsv", default="functions.tsv")
+parser.add_argument("-m", "--output_mappings_tsv", help='Output mapping file for anvio "gene_callers_id"s to protein accessions and locus tags if present (default: "mappings.tsv")', action="store", dest="output_mappings_tsv", default="mappings.tsv")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -30,6 +31,9 @@ output_gene_calls.write("gene_callers_id" + "\t" + "contig" + "\t" + "start" + "
 
 output_functions = open(args.output_functions_tsv, "w")
 output_functions.write("gene_callers_id" + "\t" + "source" + "\t" + "accession" + "\t" + "function" + "\t" + "e_value" + "\n")
+
+output_mappings = open(args.output_mappings_tsv, "w")
+output_mappings.write("gene_callers_id" +"\t" + "protein_acc" + "\n")
 
 num = 0 # iterator for assigning "gene_callers_id"
 max_stop = sys.maxsize # intializing variable to ensure we don't keep gene calls that extend beyond the contig (for those that have a "region" specified)
@@ -50,6 +54,7 @@ with open(args.input_gff, "r") as inputs:
             # setting contig length value, this will enable us to filter out those that extend beyond the end of the contig, if "region" lines are present in the gff file
             if line_split[2] == "region":
                 max_stop = line_split[4]
+                continue
 
             if line_split[2] == "CDS":
 
@@ -91,12 +96,12 @@ with open(args.input_gff, "r") as inputs:
 
                 if "protein_id" in curr_dict:
                     accession = curr_dict["protein_id"]
-
-                elif "locus_tag" in curr_dict:
-                    accession = curr_dict["locus_tag"]
-
                 else:
-                    accession = "None"
+                    accession = "Not_Identified_in_gff_file"
+
+                if "locus_tag" in curr_dict:
+                    locus_tag = curr_dict["locus_tag"]
+
 
 
                 if "product" in curr_dict:
@@ -123,6 +128,7 @@ with open(args.input_gff, "r") as inputs:
                 num += 1
 
                 output_gene_calls.write(str(num) + "\t" + str(contig) + "\t" + str(start) + "\t" + str(stop) + "\t" + str(strand) + "\t" + "0" + "\t" + str(source) + "\t" +  str(version) + "\n")
+                output_mappings.write(str(num) + "\t" + str(accession) + "\n")
 
                 if "hypothetical protein" in product:
                     continue
