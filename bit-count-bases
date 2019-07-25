@@ -4,8 +4,8 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 if [ "$#" == 0 ] || [ $1 == "-h" ]; then
-  printf "\nThis script returns the total number of bases (or amino acids) in a fasta file.\n\n"
-  printf "Usage:\n\t bit-count-bases input.fasta\n\n"
+  printf "\n  This script returns the total number of bases (or amino acids) in a fasta file.\n\n"
+  printf "    Usage:\n\t bit-count-bases input.fasta\n\n"
   exit
 fi
 

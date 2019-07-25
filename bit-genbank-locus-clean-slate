@@ -9,7 +9,7 @@ import sys
 import os
 import subprocess
 
-parser = argparse.ArgumentParser(description="Clean slate for LOCUS names in genbank files that are problematic (can be the case, for example, if annotated by NCBI but not officially released yet). Only helpful if original LOCUS names don't matter of course.")
+parser = argparse.ArgumentParser(description="Clean slate for LOCUS names in genbank files that are problematic (can be the case, for example, if annotated by NCBI but not officially released yet). This is only helpful if the original LOCUS names don't matter to us, of course.")
 
 required = parser.add_argument_group('required arguments')
 
