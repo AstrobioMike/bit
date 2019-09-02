@@ -24,7 +24,10 @@ if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "help" ]; then
     printf "                  Specify the desired format. Available options currently\n"
     printf "                  include genbank, fasta, protein, or gff.\n\n"
 
-    printf "    Example usage:\n\n\t bit-dl-ncbi-assemblies -w ncbi_accessions.txt -f protein\n\n"
+    printf "        - [-j <int> ] default: 1\n"
+    printf "                  The number of downloads you'd like to run in parallel.\n\n"
+
+    printf "    Example usage:\n\n\t bit-dl-ncbi-assemblies -w ncbi_accessions.txt -f protein -j 4\n\n"
 
     exit
 fi
@@ -34,14 +37,16 @@ printf "\n"
 
 ## setting default ##
 format="genbank"
+num_jobs=1
 
 ## parsing arguments
-while getopts :w:f: args
+while getopts :w:f:j: args
 do
     case "${args}"
     in
         w) NCBI_acc_file=${OPTARG};;
         f) format=${OPTARG};;
+        j) num_jobs=${OPTARG};;
         \?) printf "\n  ${RED}Invalid argument: -${OPTARG}${NC}\n\n    Run 'bit-dl-ncbi-assemblies' with no arguments or '-h' only to see help menu.\n\n" >&2 && exit
     esac
 done
@@ -137,66 +142,72 @@ elif [ $format == "gff" ]; then
 fi
 
 
-## downloading
-while IFS=$'\t' read -r -a curr_line
+### running downloads in serial, unless specified to run in parallel ###
+if [ $num_jobs == "1" ]; then
 
-do
+    while IFS=$'\t' read -r -a curr_line
 
-    assembly="${curr_line[0]}"
-    downloaded_accession="${curr_line[1]}"
-    num=$((num+1))
+    do
 
-    printf "\r\t Numero $num of $NCBI_input_genomes_total: $assembly"
+        assembly="${curr_line[0]}"
+        downloaded_accession="${curr_line[1]}"
+        num=$((num+1))
 
-    # storing and building links
-    base_link="${curr_line[8]}"
+        printf "\r\t Numero $num of $NCBI_input_genomes_total: $assembly"
 
-    # checking link was actually present (sometimes, very rarely, it is not there)
-    # if not there, attempting to build ourselves
-    if [ $base_link == "na" ] || [ -z $base_link ]; then
+        # storing and building links
+        base_link="${curr_line[8]}"
 
-        p1=$(printf "ftp://ftp.ncbi.nlm.nih.gov/genomes/all")
+        # checking link was actually present (sometimes, very rarely, it is not there)
+        # if not there, attempting to build ourselves
+        if [ $base_link == "na" ] || [ -z $base_link ]; then
 
-        # checking if GCF or GCA
-        if [[ $assembly == "GCF"* ]]; then 
-            p2="GCF"
+            p1=$(printf "ftp://ftp.ncbi.nlm.nih.gov/genomes/all")
+
+            # checking if GCF or GCA
+            if [[ $assembly == "GCF"* ]]; then 
+                p2="GCF"
+            else
+                p2="GCA"
+            fi
+            
+            p3=$(echo $assembly | cut -f 2 -d "_" | cut -c 1-3)
+            p4=$(echo $assembly | cut -f 2 -d "_" | cut -c 4-6)
+            p5=$(echo $assembly | cut -f 2 -d "_" | cut -c 7-9)
+
+            ass_name="${curr_line[2]}"
+            end_path=$(paste -d "_" <(echo "$assembly") <(echo "$ass_name"))
+
+            base_link=$(paste -d "/" <(echo "$p1") <(echo "$p2") <(echo "$p3") <(echo "$p4") <(echo "$p5") <(echo "$end_path"))
+
         else
-            p2="GCA"
+
+            end_path=$(basename $base_link)
+        
         fi
-        
-        p3=$(echo $assembly | cut -f 2 -d "_" | cut -c 1-3)
-        p4=$(echo $assembly | cut -f 2 -d "_" | cut -c 4-6)
-        p5=$(echo $assembly | cut -f 2 -d "_" | cut -c 7-9)
 
-        ass_name="${curr_line[2]}"
-        end_path=$(paste -d "_" <(echo "$assembly") <(echo "$ass_name"))
+        # attempting to download genes for assembly
+        curl --silent --retry 10 -o ${assembly}${my_ext}.gz "${base_link}/${end_path}${ext}.gz"
 
-        base_link=$(paste -d "/" <(echo "$p1") <(echo "$p2") <(echo "$p3") <(echo "$p4") <(echo "$p5") <(echo "$end_path"))
+        if [ -s ${assembly}${my_ext}.gz ]; then
+            gunzip ${assembly}${my_ext}.gz
 
-    else
+        else
+            
+            printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
+            printf "\t  $assembly's $format file didn't download successfully.\n\n"
+            printf "\t  Written to \"Failed_accessions.txt\".\n"
+            printf "     ${RED}********************************************************************** ${NC}\n\n"
 
-        end_path=$(basename $base_link)
-    
-    fi
+            echo ${assembly} >> Failed_accessions.txt
 
-    # attempting to download genes for assembly
-    curl --silent --retry 10 -o ${assembly}${my_ext}.gz "${base_link}/${end_path}${ext}.gz"
+        fi
 
-    if [ -s ${assembly}${my_ext}.gz ]; then
-        gunzip ${assembly}${my_ext}.gz
+    done < $tmp_file
 
-    else
-        
-        printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
-        printf "\t  $assembly's $format file didn't download successfully.\n\n"
-        printf "\t  Written to \"Failed_accessions.txt\".\n"
-        printf "     ${RED}********************************************************************** ${NC}\n\n"
-
-        echo ${assembly} >> Failed_accessions.txt
-
-    fi
-
-done < $tmp_file
+else
+    cat $tmp_file | parallel -j $num_jobs helper-bit-dl-ncbi-assemblies-parallel.sh {} $my_ext $ext
+fi
 
 rm $tmp_file
 
