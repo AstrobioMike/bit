@@ -205,14 +205,10 @@ if [ $num_jobs == "1" ]; then
 
     done < $tmp_file
 
-    rm $tmp_file
-
-    printf "\n\n\t\t\t  ${GREEN}DONE!${NC}\n\n"
-
-    exit
-
 else
     cat $tmp_file | parallel -j $num_jobs helper-bit-dl-ncbi-assemblies-parallel.sh {} $my_ext $ext
 fi
+
+rm $tmp_file
 
 printf "\n\n\t\t\t  ${GREEN}DONE!${NC}\n\n"
