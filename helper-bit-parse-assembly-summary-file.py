@@ -30,8 +30,6 @@ with open(args.wanted_accs, "r") as wanted_accs:
 
 out_file = open(args.output_file, "w")
 
-# out_file.write("input_accession\tdownloaded_accession\tassembly_name\ttaxid\torganism_name\tinfraspecific_name\tversion_status\tassembly_level\tftp_path\n")
-
 with open(args.all_assemblies) as assemblies:
   for line in assemblies:
     line = line.split("\t")

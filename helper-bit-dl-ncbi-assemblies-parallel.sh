@@ -47,16 +47,15 @@ curl --silent --retry 10 -o ${assembly}${my_ext}.gz "${base_link}/${end_path}${e
 
 if [ -s ${assembly}${my_ext}.gz ]; then
 
-    printf "\r\t Successfully downloaded: $assembly"
+    printf "\r\t  Successfully downloaded: $assembly"
 
 else
 
     printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
-    printf "\t  $assembly's $format file didn't download successfully.\n\n"
-    printf "\t  Written to \"Failed_accessions.txt\".\n"
+    printf "\t\t  $assembly's $format file didn't download successfully.\n\n"
+    printf "\t\t  Written to \"NCBI-accessions-not-downloaded.txt\".\n"
     printf "     ${RED}********************************************************************** ${NC}\n\n"
 
-    echo ${assembly} >> Failed_accessions.txt
+    echo ${assembly} >> NCBI-accessions-not-downloaded.txt
 
 fi
-

@@ -124,7 +124,31 @@ fi
 
 ## parsing assembly summaries and generating base ftp link info tab ##
 tmp_file=$(date +%s).bit-dl-ncbi.tmp
-bit-parse-assembly-summary-file -a ncbi_assembly_info.tsv -w $NCBI_acc_file -o $tmp_file
+helper-bit-parse-assembly-summary-file.py -a ncbi_assembly_info.tsv -w $NCBI_acc_file -o $tmp_file
+
+# checking which not found:
+comm -23 <(sort $NCBI_acc_file) <(cut -f1 $tmp_file | sort) > NCBI-accessions-not-found.tmp
+
+# reporting
+if [ -s NCBI-accessions-not-found.tmp ]; then
+    
+    mv NCBI-accessions-not-found.tmp NCBI-accessions-not-found.txt
+    num_not_found=$(wc -l NCBI-accessions-not-found.txt | sed 's/^ *//' | cut -d " " -f 1)
+    remaining_targets=$(($NCBI_input_genomes_total - $num_not_found))
+
+    printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
+    printf "\t\t  $num_not_found input accessions were not found at NCBI.\n\n"
+    printf "\t\t  Written to \"NCBI-accessions-not-found.txt\".\n"
+    printf "     ${RED}********************************************************************** ${NC}\n\n"
+
+    printf "\t  Remaining total targets: $remaining_targets\n\n"
+
+else
+
+    rm NCBI-accessions-not-found.tmp
+    remaining_targets=$NCBI_input_genomes_total
+
+fi
 
 ## setting proper extention for download ##
 if [ $format == "genbank" ]; then
@@ -153,7 +177,7 @@ if [ $num_jobs == "1" ]; then
         downloaded_accession="${curr_line[1]}"
         num=$((num+1))
 
-        printf "\r\t Numero $num of $NCBI_input_genomes_total: $assembly"
+        printf "\r\t  Numero $num of $remaining_targets: $assembly"
 
         # storing and building links
         base_link="${curr_line[8]}"
@@ -190,25 +214,28 @@ if [ $num_jobs == "1" ]; then
         curl --silent --retry 10 -o ${assembly}${my_ext}.gz "${base_link}/${end_path}${ext}.gz"
 
         if [ -s ${assembly}${my_ext}.gz ]; then
-            gunzip ${assembly}${my_ext}.gz
+
+            gunzip -f ${assembly}${my_ext}.gz
 
         else
             
             printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
-            printf "\t  $assembly's $format file didn't download successfully.\n\n"
-            printf "\t  Written to \"Failed_accessions.txt\".\n"
+            printf "\t\t  $assembly's $format file didn't download successfully.\n\n"
+            printf "\t\t  Written to \"NCBI-accessions-not-downloaded.txt\".\n"
             printf "     ${RED}********************************************************************** ${NC}\n\n"
 
-            echo ${assembly} >> Failed_accessions.txt
+            echo ${assembly} >> NCBI-accessions-not-downloaded.txt
 
         fi
 
     done < $tmp_file
 
+    printf "\n\n"
 else
     cat $tmp_file | parallel -j $num_jobs helper-bit-dl-ncbi-assemblies-parallel.sh {} $my_ext $ext
 fi
 
 rm $tmp_file
 
-printf "\n\n\t\t\t  ${GREEN}DONE!${NC}\n\n"
+printf "\r                                                               "
+printf "\n\t\t\t  ${GREEN}DONE!${NC}\n\n"
