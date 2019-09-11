@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+
+version='1.4.3'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+printf "\n\t\tBioinf Tools ${GREEN}v${version}${NC}\n"
+printf "\tgithub.com/AstrobioMike/bioinf_tools\n\n"
