@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-version='1.4.4'
+version='1.4.5'
 GREEN='\033[0;32m'
 NC='\033[0m'
 
