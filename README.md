@@ -15,5 +15,5 @@ And other just convenient things to have handy like removing those annoying soft
 conda install -c bioconda -c astrobiomike bit
 ```
 
-Each command has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. Once installed, you can see all available by entering `bit-` and pressing tab twice.
+Each command has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. Once installed, you can see all available commands by entering `bit-` and pressing tab twice.
 
