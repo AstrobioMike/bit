@@ -20,7 +20,7 @@ ordered_list = list(line.strip() for line in ordered_seqs)
 
 fasta_dict = SeqIO.index(args.input_fasta, "fasta")
 
-fasta_out = open(args.output_fasta, "w")
+fasta_out = open(args.output_fasta, "wb")
 
 for header in ordered_list:
   fasta_out.write(fasta_dict.get_raw(header))
