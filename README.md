@@ -12,7 +12,7 @@ And other just convenient things to have handy like removing those annoying soft
 ## Conda install
 
 ```
-conda install -c conda-forge -c bioconda -c defaults -c astrobiomike bit
+conda install -c conda-forge -c bioconda -c astrobiomike bit
 ```
 
 Each command has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. Once installed, you can see all available commands by entering `bit-` and pressing tab twice.
