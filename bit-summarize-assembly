@@ -1,0 +1,73 @@
+#!/usr/bin/env python
+
+import pyfastx
+import sys
+import argparse
+import os
+
+parser = argparse.ArgumentParser(description="This script outputs general summary stats for an assembly provided in fasta format. If given an output file, writes out a tsv, otherwise prints to the screen.")
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input_fasta", help="input assembly fasta file", action="store", dest="input_fasta")
+parser.add_argument("-o", "--output_tsv", help='Name of output tsv file (if none provided, prints to screen)', action="store", dest="output_tsv", default=False)
+
+if len(sys.argv)==1:
+  parser.print_help(sys.stderr)
+  sys.exit(1)
+
+args = parser.parse_args()
+
+fasta = pyfastx.Fasta(args.input_fasta)
+
+num_contigs = len(fasta)
+total_length = fasta.size
+gc = round(fasta.gc_content, 2)
+largest_contig_len = len(fasta.longest)
+info_at_50 = fasta.nl(50)
+info_at_75 = fasta.nl(75)
+info_at_90 = fasta.nl(90)
+N50 = info_at_50[0]
+L50 = info_at_50[1]
+N75 = info_at_75[0]
+L75 = info_at_75[1]
+N90 = info_at_90[0]
+L90 = info_at_90[1]
+num_contigs_gt_100_bps = fasta.count(100)
+num_contigs_gt_500_bps = fasta.count(500)
+num_contigs_gt_1000_bps = fasta.count(1000)
+num_contigs_gt_5000_bps = fasta.count(5000)
+num_contigs_gt_10000_bps = fasta.count(10000)
+num_contigs_gt_50000_bps = fasta.count(50000)
+num_contigs_gt_100000_bps = fasta.count(100000)
+
+
+
+if args.output_tsv:
+        # writing out file
+    out_file = open(args.output_tsv, "w")
+    out_file.write("Total_contigs\tTotal_length\tGC_content\tLargest_contig\tN50\tN75\tN90\tL50\tL75\tL90\tNum_contigs_gte_100\tNum_contigs_gte_500\tNum_contigs_gte_1000\tNum_contigs_gte_5000\tNum_contigs_gte_10000\tNum_contigs_gte_50000\tNum_contigs_gte_100000\n")
+    out_file.write(str(num_contigs) + "\t" + str(total_length) + "\t" + str(gc) + "\t" + str(largest_contig_len) + "\t" + str(N50) + "\t" + str(N75) + "\t" + str(N90) + "\t" + str(L50) + "\t" + str(L75) + "\t" + str(L90) + "\t" + str(num_contigs_gt_100_bps) + "\t" + str(num_contigs_gt_500_bps) + "\t" + str(num_contigs_gt_1000_bps) + "\t" + str(num_contigs_gt_5000_bps) + "\t" + str(num_contigs_gt_10000_bps) + "\t" + str(num_contigs_gt_50000_bps) + "\t" + str(num_contigs_gt_100000_bps) + "\n")
+    out_file.close()
+else:
+        # print out results to terminal
+    print("%-25s %s" %("Total contigs:", num_contigs))
+    print("%-25s %s" %("Total length:", total_length))
+    print("%-25s %s" %("GC content:", gc))
+    print("%-25s %s" %("Largest contig:", largest_contig_len))
+    print("%-25s %s" %("N50:", N50))
+    print("%-25s %s" %("N75:", N75))
+    print("%-25s %s" %("N90:", N90))
+    print("%-25s %s" %("L50:", L50))
+    print("%-25s %s" %("L75:", L75))
+    print("%-25s %s" %("L90:", L90))
+    print("%-25s %s" %("Num. contigs >= 100:", num_contigs_gt_100_bps))
+    print("%-25s %s" %("Num. contigs >= 500:", num_contigs_gt_500_bps))
+    print("%-25s %s" %("Num. contigs >= 1000:", num_contigs_gt_1000_bps))
+    print("%-25s %s" %("Num. contigs >= 5000:", num_contigs_gt_5000_bps))
+    print("%-25s %s" %("Num. contigs >= 10000:", num_contigs_gt_10000_bps))
+    print("%-25s %s" %("Num. contigs >= 50000:", num_contigs_gt_50000_bps))
+    print("%-25s %s" %("Num. contigs >= 100000:", num_contigs_gt_100000_bps))
+
+# removing intermediate index file
+os.remove(args.input_fasta + ".fxi")
