@@ -3,6 +3,7 @@
 from Bio import SeqIO
 import sys
 import argparse
+import os
 
 parser = argparse.ArgumentParser(description='This script will append a number to headers if that exact ID has already appeared in the fasta file.')
 
@@ -14,6 +15,10 @@ parser.add_argument("-o", "--output_fasta_name", help='Output fasta file (defaul
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
   sys.exit(1)
+
+if "-v" or "--version" in sys.argv:
+    os.system('bit-version')
+    sys.exit(0)
 
 args = parser.parse_args()
 

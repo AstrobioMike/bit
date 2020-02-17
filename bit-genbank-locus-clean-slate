@@ -22,6 +22,10 @@ if len(sys.argv)==1:
     parser.print_help(sys.stderr)
     sys.exit(1)
 
+if "-v" or "--version" in sys.argv:
+    os.system('bit-version')
+    sys.exit(0)
+    
 args = parser.parse_args()
 
 tmp_file = args.input_gb + ".tmp"

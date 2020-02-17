@@ -3,6 +3,7 @@
 from Bio import SeqIO
 import sys
 import argparse
+import os
 
 parser = argparse.ArgumentParser(description="This script takes a nucleotide multifasta and returns a tab-delimited file with 3 columns: header, sequence length, and GC.")
 
@@ -14,6 +15,10 @@ parser.add_argument("-o", "--output_txt_file", help='Name of output txt file (de
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
   sys.exit(1)
+
+if "-v" or "--version" in sys.argv:
+    os.system('bit-version')
+    sys.exit(0)
 
 args = parser.parse_args()
 

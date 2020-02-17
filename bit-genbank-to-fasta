@@ -3,6 +3,7 @@
 from Bio import SeqIO
 import argparse
 import sys
+import os
 
 parser = argparse.ArgumentParser(description="Parse nucleotide sequences from GenBank file into fasta file.")
 
@@ -15,6 +16,10 @@ if len(sys.argv)==1:
     parser.print_help(sys.stderr)
     sys.exit(1)
 
+if "-v" or "--version" in sys.argv:
+    os.system('bit-version')
+    sys.exit(0)
+    
 args = parser.parse_args()
 
 input_gb = open(args.input_gb, "r")

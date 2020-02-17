@@ -3,6 +3,7 @@
 from pybedtools import BedTool
 import sys
 import argparse
+import os
 
 parser = argparse.ArgumentParser(description='This script takes a multifasta file and tab-delimited file specifying which contigs and coordinates are wanted and returns a multifasta of the chopped out sequences. NOTE: It requires the python package "pybedtools".')
 
@@ -15,6 +16,10 @@ parser.add_argument("-o", "--output_fasta", help='Name of output fasta file (def
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
   sys.exit(1)
+
+if "-v" or "--version" in sys.argv:
+    os.system('bit-version')
+    sys.exit(0)
 
 args = parser.parse_args()
 

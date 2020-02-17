@@ -3,6 +3,7 @@
 from Bio import SeqIO
 import sys
 import argparse
+import os
 
 parser = argparse.ArgumentParser(description='This script is for parsing a fasta file by pulling out sequences with the desired headers. If you want all sequences EXCEPT the ones with the headers you are providing, add the flag "--inverse".')
 
@@ -17,6 +18,10 @@ if len(sys.argv)==1:
   parser.print_help(sys.stderr)
   sys.exit(1)
 
+if "-v" or "--version" in sys.argv:
+    os.system('bit-version')
+    sys.exit(0)
+    
 args = parser.parse_args()
 
 fasta_in = open(args.input_fasta, "r")

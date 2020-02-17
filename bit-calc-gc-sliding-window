@@ -3,6 +3,7 @@
 from Bio import SeqIO
 import sys
 import argparse
+import os
 
 parser = argparse.ArgumentParser(description="This script is for nucleotide multifastas and will return a tab-delimited file with 4 columns: header, sequence length, gc of whole sequence, and gc of each window of the specified window size (-w) for each step of the specified step size (-s).")
 
@@ -16,6 +17,10 @@ parser.add_argument("-s", "--step_size", help="Desired size of steps between eac
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
   sys.exit(1)
+
+if "-v" or "--version" in sys.argv:
+    os.system('bit-version')
+    sys.exit(0)
 
 args = parser.parse_args()
 
