@@ -5,20 +5,16 @@ import argparse
 import sys
 import os
 
-parser = argparse.ArgumentParser(description="This script takes a multifasta as input and returns a tab-delimited file with two columns, header and number of bases or amino acids, for each sequence." )
+parser = argparse.ArgumentParser(description="This script takes a multifasta as input and returns a tab-delimited file with two columns, header and number of bases or amino acids, for each sequence. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_fasta", help="Original fasta file", action="store", dest="input_fasta")
+required.add_argument("-i", "--input_fasta", help="Original fasta file", action="store", dest="input_fasta", required=True)
 parser.add_argument("-o", "--output_txt_file", help='Name of output txt file (default: "Num_bps.txt")', action="store", dest="output_file", default="Num_bps.txt")
 
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
   sys.exit(1)
-
-if "-v" or "--version" in sys.argv:
-    os.system('bit-version')
-    sys.exit(0)
 
 args = parser.parse_args()
 

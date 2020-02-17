@@ -5,22 +5,18 @@ import sys
 import argparse
 import os
 
-parser = argparse.ArgumentParser(description="This script is for nucleotide multifastas and will return a tab-delimited file with 4 columns: header, sequence length, gc of whole sequence, and gc of each window of the specified window size (-w) for each step of the specified step size (-s).")
+parser = argparse.ArgumentParser(description="This script is for nucleotide multifastas and will return a tab-delimited file with 4 columns: header, sequence length, gc of whole sequence, and gc of each window of the specified window size (-w) for each step of the specified step size (-s). For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_fasta", help="fasta file", action="store", dest="input_fasta")
-required.add_argument("-o", "--output_txt_file", help="Name of output txt file", action="store", dest="output_file")
+required.add_argument("-i", "--input_fasta", help="fasta file", action="store", dest="input_fasta", required=True)
+required.add_argument("-o", "--output_txt_file", help="Name of output txt file", action="store", dest="output_file", required=True)
 parser.add_argument("-w", "--window_size", help="Desired size of sliding window (default: 100)", action="store", dest="window", default=100)
 parser.add_argument("-s", "--step_size", help="Desired size of steps between each window (default: 1)", action="store", dest="step", default=1)
 
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
   sys.exit(1)
-
-if "-v" or "--version" in sys.argv:
-    os.system('bit-version')
-    sys.exit(0)
 
 args = parser.parse_args()
 

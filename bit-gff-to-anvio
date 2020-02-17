@@ -7,7 +7,7 @@ import os
 
 parser = argparse.ArgumentParser(description="This script takes a gff file and converts it into the format required\
                                               for importing external gene calls and functions into anvi'o. It was\
-                                              made based on the gff3 format.")
+                                              made based on the gff3 format. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
@@ -22,10 +22,6 @@ if len(sys.argv)==1:
     parser.print_help(sys.stderr)
     sys.exit(1)
 
-if "-v" or "--version" in sys.argv:
-    os.system('bit-version')
-    sys.exit(0)
-    
 args = parser.parse_args()
 
 source = args.source

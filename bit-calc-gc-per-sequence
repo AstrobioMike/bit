@@ -5,20 +5,16 @@ import sys
 import argparse
 import os
 
-parser = argparse.ArgumentParser(description="This script takes a nucleotide multifasta and returns a tab-delimited file with 3 columns: header, sequence length, and GC.")
+parser = argparse.ArgumentParser(description="This script takes a nucleotide multifasta and returns a tab-delimited file with 3 columns: header, sequence length, and GC. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_fasta", help="fasta file", action="store", dest="input_fasta")
+required.add_argument("-i", "--input_fasta", help="fasta file", action="store", dest="input_fasta", required=True)
 parser.add_argument("-o", "--output_txt_file", help='Name of output txt file (default: "GC_out.txt")', action="store", dest="output_file", default="GC_out.txt")
 
 if len(sys.argv)==1:
-  parser.print_help(sys.stderr)
-  sys.exit(1)
-
-if "-v" or "--version" in sys.argv:
-    os.system('bit-version')
-    sys.exit(0)
+    parser.print_help(sys.stderr)
+    sys.exit(1)
 
 args = parser.parse_args()
 
@@ -28,15 +24,15 @@ out_file = open(args.output_file, "w")
 out_file.write("header" + "\t" + "length" + "\t" + "gc" + "\n")
 
 for cur_record in SeqIO.parse(in_fasta, "fasta"):
-  gene_name = cur_record.name
-  A_count = cur_record.seq.count('A')
-  C_count = cur_record.seq.count('C')
-  G_count = cur_record.seq.count('G')
-  T_count = cur_record.seq.count('T')
-  length = len(cur_record.seq)
-  gc_percentage = float(G_count + C_count) / length
-  gc_percentage = round(gc_percentage,2)
-  out_file.write(str(gene_name)+"\t"+str(length)+"\t"+str(gc_percentage)+"\n")
+    gene_name = cur_record.name
+    A_count = cur_record.seq.count('A')
+    C_count = cur_record.seq.count('C')
+    G_count = cur_record.seq.count('G')
+    T_count = cur_record.seq.count('T')
+    length = len(cur_record.seq)
+    gc_percentage = float(G_count + C_count) / length
+    gc_percentage = round(gc_percentage,2)
+    out_file.write(str(gene_name)+"\t"+str(length)+"\t"+str(gc_percentage)+"\n")
 
 in_fasta.close()
 out_file.close()

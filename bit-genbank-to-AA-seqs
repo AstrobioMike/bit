@@ -6,7 +6,7 @@ import re
 import sys
 import os
 
-parser = argparse.ArgumentParser(description="This script takes a genbank file and returns amino acid sequences for all coding sequences.")
+parser = argparse.ArgumentParser(description="This script takes a genbank file and returns amino acid sequences for all coding sequences. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
@@ -16,10 +16,6 @@ parser.add_argument("-f", "--output_fasta", help='Output fasta file (default: "c
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
   sys.exit(1)
-
-if "-v" or "--version" in sys.argv:
-    os.system('bit-version')
-    sys.exit(0)
 
 args = parser.parse_args()
 

@@ -6,21 +6,16 @@ from Bio import SeqIO
 from Bio.Alphabet import generic_dna
 import os
 
-parser = argparse.ArgumentParser(description="This script takes a fasta file and converts it into genbank format.")
+parser = argparse.ArgumentParser(description="This script takes a fasta file and converts it into genbank format. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument('-i', '--input_fasta_file', action='store', dest='input_fasta', required=True, help='input fasta file')
-
+required.add_argument('-i', '--input_fasta_file', action='store', dest='input_fasta', help='input fasta file', required=True)
 parser.add_argument("-o", "--output_genbank_file", action="store", dest="output_gb", default="new.gb", help='Output genbank file (default: "new.gb")')
 
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
   sys.exit(1)
-
-if "-v" or "--version" in sys.argv:
-    os.system('bit-version')
-    sys.exit(0)
 
 args = parser.parse_args()
 

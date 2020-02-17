@@ -5,7 +5,7 @@ import argparse
 import sys
 import os
 
-parser = argparse.ArgumentParser(description="Parse nucleotide sequences from GenBank file into fasta file.")
+parser = argparse.ArgumentParser(description="Parse nucleotide sequences from GenBank file into fasta file. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
@@ -15,11 +15,7 @@ parser.add_argument("-o", "--output_fasta", help='Output fasta file (default: "g
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
     sys.exit(1)
-
-if "-v" or "--version" in sys.argv:
-    os.system('bit-version')
-    sys.exit(0)
-    
+   
 args = parser.parse_args()
 
 input_gb = open(args.input_gb, "r")

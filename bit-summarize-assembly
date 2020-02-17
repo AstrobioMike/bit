@@ -5,7 +5,7 @@ import sys
 import argparse
 import os
 
-parser = argparse.ArgumentParser(description="This script outputs general summary stats for an assembly provided in fasta format. If given an output file, writes out a tsv, otherwise prints to the screen.")
+parser = argparse.ArgumentParser(description="This script outputs general summary stats for an assembly provided in fasta format. If given an output file, writes out a tsv, otherwise prints to the screen. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
@@ -16,10 +16,6 @@ parser.add_argument("-o", "--output_tsv", help='Name of output tsv file (if none
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
     sys.exit(1)
-
-if "-v" or "--version" in sys.argv:
-    os.system('bit-version')
-    sys.exit(0)
 
 args = parser.parse_args()
 

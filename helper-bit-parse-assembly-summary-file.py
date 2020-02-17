@@ -8,7 +8,7 @@ import os
 
 parser = argparse.ArgumentParser(description='This script is for parsing NCBI\'s assembly summary file down\
                                               to the provided accessions. It is used by the `bit-dl-ncbi-assemblies`\
-                                              script.')
+                                              script. For version info, run `bit-version`.')
 
 required = parser.add_argument_group('required arguments')
 
@@ -19,10 +19,6 @@ parser.add_argument("-o", "--output_file", help='Wanted summary info only (defau
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
   sys.exit(1)
-
-if "-v" or "--version" in sys.argv:
-    os.system('bit-version')
-    sys.exit(0)
 
 args = parser.parse_args()
 
