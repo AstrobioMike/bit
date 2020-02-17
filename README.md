@@ -1,7 +1,7 @@
 <a href="https://zenodo.org/badge/latestdoi/59388885"><img align="right" src="https://zenodo.org/badge/59388885.svg" alt="DOI"></a>
 ## Bioinformatics Tools (bit)
 These are a collection of one-liners and short scripts I use frequently enough that it's been worth it for me to have them instantly available anywhere. This includes things like: 
-1. instantly summarizing an nucleotide assembly (`bit-summarize-assembly`)
+1. instantly summarizing nucleotide assemblies (`bit-summarize-assembly`)
 2. downloading NCBI assemblies in different formats by just providing accession numbers (`bit-dl-ncbi-assemblies`) 
 3. pulling out sequences by their coordinates (`bit-extract-seqs-by-coords`)
 4. splitting a fasta file based on headers (`bit-parse-fasta-by-headers`)
