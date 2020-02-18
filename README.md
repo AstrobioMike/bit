@@ -18,3 +18,9 @@ conda install -c conda-forge -c bioconda -c astrobiomike bit python=3.7
 
 Each command has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. Once installed, you can see all available commands by entering `bit-` and pressing tab twice.
 
+## Citation info
+If you happen to find this useful in your work and are inclined to cite this toolset, thank you 🙂, and please do so with the following: 
+
+>Lee, MD. Bioinformatics Tools (bit) 2018. doi:10.5281/zenodo.3633827
+
+You can get the version you are using with `bit-version`.
