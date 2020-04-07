@@ -22,7 +22,7 @@ if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "help" ]; then
 
     printf "        - [-f <str>] default: genbank\n"
     printf "                  Specify the desired format. Available options currently\n"
-    printf "                  include genbank, fasta, protein, or gff.\n\n"
+    printf "                  include: genbank, fasta, protein, gff, feature_tab, report, stats.\n\n"
 
     printf "        - [-j <int> ] default: 1\n"
     printf "                  The number of downloads you'd like to run in parallel.\n\n"
@@ -60,7 +60,7 @@ if [ ! -n "$NCBI_acc_file" ]; then
 fi
 
 ## making sure format specified is interpretable
-if [[ "$format" != "genbank" && $format != "fasta" && $format != "protein" && $format != "gff" ]]; then
+if [[ "$format" != "genbank" && $format != "fasta" && $format != "protein" && $format != "gff" && $format != "feature_tab" && $format != "report" && $format != "stats" ]]; then
     printf "\n  ${RED}Invalid argument passed to \'-f' option: $format\n\n${NC}"
     printf "  Valid options are genbank, fasta, protein, or gff.\n"
     printf "Exiting for now.\n\n"
@@ -152,17 +152,28 @@ fi
 
 ## setting proper extention for download ##
 if [ $format == "genbank" ]; then
-    ext="_genomic.gbff"
-    my_ext=".gb"
+    ext="_genomic.gbff.gz"
+    my_ext=".gb.gz"
 elif [ $format == "fasta" ]; then
-    ext="_genomic.fna"
-    my_ext=".fa"
+    ext="_genomic.fna.gz"
+    my_ext=".fa.gz"
 elif [ $format == "protein" ]; then
-    ext="_protein.faa"
-    my_ext=".faa"
+    ext="_protein.faa.gz"
+    my_ext=".faa.gz"
 elif [ $format == "gff" ]; then
-    ext="_genomic.gff"
-    my_ext=".gff"
+    ext="_genomic.gff.gz"
+    my_ext=".gff.gz"
+elif [ $format == "feature_tab" ]; then
+    ext="_feature_table.txt.gz"
+    my_ext=".tsv.gz"
+elif [ $format == "report" ]; then
+    ext="_assembly_report.txt"
+    my_ext="_assembly_report.txt"
+elif [ $format == "stats" ]; then
+    ext="_assembly_stats.txt"
+    my_ext="_assembly_stats.txt"
+
+
 fi
 
 
@@ -210,14 +221,14 @@ if [ $num_jobs == "1" ]; then
         
         fi
 
-        # attempting to download genes for assembly
-        curl --silent --retry 10 -o ${assembly}${my_ext}.gz "${base_link}/${end_path}${ext}.gz"
+        # attempting to download file for assembly
+        curl --silent --retry 10 -o ${assembly}${my_ext} "${base_link}/${end_path}${ext}"
 
-        if [ -s ${assembly}${my_ext}.gz ]; then
 
-            gunzip -f ${assembly}${my_ext}.gz
 
-        else
+        
+
+        if [ ! -s ${assembly}${my_ext} ]; then
             
             printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
             printf "\t\t  $assembly's $format file didn't download successfully.\n\n"
@@ -232,7 +243,7 @@ if [ $num_jobs == "1" ]; then
 
     printf "\n\n"
 else
-    cat $tmp_file | parallel -j $num_jobs helper-bit-dl-ncbi-assemblies-parallel.sh {} $my_ext $ext
+    cat $tmp_file | parallel -j $num_jobs ./helper-bit-dl-ncbi-assemblies-parallel.sh {} $my_ext $ext
 fi
 
 rm $tmp_file

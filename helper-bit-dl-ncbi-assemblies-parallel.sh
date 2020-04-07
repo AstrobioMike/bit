@@ -43,9 +43,9 @@ else
 
 fi
 
-curl --silent --retry 10 -o ${assembly}${my_ext}.gz "${base_link}/${end_path}${ext}.gz"
+curl --silent --retry 10 -o ${assembly}${my_ext} "${base_link}/${end_path}${ext}"
 
-if [ -s ${assembly}${my_ext}.gz ]; then
+if [ -s ${assembly}${my_ext} ]; then
 
     printf "\r\t  Successfully downloaded: $assembly"
 
