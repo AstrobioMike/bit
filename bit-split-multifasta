@@ -11,12 +11,12 @@ parser = argparse.ArgumentParser(description='This script will split a multifast
 required = parser.add_argument_group('required arguments')
 
 required.add_argument("-i", "--input_fasta", help="Starting fasta file", action="store", dest="input_fasta", required=True)
-parser.add_argument("-d", "--desired_subdirectory_name", help='Name of new subdirectory holding split sequences (default: "sub"', action="store", dest="subdirectory", default="sub")
+parser.add_argument("-d", "--desired_subdirectory_name", help='Name of new subdirectory holding split sequences (default: "sub")', action="store", dest="subdirectory", default="sub")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
     sys.exit(1)
-    
+
 args = parser.parse_args()
 
 out_dir = Path(str(args.subdirectory))
@@ -29,7 +29,7 @@ for seq_record in SeqIO.parse(in_fasta, "fasta"):
     curr_header = str(seq_record.id)
 
     curr_out = open(str(args.subdirectory) + "/" + curr_header + ".fa", "w")
-    curr_out.write(">" + str(seq_record.id) + "\n" + str(seq_record.seq) + "\n") 
+    curr_out.write(">" + str(seq_record.id) + "\n" + str(seq_record.seq) + "\n")
     curr_out.close()
 
 in_fasta.close()
