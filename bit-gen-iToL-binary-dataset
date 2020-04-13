@@ -1,0 +1,98 @@
+#!/usr/bin/env python
+
+import sys
+import argparse
+import os
+
+parser = argparse.ArgumentParser(description='This script is for creating a standard iToL binary dataset. For version info, run `bit-version`.')
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-g", "--target_genomes", help='Single-column file with the genomes to color (need to match the IDs in the tree file)', action="store", dest="target_genomes", required=True)
+parser.add_argument("-s", "--shape_to_add", help='Shape to add, must be one of: "square", "circle", "star", "rtriangle", "ltriangle", or "check" (default: "square")', action="store", dest="shape", default="square")
+parser.add_argument("-c", "--color", help='Color to use of either: "blue", "green", "red", or "black" (default: "blue", of course, \'cause it\'s the best)', action="store", dest="color", default="blue")
+parser.add_argument("-H", "--height_factor", help='Increase or decrease symbol size. Values below 1 will decrease the standard size, above 1 will increase it (default: "1")', action="store", dest="height", default="1")
+
+
+parser.add_argument("-o", "--output_file", help='Output file for iToL (default: "iToL-binary-dataset.txt")', action="store", dest="output_file", default="iToL-binary-dataset.txt")
+
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(1)
+
+args = parser.parse_args()
+
+if args.color == "blue":
+    col = "#434da7"
+elif args.color == "green":
+    col = "#48a743"
+elif args.color == "red":
+    col = "#c01820"
+elif args.color == "black":
+    col = "#000000"
+else:
+    print("\n\tSorry, we're not prepared to handle \"" + str(args.color) + "\" as the color... :(\n")
+    parser.print_help(sys.stderr)
+    sys.exit(1)
+
+if args.shape not in ["square", "circle", "star", "rtriangle", "ltriangle", "check"]:
+    print("\n\tSorry, we're not prepared to handle \"" + str(args.shape) + "\" as the argument for what shape to use... :(\n")
+    parser.print_help(sys.stderr)
+    sys.exit(1)
+
+try:
+    height = float(args.height)
+except ValueError:
+    print("\n\tSorry, " + str(args.height) + " doesn't appear to be a number... :(\n")
+    parser.print_help(sys.stderr)
+    sys.exit(1)
+
+target_list = []
+
+with open(args.target_genomes, "r") as target_genomes:
+    for genome in target_genomes:
+        target_list.append(genome.strip())
+
+out_file = open(args.output_file, "w")
+
+out_file.write("DATASET_BINARY\nSEPARATOR TAB\n\n")
+
+# setting DATASET_LABEL
+out_file.write("DATASET_LABEL\tdata\n\n")
+
+# setting dataset main color
+out_file.write("COLOR\t" + str(col) + "\n\n")
+
+# setting FIELD_LABELS
+out_file.write("FIELD_LABELS\tf1\n\n")
+
+# setting FIELD_SHAPES
+
+if args.shape == "square":
+    shape = "1"
+elif args.shape == "circle":
+    shape = "2"
+elif args.shape == "star":
+    shape = "3"
+elif args.shape == "rtriangle":
+    shape = "4"
+elif args.shape == "ltriangle":
+    shape = "5"
+else:
+    shape = "6"
+
+out_file.write("FIELD_SHAPES\t" + str(shape) + "\n\n")
+
+# writing out FIELD_COLORS
+out_file.write("FIELD_COLORS\t" + str(col) + "\n\n")
+
+# writing out HEIGHT_FACTOR
+out_file.write("HEIGHT_FACTOR\t" + str(height) + "\n\n")
+
+# writing lines for each labels 
+out_file.write("DATA\n")
+
+for target in target_list:
+    out_file.write(str(target) + "\t" + str(shape) + "\n")
+
+out_file.close()

@@ -1,0 +1,58 @@
+#!/usr/bin/env python
+
+import sys
+import argparse
+import os
+
+parser = argparse.ArgumentParser(description='This script is for creating a standard iToL text dataset. For version info, run `bit-version`.')
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-g", "--target_genomes", help='Single-column file with the genomes to color (need to match the IDs in the tree file)', action="store", dest="target_genomes", required=True)
+required.add_argument("-l", "--text_to_add", help='Text to add to the target genomes', action="store", dest="text", required=True)
+parser.add_argument("-c", "--color", help='Color to use of either: "blue", "green", "red", or "black" (default: "blue", of course, \'cause it\'s the best)', action="store", dest="color", default="blue")
+
+parser.add_argument("-o", "--output_file", help='Output file for iToL (default: "iToL-text-dataset.txt")', action="store", dest="output_file", default="iToL-text-dataset.txt")
+
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(1)
+
+args = parser.parse_args()
+
+if args.color == "blue":
+    col = "#434da7"
+elif args.color == "green":
+    col = "#48a743"
+elif args.color == "red":
+    col = "#c01820"
+elif args.color == "black":
+    col = "#000000"
+else:
+    print("\n\tSorry, we're not prepared to handle \"" + str(args.color) + "\" as the color... :(\n")
+    parser.print_help(sys.stderr)
+    sys.exit(1)
+
+target_list = []
+
+with open(args.target_genomes, "r") as target_genomes:
+    for genome in target_genomes:
+        target_list.append(genome.strip())
+
+out_file = open(args.output_file, "w")
+
+out_file.write("DATASET_TEXT\nSEPARATOR TAB\n\n")
+
+# setting DATASET_LABEL
+out_file.write("DATASET_LABEL\tdata\n\n")
+
+# setting dataset main color
+out_file.write("COLOR\t" + str(col) + "\n\n")
+
+# writing lines for each labels 
+out_file.write("DATA\n")
+
+for target in target_list:
+    out_file.write(str(target) + "\t" + str(args.text) + "\t" + "-1" + "\t" + str(col) + "\t" + "normal" + "\t" + "1" + "\t" + "0" + "\n")
+
+out_file.close()

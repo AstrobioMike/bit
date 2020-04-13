@@ -10,7 +10,8 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-g", "--target_genomes", help='Single-column file with the genomes to color (need to match the IDs in the tree file, with no "">")', action="store", dest="target_genomes", required=True)
 parser.add_argument("-w", "--what_to_color", help='What to color, must be: "branches", "labels", or "both" (default: "both")', action="store", dest="to_color", default="both")
-parser.add_argument("-c", "--color", help='Color to use of either: "blue", "green", or "red" (default: "blue", of course, \'cause it\'s the best)', action="store", dest="color", default="blue")
+parser.add_argument("-c", "--color", help='Color to use of either: "blue", "green", "red", or "black" (default: "blue", of course, \'cause it\'s the best)', action="store", dest="color", default="blue")
+parser.add_argument("-l", "--line_thickness", help='Line thickness if coloring branches (default: "1.5"', action="store", dest="line_weight", default="1.5")
 parser.add_argument("-o", "--output_file", help='Output file for iToL (default: "iToL-colors.txt")', action="store", dest="output_file", default="iToL-colors.txt")
 
 if len(sys.argv)==1:
@@ -20,11 +21,13 @@ if len(sys.argv)==1:
 args = parser.parse_args()
 
 if args.color == "blue":
-    col = "#0000ff"
+    col = "#434da7"
 elif args.color == "green":
-    col = "#00a33f"
+    col = "#48a743"
 elif args.color == "red":
-    col = "#a30000"
+    col = "#c01820"
+elif args.color == "black":
+    col = "#000000"
 else:
     print("\n\tSorry, we're not prepared to handle \"" + str(args.color) + "\" as the color... :(\n")
     parser.print_help(sys.stderr)
@@ -32,6 +35,13 @@ else:
 
 if args.to_color not in ["both", "branches", "labels"]:
     print("\n\tSorry, we're not prepared to handle \"" + str(args.to_color) + "\" as the argument for what to color... :(\n")
+    parser.print_help(sys.stderr)
+    sys.exit(1)
+
+try:
+    line_weight = float(args.line_weight)
+except ValueError:
+    print("\n\tSorry, " + str(args.line_weight) + " doesn't appear to be a number... :(\n")
     parser.print_help(sys.stderr)
     sys.exit(1)
 
@@ -55,6 +65,6 @@ if args.to_color in ["both", "labels"]:
 if args.to_color in ["both", "branches"]:
 
     for target in target_list:
-        out_file.write(str(target) + "\tbranch\t" + str(col) + "\tnormal\t1.5\n")
+        out_file.write(str(target) + "\tbranch\t" + str(col) + "\tnormal\t" + str(line_weight) + "\n")
 
 out_file.close()
