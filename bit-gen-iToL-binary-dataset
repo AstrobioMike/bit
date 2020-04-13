@@ -10,7 +10,7 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-g", "--target_genomes", help='Single-column file with the genomes to color (need to match the IDs in the tree file)', action="store", dest="target_genomes", required=True)
 parser.add_argument("-s", "--shape_to_add", help='Shape to add, must be one of: "square", "circle", "star", "rtriangle", "ltriangle", or "check" (default: "square")', action="store", dest="shape", default="square")
-parser.add_argument("-c", "--color", help='Color to use of either: "blue", "green", "red", or "black" (default: "blue", of course, \'cause it\'s the best)', action="store", dest="color", default="blue")
+parser.add_argument("-c", "--color", help='Color to use of either: "blue", "green", "red", "purple", or "black" (default: "blue", of course, \'cause it\'s the best)', action="store", dest="color", default="blue")
 parser.add_argument("-H", "--height_factor", help='Increase or decrease symbol size. Values below 1 will decrease the standard size, above 1 will increase it (default: "1")', action="store", dest="height", default="1")
 
 
@@ -28,6 +28,8 @@ elif args.color == "green":
     col = "#48a743"
 elif args.color == "red":
     col = "#c01820"
+elif args.color == "purple":
+    col = "#512f9c"
 elif args.color == "black":
     col = "#000000"
 else:

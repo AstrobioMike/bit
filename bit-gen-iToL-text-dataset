@@ -10,7 +10,7 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-g", "--target_genomes", help='Single-column file with the genomes to color (need to match the IDs in the tree file)', action="store", dest="target_genomes", required=True)
 required.add_argument("-l", "--text_to_add", help='Text to add to the target genomes', action="store", dest="text", required=True)
-parser.add_argument("-c", "--color", help='Color to use of either: "blue", "green", "red", or "black" (default: "blue", of course, \'cause it\'s the best)', action="store", dest="color", default="blue")
+parser.add_argument("-c", "--color", help='Color to use of either: "blue", "green", "red", "purple", or "black" (default: "blue", of course, \'cause it\'s the best)', action="store", dest="color", default="blue")
 
 parser.add_argument("-o", "--output_file", help='Output file for iToL (default: "iToL-text-dataset.txt")', action="store", dest="output_file", default="iToL-text-dataset.txt")
 
@@ -26,6 +26,8 @@ elif args.color == "green":
     col = "#48a743"
 elif args.color == "red":
     col = "#c01820"
+elif args.color == "purple":
+    col = "#512f9c"
 elif args.color == "black":
     col = "#000000"
 else:
