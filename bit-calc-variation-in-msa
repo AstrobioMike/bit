@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from skbio import TabularMSA, DNA
+from skbio import TabularMSA, DNA, Protein
 import pandas as pd
 import argparse
 import sys
@@ -14,7 +14,8 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-i", "--input_alignment_fasta", help="Input alignment fasta file", action="store", dest="input_alignment_fasta", required=True)
 
-parser.add_argument("-g", "--gap_treatment", help='How to treat gaps, either "nan", "ignore", "error", "include" (default: "ignore")', action="store", dest="gap_treatment", default="ignore")
+parser.add_argument("-g", "--gap_treatment", help='How to treat gaps, either "nan", "ignore", "error", "include" (default: "ignore")', choices=["nan", "ignore", "error", "include"], action="store", dest="gap_treatment", default="ignore")
+parser.add_argument("-t", "--type", help='Either "DNA" or "Protein" (default: "Protein")', choices=["DNA", "Protein"], action="store", dest="type", default="Protein")
 parser.add_argument("-o", "--output_file", help='Name of output tab-separated file (default: "variation.tsv")', action="store", dest="output_tsv", default="variation.tsv")
 
 if len(sys.argv)==1:
@@ -23,13 +24,6 @@ if len(sys.argv)==1:
 
 args = parser.parse_args()
 
-# checking valid gap option provided:
-acceptable_gap_options = ["nan", "ignore", "error", "include"]
-if args.gap_treatment not in acceptable_gap_options:
-    parser.print_help(sys.stderr)
-    print('\n\tSorry, "' + str(args.gap_treatment) + '" is not understood for how to treat gaps... :(\n')
-    sys.exit(1)
-
   # i'm not certain unequal alignments are all that would throw this error, so i'm leaving this out for now so skbio just spits out their problem if they have one reading in the alignment
 # try:
     # msa = TabularMSA.read(args.input_alignment_fasta, constructor=DNA)
@@ -37,8 +31,7 @@ if args.gap_treatment not in acceptable_gap_options:
 #     print('\n\tSorry, it seems not all sequences in the alignment are the same length... :(\n')
 #     sys.exit(1)
 
-msa = TabularMSA.read(args.input_alignment_fasta, constructor=DNA, lowercase=True)
-    # when i want to return to this and add functionality for proteins, i think this just needs `constructor=Protein`
+msa = TabularMSA.read(args.input_alignment_fasta, constructor=eval(args.type), lowercase=True)
 
 list_of_cleaned_seqs = []
 
@@ -53,6 +46,6 @@ clean_msa = TabularMSA(list_of_cleaned_seqs)
 conserved = clean_msa.conservation(gap_mode=args.gap_treatment)
 indexes = list(range(1,clean_msa.shape[1] + 1))
 
-df = pd.DataFrame({"position": indexes, "variation":1 - conserved})
+df = pd.DataFrame({"position": indexes, "variation":1 - conserved, "conservation": conserved})
 
 df.to_csv(args.output_tsv, sep="\t", index=False)
