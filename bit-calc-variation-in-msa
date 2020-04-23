@@ -5,10 +5,11 @@ import pandas as pd
 import argparse
 import sys
 
-parser = argparse.ArgumentParser(description="This script takes a nucleotide alignment in fasta format as input and returns the Shannon uncertainty values for each column \
-                                              using: http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html. As written: 0 is \
+parser = argparse.ArgumentParser(description='This script takes an alignment in fasta format as input and returns the Shannon uncertainty values for each column \
+                                              using: http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html. In output "variation" column: 0 is \
                                               same character in all sequences for that position (highest conservation); 1 is equal probability of any character \
-                                              (greatest variability); and any ambiguous bases are converted to gap characters. For version info, run `bit-version`.")
+                                              (greatest variability). "Conservation" column is inverse. As written, any ambiguous bases or residues are converted to gap characters. \
+                                              For version info, run `bit-version`.')
 
 required = parser.add_argument_group('required arguments')
 
