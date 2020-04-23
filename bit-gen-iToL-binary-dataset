@@ -9,6 +9,7 @@ parser = argparse.ArgumentParser(description='This script is for creating a stan
 required = parser.add_argument_group('required arguments')
 
 required.add_argument("-g", "--target_genomes", help='Single-column file with the genomes to color (need to match the IDs in the tree file)', action="store", dest="target_genomes", required=True)
+parser.add_argument("-d", "--dataset_label", help='Label of the dataset (default: "data")', action="store", dest="dataset_label", default="data")
 parser.add_argument("-s", "--shape_to_add", help='Shape to add, must be one of: "square", "circle", "star", "rtriangle", "ltriangle", or "check" (default: "square")', action="store", dest="shape", default="square")
 parser.add_argument("-c", "--color", help='Color to use of either: "blue", "green", "red", "purple", or "black" (default: "blue", of course, \'cause it\'s the best)', action="store", dest="color", default="blue")
 parser.add_argument("-H", "--height_factor", help='Increase or decrease symbol size. Values below 1 will decrease the standard size, above 1 will increase it (default: "1")', action="store", dest="height", default="1")
@@ -60,7 +61,7 @@ out_file = open(args.output_file, "w")
 out_file.write("DATASET_BINARY\nSEPARATOR TAB\n\n")
 
 # setting DATASET_LABEL
-out_file.write("DATASET_LABEL\tdata\n\n")
+out_file.write("DATASET_LABEL" + "\t" + str(args.dataset_label) + "\n\n")
 
 # setting dataset main color
 out_file.write("COLOR\t" + str(col) + "\n\n")

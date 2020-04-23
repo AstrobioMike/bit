@@ -1,0 +1,44 @@
+#!/usr/bin/env python
+
+from skbio import TabularMSA, DNA
+import pandas as pd
+import argparse
+import sys
+
+parser = argparse.ArgumentParser(description="This script takes an alignment in fasta format as input and returns the Shannon uncertainty values for each column \
+                                              using: http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html. As written, 0 is \
+                                              same character in all sequences for that position (highest conservation); 1 is equal probability of any character (greatest variability). \
+                                              For version info, run `bit-version`.")
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input_alignment_fasta", help="Input alignment fasta file", action="store", dest="input_alignment_fasta", required=True)
+
+parser.add_argument("-g", "--gap_treatment", help='How to treat gaps, either "nan", "ignore", "error", "include" (default: "ignore")', action="store", dest="gap_treatment", default="ignore")
+parser.add_argument("-o", "--output_file", help='Name of output tab-separated file (default: "variation.tsv")', action="store", dest="output_tsv", default="variation.tsv")
+
+if len(sys.argv)==1:
+  parser.print_help(sys.stderr)
+  sys.exit(1)
+
+args = parser.parse_args()
+
+# checking valid gap option provided:
+acceptable_gap_options = ["nan", "ignore", "error", "include"]
+if args.gap_treatment not in acceptable_gap_options:
+    parser.print_help(sys.stderr)
+    print('\n\tSorry, "' + str(args.gap_treatment) + '" is not understood for how to treat gaps... :(\n')
+    sys.exit(1)
+
+try:
+    msa = TabularMSA.read(args.input_alignment_fasta, constructor=DNA)
+except ValueError:
+    print('\n\tSorry, it seems not all sequences in the alignment are the same length... :(\n')
+    sys.exit(1)
+
+conserved = msa.conservation(gap_mode=args.gap_treatment)
+indexes = list(range(1,msa.shape[1] + 1))
+
+df = pd.DataFrame({"position": indexes, "variation":1 - conserved})
+
+df.to_csv(args.output_tsv, sep="\t", index=False)
