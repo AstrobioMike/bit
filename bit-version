@@ -1,10 +1,7 @@
 #!/usr/bin/env bash
 
-<<<<<<< HEAD
 version='1.7.00'
-=======
-version='1.6.11'
->>>>>>> 44bf8a3343b53db09c73bde4f5eafa418bc2e0a8
+
 GREEN='\033[0;32m'
 NC='\033[0m'
 
