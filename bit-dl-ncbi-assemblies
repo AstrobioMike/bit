@@ -13,7 +13,8 @@ if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "help" ]; then
     printf "\n --------------------------------  HELP INFO  --------------------------------- \n\n"
     printf "  This program downloads assembly files for NCBI genomes. It takes as input\n"
     printf "  assembly accessions (either GCA_* or GCF_*) and optionally a specification of\n"
-    printf "  which format to download (currently: genbank, fasta, protein, or gff).\n\n"
+    printf "  which format to download (currently: genbank, fasta, protein, or gff). For\n"
+    printf "  version info, run \`bit-version\`.\n\n"
 
     printf "    Required input:\n\n"
     printf "        - [-w <file>] single-column file of NCBI assembly accessions\n\n"

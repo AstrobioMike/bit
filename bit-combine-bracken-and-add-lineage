@@ -1,0 +1,109 @@
+#!/usr/bin/env bash
+
+# setting some colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+
+### HELP INFO
+## called by program name with no arguments or with "-h" as only positional argument ##
+if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "help" ]; then
+
+    printf "\n --------------------------------  HELP INFO  --------------------------------- \n\n"
+    printf "  This program combines multiple bracken sample outputs and adds full lineage info.\n"
+    printf "  The local NCBI taxonomy database that \`taxonkit\` uses can be updated at anytime\n"
+    printf "  with \`bit-update-ncbi-taxonomy\`. Recommended at least weekly. For version info,\n"
+    printf "  run \`bit-version\`."
+
+    printf "\n    Required:\n\n"
+    printf "      – [-i <file>] An input file holding either a single-column holding the input\n"
+    printf "                    file names, or a tab-delimited 2-column file holding input\n"
+    printf "                    filenames in column 1 and the wanted sample names in column 2.\n"
+
+    printf "\n    Optional:\n\n"
+
+    printf '      - [-o <str>]  Specify the output file name. Default: "Combined-taxonomy.tsv"\n'
+
+    printf "\n    Example usage:\n\n\t bit-combine-bracken-and-add-lineage -i input-files.tsv\n\n"
+
+    exit
+fi
+
+### PARSING ARGUMENTS
+## setting defaults
+output_file="Combined-taxonomy.tsv"
+
+while getopts :i:o: args
+do
+    case "${args}"
+    in
+        i) input_file=${OPTARG};;
+        o) output_file=${OPTARG};;
+        \?) printf "\n  ${RED}Invalid argument: -${OPTARG}${NC}\n\n    Run with no arguments or '-h' only to see help menu.\n\n" >&2 && exit
+    esac
+done
+
+
+### CHECKING REQUIRED INPUT WAS PROVIDED
+if [ ! -n "$input_file" ]; then
+    printf "\n  ${RED}You need to provide an input file to '-i' :(${NC}\n"
+    printf "\nExiting for now.\n\n"
+    exit
+fi
+
+
+### COMBINING MULTIPLE BRACKEN OUTPUT TABLES ###
+
+printf "\n\t${GREEN}Combining tables...${NC}\n\n"
+
+# this `helper-bit-combine-bracken.py` script was modified from the `combine_bracken_outputs.py` script provided by Jennifer Lu (jlu26@jhmi.edu) that comes with bracken
+
+    # checking if there are 2 columns in input file (and therefore we are providing sample names too, otherwise base of filename is used)
+if grep -q '\t' ${input_file}; then
+
+    ./helper-bit-combine-bracken.py -i $(cut -f 1 ${input_file}) -n $(cut -f 2 ${input_file}  | tr "\n" "," | sed 's/,$//') -o combined-bracken.tmp
+
+else
+
+    ./helper-bit-combine-bracken.py -i $(cut -f 1 ${input_file}) -o combined-bracken.tmp
+
+fi
+
+
+### GETTING FULL LINEAGE INFO WITH TAXONKIT ###
+printf "\n\t${GREEN}Getting full lineage info...${NC}\n\n"
+tail -n +2 combined-bracken.tmp | cut -f 2 | taxonkit lineage | taxonkit reformat -r NA | cut -f 3 | tr ";" "\t" | cut -f 1-7 > lineages.tmp
+
+    # adding a header
+cat <(printf "domain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n") lineages.tmp > lineages-tab.tmp
+
+    # combining lineage info and bracken combined-sample table
+paste lineages-tab.tmp <(cut -f 2- combined-bracken.tmp) > Combined-taxonomy.tsv
+
+    # clearing intermediate files
+rm combined-bracken.tmp lineages.tmp lineages-tab.tmp
+
+printf "\n\t\t${GREEN}DONE!${NC}\n\n"
+printf "\tOutput written to: $output_file\n\n"
+
+
+### FINAL OUTPUT TABLE FORMAT ###
+
+## columns in "Combined-bracken-species-taxonomy-for-other-microbes.tsv"
+# 1.  domain
+# 2.  phylum
+# 3.  class
+# 4.  order
+# 5.  family
+# 6.  genus
+# 7.  species (which is genus and species in NCBI)
+# 8.  taxonomy_id
+# 9.  taxonomy_lvl
+# 10. ..._num (sample info starts here, this first one is number of reads classified)
+# 11. ..._frac (This one is the fraction normalized to 1 of the same sample. 
+    # Importantly, bracken only considers those classified. So this does not include unclassified reads. 
+    # They will always sum to 1, or very near 1, and there is no row currently accounting for unclassified.)
+    # The rest of the columns are samples just like 10 and 11 above, 2 columns, first is read counts, second is fraction.
+
+# We can get "Unclassified" from the kraken report, but i didn't do that currently because those numbers don't add up to the total starting reads either (as all that was included in that run were things that were already filtered)
