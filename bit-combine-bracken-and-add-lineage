@@ -79,7 +79,7 @@ tail -n +2 combined-bracken.tmp | cut -f 2 | taxonkit lineage | taxonkit reforma
 cat <(printf "domain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n") lineages.tmp > lineages-tab.tmp
 
     # combining lineage info and bracken combined-sample table
-paste lineages-tab.tmp <(cut -f 2- combined-bracken.tmp) > Combined-taxonomy.tsv
+paste lineages-tab.tmp <(cut -f 2- combined-bracken.tmp) > ${output_file}
 
     # clearing intermediate files
 rm combined-bracken.tmp lineages.tmp lineages-tab.tmp
