@@ -62,11 +62,11 @@ printf "\n\t${GREEN}Combining tables...${NC}\n\n"
     # checking if there are 2 columns in input file (and therefore we are providing sample names too, otherwise base of filename is used)
 if grep -q '\t' ${input_file}; then
 
-    ./helper-bit-combine-bracken.py -i $(cut -f 1 ${input_file}) -n $(cut -f 2 ${input_file}  | tr "\n" "," | sed 's/,$//') -o combined-bracken.tmp
+    helper-bit-combine-bracken.py -i $(cut -f 1 ${input_file}) -n $(cut -f 2 ${input_file}  | tr "\n" "," | sed 's/,$//') -o combined-bracken.tmp
 
 else
 
-    ./helper-bit-combine-bracken.py -i $(cut -f 1 ${input_file}) -o combined-bracken.tmp
+    helper-bit-combine-bracken.py -i $(cut -f 1 ${input_file}) -o combined-bracken.tmp
 
 fi
 
