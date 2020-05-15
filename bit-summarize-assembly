@@ -5,7 +5,11 @@ import sys
 import argparse
 import os
 
-parser = argparse.ArgumentParser(description="This script outputs general summary stats for an assembly provided in fasta format. If given an output file, writes out a tsv, otherwise prints to the screen. For version info, run `bit-version`.")
+parser = argparse.ArgumentParser(description='This script outputs general summary stats for an assembly provided \
+                                              in fasta format. If given an output file, writes out a tsv, otherwise \
+                                              prints to the screen. "Ambiguous characters" reports total counts of \
+                                              of any letter that is not "A", "T", "C", or "G". For version info, run \
+                                              `bit-version`.')
 
 required = parser.add_argument_group('required arguments')
 
@@ -22,8 +26,7 @@ args = parser.parse_args()
 if args.output_tsv:
         # starting output file
     out_file = open(args.output_tsv, "w")
-    out_file.write("Assembly\tTotal contigs\tTotal length\tGC content\tLargest contig\tN50\tN75\tN90\tL50\tL75\tL90\tNum. contigs >= 100\tNum. contigs >= 500\tNum. contigs >= 1000\tNum. contigs >= 5000\tNum. contigs >= 10000\tNum. contigs >= 50000\tNum. contigs >= 100000\n")
-
+    out_file.write("Assembly\tTotal contigs\tTotal length\tAmbiguous characters\tGC content\tMaximum contig length\tMinimum contig length\tN50\tN75\tN90\tL50\tL75\tL90\tNum. contigs >= 100\tNum. contigs >= 500\tNum. contigs >= 1000\tNum. contigs >= 5000\tNum. contigs >= 10000\tNum. contigs >= 50000\tNum. contigs >= 100000\n")
 
 for assembly in args.input_assembly:
 
@@ -32,8 +35,15 @@ for assembly in args.input_assembly:
     assembly_name=assembly.split(".")[0]
     num_contigs = len(fasta)
     total_length = fasta.size
+
+    num_ambiguous_chars = 0
+    for key in fasta.composition:
+        if key not in ["A","T","G","C"]:
+            num_ambiguous_chars += fasta.composition[key]
+
     gc = round(fasta.gc_content, 2)
     largest_contig_len = len(fasta.longest)
+    smallest_contig_len = len(fasta.shortest)
     info_at_50 = fasta.nl(50)
     info_at_75 = fasta.nl(75)
     info_at_90 = fasta.nl(90)
@@ -53,7 +63,7 @@ for assembly in args.input_assembly:
 
     if args.output_tsv:
         # writing to out file
-        out_file.write(str(assembly_name) + "\t" + str(num_contigs) + "\t" + str(total_length) + "\t" + str(gc) + "\t" + str(largest_contig_len) + "\t" + str(N50) + "\t" + str(N75) + "\t" + str(N90) + "\t" + str(L50) + "\t" + str(L75) + "\t" + str(L90) + "\t" + str(num_contigs_gt_100_bps) + "\t" + str(num_contigs_gt_500_bps) + "\t" + str(num_contigs_gt_1000_bps) + "\t" + str(num_contigs_gt_5000_bps) + "\t" + str(num_contigs_gt_10000_bps) + "\t" + str(num_contigs_gt_50000_bps) + "\t" + str(num_contigs_gt_100000_bps) + "\n")
+        out_file.write(str(assembly_name) + "\t" + str(num_contigs) + "\t" + str(total_length) + "\t" + str(num_ambiguous_chars) + "\t" + str(gc) + "\t" + str(largest_contig_len) + "\t" + str(smallest_contig_len) + "\t" + str(N50) + "\t" + str(N75) + "\t" + str(N90) + "\t" + str(L50) + "\t" + str(L75) + "\t" + str(L90) + "\t" + str(num_contigs_gt_100_bps) + "\t" + str(num_contigs_gt_500_bps) + "\t" + str(num_contigs_gt_1000_bps) + "\t" + str(num_contigs_gt_5000_bps) + "\t" + str(num_contigs_gt_10000_bps) + "\t" + str(num_contigs_gt_50000_bps) + "\t" + str(num_contigs_gt_100000_bps) + "\n")
     
     else:
             # print out results to terminal
@@ -61,8 +71,10 @@ for assembly in args.input_assembly:
         print("%-25s %s" %("Assembly:", assembly_name))    
         print("%-25s %s" %("Total contigs:", num_contigs))
         print("%-25s %s" %("Total length:", total_length))
+        print("%-25s %s" %("Ambiguous characters:", num_ambiguous_chars))
         print("%-25s %s" %("GC content:", gc))
-        print("%-25s %s" %("Largest contig:", largest_contig_len))
+        print("%-25s %s" %("Maximum contig length:", largest_contig_len))
+        print("%-25s %s" %("Minimum contig length:", smallest_contig_len))
         print("%-25s %s" %("N50:", N50))
         print("%-25s %s" %("N75:", N75))
         print("%-25s %s" %("N90:", N90))
@@ -76,6 +88,7 @@ for assembly in args.input_assembly:
         print("%-25s %s" %("Num. contigs >= 10000:", num_contigs_gt_10000_bps))
         print("%-25s %s" %("Num. contigs >= 50000:", num_contigs_gt_50000_bps))
         print("%-25s %s" %("Num. contigs >= 100000:", num_contigs_gt_100000_bps))
+        print("")
 
     # removing intermediate index file
     os.remove(assembly + ".fxi")

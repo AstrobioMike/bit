@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+### Helper script used with `bit-dl-ncbi-assemblies` when run in parallel; for version info, run or see `bit-version` ###
+
 # setting colors to use
 GREEN='\033[0;32m'
 RED='\033[0;31m'
