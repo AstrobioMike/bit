@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+import pandas as pd
 import pyfastx
 import sys
 import argparse
@@ -23,76 +24,66 @@ if len(sys.argv)==1:
 
 args = parser.parse_args()
 
-if args.output_tsv:
-        # starting output file
-    out_file = open(args.output_tsv, "w")
-    out_file.write("Assembly\tTotal contigs\tTotal length\tAmbiguous characters\tGC content\tMaximum contig length\tMinimum contig length\tN50\tN75\tN90\tL50\tL75\tL90\tNum. contigs >= 100\tNum. contigs >= 500\tNum. contigs >= 1000\tNum. contigs >= 5000\tNum. contigs >= 10000\tNum. contigs >= 50000\tNum. contigs >= 100000\n")
+## setting up master dataframe
+df_colnames = []
+for assembly in args.input_assembly:
+    df_colnames.append(assembly.rsplit(".", 1)[0])
+
+df_index = ["Assembly", "Total contigs", "Total length", "Ambiguous characters", "GC content", "Maximum contig length", "Minimum contig length", "N50", "N75", "N90", "L50", "L75", "L90", "Num. contigs >= 100", "Num. contigs >= 500", "Num. contigs >= 1000", "Num. contigs >= 5000", "Num. contigs >= 10000", "Num. contigs >= 50000", "Num. contigs >= 100000"]
+
+df = pd.DataFrame(columns = df_colnames, index = df_index)
 
 for assembly in args.input_assembly:
 
     fasta = pyfastx.Fasta(assembly)
 
-    assembly_name=assembly.split(".")[0]
-    num_contigs = len(fasta)
-    total_length = fasta.size
+    assembly_name=assembly.rsplit(".", 1)[0]
+
+    try:
+        df.at["Assembly", str(assembly_name)] = assembly_name
+    except AttributeError: 
+        print("  An attribute exception was thrown by pandas. Maybe the inputs don't have unique names?")
+        print("  As written, this cuts off the extension based on last period to generate names.")
+        sys.exit(1)
+    
+    df.at["Total contigs", str(assembly_name)] = len(fasta)
+    df.at["Total length", str(assembly_name)] = fasta.size
 
     num_ambiguous_chars = 0
     for key in fasta.composition:
         if key not in ["A","T","G","C"]:
             num_ambiguous_chars += fasta.composition[key]
+    
+    df.at["Ambiguous characters", str(assembly_name)] = num_ambiguous_chars
+    df.at["GC content", str(assembly_name)] = round(fasta.gc_content, 2)
+    df.at["Maximum contig length", str(assembly_name)] = len(fasta.longest)
+    df.at["Minimum contig length", str(assembly_name)] = len(fasta.shortest)
 
-    gc = round(fasta.gc_content, 2)
-    largest_contig_len = len(fasta.longest)
-    smallest_contig_len = len(fasta.shortest)
     info_at_50 = fasta.nl(50)
     info_at_75 = fasta.nl(75)
     info_at_90 = fasta.nl(90)
-    N50 = info_at_50[0]
-    L50 = info_at_50[1]
-    N75 = info_at_75[0]
-    L75 = info_at_75[1]
-    N90 = info_at_90[0]
-    L90 = info_at_90[1]
-    num_contigs_gt_100_bps = fasta.count(100)
-    num_contigs_gt_500_bps = fasta.count(500)
-    num_contigs_gt_1000_bps = fasta.count(1000)
-    num_contigs_gt_5000_bps = fasta.count(5000)
-    num_contigs_gt_10000_bps = fasta.count(10000)
-    num_contigs_gt_50000_bps = fasta.count(50000)
-    num_contigs_gt_100000_bps = fasta.count(100000)
+    df.at["N50", str(assembly_name)] = info_at_50[0]
+    df.at["N75", str(assembly_name)] = info_at_75[0]
+    df.at["N90", str(assembly_name)] = info_at_90[0]
+    df.at["L50", str(assembly_name)] = info_at_50[1]
+    df.at["L75", str(assembly_name)] = info_at_75[1]
+    df.at["L90", str(assembly_name)] = info_at_90[1]
 
-    if args.output_tsv:
-        # writing to out file
-        out_file.write(str(assembly_name) + "\t" + str(num_contigs) + "\t" + str(total_length) + "\t" + str(num_ambiguous_chars) + "\t" + str(gc) + "\t" + str(largest_contig_len) + "\t" + str(smallest_contig_len) + "\t" + str(N50) + "\t" + str(N75) + "\t" + str(N90) + "\t" + str(L50) + "\t" + str(L75) + "\t" + str(L90) + "\t" + str(num_contigs_gt_100_bps) + "\t" + str(num_contigs_gt_500_bps) + "\t" + str(num_contigs_gt_1000_bps) + "\t" + str(num_contigs_gt_5000_bps) + "\t" + str(num_contigs_gt_10000_bps) + "\t" + str(num_contigs_gt_50000_bps) + "\t" + str(num_contigs_gt_100000_bps) + "\n")
-    
-    else:
-            # print out results to terminal
-        print("")
-        print("%-25s %s" %("Assembly:", assembly_name))    
-        print("%-25s %s" %("Total contigs:", num_contigs))
-        print("%-25s %s" %("Total length:", total_length))
-        print("%-25s %s" %("Ambiguous characters:", num_ambiguous_chars))
-        print("%-25s %s" %("GC content:", gc))
-        print("%-25s %s" %("Maximum contig length:", largest_contig_len))
-        print("%-25s %s" %("Minimum contig length:", smallest_contig_len))
-        print("%-25s %s" %("N50:", N50))
-        print("%-25s %s" %("N75:", N75))
-        print("%-25s %s" %("N90:", N90))
-        print("%-25s %s" %("L50:", L50))
-        print("%-25s %s" %("L75:", L75))
-        print("%-25s %s" %("L90:", L90))
-        print("%-25s %s" %("Num. contigs >= 100:", num_contigs_gt_100_bps))
-        print("%-25s %s" %("Num. contigs >= 500:", num_contigs_gt_500_bps))
-        print("%-25s %s" %("Num. contigs >= 1000:", num_contigs_gt_1000_bps))
-        print("%-25s %s" %("Num. contigs >= 5000:", num_contigs_gt_5000_bps))
-        print("%-25s %s" %("Num. contigs >= 10000:", num_contigs_gt_10000_bps))
-        print("%-25s %s" %("Num. contigs >= 50000:", num_contigs_gt_50000_bps))
-        print("%-25s %s" %("Num. contigs >= 100000:", num_contigs_gt_100000_bps))
-        print("")
+    df.at["Num. contigs >= 100", str(assembly_name)] = fasta.count(100)
+    df.at["Num. contigs >= 500", str(assembly_name)] = fasta.count(500)
+    df.at["Num. contigs >= 1000", str(assembly_name)] = fasta.count(1000)
+    df.at["Num. contigs >= 5000", str(assembly_name)] = fasta.count(5000)
+    df.at["Num. contigs >= 10000", str(assembly_name)] = fasta.count(10000)
+    df.at["Num. contigs >= 50000", str(assembly_name)] = fasta.count(50000)
+    df.at["Num. contigs >= 100000", str(assembly_name)] = fasta.count(100000)
 
     # removing intermediate index file
     os.remove(assembly + ".fxi")
 
 if args.output_tsv:
-    # closing output file
-    out_file.close()
+    df.to_csv(args.output_tsv, sep="\t", header=False)
+    
+else:
+    print("")
+    print(df.to_string(header=False))
+    print("")
