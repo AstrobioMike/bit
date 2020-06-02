@@ -10,11 +10,8 @@ import sys
 
 parser = argparse.ArgumentParser(description="Get quick information on individual GO terms. For version info, run `bit-version`.")
 parser.add_argument('GO_term', help= 'GO term you want to investigate, e.g. "GO:0010501"')
-parser.add_argument("-g", "--GO_obo_file", help='GO obo file to use (e.g. from: http://geneontology.org/docs/download-ontology/). By default will \
-                                                 use go-basic.obo, and will download it to `~/GO-data` if not already present.', \
-                    action="store", dest="obo", default="go-basic.obo")
 
-parser.add_argument("-g", "--GO_obo_file", help='GO obo file to use (e.g. from: http://geneontology.org/docs/download-ontology/). By default will \
+parser.add_argument("-g", "--GO_obo_file", help='GO obo file to use (e.g. from: geneontology.org/docs/download-ontology/). By default will \
                                                  use "go-basic.obo". "goslim_metagenomics.obo" is also a pre-packaged option (enter `-g goslim_metagenomics` to specify it). Or \
                                                  a different obo-formatted file can be specified here.',
                     action="store", dest="obo", default="go_basic")
@@ -31,10 +28,10 @@ pd.set_option('display.max_colwidth', None)
 go_data_dir = os.environ["GO_DB_DIR"]
 
 if args.obo == "goslim_metagenomics":
-    go_obo = go_data_dir + "/goslim_metagenomics.obo"
+    go_obo = go_data_dir + "goslim_metagenomics.obo"
 
 elif args.obo == "go_basic":
-    go_obo = go_data_dir + "/go-basic.obo"
+    go_obo = go_data_dir + "go-basic.obo"
 
 else:
     go_obo = args.obo

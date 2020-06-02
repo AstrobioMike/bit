@@ -38,13 +38,13 @@ args = parser.parse_args()
 go_data_dir = os.environ["GO_DB_DIR"]
 
 if args.initial_obo == "go_basic":
-    initial_obo = go_data_dir + "/go-basic.obo"
+    initial_obo = go_data_dir + "go-basic.obo"
 
 else:
     initial_obo = args.initial_obo
 
 if args.slimmed_obo == "goslim_metagenomics":
-    slim_obo = go_data_dir + "/goslim_metagenomics.obo"
+    slim_obo = go_data_dir + "goslim_metagenomics.obo"
 
 else:
     slim_obo = args.slimmed_obo
@@ -53,3 +53,4 @@ else:
 with open(args.output_tab, "w") as output:
     map_to_slim = subprocess.run(["map_to_slim.py", "--association_file", args.input_ass_file, "--slim_out", args.mode, initial_obo, slim_obo], stdout=output)
     map_to_slim
+

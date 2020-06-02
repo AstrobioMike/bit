@@ -33,10 +33,10 @@ args = parser.parse_args()
 go_data_dir = os.environ["GO_DB_DIR"]
 
 if args.obo == "goslim_metagenomics":
-    go_obo = go_data_dir + "/goslim_metagenomics.obo"
+    go_obo = go_data_dir + "goslim_metagenomics.obo"
 
 elif args.obo == "go_basic":
-    go_obo = go_data_dir + "/go-basic.obo"
+    go_obo = go_data_dir + "go-basic.obo"
 
 else:
     go_obo = args.obo

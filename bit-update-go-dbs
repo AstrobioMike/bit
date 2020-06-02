@@ -18,7 +18,7 @@ NC='\033[0m'
 
 printf "\n"
 
-curl --retry 10 -o ${GO_DB_DIR}/go-basic.obo http://purl.obolibrary.org/obo/go/go-basic.obo
-curl --retry 10 -o ${GO_DB_DIR}/goslim_metagenomics.obo http://current.geneontology.org/ontology/subsets/goslim_metagenomics.obo
+curl -L --retry 10 -o ${GO_DB_DIR}/go-basic.obo http://purl.obolibrary.org/obo/go/go-basic.obo
+curl -L --retry 10 -o ${GO_DB_DIR}/goslim_metagenomics.obo http://current.geneontology.org/ontology/subsets/goslim_metagenomics.obo
 
 printf "\n\t\t${GREEN}The GO basic and metagenomics slim obo files have been updated!${NC}\n\n"
