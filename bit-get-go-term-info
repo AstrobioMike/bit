@@ -1,0 +1,111 @@
+#!/usr/bin/env python
+
+## lots of this is from this great tutorial: GO Tutorial in Python - Solutions.ipynb, which comes from here: http://gohandbook.org/doku.php ; https://nbviewer.jupyter.org/urls/dessimozlab.github.io/go-handbook/GO%20Tutorial%20in%20Python%20-%20Solutions.ipynb
+
+from goatools import obo_parser
+import os
+import argparse
+import pandas as pd
+import sys
+
+parser = argparse.ArgumentParser(description="Get quick information on individual GO terms. For version info, run `bit-version`.")
+parser.add_argument('GO_term', help= 'GO term you want to investigate, e.g. "GO:0010501"')
+parser.add_argument("-g", "--GO_obo_file", help='GO obo file to use (e.g. from: http://geneontology.org/docs/download-ontology/). By default will \
+                                                 use go-basic.obo, and will download it to `~/GO-data` if not already present.', \
+                    action="store", dest="obo", default="go-basic.obo")
+
+parser.add_argument("-g", "--GO_obo_file", help='GO obo file to use (e.g. from: http://geneontology.org/docs/download-ontology/). By default will \
+                                                 use "go-basic.obo". "goslim_metagenomics.obo" is also a pre-packaged option (enter `-g goslim_metagenomics` to specify it). Or \
+                                                 a different obo-formatted file can be specified here.',
+                    action="store", dest="obo", default="go_basic")
+
+if len(sys.argv)==1:
+  parser.print_help(sys.stderr)
+  sys.exit(0)
+
+args = parser.parse_args()
+
+pd.set_option('display.max_colwidth', None)
+
+### checking and setting up obo file location
+go_data_dir = os.environ["GO_DB_DIR"]
+
+if args.obo == "goslim_metagenomics":
+    go_obo = go_data_dir + "/goslim_metagenomics.obo"
+
+elif args.obo == "go_basic":
+    go_obo = go_data_dir + "/go-basic.obo"
+
+else:
+    go_obo = args.obo
+
+## loading GO database
+print("\n\tGO obo file being used:")
+go = obo_parser.GODag(go_obo)
+print("")
+
+input_go_id = args.GO_term
+
+# adding "GO:" if not in input
+if not input_go_id.startswith("GO:"):
+    input_go_id = "GO:" + input_go_id
+
+# trying to pull GO id from database, if not, quitting and reporting
+try:
+    input_go_term = go[input_go_id]
+except:
+    print(str(input_go_id) + " does not seem to be in the GO database :(\n")
+    sys.exit()
+
+def get_general_info(go_id):
+    go_term = go[go_id]
+    name = go_term.name
+    namespace = go_term.namespace
+    depth = go_term.depth
+
+    go_term_info = [go_id, namespace, depth, name]
+    return go_term_info
+
+curr_go_info = get_general_info(input_go_id)
+
+header = ["GO id", "namespace", "depth", "name"]
+
+  # getting current term info
+input_df = pd.DataFrame([curr_go_info], columns = header)
+
+print("Input GO term info:")
+print(input_df.to_string(index=False))
+
+  # getting parent terms and their info
+parents = input_go_term.get_all_parents()
+
+if parents:
+    parent_df = pd.DataFrame([])
+
+    for term in parents:
+        curr_parent_info = get_general_info(term)
+        parent_df = parent_df.append([curr_parent_info])
+
+    print("\nParent terms info:")
+    print(parent_df.to_string(index=False, header = header))
+
+else:
+    print("\nThere are no parent terms for " + str(input_go_id) + ".")
+  
+  # getting child terms and their info
+children = input_go_term.get_all_children()
+
+if children:
+    child_df = pd.DataFrame([])
+
+    for term in children:
+        curr_child_info = get_general_info(term)
+        child_df = child_df.append([curr_child_info])
+
+    print("\nChild terms info:")
+    print(child_df.to_string(index=False, header = header))
+
+else:
+    print("\nThere are no child terms for " + str(input_go_id) + ".")
+
+print("")
