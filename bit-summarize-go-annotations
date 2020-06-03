@@ -10,7 +10,8 @@ import sys
 
 parser = argparse.ArgumentParser(description='This script takes an GO-annotated tab-delimited file with gene IDs in the first column, and associated \
                                               GO terms in second column (can be multiple delimited by semi-colons). It returns 4 tab-delimited files of \
-                                              counts and percentages: 3 broken down by GO namespace; 1 all together. For version info, run `bit-version`.')
+                                              counts and percentages: 3 broken down by GO namespace; and 1 all together. For version info,  \
+                                              run `bit-version`.')
 
 required = parser.add_argument_group('required arguments')
 
@@ -43,15 +44,12 @@ else:
 
 ### loading GO database
 print("\n\tGO obo file being used:")
-go = obo_parser.GODag(go_obo)
+go = obo_parser.GODag(go_obo, load_obsolete=True)
 print("")
 
-#### PARSING METAGENOMICS OBO TO BUILD TABLE
+#### PARSING OBO TO BUILD TABLE
 # getting unique GO Term IDs in the metagenomics.obo
-unique_GO_terms_set = set()
-for go_term in go.values():
-    unique_GO_terms_set.add(go_term.id)
-
+unique_GO_terms_set = set(go.keys())
 
 # function to get info for a go term:
 def get_general_info(go_id):
@@ -59,22 +57,30 @@ def get_general_info(go_id):
     name = go_term.name
     namespace = go_term.namespace
     depth = go_term.depth
-    
+    is_obsolete = go_term.is_obsolete
+
     # returns a list
-    go_term_info = [go_id, namespace, depth, name]
-    
+    go_term_info = [go_id, namespace, depth, name, is_obsolete]
+
     return go_term_info
 
-
-# creating table of GO info for each term
+# creating list then table of GO info for each term
 table_list = [[]]
 for GO_ID in unique_GO_terms_set:
     table_list.append(get_general_info(GO_ID))
 
-table_list.pop(0) # because i don't know how to initialize the list without it introducing a row of NAs...
+table_list = list(filter(None, table_list)) # because i don't know how to initialize the list without it introducing a row of NAs...
 
-header = ["ID", "namespace", "depth", "name"]
+header = ["ID", "namespace", "depth", "name", "is_obsolete"]
 GO_df = pd.DataFrame(table_list, columns=header).sort_values(by=["depth"])
+
+#### REMOVING ANY TERMS THAT ARE OBSOLETE FROM THE TABLE AND MAKING A SET OF OBSOLETE IDS TO HANDLE THEM PROPERLY IF IN THE INPUT ANNOTATIONS (http://geneontology.org/docs/GO-term-elements)
+if True in GO_df["is_obsolete"]:
+
+    GO_df_of_obsolete = GO_df.loc[GO_df["is_obsolete"] == True, ["ID"]]
+    obsolete_terms = set(GO_df_of_obsolete["ID"])
+
+    GO_df = GO_df.loc[GO_df["is_obsolete"] == False, ["ID", "namespace", "depth", "name"]]
 
 #### COUNTING HOW MANY TIMES EACH TERM APPEARS IN ANNOTATION FILE
 # creating dictionary to hold counts
@@ -87,10 +93,23 @@ with open(args.input_annotations, "r") as annots:
 
         if len(line.strip().split("\t")) <= 1:
             continue
+        elif line.startswith("#"):
+            continue
         else:
             terms=line.strip().split("\t")[1].replace(" ", "")
             for term in terms.split(";"):
-                term_counts_dict[term] += 1
+                # only moving forward if term isn't obsolete
+                if term not in obsolete_terms:
+                    # checking if term exists in dictionary, if it doesn't, the annotation or slim source used isn't being provided here and it should be
+                    if term in term_counts_dict.keys():
+                        term_counts_dict[term] += 1
+                    else:
+                        print('\n    So the GO term "' + str(term) + '" shows up in the provided annotation file')
+                        print('    "' + str(args.input_annotations) + '", but it is not present in the obo reference')
+                        print('    file used: "' + str(args.obo) + "\". We aren't sure how to deal with this. You might")
+                        print('    want to pass a different obo file to the `-g` argument.\n')
+                        print('        Exiting for now :(\n')
+                        sys.exit(1)
 
 GO_df['counts'] = term_counts_dict.values()
 
@@ -140,10 +159,10 @@ if not args.remove_zeroes:
     no_term_check_CC = cellular_component_NS_df[cellular_component_NS_df["counts"] > 0]
     if len(no_term_check_CC.index) == 0:
         print("\n\tThere were no counts to any Cellular Component terms, so that table wasn't reported.\n")
-    else:    
+    else:
         with open(args.output_prefix + "-cellular-components.tsv", "w") as out:
             out.write(cellular_component_NS_df.to_csv(index=False, sep="\t"))
-        
+
 else:
     GO_df = GO_df[GO_df["counts"] > 0]
     if len(GO_df.index) == 0:
