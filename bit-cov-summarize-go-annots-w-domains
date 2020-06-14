@@ -7,12 +7,13 @@ import os
 import argparse
 import pandas as pd
 import sys
+import subprocess
 
-parser = argparse.ArgumentParser(description='This script takes an GO-annotated tab-delimited file with gene IDs in the first column, and associated \
-                                              GO terms in second column (can be multiple delimited by semi-colons). By default, it returns one \
-                                              tab-delimited summary table with counts and percentages for each GO term. If the `--by_namespace` \
-                                              flag is added, it will also return separate summaries for each GO namespace. For version info,  \
-                                              run `bit-version`.')
+parser = argparse.ArgumentParser(description='This script takes an GO-annotated tab-delimited file with unique item IDs in the first column, NCBI taxids \
+                                              in the second column, and associated GO terms in the third column (can be multiple delimited by semi-colons). \
+                                              By default, it returns one tab-delimited summary table with counts and percentages for each GO term. \
+                                              If the `--by_namespace` flag is added, it will also return separate summaries for each GO namespace. \
+                                              For version info, run `bit-version`.')
 
 required = parser.add_argument_group('required arguments')
 
@@ -30,11 +31,23 @@ parser.add_argument("--by-namespace", help='By default the program will return a
                                             the Molecular Function namespace.', action="store_true")
 
 
+args = parser.parse_args()
+
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
   sys.exit(0)
 
-args = parser.parse_args()
+### checking taxid-to-domain map exists and making if not
+tax_data_dir = os.environ["TAXONKIT_DB"]
+if not os.path.exists(tax_data_dir + "taxids-and-domains.tsv"):
+    subprocess.run(['helper-bit-update-tax-table-for-seqscreen-go-tax-summary.sh'])
+
+taxa_domain_map = tax_data_dir + "taxids-and-domains.tsv"
+
+### reading in tax-to-domain map and generating sets of taxids for each domain
+tax_domain_map_df = pd.read_csv(taxa_domain_map, sep="\t", dtype="str", names=["taxid", "domain"])
+
+tax_map_dict = tax_domain_map_df.set_index('taxid')['domain'].to_dict()
 
 ### checking and setting up obo file location
 go_data_dir = os.environ["GO_DB_DIR"]
@@ -89,9 +102,11 @@ if True in GO_df["is_obsolete"]:
     GO_df = GO_df.loc[GO_df["is_obsolete"] == False, ["GO_term", "namespace", "depth", "name"]]
 
 #### COUNTING HOW MANY TIMES EACH TERM APPEARS IN ANNOTATION FILE
-# creating dictionary to hold counts
+#### AND COUNTING HOW MANY TIMES EACH DOMAIN WAS ASSOCIATED WITH EACH GO TERM
+# creating dictionary to hold GO term counts
 term_list = GO_df["GO_term"]
 term_counts_dict={key:0 for key in term_list}
+term_full_dict = {key: {'counts': 0, 'Archaea': 0, 'Bacteria': 0, 'Eukaryota': 0, 'Viruses': 0, 'NA': 0} for key in term_list}
 
 # iterating through input file
 with open(args.input_annotations, "r") as annots:
@@ -99,16 +114,34 @@ with open(args.input_annotations, "r") as annots:
 
         if len(line.strip().split("\t")) <= 1:
             continue
-        elif line.startswith("#"):
+        elif line.startswith("#") or line.startswith("query"):
             continue
+
         else:
-            terms=line.strip().split("\t")[1].replace(" ", "")
+
+            # getting associated domain of this particular row
+            curr_taxid = line.strip().split("\t")[1]
+
+            if curr_taxid in tax_map_dict:
+                curr_domain = tax_map_dict[curr_taxid]
+            else:
+                curr_domain = "NA"
+
+            terms=line.strip().split("\t")[2].replace(" ", "")
+
             for term in terms.split(";"):
+
+                # the seqscreen report has "-" for those with no hits, so skipping those
+                if term == "-":
+                    continue
+
                 # only moving forward if term isn't obsolete
                 if term not in obsolete_terms:
                     # checking if term exists in dictionary, if it doesn't, the annotation or slim source used isn't being provided here and it should be
-                    if term in term_counts_dict.keys():
-                        term_counts_dict[term] += 1
+                    if term in term_full_dict:
+                        term_full_dict[term]["counts"] += 1
+                        term_full_dict[term][curr_domain] += 1
+
                     else:
                         print('\n    So the GO term "' + str(term) + '" shows up in the provided annotation file')
                         print('    "' + str(args.input_annotations) + '", but it is not present in the obo reference')
@@ -117,15 +150,49 @@ with open(args.input_annotations, "r") as annots:
                         print('        Exiting for now :(\n')
                         sys.exit(1)
 
-GO_df['term_counts'] = term_counts_dict.values()
+
+# making table
+term_full_df = pd.DataFrame.from_dict(term_full_dict, orient="index")
+# renaming columns
+term_full_df.rename(columns={"counts": "term_counts", "Archaea": "arc_counts", "Bacteria": "bac_counts", "Eukaryota": "euk_counts", "Viruses": "vir_counts", "NA": "NA_tax_counts"}, inplace=True)
+# setting index to column and renaming 
+term_full_df.reset_index(inplace=True)
+term_full_df.rename(columns = {'index': 'GO_term'}, inplace=True)
+
+# merging with annotation table
+GO_df = GO_df.merge(term_full_df, on="GO_term")
+
+# doing some sorting
+GO_df.sort_values(by=["namespace", "depth"], inplace=True)
+
+#### ADDING COLUMN WITH PERCENTAGE OF TOTAL TERMS FOR EACH
+term_count_perc_df = pd.DataFrame({"term_perc_of_annotated": GO_df["term_counts"] / GO_df["term_counts"].sum() * 100})
+GO_df = pd.concat([GO_df, term_count_perc_df], axis=1)
+
+#### GENERATING PERCENTAGES OF DOMAINS ASSOCIATED WITH EACH GO TERM
+# subsetting tab to those needed for domain calculations
+sub_tab = GO_df[["GO_term", "arc_counts", "bac_counts", "euk_counts", "vir_counts", "NA_tax_counts"]]
+# moving to index for ease of calculation
+sub_tab.set_index("GO_term", inplace=True)
+# generating percents
+sub_percs = sub_tab.div(sub_tab.sum(axis=1), axis=0) * 100
+# replacing NAs with 0
+sub_percs.fillna(0, inplace=True)
+# renaming columns
+sub_percs.rename(columns={"arc_counts": "arc_perc", "bac_counts": "bac_perc", "euk_counts": "euk_perc", "vir_counts": "vir_perc", "NA_tax_counts": "NA_tax_perc"}, inplace=True)
+# setting index back to column and renaming 
+sub_percs.reset_index(inplace=True)
+sub_percs.rename(columns = {'index': 'GO_term'}, inplace=True)
+
+# merging with annotation table
+GO_df = GO_df.merge(sub_percs, on="GO_term")
+
+# rearranging columns
+new_df_order = ['GO_term', 'namespace', 'depth', 'name', 'term_counts', 'term_perc_of_annotated', 'arc_counts', 'arc_perc', 'bac_counts', 'bac_perc', 'euk_counts', 'euk_perc', 'vir_counts', 'vir_perc', 'NA_tax_counts', 'NA_tax_perc']
+GO_df = GO_df[new_df_order]
 
 
-#### ADDING COLUMN WITH PERCENTAGE OF TOTAL TERMS FOR EACH TABLE
-GO_perc_df = pd.DataFrame({"term_perc_of_annotated": GO_df["term_counts"] / GO_df["term_counts"].sum() * 100})
-GO_df = pd.concat([GO_df, GO_perc_df], axis=1)
-
-
-#### SPLITTING TO CREATE OTHER 3 OUTPUT TABLES IF --by_namespace FLAG WAS PROVIDED
+#### SPLITTING TO CREATE OTHER 3 OUTPUT TABLES IF --by-namespace FLAG WAS PROVIDED
 if args.by_namespace:
 
     biological_process_NS_df = GO_df[GO_df["namespace"] == "biological_process"]
@@ -134,15 +201,25 @@ if args.by_namespace:
 
     BP_percs_df = pd.DataFrame({"term_perc_of_annotated": biological_process_NS_df["term_counts"] / biological_process_NS_df["term_counts"].sum() * 100})
     biological_process_NS_df = pd.concat([biological_process_NS_df, BP_percs_df], axis=1)
+    new_BP_df_order = ['GO_term', 'namespace', 'depth', 'name', 'term_counts', 'term_perc_of_annotated', 'arc_counts', 'arc_perc', 'bac_counts', 'bac_perc', 'euk_counts', 'euk_perc', 'vir_counts', 'vir_perc', 'NA_tax_counts', 'NA_tax_perc']
+    biological_process_NS_df = biological_process_NS_df[new_BP_df_order]
 
     MF_percs_df = pd.DataFrame({"term_perc_of_annotated": molecular_function_NS_df["term_counts"] / molecular_function_NS_df["term_counts"].sum() * 100})
     molecular_function_NS_df = pd.concat([molecular_function_NS_df, MF_percs_df], axis=1)
+    new_MF_df_order = ['GO_term', 'namespace', 'depth', 'name', 'term_counts', 'term_perc_of_annotated', 'arc_counts', 'arc_perc', 'bac_counts', 'bac_perc', 'euk_counts', 'euk_perc', 'vir_counts', 'vir_perc', 'NA_tax_counts', 'NA_tax_perc']
+    molecular_function_NS_df = molecular_function_NS_df[new_MF_df_order]
+
 
     CC_percs_df = pd.DataFrame({"term_perc_of_annotated": cellular_component_NS_df["term_counts"] / cellular_component_NS_df["term_counts"].sum() * 100})
     cellular_component_NS_df = pd.concat([cellular_component_NS_df, CC_percs_df], axis=1)
+    new_CC_df_order = ['GO_term', 'namespace', 'depth', 'name', 'term_counts', 'term_perc_of_annotated', 'arc_counts', 'arc_perc', 'bac_counts', 'bac_perc', 'euk_counts', 'euk_perc', 'vir_counts', 'vir_perc', 'NA_tax_counts', 'NA_tax_perc']
+    cellular_component_NS_df = cellular_component_NS_df[new_CC_df_order]
 
     # creating basename for additional output tables
-    out_base = "".join(args.output_file.split(".")[:-1])
+    if len(args.output_file.split(".")) > 1:
+        out_base = "".join(args.output_file.split(".")[:-1])
+    else:
+        out_base = args.output_file
 
 #### WRITING OUT SUMMARY TABLE(S)
 if args.keep_zeroes:

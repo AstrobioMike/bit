@@ -15,7 +15,7 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-i", "--input_files", nargs="+", type=str, help="space-delimited list of bracken output files", action="store", dest="input_files", required=True)
 parser.add_argument("-n", "--sample_names", help='Sample names provided as a comma-delimited list (by default will use basename of input files)', action="store", default='', dest="sample_names")
-parser.add_argument("-o", "--output_file", help='Output combined tables (default: "combined-bracken.tsv")', action="store", dest="output_file", default="bombined-bracken.tsv")
+parser.add_argument("-o", "--output_file", help='Output combined tables (default: "combined-bracken.tsv")', action="store", dest="output_file", default="combined-bracken.tsv")
 
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)

@@ -2,7 +2,7 @@
 
 set -e
 
-if [ $1 == "-h" ]; then
+if [ $1 ]; then
   printf "\n  This script updates the NCBI taxonomy database taxonkit uses.\n"
   printf "  For version info, run \`bit-version\`.\n\n"
   printf "    Usage:\n\t bit-update-ncbi-taxonomy\n\n"
