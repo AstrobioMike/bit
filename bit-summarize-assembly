@@ -6,6 +6,7 @@ import sys
 import argparse
 import os
 
+
 parser = argparse.ArgumentParser(description='This script outputs general summary stats for an assembly provided \
                                               in fasta format. If given an output file, writes out a tsv, otherwise \
                                               prints to the screen. "Ambiguous characters" reports total counts of \
@@ -16,7 +17,9 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("input_assembly", metavar='fasta_file', type=str, nargs="+", help="Input assembly file(s).")
 
-parser.add_argument("-o", "--output_tsv", help='Name of output tsv file (if none provided, prints to screen)', action="store", dest="output_tsv", default=False)
+parser.add_argument("-o", "--output-tsv", help='Name of output tsv file (if none provided, prints to screen)', action="store", dest="output_tsv", default=False)
+
+parser.add_argument("-t", "--transpose-output-tsv", help='Set this flag if we want to have the output table have genomes as rows rather than columns.', action="store_true")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -27,7 +30,8 @@ args = parser.parse_args()
 ## setting up master dataframe
 df_colnames = []
 for assembly in args.input_assembly:
-    df_colnames.append(assembly.rsplit(".", 1)[0])
+    assembly_base = os.path.basename(assembly)
+    df_colnames.append(assembly_base.rsplit(".", 1)[0])
 
 df_index = ["Assembly", "Total contigs", "Total length", "Ambiguous characters", "GC content", "Maximum contig length", "Minimum contig length", "N50", "N75", "N90", "L50", "L75", "L90", "Num. contigs >= 100", "Num. contigs >= 500", "Num. contigs >= 1000", "Num. contigs >= 5000", "Num. contigs >= 10000", "Num. contigs >= 50000", "Num. contigs >= 100000"]
 
@@ -35,9 +39,11 @@ df = pd.DataFrame(columns = df_colnames, index = df_index)
 
 for assembly in args.input_assembly:
 
+    assembly_base = os.path.basename(assembly)
+    
     fasta = pyfastx.Fasta(assembly)
 
-    assembly_name=assembly.rsplit(".", 1)[0]
+    assembly_name=assembly_base.rsplit(".", 1)[0]
 
     try:
         df.at["Assembly", str(assembly_name)] = assembly_name
@@ -80,8 +86,17 @@ for assembly in args.input_assembly:
     # removing intermediate index file
     os.remove(assembly + ".fxi")
 
+
 if args.output_tsv:
-    df.to_csv(args.output_tsv, sep="\t", header=False)
+    # transposing if wanted:
+    if args.transpose_output_tsv:
+        print(df)
+        df = df.T
+        print(df)
+        df.to_csv(args.output_tsv, sep="\t", index=False)
+    
+    else:
+        df.to_csv(args.output_tsv, sep="\t", header=False)
     
 else:
     print("")
