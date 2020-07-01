@@ -90,9 +90,7 @@ for assembly in args.input_assembly:
 if args.output_tsv:
     # transposing if wanted:
     if args.transpose_output_tsv:
-        print(df)
         df = df.T
-        print(df)
         df.to_csv(args.output_tsv, sep="\t", index=False)
     
     else:
