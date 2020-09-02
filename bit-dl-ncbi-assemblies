@@ -26,7 +26,9 @@ if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "help" ]; then
     printf "                  include: genbank, fasta, protein, gff, feature_tab, report, stats.\n\n"
 
     printf "        - [-j <int> ] default: 1\n"
-    printf "                  The number of downloads you'd like to run in parallel.\n\n"
+    printf "                  The number of downloads you'd like to run in parallel. Write speeds\n"
+    printf "                  can become problematic generally with around 15 or more, so a max\n"
+    printf "                  of 12 will be used to be safe even if more are requested.\n\n"
 
     printf "    Example usage:\n\n\t bit-dl-ncbi-assemblies -w ncbi_accessions.txt -f protein -j 4\n\n"
 
@@ -52,6 +54,10 @@ do
     esac
 done
 
+# setting max 
+if [ $num_jobs -gt "12" ]; then
+    num_jobs=12
+fi
 
 ## making sure input file was provided ##
 if [ ! -n "$NCBI_acc_file" ]; then
