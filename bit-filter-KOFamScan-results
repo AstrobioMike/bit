@@ -4,6 +4,12 @@
 This script filters the "detail-tsv"-formatted output of KOFamScan to retain only those above the
 KO-specific score threshold, and retain only the best hit for each gene.
 Outputs a 3-column tab-delimited table with: gene_ID, KO_ID, and KO_annotation
+
+KOFamScan e.g. usage prior to input here:
+    exec_annotation -p profiles/ -k ko_list --cpu 15 -f detail-tsv -o 5492-KO-tab.tmp 5492-genes.faa --tmp-dir 5492-tmp-KO --report-unannotated
+
+Then would be:
+    bit-filter-KOFamScan-results -i 5492-KO-tab.tmp -o 5492-annotations.tsv
 """
 
 import sys
