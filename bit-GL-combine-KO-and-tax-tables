@@ -18,6 +18,7 @@ import argparse
 import textwrap
 import pandas as pd
 from math import isnan
+from numpy import NaN
 
 parser = argparse.ArgumentParser(description="This is a helper program designed for use with the NASA GeneLab \
                                               metagenomics assembly-based workflow. See note at top of script for more info. \
@@ -26,7 +27,7 @@ parser = argparse.ArgumentParser(description="This is a helper program designed 
 required = parser.add_argument_group('required arguments')
 
 required.add_argument("input_tables", metavar="input-tables", type=str, nargs="+", help="Input coverage, annotation, and tax tables (as written, expected to end with extension '.tsv'.")
-parser.add_argument("-o", "--output-prefix", help='Desired output prefix (default: "Combined"', action="store", default="Combined", dest="output_prefix")
+parser.add_argument("-o", "--output-prefix", help='Desired output prefix (default: "Combined")', action="store", default="Combined", dest="output_prefix")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -45,7 +46,9 @@ def main():
 
     KO_dict, tax_dict = {}, {}
 
-    KO_collapsed_tabs, tax_collapsed_tabs, KO_dict, tax_dict = process_each_table(input_files, KO_dict, tax_dict)
+    na_taxids = []
+
+    KO_collapsed_tabs, tax_collapsed_tabs, KO_dict, tax_dict = process_each_table(input_files, KO_dict, tax_dict, na_taxids)
 
     combined_KO_tab, combined_tax_tab = combine_tabs(KO_collapsed_tabs, tax_collapsed_tabs, sample_names, KO_dict, tax_dict)
 
@@ -117,7 +120,7 @@ def add_to_KO_dict(table, KO_dict):
     return(KO_dict)
 
 
-def add_to_tax_dict(table, tax_dict):
+def add_to_tax_dict(table, tax_dict, na_taxids):
     """ function for building tax mapping dictionary """
 
     for index, row in table.iterrows():
@@ -128,9 +131,27 @@ def add_to_tax_dict(table, tax_dict):
             if not row["taxid"] in tax_dict:
                 tax_dict[row["taxid"]] = row[["domain", "phylum", "class", "order", "family", "genus", "species"]].tolist()
 
-    return(tax_dict)
+                # some taxids have all NA for these ranks (like 1 and 131567), keep track so can sum with not classified
+                if len(set(row[["domain", "phylum", "class", "order", "family", "genus", "species"]].tolist())) == 1:
+                    na_taxids.append(row["taxid"])
 
-def process_each_table(input_files, KO_dict, tax_dict):
+
+    return(tax_dict, na_taxids)
+
+
+def get_na_taxids(tax_dict):
+    """ some taxids have all NA for these ranks (like 1 and 131567), keeping track of those so can sum with not classified """
+
+    na_taxids = []
+
+    for key in tax_dict:
+        if len(set(mock_dict[key])) == 1:
+            na_taxids.append(key)
+
+    return(na_taxids)
+
+
+def process_each_table(input_files, KO_dict, tax_dict, na_taxids):
     """ reads in each table, normalizes coverage values, collapses based on KO annotations """
 
     KO_collapsed_tabs = []
@@ -144,7 +165,7 @@ def process_each_table(input_files, KO_dict, tax_dict):
 
         KO_dict = add_to_KO_dict(tab, KO_dict)
 
-        tax_dict = add_to_tax_dict(tab, tax_dict)
+        tax_dict, na_taxids = add_to_tax_dict(tab, tax_dict, na_taxids)
 
         # adding column with normalized coverage (doing coverage per million genes covered)
         tab['norm_cov'] = tab.coverage / tab.coverage.sum() * 1000000
@@ -154,6 +175,8 @@ def process_each_table(input_files, KO_dict, tax_dict):
         KO_collapsed_tabs.append(KO_tab)
 
         # collapsing based on tax
+          # first setting any taxids that are all NA at these standard ranks to "NA"
+        tab.replace(na_taxids, NaN, inplace = True)
         tax_tab = tab[['taxid', 'norm_cov']].groupby(by=['taxid'], dropna=False).sum()
         tax_collapsed_tabs.append(tax_tab)
 

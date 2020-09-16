@@ -49,6 +49,6 @@ fi
 
 cat $taxids_file | taxonkit lineage | taxonkit reformat -r NA | cut -f 1,3 | tr ";" "\t" > lineages.tmp
 
-cat <(printf "taxid\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecific_name\n") lineages.tmp > $output_file
+cat <(printf "taxid\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n") lineages.tmp > $output_file
 
 rm lineages.tmp
