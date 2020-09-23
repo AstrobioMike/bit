@@ -11,7 +11,8 @@ import subprocess
 
 parser = argparse.ArgumentParser(description='This script takes an GO-annotated tab-delimited file with unique item IDs in the first column, NCBI taxids \
                                               in the second column, and associated GO terms in the third column (can be multiple delimited by semi-colons). \
-                                              By default, it returns one tab-delimited summary table with counts and percentages for each GO term. \
+                                              By default, it returns one tab-delimited summary table with counts and percentages for each GO term. Percentages of \
+                                              GO terms are normalized to the total number of GO terms in that group (either all, or individual domains/virus), so is of those that were annotated only. \
                                               If the `--by_namespace` flag is added, it will also return separate summaries for each GO namespace. \
                                               For version info, run `bit-version`.')
 
@@ -23,7 +24,7 @@ parser.add_argument("-g", "--GO_obo_file", help='GO obo file to use (e.g. from: 
                                                  a different obo-formatted file can be specified here (it should probably be the one the annotations are based off of, or were slimmed based on).',
                     action="store", dest="obo", default="goslim_metagenomics")
 parser.add_argument("-o", "--output_file", help='Output file name. (default: "GO-summary.tsv").', action="store", dest="output_file", default="GO-summary.tsv")
-parser.add_argument("--keep-zeroes", help="By default the program will remove any rows with for GO terms with 0 counts to them. Add this flag \
+parser.add_argument("--keep-zeroes", help="By default the program will remove any rows with GO terms with 0 counts assigned to them. Add this flag \
                                              to keep them.", action="store_true")
 parser.add_argument("--by-namespace", help='By default the program will return a single summary table with all GO terms combined. Add this flag \
                                             to also return individual tables for each GO namespace. (Will append namespace ID in front of last extension \
@@ -165,30 +166,48 @@ GO_df = GO_df.merge(term_full_df, on="GO_term")
 # doing some sorting
 GO_df.sort_values(by=["namespace", "depth"], inplace=True)
 
-#### ADDING COLUMN WITH PERCENTAGE OF TOTAL TERMS FOR EACH
-term_count_perc_df = pd.DataFrame({"term_perc_of_annotated": GO_df["term_counts"] / GO_df["term_counts"].sum() * 100})
+#### ADDING COLUMN WITH PERCENTAGE OF TOTAL TERMS (this is ugly even by my standards)
+    # for all
+term_count_perc_df = pd.DataFrame({"term_perc": GO_df["term_counts"] / GO_df["term_counts"].sum() * 100})
 GO_df = pd.concat([GO_df, term_count_perc_df], axis=1)
+    # for archaea
+arc_perc_df = pd.DataFrame({"arc_perc": GO_df["arc_counts"] / GO_df["arc_counts"].sum() * 100})
+GO_df = pd.concat([GO_df, arc_perc_df], axis=1)
+    # for bacteria
+bac_perc_df = pd.DataFrame({"bac_perc": GO_df["bac_counts"] / GO_df["bac_counts"].sum() * 100})
+GO_df = pd.concat([GO_df, bac_perc_df], axis=1)
+    # for euks
+euk_perc_df = pd.DataFrame({"euk_perc": GO_df["euk_counts"] / GO_df["euk_counts"].sum() * 100})
+GO_df = pd.concat([GO_df, euk_perc_df], axis=1)
+    # for viruses
+vir_perc_df = pd.DataFrame({"vir_perc": GO_df["vir_counts"] / GO_df["vir_counts"].sum() * 100})
+GO_df = pd.concat([GO_df, vir_perc_df], axis=1)
+    # for NA
+NA_perc_df = pd.DataFrame({"NA_tax_perc": GO_df["NA_tax_counts"] / GO_df["NA_tax_counts"].sum() * 100})
+GO_df = pd.concat([GO_df, NA_perc_df], axis=1)
 
-#### GENERATING PERCENTAGES OF DOMAINS ASSOCIATED WITH EACH GO TERM
-# subsetting tab to those needed for domain calculations
-sub_tab = GO_df[["GO_term", "arc_counts", "bac_counts", "euk_counts", "vir_counts", "NA_tax_counts"]]
-# moving to index for ease of calculation
-sub_tab.set_index("GO_term", inplace=True)
-# generating percents
-sub_percs = sub_tab.div(sub_tab.sum(axis=1), axis=0) * 100
-# replacing NAs with 0
-sub_percs.fillna(0, inplace=True)
-# renaming columns
-sub_percs.rename(columns={"arc_counts": "arc_perc", "bac_counts": "bac_perc", "euk_counts": "euk_perc", "vir_counts": "vir_perc", "NA_tax_counts": "NA_tax_perc"}, inplace=True)
-# setting index back to column and renaming 
-sub_percs.reset_index(inplace=True)
-sub_percs.rename(columns = {'index': 'GO_term'}, inplace=True)
+##### OLD FUNCTIONALITY NOT CURRENTLY USEFUL TO TEAM #####
 
-# merging with annotation table
-GO_df = GO_df.merge(sub_percs, on="GO_term")
+# #### GENERATING PERCENTAGES OF DOMAINS ASSOCIATED WITH EACH GO TERM
+# # subsetting tab to those needed for domain calculations
+# sub_tab = GO_df[["GO_term", "arc_counts", "bac_counts", "euk_counts", "vir_counts", "NA_tax_counts"]]
+# # moving to index for ease of calculation
+# sub_tab.set_index("GO_term", inplace=True)
+# # generating percents
+# sub_percs = sub_tab.div(sub_tab.sum(axis=1), axis=0) * 100
+# # replacing NAs with 0
+# sub_percs.fillna(0, inplace=True)
+# # renaming columns
+# sub_percs.rename(columns={"arc_counts": "arc_perc", "bac_counts": "bac_perc", "euk_counts": "euk_perc", "vir_counts": "vir_perc", "NA_tax_counts": "NA_tax_perc"}, inplace=True)
+# # setting index back to column and renaming 
+# sub_percs.reset_index(inplace=True)
+# sub_percs.rename(columns = {'index': 'GO_term'}, inplace=True)
+
+# # merging with annotation table
+# GO_df = GO_df.merge(sub_percs, on="GO_term")
 
 # rearranging columns
-new_df_order = ['GO_term', 'namespace', 'depth', 'name', 'term_counts', 'term_perc_of_annotated', 'arc_counts', 'arc_perc', 'bac_counts', 'bac_perc', 'euk_counts', 'euk_perc', 'vir_counts', 'vir_perc', 'NA_tax_counts', 'NA_tax_perc']
+new_df_order = ['GO_term', 'namespace', 'depth', 'name', 'term_counts', 'term_perc', 'arc_counts', 'arc_perc', 'bac_counts', 'bac_perc', 'euk_counts', 'euk_perc', 'vir_counts', 'vir_perc', 'NA_tax_counts', 'NA_tax_perc']
 GO_df = GO_df[new_df_order]
 
 
@@ -199,20 +218,20 @@ if args.by_namespace:
     molecular_function_NS_df = GO_df[GO_df["namespace"] == "molecular_function"]
     cellular_component_NS_df = GO_df[GO_df["namespace"] == "cellular_component"]
 
-    BP_percs_df = pd.DataFrame({"term_perc_of_annotated": biological_process_NS_df["term_counts"] / biological_process_NS_df["term_counts"].sum() * 100})
+    BP_percs_df = pd.DataFrame({"term_perc": biological_process_NS_df["term_counts"] / biological_process_NS_df["term_counts"].sum() * 100})
     biological_process_NS_df = pd.concat([biological_process_NS_df, BP_percs_df], axis=1)
-    new_BP_df_order = ['GO_term', 'namespace', 'depth', 'name', 'term_counts', 'term_perc_of_annotated', 'arc_counts', 'arc_perc', 'bac_counts', 'bac_perc', 'euk_counts', 'euk_perc', 'vir_counts', 'vir_perc', 'NA_tax_counts', 'NA_tax_perc']
+    new_BP_df_order = ['GO_term', 'namespace', 'depth', 'name', 'term_counts', 'all_term_perc', 'arc_counts', 'arc_perc', 'bac_counts', 'bac_perc', 'euk_counts', 'euk_perc', 'vir_counts', 'vir_perc', 'NA_tax_counts', 'NA_tax_perc']
     biological_process_NS_df = biological_process_NS_df[new_BP_df_order]
 
-    MF_percs_df = pd.DataFrame({"term_perc_of_annotated": molecular_function_NS_df["term_counts"] / molecular_function_NS_df["term_counts"].sum() * 100})
+    MF_percs_df = pd.DataFrame({"term_perc": molecular_function_NS_df["term_counts"] / molecular_function_NS_df["term_counts"].sum() * 100})
     molecular_function_NS_df = pd.concat([molecular_function_NS_df, MF_percs_df], axis=1)
-    new_MF_df_order = ['GO_term', 'namespace', 'depth', 'name', 'term_counts', 'term_perc_of_annotated', 'arc_counts', 'arc_perc', 'bac_counts', 'bac_perc', 'euk_counts', 'euk_perc', 'vir_counts', 'vir_perc', 'NA_tax_counts', 'NA_tax_perc']
+    new_MF_df_order = ['GO_term', 'namespace', 'depth', 'name', 'term_counts', 'term_perc', 'arc_counts', 'arc_perc', 'bac_counts', 'bac_perc', 'euk_counts', 'euk_perc', 'vir_counts', 'vir_perc', 'NA_tax_counts', 'NA_tax_perc']
     molecular_function_NS_df = molecular_function_NS_df[new_MF_df_order]
 
 
-    CC_percs_df = pd.DataFrame({"term_perc_of_annotated": cellular_component_NS_df["term_counts"] / cellular_component_NS_df["term_counts"].sum() * 100})
+    CC_percs_df = pd.DataFrame({"term_perc": cellular_component_NS_df["term_counts"] / cellular_component_NS_df["term_counts"].sum() * 100})
     cellular_component_NS_df = pd.concat([cellular_component_NS_df, CC_percs_df], axis=1)
-    new_CC_df_order = ['GO_term', 'namespace', 'depth', 'name', 'term_counts', 'term_perc_of_annotated', 'arc_counts', 'arc_perc', 'bac_counts', 'bac_perc', 'euk_counts', 'euk_perc', 'vir_counts', 'vir_perc', 'NA_tax_counts', 'NA_tax_perc']
+    new_CC_df_order = ['GO_term', 'namespace', 'depth', 'name', 'term_counts', 'term_perc', 'arc_counts', 'arc_perc', 'bac_counts', 'bac_perc', 'euk_counts', 'euk_perc', 'vir_counts', 'vir_perc', 'NA_tax_counts', 'NA_tax_perc']
     cellular_component_NS_df = cellular_component_NS_df[new_CC_df_order]
 
     # creating basename for additional output tables

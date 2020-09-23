@@ -76,9 +76,9 @@ for sample_key in all_samples:
 
 
     # trimming down current table
-    curr_sub_tab = curr_tab[["GO_term", "term_counts", "term_perc_of_annotated", "arc_counts", "arc_perc", "bac_counts", "bac_perc", "euk_counts", "euk_perc", "vir_counts", "vir_perc", "NA_tax_counts", "NA_tax_perc"]]
+    curr_sub_tab = curr_tab[["GO_term", "term_counts", "term_perc", "arc_counts", "arc_perc", "bac_counts", "bac_perc", "euk_counts", "euk_perc", "vir_counts", "vir_perc", "NA_tax_counts", "NA_tax_perc"]]
     # and changing names to match sample ID    
-    curr_sub_tab.columns = ['GO_term', str(all_samples[sample_key]) + "_term_counts", str(all_samples[sample_key]) + "_term_perc_of_annotated",
+    curr_sub_tab.columns = ['GO_term', str(all_samples[sample_key]) + "_term_counts", str(all_samples[sample_key]) + "_term_perc",
                             str(all_samples[sample_key]) + "_arc_counts", str(all_samples[sample_key]) + "_arc_perc",
                             str(all_samples[sample_key]) + "_bac_counts", str(all_samples[sample_key]) + "_bac_perc",
                             str(all_samples[sample_key]) + "_euk_counts", str(all_samples[sample_key]) + "_euk_perc",
