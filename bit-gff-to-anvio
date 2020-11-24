@@ -7,7 +7,8 @@ import os
 
 parser = argparse.ArgumentParser(description="This script takes a gff file and converts it into the format required\
                                               for importing external gene calls and functions into anvi'o. It was\
-                                              made based on the gff3 format. For version info, run `bit-version`.")
+                                              made based on the gff3 format. Currently, it does not take into account 'call_type',\
+                                              and assumes all are for coding sequences. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
@@ -28,7 +29,7 @@ source = args.source
 version = args.version
 
 output_gene_calls = open(args.output_gene_calls_tsv, "w")
-output_gene_calls.write("gene_callers_id" + "\t" + "contig" + "\t" + "start" + "\t" + "stop" + "\t" + "direction" + "\t" + "partial" + "\t" + "source" + "\t" + "version" + "\n")
+output_gene_calls.write("gene_callers_id" + "\t" + "contig" + "\t" + "start" + "\t" + "stop" + "\t" + "direction" + "\t" + "partial" + "\t" "call_type" + "\t" + "source" + "\t" + "version" + "\n")
 
 output_functions = open(args.output_functions_tsv, "w")
 output_functions.write("gene_callers_id" + "\t" + "source" + "\t" + "accession" + "\t" + "function" + "\t" + "e_value" + "\n")
@@ -128,7 +129,7 @@ with open(args.input_gff, "r") as inputs:
 
                 num += 1
 
-                output_gene_calls.write(str(num) + "\t" + str(contig) + "\t" + str(start) + "\t" + str(stop) + "\t" + str(strand) + "\t" + "0" + "\t" + str(source) + "\t" +  str(version) + "\n")
+                output_gene_calls.write(str(num) + "\t" + str(contig) + "\t" + str(start) + "\t" + str(stop) + "\t" + str(strand) + "\t" + "0" + "\t" + "1" + "\t" + str(source) + "\t" +  str(version) + "\n")
                 output_mappings.write(str(num) + "\t" + str(accession) + "\n")
 
                 if "hypothetical protein" in product:
