@@ -220,7 +220,7 @@ def combine_tabs(tax_tab_list, sample_names, tax_dict):
     # moving index to be column
     tax_combined_tab = tax_combined_tab.reset_index()
     # changing that NaN to be "Not annotated"
-    tax_combined_tab['index'] = tax_combined_tab['index'].fillna("Not classified")
+    tax_combined_tab['taxid'] = tax_combined_tab['taxid'].fillna("Not classified")
     # setting column names
     tax_combined_tab.columns = ["taxid"] + sample_names
     # adding tax full lineage info
