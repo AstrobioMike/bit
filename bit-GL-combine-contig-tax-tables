@@ -4,13 +4,10 @@
 This is a helper program designed for use with the NASA GeneLab 
 metagenomics assembly-based workflow. It takes as input multiple individual-
 sample coverage and taxonomy tables and creates an output merged table based on 
-taxonomic classifications
-holding all samples (both including not annotated and not classified):
-    1) summed based on KO annotations and normalized to coverage per million genes covered
-    2) summed based on taxonomic classification
+taxonomic classifications (including unclassified) normalized to coverage per million (CPM)
 
 These tables are produced during the GeneLab protocol document workflow. The location of this protocol 
-document be added here as soon as it is publically available.
+document will be added here as soon as it is publically available.
 """
 
 import os
@@ -28,7 +25,7 @@ parser = argparse.ArgumentParser(description="This is a helper program designed 
 required = parser.add_argument_group('required arguments')
 
 required.add_argument("input_tables", metavar="input-tables", type=str, nargs="+", help="Input coverage, annotation, and tax tables (as written, expected to end with extension '.tsv'.")
-parser.add_argument("-o", "--output-prefix", help='Desired output prefix (default: "Combined")', action="store", default="Combined", dest="output_prefix")
+parser.add_argument("-o", "--output", help='Desired output filename (default: "Combined-contig-level-taxonomy-coverages.tsv")', action="store", default="Combined-contig-level-taxonomy-coverages.tsv", dest="output")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -45,17 +42,15 @@ def main():
 
     input_files, sample_names = setup_input_lists(args.input_tables)
 
-    KO_dict, tax_dict = {}, {}
+    tax_dict = {}
 
     na_taxids = []
 
-    KO_collapsed_tabs, tax_collapsed_tabs, KO_dict, tax_dict = process_each_table(input_files, KO_dict, tax_dict, na_taxids)
+    tax_collapsed_tabs, tax_dict = process_each_table(input_files, tax_dict, na_taxids)
 
-    combined_KO_tab, combined_tax_tab = combine_tabs(KO_collapsed_tabs, tax_collapsed_tabs, sample_names, KO_dict, tax_dict)
+    combined_tax_tab = combine_tabs(tax_collapsed_tabs, sample_names, tax_dict)
 
-    combined_KO_tab.to_csv(args.output_prefix + "-gene-level-KO-function-coverages.tsv", index=False, sep="\t")
-
-    combined_tax_tab.to_csv(args.output_prefix + "-gene-level-taxonomy-coverages.tsv", index=False, sep="\t")
+    combined_tax_tab.to_csv(args.output, index=False, sep="\t")
 
 
 ################################################################################
@@ -107,19 +102,6 @@ def setup_input_lists(input_tables):
     return(input_files, sample_names)
 
 
-def add_to_KO_dict(table, KO_dict):
-    """ function for building KO mapping dictionary """
-
-    for index, row in table.iterrows():
-        
-        if str(row["KO_ID"]).startswith("K"):
-            
-            if str(row["KO_ID"]) not in KO_dict:
-                
-                KO_dict[row["KO_ID"]] = row["KO_function"]
-
-    return(KO_dict)
-
 
 def add_to_tax_dict(table, tax_dict, na_taxids):
     """ function for building tax mapping dictionary """
@@ -140,10 +122,9 @@ def add_to_tax_dict(table, tax_dict, na_taxids):
     return(tax_dict, na_taxids)
 
 
-def process_each_table(input_files, KO_dict, tax_dict, na_taxids):
-    """ reads in each table, normalizes coverage values, collapses based on KO annotations """
+def process_each_table(input_files, tax_dict, na_taxids):
+    """ reads in each table, normalizes coverage values, collapses based on tax classifications """
 
-    KO_collapsed_tabs = []
     tax_collapsed_tabs = []
 
     # iterator to access the same input file and sample name
@@ -152,16 +133,10 @@ def process_each_table(input_files, KO_dict, tax_dict, na_taxids):
 
         tab = pd.read_csv(input_files[i], sep="\t", dtype = {'taxid': str})
 
-        KO_dict = add_to_KO_dict(tab, KO_dict)
-
         tax_dict, na_taxids = add_to_tax_dict(tab, tax_dict, na_taxids)
 
         # adding column with normalized coverage (doing coverage per million genes covered)
         tab['norm_cov'] = tab.coverage / tab.coverage.sum() * 1000000
-
-        # collapsing based on KO terms
-        KO_tab = tab[['KO_ID', 'norm_cov']].groupby(by=['KO_ID'], dropna=False).sum()
-        KO_collapsed_tabs.append(KO_tab)
 
         # collapsing based on tax
           # first setting any taxids that are all NA at these standard ranks to "NA"
@@ -169,28 +144,8 @@ def process_each_table(input_files, KO_dict, tax_dict, na_taxids):
         tax_tab = tab[['taxid', 'norm_cov']].groupby(by=['taxid'], dropna=False).sum()
         tax_collapsed_tabs.append(tax_tab)
 
+    return(tax_collapsed_tabs, tax_dict)
 
-    return(KO_collapsed_tabs, tax_collapsed_tabs, KO_dict, tax_dict)
-
-
-def add_KO_functions(tab, KO_dict):
-    """ adds KO functions to combined table based on KO_ID and KO_dict object holding mappings """
-
-    KO_functions = []
-
-    for KO in tab.KO_ID:
-
-        if KO in KO_dict:
-
-            KO_functions.append(str(KO_dict[KO]))
-
-        else:
-
-            KO_functions.append("Not annotated")
-
-    tab.insert(1, "KO_function", KO_functions)
-
-    return(tab)
 
 def add_tax_info(tab, tax_dict):
     """ adds lineage info back to combined table based on taxid and tax_dict object holding mappings """
@@ -257,18 +212,8 @@ def add_tax_info(tab, tax_dict):
     return(tab)
 
 
-def combine_tabs(KO_tab_list, tax_tab_list, sample_names, KO_dict, tax_dict):
-    """ combines all KO tables into one and all tax tables into one """
-
-    # combining KO tabs
-    KO_combined_tab = pd.concat(KO_tab_list, axis=1).drop_duplicates().fillna(0).sort_index()
-    # moving index to be column and changing that NaN to be "Not annotated"
-    KO_combined_tab = KO_combined_tab.reset_index().fillna("Not annotated")
-    # setting column names
-    KO_combined_tab.columns = ["KO_ID"] + sample_names
-    # adding KO functions
-    KO_combined_tab = add_KO_functions(KO_combined_tab, KO_dict)
-
+def combine_tabs(tax_tab_list, sample_names, tax_dict):
+    """ combines all tax tables into one """
 
     # combining tax tabs
     tax_combined_tab = pd.concat(tax_tab_list, axis=1).drop_duplicates().fillna(0).sort_index()
@@ -281,7 +226,7 @@ def combine_tabs(KO_tab_list, tax_tab_list, sample_names, KO_dict, tax_dict):
     # adding tax full lineage info
     tax_combined_tab = add_tax_info(tax_combined_tab, tax_dict)
 
-    return(KO_combined_tab, tax_combined_tab)
+    return(tax_combined_tab)
 
 
 if __name__ == "__main__":
