@@ -219,10 +219,10 @@ def combine_tabs(tax_tab_list, sample_names, tax_dict):
     tax_combined_tab = pd.concat(tax_tab_list, axis=1).drop_duplicates().fillna(0).sort_index()
     # moving index to be column
     tax_combined_tab = tax_combined_tab.reset_index()
-    # changing that NaN to be "Not annotated"
-    tax_combined_tab['taxid'] = tax_combined_tab['taxid'].fillna("Not classified")
     # setting column names
     tax_combined_tab.columns = ["taxid"] + sample_names
+    # changing taxid NaN to be "Not annotated"
+    tax_combined_tab['taxid'] = tax_combined_tab['taxid'].fillna("Not classified")
     # adding tax full lineage info
     tax_combined_tab = add_tax_info(tax_combined_tab, tax_dict)
 
