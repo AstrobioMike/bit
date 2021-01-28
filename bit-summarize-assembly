@@ -40,9 +40,7 @@ df = pd.DataFrame(columns = df_colnames, index = df_index)
 for assembly in args.input_assembly:
 
     assembly_base = os.path.basename(assembly)
-    
-    fasta = pyfastx.Fasta(assembly)
-
+        
     assembly_name=assembly_base.rsplit(".", 1)[0]
 
     try:
@@ -52,6 +50,13 @@ for assembly in args.input_assembly:
         print("  As written, this cuts off the extension based on last period to generate names.")
         sys.exit(1)
     
+    # putting in a catch if file is empty (which can happen if an assembly produced no contigs)
+        # this will leave it in the table, but with NAs (written out as "NA")
+    if os.stat(assembly).st_size == 0:
+        continue
+
+    fasta = pyfastx.Fasta(assembly)
+
     df.at["Total contigs", str(assembly_name)] = len(fasta)
     df.at["Total length", str(assembly_name)] = fasta.size
 
@@ -91,10 +96,10 @@ if args.output_tsv:
     # transposing if wanted:
     if args.transpose_output_tsv:
         df = df.T
-        df.to_csv(args.output_tsv, sep="\t", index=False)
+        df.to_csv(args.output_tsv, sep="\t", index=False, na_rep = "NA")
     
     else:
-        df.to_csv(args.output_tsv, sep="\t", header=False)
+        df.to_csv(args.output_tsv, sep="\t", header=False, na_rep = "NA")
     
 else:
     print("")
