@@ -57,8 +57,10 @@ with np.errstate(divide = 'ignore'):
 # getting ratios of gene values to geometric means
 ratios_tab = (tab.T / geomeans).T
 
-sizeFactors = ratios_tab.median().to_list()
+sizeFactors = ratios_tab[geomeans > 0].median().to_list()
 
+# dividing by size factors
 norm_tab = tab / sizeFactors
 
+# writing out normalized table
 norm_tab.to_csv(args.output_table, sep = "\t")
