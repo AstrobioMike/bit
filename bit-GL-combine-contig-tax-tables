@@ -3,11 +3,25 @@
 """
 This is a helper program designed for use with the NASA GeneLab 
 metagenomics assembly-based workflow. It takes as input multiple individual-
-sample coverage and taxonomy tables and creates an output merged table based on 
-taxonomic classifications (including unclassified) normalized to coverage per million (CPM)
+sample coverage and taxonomy tables and creates 2 output merged tables based on taxonomic
+classifications:
 
-These tables are produced during the GeneLab protocol document workflow. The location of this protocol 
-document will be added here as soon as it is publically available.
+1) merged but not normalized across samples
+2) one normalized based on specified method (set with the -n flag)
+
+### details on normalization methods
+Normalization for sampling depth is done by either coverage per million (CPM) or using the median-ratio (MR)
+method as performed in DESeq2. 
+
+The CPM (coverage per million) normalization is just like a percent, except scaled to 1 million instead of 100.
+So each row's entry (e.g. gene/KO/taxon/etc.) is the proportion out of 1 million for that column (sample), 
+and each column will sum to 1 million.
+
+The median-ration normalization method (MR) was initially described in this paper 
+(http://dx.doi.org/10.1186/gb-2010-11-10-r106; e.q. 5), and this site is super-informative in general 
+about the DESeq2 process overall, and helped me understand the normalizaiton process better to implement it: 
+https://hbctraining.github.io/DGE_workshop/lessons/02_DGE_count_normalization.html. Columns will not sum to 
+the same amount when the median-ratio method is applied.
 """
 
 import os
@@ -17,6 +31,8 @@ import textwrap
 import pandas as pd
 from math import isnan
 from numpy import NaN
+import numpy as np
+from scipy.stats.mstats import gmean
 
 parser = argparse.ArgumentParser(description="This is a helper program designed for use with the NASA GeneLab \
                                               metagenomics assembly-based workflow. See note at top of script for more info. \
@@ -24,8 +40,12 @@ parser = argparse.ArgumentParser(description="This is a helper program designed 
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("input_tables", metavar="input-tables", type=str, nargs="+", help="Input coverage, annotation, and tax tables (as written, expected to end with extension '.tsv'.")
-parser.add_argument("-o", "--output", help='Desired output filename (default: "Combined-contig-level-taxonomy-coverages.tsv")', action="store", default="Combined-contig-level-taxonomy-coverages.tsv", dest="output")
+required.add_argument("input_tables", metavar="input-tables", type=str, nargs="+", help="Input coverage, annotation, and tax tables (as written, expected to end with extension '.tsv')")
+parser.add_argument("-n", "--normalization-method", help='Desired normalization method of either "none", \
+                    "CPM" as in coverage per million, or "MR" as in median-ratio as performed in DESeq2. \
+                    See note at top of program for more info. (default: "CPM")', choices=["CPM", "MR"], \
+                    action="store", default="CPM")
+parser.add_argument("-o", "--output-prefix", help='Desired output prefix (default: "Combined")', action="store", default="Combined", dest="output_prefix")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -50,8 +70,11 @@ def main():
 
     combined_tax_tab = combine_tabs(tax_collapsed_tabs, sample_names, tax_dict)
 
-    combined_tax_tab.to_csv(args.output, index=False, sep="\t")
+    norm_tax_tab = normalize_tab(combined_tax_tab, args.normalization_method)
 
+    # writing outputs
+    combined_tax_tab.to_csv(args.output_prefix + "-contig-level-taxonomy-coverages.tsv", index=False, sep="\t")
+    norm_tax_tab.to_csv(args.output_prefix + "-contig-level-taxonomy-coverages-" + args.normalization_method + ".tsv", index=False, sep="\t")
 
 ################################################################################
 
@@ -135,13 +158,10 @@ def process_each_table(input_files, tax_dict, na_taxids):
 
         tax_dict, na_taxids = add_to_tax_dict(tab, tax_dict, na_taxids)
 
-        # adding column with normalized coverage (doing coverage per million genes covered)
-        tab['norm_cov'] = tab.coverage / tab.coverage.sum() * 1000000
-
         # collapsing based on tax
-          # first setting any taxids that are all NA at these standard ranks to "NA"
+            # first setting any taxids that are all NA at these standard ranks to "NA"
         tab.replace(na_taxids, NaN, inplace = True)
-        tax_tab = tab[['taxid', 'norm_cov']].groupby(by=['taxid'], dropna=False).sum()
+        tax_tab = tab[['taxid', 'coverage']].groupby(by=['taxid'], dropna=False).sum()
         tax_collapsed_tabs.append(tax_tab)
 
     return(tax_collapsed_tabs, tax_dict)
@@ -227,6 +247,43 @@ def combine_tabs(tax_tab_list, sample_names, tax_dict):
     tax_combined_tab = add_tax_info(tax_combined_tab, tax_dict)
 
     return(tax_combined_tab)
+
+
+def median_ratio_norm(tab):
+    """ performs median ratio normalization """
+
+    ## calculating size factors
+    # getting geometric means for each row
+    with np.errstate(divide = 'ignore'):
+        geomeans = gmean(tab, axis = 1)
+
+    # getting ratios of gene values to geometric means
+    ratios_tab = (tab.T / geomeans).T
+
+    sizeFactors = ratios_tab[geomeans > 0].median().to_list()
+
+    # dividing by size factors
+    norm_tab = tab / sizeFactors
+
+    return(norm_tab)
+
+
+def normalize_tab(combined_tax_tab, normalization_method):
+    """ generates normalized version of merged output table """
+
+    target_cols = [col for col in combined_tax_tab.columns.to_list() if col not in ["taxid", "domain", "phylum", "class", "order", "family", "genus", "species"]]
+    
+    norm_tax_tab = combined_tax_tab.copy()
+
+    if normalization_method == "CPM":
+
+        norm_tax_tab[target_cols] = norm_tax_tab[target_cols] / norm_tax_tab[target_cols].sum() * 1000000
+
+    else:
+
+        norm_tax_tab[target_cols] = median_ratio_norm(norm_tax_tab[target_cols])
+
+    return(norm_tax_tab)
 
 
 if __name__ == "__main__":
