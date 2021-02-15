@@ -1,0 +1,84 @@
+#!/usr/bin/env python
+
+from Bio import SeqIO
+import sys
+import argparse
+import gzip
+
+class colors:
+    GREEN = '\033[0;32m'
+    YELLOW = '\033[0;33m'
+    NC = '\033[0m'
+
+parser = argparse.ArgumentParser(description='This script is just for checking if there are any duplicate headers in a fastq file. \
+                                 For version info, run `bit-version`.')
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input_fastq", help="Fastq file", action="store", dest="input_fastq", required=True)
+parser.add_argument("--not-gzipped", help="Add this flag if the input fastq is not gzipped (program expects they are gzipped by default)", action="store_true")
+parser.add_argument("--write-dupes", help="Add this flag if you want duplicate headers written to a file (will write to 'duplicate-headers.txt')", action="store_true")
+
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(0)
+    
+args = parser.parse_args()
+
+headers_dict = {}
+seq_count = 0
+
+if args.not_gzipped:
+
+    with open(args.input_fastq, "rt") as fastq_in:
+
+        for seq_record in SeqIO.parse(fastq_in, "fastq"):
+
+            seq_count += 1
+
+            if seq_record.id in headers_dict:
+                headers_dict[seq_record.id] += 1
+            
+            else:
+                headers_dict[seq_record.id] = 1
+
+else:
+    
+    with gzip.open(args.input_fastq, "rt") as fastq_in:
+
+        for seq_record in SeqIO.parse(fastq_in, "fastq"):
+
+            seq_count += 1
+            
+            if seq_record.id in headers_dict:
+                headers_dict[seq_record.id] += 1
+            
+            else:
+                headers_dict[seq_record.id] = 1
+
+
+dup_keys = [k for k,v in headers_dict.items() if v > 1]
+
+if len(dup_keys) > 0:
+
+    if len(dup_keys) == 1:
+        print(colors.YELLOW + "\n  There was 1 duplicate header among the " + str(seq_count) + " input fastq entries:\n\n    " + colors.NC + str(dup_keys[0]) + "\n")
+
+    else:
+
+        print(colors.YELLOW + "\n  There were " + str(len(dup_keys)) + " duplicate headers among the " + str(seq_count) + " input fastq entries." + colors.NC)
+        
+        if not args.write_dupes:
+            print("  If you'd like to know which ones, add the `--write-dups` flag.\n")
+
+        else:
+
+            with open("duplicate-headers.txt", "w") as out:
+                out.write("\n".join(dup_keys))
+                out.write("\n")
+
+            print("  They were written to 'duplicate-headers.txt'.\n")
+
+else:
+
+    print(colors.GREEN + "\n  There were no duplicate headers detected among the " + str(seq_count) + " input fastq entries :)\n" + colors.NC)
