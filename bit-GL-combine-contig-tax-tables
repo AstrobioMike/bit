@@ -118,12 +118,16 @@ def setup_input_lists(input_tables):
     input_files = []
     sample_names = []
 
-    for sample in input_tables:
-        input_files.append(sample)
-        sample_names.append(os.path.splitext(os.path.basename(sample))[0])
+    for sample_path in input_tables:
+        input_files.append(sample_path)
+        sample = os.path.splitext(os.path.basename(sample_path))[0]
+
+        # removing the common superfluous info that my workflow introduces to the names, if it is there
+        sample = sample.replace("-contig-coverage-and-tax", "")
+
+        sample_names.append(sample)
 
     return(input_files, sample_names)
-
 
 
 def add_to_tax_dict(table, tax_dict, na_taxids):
