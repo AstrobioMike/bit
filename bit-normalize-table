@@ -60,7 +60,7 @@ args = parser.parse_args()
 
 ################################################################################
 
-tab = pd.read_csv(args.input_table, sep = "\t", index_col = 0)
+tab = pd.read_csv(args.input_table, sep = "\t", index_col = 0, low_memory = False)
 
 
 ## removing columns if they have all zeroes in them prior to normalization to avoid problems (will put them back)
