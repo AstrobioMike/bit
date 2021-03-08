@@ -62,12 +62,22 @@ args = parser.parse_args()
 
 tab = pd.read_csv(args.input_table, sep = "\t", index_col = 0)
 
+
+## removing columns if they have all zeroes in them prior to normalization to avoid problems (will put them back)
+column_sums = tab.sum()
+
+# getting all column names in order so can rearrange afterwards
+ordered_columns = tab.columns.tolist()
+
+# getting column names of those with all zeroes
+zero_column_names = column_sums[column_sums == 0].index.tolist()
+
+tab.drop(zero_column_names, axis = 1, inplace = True)
+
+
 if args.normalization_method == "CPM":
     
     norm_tab = tab / tab.sum() * 1000000
-
-    # writing out normalized table
-    norm_tab.to_csv(args.output_table, sep = "\t")
 
 else:
 
@@ -75,6 +85,9 @@ else:
     # getting geometric means for each row
     with np.errstate(divide = 'ignore'):
         geomeans = gmean(tab, axis = 1)
+
+    print(geomeans)
+    print(len(geomeans))
 
     # getting ratios of gene values to geometric means
     ratios_tab = (tab.T / geomeans).T
@@ -84,5 +97,14 @@ else:
     # dividing by size factors
     norm_tab = tab / sizeFactors
 
-    # writing out normalized table
-    norm_tab.to_csv(args.output_table, sep = "\t")
+
+## adding back on columns with all zeroes
+if len(zero_column_names) > 0:
+    for col in zero_column_names:
+        norm_tab[col] = 0.0
+
+# reordering to match input
+norm_tab = norm_tab[ordered_columns]
+
+# writing out normalized table
+norm_tab.to_csv(args.output_table, sep = "\t")
