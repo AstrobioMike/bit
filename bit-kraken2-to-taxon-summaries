@@ -35,6 +35,7 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-i", "--input-tsv", help="Input table produced by kraken2 run", action="store", dest="input_file", required=True)
 parser.add_argument("-o", "--output-table", help='Output table name (default: "output.tsv")', action="store", dest="output_file", default="output.tsv")
+parser.add_argument("--names-included", help='Add this flag if kraken2 was run with the `--use-names` flag', action="store_true")
 
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
@@ -56,9 +57,12 @@ with open(args.input_file, "r") as classifications:
             continue
         
         # gettig taxid classification of current read 
-        classification = line.strip().split("\t")[2]
-        taxid = re.split('\(taxid ', classification)[1].rstrip(")")
-
+        if args.names_included:
+            classification = line.strip().split("\t")[2]
+            taxid = re.split('\(taxid ', classification)[1].rstrip(")")
+        else:
+            taxid = line.strip().split("\t")[2]
+            
         # adding count to taxid in taxid dictionary if present
         if taxid in taxid_counts_dict:
             taxid_counts_dict[taxid] += 1
