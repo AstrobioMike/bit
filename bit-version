@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 
-version='1.8.32'
+version='1.8.33'
 
 GREEN='\033[0;32m'
 NC='\033[0m'
 
 printf "\n\t\t\tBioinf Tools ${GREEN}v${version}${NC}\n"
-printf "\t\tgithub.com/AstrobioMike/bioinf_tools\n\n"
+printf "\t\tgithub.com/AstrobioMike/bit\n\n"
 
 printf "    If you happen to find this toolset useful in your work and feel\n"
 printf "    it is appropriate to cite, thank you :) and please do\n"
