@@ -33,6 +33,6 @@ Each command has a help menu accessible by either entering the command alone or 
 ## Citation info
 If you happen to find this useful in your work and are inclined to cite this toolset, thank you 🙂, and please do so with the following: 
 
->Lee, MD. Bioinformatics Tools (bit) 2018. doi.org/10.5281/zenodo.4287770
+>Lee, MD. Bioinformatics Tools (bit) 2018. doi.org/10.5281/zenodo.3383647
 
 You can get the version you are using with `bit-version`.
