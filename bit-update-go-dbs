@@ -2,7 +2,7 @@
 
 set -e
 
-if [ $1 == "-h" ]; then
+if [ ! -z $1 ]; then
     printf "\n  This script updates the GO obo files \"go-basic.obo\" \n"
     printf "  and \"goslim_metagenomics.obo\" from the GO reference site\n"
     printf "  (http://geneontology.org/docs/download-ontology/) to support\n"
