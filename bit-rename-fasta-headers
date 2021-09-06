@@ -9,27 +9,68 @@ parser = argparse.ArgumentParser(description='This script will rename all sequen
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_fasta", help="Starting fasta file", action="store", dest="input_fasta", required=True)
-parser.add_argument("-w", "--desired_name", help='Name to give seqs (default: "Seq"', action="store", dest="wanted_name", default="Seq")
-parser.add_argument("-o", "--output_fasta_name", help='Output fasta file (default: "Renamed.fasta").', dest="output_fasta_name", default="Renamed.fasta")
+required.add_argument("-i", "--input-fasta", help="Starting fasta file", action="store", required=True)
+parser.add_argument("-w", "--wanted-text", help='Name to give seqs (default: "Seq"', action="store", default="Seq")
+parser.add_argument("-o", "--output-fasta-name", help='Output fasta file (default: "Renamed.fasta").', default="Renamed.fasta")
+
+parser.add_argument("--prefix", help="add the text provided to '-w' argument as prefix to current header instead of replacing it", action = "store_true")
+parser.add_argument("--suffix", help="add the text provided to '-w' argument as suffix to current header instead of replacing it", action = "store_true")
+
 
 if len(sys.argv)==1:
-  parser.print_help(sys.stderr)
-  sys.exit(0)
+    parser.print_help(sys.stderr)
+    sys.exit(0)
     
 args = parser.parse_args()
 
+if args.prefix and args.suffix:
+	  print("\n  Both the '--prefix' and '--suffix' arguments cannot be provided at the same time.")
+	  print("  Provide only one please. Exiting for now.\n")
+	  sys.exit(1)
+
+
 in_fasta = open(args.input_fasta, "r")
-new_header = args.wanted_name
+wanted_text = args.wanted_text
 out_fasta = open(args.output_fasta_name, "w")
 
-n = 0
+# changing full name and adding number if prefix or suffix specified
+if not args.prefix and not args.suffix:
+    n = 0
 
-for seq_record in SeqIO.parse(in_fasta, "fasta"):
-	n = n + 1
-	out_fasta.write(">" + new_header  + "_" + str(n) + "\n")
-	out_fasta.write(str(seq_record.seq) + "\n")
+    for seq_record in SeqIO.parse(in_fasta, "fasta"):
+        n = n + 1
+        out_fasta.write(">" + wanted_text  + "_" + str(n) + "\n")
+        out_fasta.write(str(seq_record.seq) + "\n")
 
-in_fasta.close()
-out_fasta.close()
+    in_fasta.close()
+    out_fasta.close()
+    
+    sys.exit(0)
+
+# adding as prefix if specified
+if args.prefix:
+
+    for seq_record in SeqIO.parse(in_fasta, "fasta"):
+
+        out_fasta.write(">" + str(wanted_text) + "_" + str(seq_record.id) + "\n")
+        out_fasta.write(str(seq_record.seq) + "\n")
+
+    in_fasta.close()
+    out_fasta.close()
+    
+    sys.exit(0)
+
+
+# adding as suffix if specified
+if args.suffix:
+
+    for seq_record in SeqIO.parse(in_fasta, "fasta"):
+
+        out_fasta.write(">" + str(seq_record.id) + "_" + str(wanted_text) + "\n")
+        out_fasta.write(str(seq_record.seq) + "\n")
+
+    in_fasta.close()
+    out_fasta.close()
+    
+    sys.exit(0)
 
