@@ -8,10 +8,10 @@ parser = argparse.ArgumentParser(description='This script is for creating a stan
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-g", "--target_genomes", help='Single-column file with the genomes to color (need to match the IDs in the tree file, with no ">")', action="store", dest="target_genomes", required=True)
-parser.add_argument("-w", "--what_to_color", help='What to color, must be: "branches", "labels", or "both" (default: "both")', action="store", dest="to_color", default="both")
+required.add_argument("-g", "--target-genomes", help='Single-column file with the genomes to color (need to match the IDs in the tree file, with no ">")', action="store", required=True)
+parser.add_argument("-w", "--what-to-color", help='What to color, must be: "branches", "labels", or "both" (default: "both")', action="store", dest="to_color", default="both")
 parser.add_argument("-c", "--color", help='Color to use, pre-baked options include "blue", "green", "red", "purple", or "black", or can provide the hexcode (default: "blue", of course, \'cause it\'s the best)', action="store", dest="color", default="blue")
-parser.add_argument("-l", "--line_thickness", help='Line thickness if coloring branches (default: "2")', action="store", dest="line_weight", default="2")
+parser.add_argument("-l", "--line-weight", help='Line weight if coloring branches (default: "2")', action="store", dest="line_weight", default="2")
 parser.add_argument("-o", "--output_file", help='Output file for iToL (default: "iToL-colors.txt")', action="store", dest="output_file", default="iToL-colors.txt")
 
 if len(sys.argv)==1:
