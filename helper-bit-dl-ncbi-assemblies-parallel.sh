@@ -9,6 +9,7 @@ NC='\033[0m'
 
 my_ext=$2
 ext=$3
+format=$4
 
 assembly=$(echo "$1" | cut -f 1)
 downloaded_accession=$(echo "$1" | cut -f 2)
@@ -47,17 +48,27 @@ fi
 
 curl --silent --retry 10 -o ${assembly}${my_ext} "${base_link}/${end_path}${ext}"
 
-if [ -s ${assembly}${my_ext} ]; then
+# grabbing this to check if " XML " is in there
+    # when this was first written, trying to download a link that wasn't there would fail
+    # now it can download an xml-formated file saying the link wasn't found at NCBI
+    # so this let's us check for that, and report and remove it if that's the case
+file_command_output=$(file ${assembly}${my_ext})
+
+
+if [ -s ${assembly}${my_ext} ] && [[ ${file_command_output} != *" XML "* ]]; then
 
     printf "\r\t  Successfully downloaded: $assembly"
 
 else
 
     printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
-    printf "\t\t  $assembly's $format file didn't download successfully.\n\n"
-    printf "\t\t  Written to \"NCBI-accessions-not-downloaded.txt\".\n"
+    printf "\t    $assembly's $format file didn't download successfully.\n"
+    printf "\t    That file type may not exist for this accession.\n\n"
+    printf "\t    Written to \"NCBI-accessions-not-downloaded.txt\".\n"
     printf "     ${RED}********************************************************************** ${NC}\n\n"
 
     echo ${assembly} >> NCBI-accessions-not-downloaded.txt
+
+    rm -rf ${assembly}${my_ext}
 
 fi

@@ -13,8 +13,7 @@ if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "help" ]; then
     printf "\n --------------------------------  HELP INFO  --------------------------------- \n\n"
     printf "  This program downloads assembly files for NCBI genomes. It takes as input\n"
     printf "  assembly accessions (either GCA_* or GCF_*) and optionally a specification of\n"
-    printf "  which format to download (currently: genbank, fasta, protein, or gff). For\n"
-    printf "  version info, run \`bit-version\`.\n\n"
+    printf "  which format to download. For version info, run \`bit-version\`.\n\n"
 
     printf "    Required input:\n\n"
     printf "        - [-w <file>] single-column file of NCBI assembly accessions\n\n"
@@ -97,11 +96,14 @@ else
 fi
 
 
+# making sure output file to hold accessions not downloaded doesn't exist already, as it gets appended to
+rm -rf NCBI-accessions-not-downloaded.txt
+
 ## downloading assembly summaries (if not present in cwd) ##
 if [ ! -s ncbi_assembly_info.tsv ]; then
 
     printf "    ${GREEN}Downloading ncbi assembly summaries to be able to construct ftp links...${NC}\n\n"
-    curl --connect-timeout 30 --retry 10 https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt -o ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
+    curl --connect-timeout 30 --retry 10 ftp://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt -o ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
 
     # making sure file downloaded with no errors
     if [ -s capture_any_dl_errors.tmp ]; then
@@ -112,7 +114,7 @@ if [ ! -s ncbi_assembly_info.tsv ]; then
         rm -rf capture_any_dl_errors.tmp
     fi
 
-    curl --connect-timeout 30 --retry 10 https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt -o ncbi_RS_assembly_info.tmp || echo "failed" > capture_any_dl_errors.tmp
+    curl --connect-timeout 30 --retry 10 ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt -o ncbi_RS_assembly_info.tmp || echo "failed" > capture_any_dl_errors.tmp
 
     # making sure file downloaded with no errors
     if [ -s capture_any_dl_errors.tmp ]; then
@@ -179,8 +181,6 @@ elif [ $format == "report" ]; then
 elif [ $format == "stats" ]; then
     ext="_assembly_stats.txt"
     my_ext="_assembly_stats.txt"
-
-
 fi
 
 
@@ -195,7 +195,7 @@ if [ $num_jobs == "1" ]; then
         downloaded_accession="${curr_line[1]}"
         num=$((num+1))
 
-        printf "\r\t  Numero $num of $remaining_targets: $assembly"
+        # printf "\r\t  Numero $num of $remaining_targets: $assembly"
 
         # storing and building links
         base_link="${curr_line[8]}"
@@ -231,26 +231,30 @@ if [ $num_jobs == "1" ]; then
         # attempting to download file for assembly
         curl --silent --retry 10 -o ${assembly}${my_ext} "${base_link}/${end_path}${ext}"
 
+        # grabbing this to check if " XML " is in there
+            # when this was first written, trying to download a link that wasn't there would fail
+            # now it can download an xml-formated file saying the link wasn't found at NCBI
+            # so this let's us check for that, and report and remove it if that's the case
+        file_command_output=$(file ${assembly}${my_ext})
 
-
-        
-
-        if [ ! -s ${assembly}${my_ext} ]; then
+        if [ ! -s ${assembly}${my_ext} ] || [[ ${file_command_output} == *" XML "* ]]; then
             
             printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
-            printf "\t\t  $assembly's $format file didn't download successfully.\n\n"
-            printf "\t\t  Written to \"NCBI-accessions-not-downloaded.txt\".\n"
+            printf "\t    $assembly's $format file didn't download successfully.\n"
+            printf "\t    That file type may not exist for this accession.\n\n"
+            printf "\t    Written to \"NCBI-accessions-not-downloaded.txt\".\n"
             printf "     ${RED}********************************************************************** ${NC}\n\n"
 
             echo ${assembly} >> NCBI-accessions-not-downloaded.txt
+
+            rm -rf ${assembly}${my_ext}
 
         fi
 
     done < $tmp_file
 
-    printf "\n\n"
 else
-    cat $tmp_file | parallel -j $num_jobs helper-bit-dl-ncbi-assemblies-parallel.sh {} $my_ext $ext
+    cat $tmp_file | parallel -j $num_jobs helper-bit-dl-ncbi-assemblies-parallel.sh {} $my_ext $ext $format
 fi
 
 rm $tmp_file
