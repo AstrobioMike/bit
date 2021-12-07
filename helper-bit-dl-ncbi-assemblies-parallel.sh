@@ -54,8 +54,7 @@ curl --silent --retry 10 -o ${assembly}${my_ext} "${base_link}/${end_path}${ext}
     # so this let's us check for that, and report and remove it if that's the case
 file_command_output=$(file ${assembly}${my_ext})
 
-
-if [ -s ${assembly}${my_ext} ] && [[ ${file_command_output} != *" XML "* ]]; then
+if [ -s ${assembly}${my_ext} ] && [[ ${file_command_output} != *" XML "* ]] && [[ ${file_command_output} != *" XHTML "* ]]; then
 
     printf "\r\t  Successfully downloaded: $assembly"
 

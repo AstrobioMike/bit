@@ -36,7 +36,6 @@ fi
 
 printf "\n"
 
-
 ## setting default ##
 format="genbank"
 num_jobs=1
@@ -237,7 +236,7 @@ if [ $num_jobs == "1" ]; then
             # so this let's us check for that, and report and remove it if that's the case
         file_command_output=$(file ${assembly}${my_ext})
 
-        if [ ! -s ${assembly}${my_ext} ] || [[ ${file_command_output} == *" XML "* ]]; then
+        if [ ! -s ${assembly}${my_ext} ] || [[ ${file_command_output} == *" XML "* ]] || [[ ${file_command_output} == *" XHTML "* ]]; then
             
             printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
             printf "\t    $assembly's $format file didn't download successfully.\n"
