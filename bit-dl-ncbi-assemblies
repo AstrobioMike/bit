@@ -102,7 +102,7 @@ rm -rf NCBI-accessions-not-downloaded.txt
 if [ ! -s ncbi_assembly_info.tsv ]; then
 
     printf "    ${GREEN}Downloading ncbi assembly summaries to be able to construct ftp links...${NC}\n\n"
-    curl --connect-timeout 30 --retry 10 https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt -o ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
+    curl --connect-timeout 30 --retry 10 https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt > ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
 
     # making sure file downloaded with no errors
     if [ -s capture_any_dl_errors.tmp ]; then
@@ -113,7 +113,7 @@ if [ ! -s ncbi_assembly_info.tsv ]; then
         rm -rf capture_any_dl_errors.tmp
     fi
 
-    curl --connect-timeout 30 --retry 10 https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt -o ncbi_RS_assembly_info.tmp || echo "failed" > capture_any_dl_errors.tmp
+    curl --connect-timeout 30 --retry 10 https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt >> ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
 
     # making sure file downloaded with no errors
     if [ -s capture_any_dl_errors.tmp ]; then
@@ -122,8 +122,6 @@ if [ ! -s ncbi_assembly_info.tsv ]; then
         exit
     else
         rm -rf capture_any_dl_errors.tmp
-        cat ncbi_RS_assembly_info.tmp >> ncbi_assembly_info.tsv
-        rm ncbi_RS_assembly_info.tmp
     fi
 
     printf "\n"
