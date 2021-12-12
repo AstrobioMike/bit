@@ -2,6 +2,7 @@
 
 # setting colors to use
 GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
@@ -52,7 +53,7 @@ do
     esac
 done
 
-# setting max 
+# setting max
 if [ $num_jobs -gt "12" ]; then
     num_jobs=12
 fi
@@ -98,33 +99,84 @@ fi
 # making sure output file to hold accessions not downloaded doesn't exist already, as it gets appended to
 rm -rf NCBI-accessions-not-downloaded.txt
 
-## downloading assembly summaries (if not present in cwd) ##
+## downloading assembly summaries (if not present in cwd already) ##
 if [ ! -s ncbi_assembly_info.tsv ]; then
 
     printf "    ${GREEN}Downloading ncbi assembly summaries to be able to construct ftp links...${NC}\n\n"
-    curl --connect-timeout 30 --retry 10 https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt > ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
+    curl --connect-timeout 30 --retry 10 ftp://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt > ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
 
-    # making sure file downloaded with no errors
-    if [ -s capture_any_dl_errors.tmp ]; then
-        printf "\n\n  ${RED}Download of NCBI assembly summaries failed :(${NC}\n  Is the internet connection weak?\n\nExiting for now.\n\n"
-        rm -rf capture_any_dl_errors.tmp ncbi_assembly_info.tsv
-        exit
-    else
-        rm -rf capture_any_dl_errors.tmp
-    fi
+    # making sure file downloaded with no errors, trying again if it did not (i can't figure out why, but it fails sometimes and then works others)
+    # trying a max of 10 times
+    attempt=1
 
-    curl --connect-timeout 30 --retry 10 https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt >> ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
+    while [ -s capture_any_dl_errors.tmp ]; do
 
-    # making sure file downloaded with no errors
-    if [ -s capture_any_dl_errors.tmp ]; then
-        printf "\n\n  ${RED}Download of NCBI assembly summaries failed :(${NC}\n  Is the internet connection weak?\n\nExiting for now.\n\n"
-        rm -rf capture_any_dl_errors.tmp ncbi_assembly_info.tsv
-        exit
-    else
-        rm -rf capture_any_dl_errors.tmp
-    fi
+        if [[ ${attempt} -lt 16 ]]; then
+
+            # waiting a few seconds
+            sleep 3
+
+            # incrementing counter
+            attempt=$((attempt+1))
+
+            printf "\n    ${YELLOW}Snag downloading GenBank assembly summary table, trying up to 15 times. Attempt: ${attempt}${NC}\n\n"
+
+            if ! curl --connect-timeout 30 --retry 10 ftp://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt > ncbi_assembly_info.tsv ; then
+                echo "failed" > capture_any_dl_errors.tmp
+            else
+                rm -rf capture_any_dl_errors.tmp
+            fi
+
+        else
+
+                printf "\n\n  ${RED}Download of NCBI assembly summaries failed :(${NC}\n  Is the internet connection weak?\n\nExiting for now.\n\n"
+                rm -rf capture_any_dl_errors.tmp ncbi_assembly_info.tsv
+                exit
+
+        fi
+
+    done
+
+    rm -rf capture_any_dl_errors.tmp
 
     printf "\n"
+    curl --connect-timeout 30 --retry 10 ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt >> ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
+
+    # doing the same as above, trying a few times because sometimes seems to work and others not for reasons I can't pin down yet
+    attempt=1
+
+    while [ -s capture_any_dl_errors.tmp ]; do
+
+        if [[ ${attempt} -lt 16 ]]; then
+
+            # incrementing counter
+            attempt=$((attempt+1))
+
+            printf "\n    ${YELLOW}Snag downloading RefSeq assembly summary table, trying up to 15 times. Attempt: ${attempt}${NC}\n\n"
+
+            if ! curl --connect-timeout 30 --retry 10 ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt >> ncbi_assembly_info.tsv ; then
+                echo "failed" > capture_any_dl_errors.tmp
+            else
+                rm -rf capture_any_dl_errors.tmp
+            fi
+
+        else
+
+                printf "\n\n  ${RED}Download of NCBI assembly summaries failed :(${NC}\n  Is the internet connection weak?\n\nExiting for now.\n\n"
+                rm -rf capture_any_dl_errors.tmp ncbi_assembly_info.tsv
+                exit
+
+        fi
+
+    done
+
+    rm -rf capture_any_dl_errors.tmp
+    
+    printf "\n    ${YELLOW}Assembly summary tables downloaded successfully. They are stored\n"
+    printf "    in the current working directory as \"ncbi_assembly_info.tsv\".\n"
+    printf "    That file is left here in you'd like to use it again soon. But be\n"
+    printf "    sure to delete it if you'd like. Now getting to work on our targets.${NC}\n\n"
+
 fi
 
 
@@ -137,7 +189,7 @@ comm -23 <(sort $NCBI_acc_file) <(cut -f1 $tmp_file | sort) > NCBI-accessions-no
 
 # reporting
 if [ -s NCBI-accessions-not-found.tmp ]; then
-    
+
     mv NCBI-accessions-not-found.tmp NCBI-accessions-not-found.txt
     num_not_found=$(wc -l NCBI-accessions-not-found.txt | sed 's/^ *//' | cut -d " " -f 1)
     remaining_targets=$(($NCBI_input_genomes_total - $num_not_found))
@@ -192,7 +244,7 @@ if [ $num_jobs == "1" ]; then
         downloaded_accession="${curr_line[1]}"
         num=$((num+1))
 
-        # printf "\r\t  Numero $num of $remaining_targets: $assembly"
+        printf "\r\t  Numero $num of $remaining_targets: $assembly"
 
         # storing and building links
         base_link="${curr_line[8]}"
@@ -209,7 +261,7 @@ if [ $num_jobs == "1" ]; then
             else
                 p2="GCA"
             fi
-            
+
             p3=$(echo $assembly | cut -f 2 -d "_" | cut -c 1-3)
             p4=$(echo $assembly | cut -f 2 -d "_" | cut -c 4-6)
             p5=$(echo $assembly | cut -f 2 -d "_" | cut -c 7-9)
@@ -222,7 +274,7 @@ if [ $num_jobs == "1" ]; then
         else
 
             end_path=$(basename $base_link)
-        
+
         fi
 
         # attempting to download file for assembly
@@ -235,7 +287,7 @@ if [ $num_jobs == "1" ]; then
         file_command_output=$(file ${assembly}${my_ext})
 
         if [ ! -s ${assembly}${my_ext} ] || [[ ${file_command_output} == *" XML "* ]] || [[ ${file_command_output} == *" XHTML "* ]]; then
-            
+
             printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
             printf "\t    $assembly's $format file didn't download successfully.\n"
             printf "\t    That file type may not exist for this accession.\n\n"
