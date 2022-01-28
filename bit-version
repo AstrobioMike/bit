@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-version='1.8.42'
+version='1.8.44'
 
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -12,7 +12,7 @@ printf "    If you happen to find this toolset useful in your work and feel\n"
 printf "    it is appropriate to cite, thank you :) and please do\n"
 printf "    so with the following:\n\n"
 
-printf "  Lee, M.D. Bioinformatics Tools (bit) 2018. doi.org/10.5281/zenodo.4287770\n\n"
+printf "  Lee, M.D. Bioinformatics Tools (bit) 2018. doi.org/10.5281/zenodo.3383647\n\n"
 
 today=$(date +'%A')
 

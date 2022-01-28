@@ -11,7 +11,7 @@ required.add_argument("-i", "--input_table", help='Input table', action="store",
 required.add_argument("-w", "--wanted_values", help='Wanted values', action="store", dest="wanted", required=True)
 
 parser.add_argument("-o", "--output_table", help='Output table (default: "Output.tsv")', action="store", dest="out_tab", default="Output.tsv")
-parser.add_argument("-d", "--delimiter", help='Delimiter (default: "\t")', action="store", dest="delimiter", default="\t")
+parser.add_argument("-d", "--delimiter", help='Delimiter (default: "\\t")', action="store", dest="delimiter", default="\t")
 parser.add_argument("-c", "--column", help='Column to filter on (default: 1)', action="store", dest="column", default=1, type=int)
 parser.add_argument("--no-header", help='Add if there is no header', action="store_true")
 parser.add_argument("--gz", help='Add if the input is gzipped (output will not be)', action="store_true")
