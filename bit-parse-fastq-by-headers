@@ -17,6 +17,7 @@ required = parser.add_argument_group('required arguments')
 required.add_argument("-i", "--input_fastq", help="Starting fastq file", action="store", required=True)
 required.add_argument("-w", "--sequence_headers", help="Single-column file with sequence headers (if the headers in the fastq file have whitespace in them, it is okay to provide just the part up to the whitespace in this input file)", action="store", required=True)
 parser.add_argument("-o", "--output_fastq", help='Output fastq file name (default: "Wanted.fq", ".gz" will be added if compressed)', action="store", default="Wanted.fq")
+parser.add_argument("--inverse", help="Add this flag to pull out all sequences with headers NOT in the provided header file.", action="store_true")
 parser.add_argument("--gz", help="Add this flag if the input is gzipped (output will be too)", action="store_true")
 
 if len(sys.argv)==1:
@@ -36,7 +37,7 @@ def main():
     # reading headers into a set
     headers_of_int_set = set(line.strip() for line in open(args.sequence_headers, "r"))
 
-    parse_fastq(headers_of_int_set, args.input_fastq, args.output_fastq, args.gz)
+    parse_fastq(headers_of_int_set, args.input_fastq, args.output_fastq, args.inverse, args.gz)
 
     if args.gz:
 
@@ -92,33 +93,39 @@ def check_if_output_already_exists(planned_output):
             sys.exit(1)
 
 
-def parse_fastq(headers_of_int_set, input_fastq, output_fastq, gz):
+def parse_fastq(headers_of_int_set, input_fastq, output_fastq, inverse, gz):
 
 
-    with open(output_fastq, "w") as output_file:
+    if gz:
 
-        if gz:
+        fastq_in = gzip.open(input_fastq, "rt")
 
-            with gzip.open(input_fastq, "rt") as fastq_in:
+    else:
 
-                for header, seq, qual in FastqGeneralIterator(fastq_in):
+        fastq_in = open(input_fastq, "rt")
 
-                    if header in headers_of_int_set or header.split(" ")[0] in headers_of_int_set:
 
-                        output_file.write("@%s\n%s\n+\n%s\n" % (header, seq, qual))
+    if not args.inverse:
 
-        else:
+        with open(output_fastq, "w") as output_file:
 
-            with open(input_fastq, "rt") as fastq_in:
+            for header, seq, qual in FastqGeneralIterator(fastq_in):
 
-                for header, seq, qual in FastqGeneralIterator(fastq_in):
+                if header in headers_of_int_set or header.split(" ")[0] in headers_of_int_set:
 
-                    if header in headers_of_int_set or header.split(" ")[0] in headers_of_int_set:
+                    output_file.write("@%s\n%s\n+\n%s\n" % (header, seq, qual))
 
-                        output_file.write("@%s\n%s\n+\n%s\n" % (header, seq, qual))
+    else:
 
- 
+        with open(output_fastq, "w") as output_file:
 
+            for header, seq, qual in FastqGeneralIterator(fastq_in):
+
+                if header not in headers_of_int_set and header.split(" ")[0] not in headers_of_int_set:
+                
+                    output_file.write("@%s\n%s\n+\n%s\n" % (header, seq, qual))
+
+    fastq_in.close()
 
 
 if __name__ == "__main__":
