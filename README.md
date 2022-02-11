@@ -4,6 +4,7 @@
 * [**Overview**](#overview)  
 * [**Conda install**](#conda-install)  
 * [**Citation info**](#citation-info)  
+* [**Shameless plug**](#shameless-plug)  
 
 ---
 
@@ -68,7 +69,7 @@ If you are using a program in *bit* that also leverages another program, please 
 
 ---
 
-## Random plug
+## Shameless plug
 For [phylogenomics](https://astrobiomike.github.io/genomics/phylogenomics), checkout [GToTree](https://github.com/AstrobioMike/GToTree/wiki) 🙂  
 
 ---
