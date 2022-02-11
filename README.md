@@ -69,6 +69,6 @@ If you are using a program in *bit* that also leverages another program, please 
 ---
 
 ## Random plug
-For phylogenomics, checkout [GToTree](https://github.com/AstrobioMike/GToTree/wiki)   
+For [phylogenomics](https://astrobiomike.github.io/genomics/phylogenomics), checkout [GToTree](https://github.com/AstrobioMike/GToTree/wiki) 🙂  
 
 ---
