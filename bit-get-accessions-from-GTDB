@@ -1,11 +1,9 @@
 #!/usr/bin/env python
 
 """
-This is a helper program of GToTree (https://github.com/AstrobioMike/GToTree/wiki) 
+This was originally a helper program of GToTree (https://github.com/AstrobioMike/GToTree/wiki) 
 to facilitate accessing and using taxonomy and genomes from the glorious Genome Taxonomy 
-Database (gtdb.ecogenomic.org/).
-
-For examples, please visit the GToTree wiki here: https://github.com/AstrobioMike/GToTree/wiki/example-usage
+Database (gtdb.ecogenomic.org/), but found use for it much more than in GToTree so included here too.
 """
 
 import sys
