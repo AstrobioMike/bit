@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
+    printf "\n  Currently pulls genome summarize workflow from:\n"
+    printf "      github.com/AstrobioMike/genome-assembly-summary\n\n"
+    printf "  For version info run \`GL-version\`.\n\n"
+    exit
+fi
+
+curl -sLO https://github.com/AstrobioMike/genome-assembly-summary/archive/refs/heads/main.zip
+
+unzip -qq main.zip
+
+rm genome-assembly-summary-main/README.md main.zip
+
+mv genome-assembly-summary-main/ genome-assembly-stats-and-tax-workflow
+
+printf "\n  Pulled genome summarize workflow from:\n"
+printf "      github.com/AstrobioMike/genome-assembly-summary\n\n"
