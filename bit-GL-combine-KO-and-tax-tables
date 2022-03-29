@@ -141,6 +141,16 @@ def setup_input_lists(input_tables):
     sample_names = []
 
     for sample_path in input_tables:
+
+        # checking here that the file has more than just the headers, otherwise it is empty and we are dropping it here
+        with open(sample_path) as in_tab:
+
+            # just making sure there are at least 2 lines, otherwise moving onto the next
+            try:
+                [next(in_tab) for x in range(2)]
+            except:
+                continue
+
         input_files.append(sample_path)
         sample = os.path.splitext(os.path.basename(sample_path))[0]
 
@@ -235,6 +245,7 @@ def add_KO_functions(tab, KO_dict):
 
     return(tab)
 
+
 def add_tax_info(tab, tax_dict):
     """ adds lineage info back to combined table based on taxid and tax_dict object holding mappings """
 
@@ -307,8 +318,12 @@ def combine_tabs(KO_tab_list, tax_tab_list, sample_names, KO_dict, tax_dict):
     KO_combined_tab = pd.concat(KO_tab_list, axis=1).drop_duplicates().fillna(0).sort_index()
     # moving index to be column and changing that NaN to be "Not annotated"
     KO_combined_tab = KO_combined_tab.reset_index().fillna("Not annotated")
+
+
     # setting column names
     KO_combined_tab.columns = ["KO_ID"] + sample_names
+    
+
     # adding KO functions
     KO_combined_tab = add_KO_functions(KO_combined_tab, KO_dict)
 

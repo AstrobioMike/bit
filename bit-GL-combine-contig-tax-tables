@@ -119,6 +119,16 @@ def setup_input_lists(input_tables):
     sample_names = []
 
     for sample_path in input_tables:
+
+        # checking here that the file has more than just the headers, otherwise it is empty and we are dropping it here
+        with open(sample_path) as in_tab:
+
+            # just making sure there are at least 2 lines, otherwise moving onto the next
+            try:
+                [next(in_tab) for x in range(2)]
+            except:
+                continue
+
         input_files.append(sample_path)
         sample = os.path.splitext(os.path.basename(sample_path))[0]
 
