@@ -20,12 +20,12 @@ parser.add_argument("-t", "--type", help='Either "DNA" or "Protein" (default: "P
 parser.add_argument("-o", "--output_file", help='Name of output tab-separated file (default: "variation.tsv")', action="store", dest="output_tsv", default="variation.tsv")
 
 if len(sys.argv)==1:
-  parser.print_help(sys.stderr)
-  sys.exit(0)
+    parser.print_help(sys.stderr)
+    sys.exit(0)
 
 args = parser.parse_args()
 
-  # i'm not certain unequal alignments are all that would throw this error, so i'm leaving this out for now so skbio just spits out their problem if they have one reading in the alignment
+# i'm not certain unequal alignments are all that would throw this error, so i'm leaving this out for now so skbio just spits out their problem if they have one reading in the alignment
 # try:
     # msa = TabularMSA.read(args.input_alignment_fasta, constructor=DNA)
 # except ValueError:
@@ -36,7 +36,7 @@ msa = TabularMSA.read(args.input_alignment_fasta, constructor=eval(args.type), l
 
 list_of_cleaned_seqs = []
 
- # converting degenerate bases to gaps
+# converting degenerate bases to gaps
 for seq in msa:
 
     seq = seq.replace(seq.degenerates(), "-")

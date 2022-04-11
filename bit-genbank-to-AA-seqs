@@ -14,8 +14,8 @@ required.add_argument("-i", "--input_gb", help='input Genbank file (e.g. "*.gbk"
 parser.add_argument("-f", "--output_fasta", help='Output fasta file (default: "clean.faa")', action="store", dest="output_fasta", default="clean.faa")
 
 if len(sys.argv)==1:
-  parser.print_help(sys.stderr)
-  sys.exit(0)
+    parser.print_help(sys.stderr)
+    sys.exit(0)
 
 args = parser.parse_args()
 
@@ -30,42 +30,42 @@ location_terms_to_exclude = ["join", "<", ">"] # dumping gene if "location" sect
 
 for rec in recs:
 
-  genes = [gene for gene in rec.features if gene.type =="CDS"] # focusing on features annotated as "CDS"
+    genes = [gene for gene in rec.features if gene.type =="CDS"] # focusing on features annotated as "CDS"
 
-  for gene in genes:
+    for gene in genes:
 
-    location = str(gene.location)
+        location = str(gene.location)
 
-      # dumping gene if "location" section contains any of these terms set above: "join" means the gene call spans multiple contigs; "<" or ">" means the gene call runs off a contig
-    if any(exclusion_term in location for exclusion_term in location_terms_to_exclude):
-      continue
+        # dumping gene if "location" section contains any of these terms set above: "join" means the gene call spans multiple contigs; "<" or ">" means the gene call runs off a contig
+        if any(exclusion_term in location for exclusion_term in location_terms_to_exclude):
+            continue
 
-    if "note" in gene.qualifiers:
-      note = str(gene.qualifiers["note"][0])
+        if "note" in gene.qualifiers:
+            note = str(gene.qualifiers["note"][0])
 
         # dumping gene if noted as any of these in the "note" section set above
-      if any(exclusion_term in note for exclusion_term in note_terms_to_exclude):
-        continue
+        if any(exclusion_term in note for exclusion_term in note_terms_to_exclude):
+            continue
 
         # dumping if overlapping translation frame
-    if "transl_except" in gene.qualifiers:
-      continue
+        if "transl_except" in gene.qualifiers:
+            continue
 
         # dumping if noted a pseudo gene
-    if "pseudo" in gene.qualifiers:
-      continue
+        if "pseudo" in gene.qualifiers:
+            continue
 
-    if "locus_tag" in gene.qualifiers:
-      locus_tag = str(gene.qualifiers["locus_tag"][0])
-    else:
-      locus_tag = "No_locus_tag"
+        if "locus_tag" in gene.qualifiers:
+            locus_tag = str(gene.qualifiers["locus_tag"][0])
+        else:
+            locus_tag = "No_locus_tag"
 
-    if "protein_id" in gene.qualifiers:
-      protein_id = str(gene.qualifiers["protein_id"][0])
-    else:
-      protein_id = "No_protein_id"
+        if "protein_id" in gene.qualifiers:
+            protein_id = str(gene.qualifiers["protein_id"][0])
+        else:
+            protein_id = "No_protein_id"
 
-    output_fasta.write(">" + locus_tag + "_" + protein_id + "\n" + str(gene.qualifiers["translation"][0]) + "\n")
+        output_fasta.write(">" + locus_tag + "_" + protein_id + "\n" + str(gene.qualifiers["translation"][0]) + "\n")
 
 input_gb.close()
 output_fasta.close()

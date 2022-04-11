@@ -15,8 +15,8 @@ parser.add_argument("-M", "--max_length", help="maximum length retained", action
 parser.add_argument("-o", "--output_file", help='Name of output fasta file (default: "filtered.fasta")', action="store", dest="output_file", default="filtered.fasta")
 
 if len(sys.argv)==1:
-  parser.print_help(sys.stderr)
-  sys.exit(0)
+    parser.print_help(sys.stderr)
+    sys.exit(0)
 
 args = parser.parse_args()
 
@@ -30,18 +30,16 @@ kept=0
 
 for seq_record in SeqIO.parse(in_fasta, "fasta"):
 
-  total+=1
+    total+=1
 
-  if len(seq_record.seq) >= int(min_len) and len(seq_record.seq) <= int(max_len):
+    if len(seq_record.seq) >= int(min_len) and len(seq_record.seq) <= int(max_len):
 
-    kept+=1
-    out_file.write(">" + str(seq_record.description) + "\n" + str(seq_record.seq) + "\n")
+        kept+=1
+        out_file.write(">" + str(seq_record.description) + "\n" + str(seq_record.seq) + "\n")
 
 
 perc = round(float(kept) / float(total) * 100, 2)
 print("\n\tRetained " + str(kept) + " sequences of the initial " + str(total) + " (" + str(perc) + "%).\n")
-
-
 
 in_fasta.close()
 out_file.close()

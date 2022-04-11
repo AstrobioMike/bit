@@ -5,16 +5,17 @@ RED='\033[0;31m'
 NC='\033[0m'
 
 if [ "$#" == 0 ] || [ $1 == "-h" ]; then
-  printf "\n  This script returns the column names (with number) from a tab-separated file.\n"
-  printf "  For version info, run \`bit-version\`.\n\n"
-  printf "    Usage:\n\t bit-colnames input.tsv\n\n"
-  exit
+    printf "\n  This script returns the column names (with number) from a tab-separated file.\n"
+    printf "  For version info, run \`bit-version\`.\n\n"
+    printf "    Usage:\n\t bit-colnames input.tsv\n\n"
+    exit
 fi
 
 if [ -f $1 ]; then
-  head -n1 $1 | tr "\t" "\n" | cat -n
+    
+    head -n1 $1 | tr "\t" "\n" | cat -n
 
 else
-  echo -e "     ${RED}Input file not found :/${NC}" >&2
-  exit 1
+    echo -e "     ${RED}Input file not found :/${NC}" >&2
+    exit 1
 fi

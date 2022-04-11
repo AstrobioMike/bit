@@ -15,8 +15,8 @@ parser.add_argument("-o", "--output_fasta", help='Reordered output fasta (defaul
 
 
 if len(sys.argv)==1:
-  parser.print_help(sys.stderr)
-  sys.exit(0)
+    parser.print_help(sys.stderr)
+    sys.exit(0)
 
 args = parser.parse_args()
 
@@ -29,7 +29,7 @@ fasta_dict = SeqIO.index(args.input_fasta, "fasta")
 fasta_out = open(args.output_fasta, "wb")
 
 for header in ordered_list:
-  fasta_out.write(fasta_dict.get_raw(header))
+    fasta_out.write(fasta_dict.get_raw(header))
 
 ordered_seqs.close()
 fasta_out.close()

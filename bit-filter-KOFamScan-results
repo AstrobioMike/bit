@@ -24,8 +24,8 @@ required.add_argument("-i", "--input-file", help="Input annotation table", actio
 parser.add_argument("-o", "--output-table", help='Output table name (default: "output.tsv")', action="store", dest="output_file", default="output.tsv")
 
 if len(sys.argv)==1:
-  parser.print_help(sys.stderr)
-  sys.exit(0)
+    parser.print_help(sys.stderr)
+    sys.exit(0)
 
 args = parser.parse_args()
 

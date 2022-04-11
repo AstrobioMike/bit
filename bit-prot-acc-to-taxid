@@ -21,8 +21,8 @@ required.add_argument("-w", "--wanted_prot_accessions", help="Single-column file
 parser.add_argument("-o", "--output_file", help='Output file of prot_acc and taxID', action="store", dest="file_out", default="Wanted_prot_accs_and_taxids.tsv")
 
 if len(sys.argv)==1:
-  parser.print_help(sys.stderr)
-  sys.exit(0)
+    parser.print_help(sys.stderr)
+    sys.exit(0)
 
 args = parser.parse_args()
 
@@ -43,18 +43,20 @@ num = 0
 print("\nNow beginning trek through reference mapping file.\n")
 
 with open(args.input_ref) as refs:
-  for line in refs:
-    line = line.split("\t")
-    num += 1
-    if num % 1000000 == 0:
-      mega_num = num / 1000000
-      sys.stdout.write("\r  On line " + colors.GREEN + str(mega_num) + colors.NC + " million of prot_acc_to_taxid_map...")
-      sys.stdout.flush()
+    
+    for line in refs:
+        line = line.split("\t")
+        num += 1
+        
+        if num % 1000000 == 0:
+            mega_num = num / 1000000
+            sys.stdout.write("\r  On line " + colors.GREEN + str(mega_num) + colors.NC + " million of prot_acc_to_taxid_map...")
+            sys.stdout.flush()
 
-    if line[1] in wanted_accs_set:
-      output_file.write(line[1] + "\t" + line[2] + "\n")
-      num_found += 1
-      accs_found.append(line[1])
+        if line[1] in wanted_accs_set:
+            output_file.write(line[1] + "\t" + line[2] + "\n")
+            num_found += 1
+            accs_found.append(line[1])
 
 print("\n")
 
@@ -63,8 +65,8 @@ wanted_accs_list = list(wanted_accs_set)
 print('  Adding in "NA"s for those protein accessions not found...\n')
 
 for acc in wanted_accs_list:
-  if acc not in accs_found:
-    output_file.write(acc + "\tNA\n")
+    if acc not in accs_found:
+        output_file.write(acc + "\tNA\n")
 
 print(colors.GREEN + "  Done!" + colors.NC + "\n")
 print("  You were looking for " + str(len(wanted_accs_list)) + " protein accessions.")

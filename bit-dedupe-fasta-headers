@@ -13,8 +13,8 @@ required.add_argument("-i", "--input_fasta", help="Starting fasta file", action=
 parser.add_argument("-o", "--output_fasta_name", help='Output fasta file (default: "Renamed.fasta").', dest="output_fasta_name", default="Renamed.fasta")
 
 if len(sys.argv)==1:
-  parser.print_help(sys.stderr)
-  sys.exit(0)
+    parser.print_help(sys.stderr)
+    sys.exit(0)
 
 args = parser.parse_args()
 
