@@ -23,6 +23,8 @@ if [ ! -s ${GO_DB_DIR}/go-basic.obo ] || [ ! -s ${GO_DB_DIR}/goslim_metagenomics
 
     rm -rf ${GO_DB_DIR}/go-basic.obo ${GO_DB_DIR}/goslim_metagenomics.obo ${GO_DB_DIR}/conda-placeholder
 
+    printf "\n    ${YELLOW}Downloading required GO data (only needs to be done once)...${NC}\n"
+
     curl -L --silent --retry 10 -o ${GO_DB_DIR}/go-basic.obo http://purl.obolibrary.org/obo/go/go-basic.obo
     curl -L --silent --retry 10 -o ${GO_DB_DIR}/goslim_metagenomics.obo http://current.geneontology.org/ontology/subsets/goslim_metagenomics.obo
 

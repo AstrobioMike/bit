@@ -40,7 +40,7 @@ args = parser.parse_args()
 go_data_dir = os.environ["GO_DB_DIR"]
 
 ## downloading default GO databases if they are not present already
-checking_db_dir = subprocess.run(["helper-bit-setup-GO-dbs"], stdout = subprocess.DEVNULL)
+checking_db_dir = subprocess.run(["helper-bit-setup-GO-dbs"])
 
 if args.obo == "goslim_metagenomics":
     go_obo = go_data_dir + "goslim_metagenomics.obo"
