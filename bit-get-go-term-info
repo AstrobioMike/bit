@@ -7,6 +7,7 @@ import os
 import argparse
 import pandas as pd
 import sys
+import subprocess
 
 parser = argparse.ArgumentParser(description="Get quick information on individual GO terms. For version info, run `bit-version`.")
 parser.add_argument('GO_term', help= 'GO term you want to investigate, e.g. "GO:0010501"')
@@ -29,6 +30,9 @@ pd.set_option('display.max_colwidth', None)
 
 ### checking and setting up obo file location
 go_data_dir = os.environ["GO_DB_DIR"]
+
+## downloading default GO databases if they are not present already
+checking_db_dir = subprocess.run(["helper-bit-setup-GO-dbs"], stdout = subprocess.DEVNULL)
 
 if args.obo == "goslim_metagenomics":
     go_obo = go_data_dir + "goslim_metagenomics.obo"

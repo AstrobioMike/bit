@@ -47,6 +47,9 @@ if [ -z $output_file ]; then
     exit
 fi
 
+### checking that ncbi tax data is present already, and downloading if it isn't
+helper-bit-get-ncbi-tax-data
+
 cat $taxids_file | taxonkit lineage | taxonkit reformat -r NA | cut -f 1,3 | tr ";" "\t" > lineages.tmp
 
 cat <(printf "taxid\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n") lineages.tmp > $output_file

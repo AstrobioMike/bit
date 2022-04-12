@@ -16,7 +16,7 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-i", "--input_files", nargs="+", type=str, help="space-delimited list of `bit-kraken2-to-taxon-summaries` output files, can be provided with shell wildcards", action="store", dest="input_files", required=True)
 parser.add_argument("-n", "--sample_names", help='Sample names provided as a comma-delimited list, be sure it matches the order of the input files (by default will use basename of input files up to last period)', action="store", default='', dest="sample_names")
-parser.add_argument("-o", "--output_file", help='Output combined summaries (default: "combined-kraken2-taxon-summaries.tsv")', action="store", dest="output_file", default="combined-GO-summaries.tsv")
+parser.add_argument("-o", "--output_file", help='Output combined summaries (default: "combined-kraken2-taxon-summaries.tsv")', action="store", dest="output_file", default="combined-kraken2-taxon-summaries.tsv")
 
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
