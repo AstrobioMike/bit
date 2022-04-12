@@ -36,6 +36,7 @@ def main():
 
     else:
 
+        print("")
         print(color_text("    Downloading required NCBI taxonomy data (only needs to be done once)...\n", "yellow"))
         get_NCBI_tax_data(NCBI_data_dir)
 
@@ -107,7 +108,7 @@ def get_NCBI_tax_data(location):
 
     taxdump_path = os.path.join(str(location) + "taxdump.tar.gz")
 
-    urllib.request.urlretrieve("ftp://ftp.ncbi.nih.gov/pub/taxonomy/taxdump.tar.gz", taxdump_path)
+    urllib.request.urlretrieve("http://ftp.ncbi.nih.gov/pub/taxonomy/taxdump.tar.gz", taxdump_path)
 
     # unpacking
     with tarfile.open(taxdump_path) as tarball:
