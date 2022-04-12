@@ -1,4 +1,6 @@
 <a href="https://zenodo.org/badge/latestdoi/59388885"><img align="right" src="https://zenodo.org/badge/59388885.svg" alt="DOI"></a>
+<br>
+<a href="https://github.com/AstrobioMike/bit/edit/master/README.md#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-750+-blue" height="23"></a>
 # Bioinformatics Tools (bit)
 
 * [**Overview**](#overview)  
@@ -47,7 +49,7 @@ Each command has a help menu accessible by either entering the command alone or 
 
 > If you are new to the wonderful world of [conda](https://conda.io/docs/) and want to learn more, one place you can start learning about it is [here](https://astrobiomike.github.io/unix/conda-intro) 🙂  
 
-Due to increasing program restrictions as *bit* has grown, it's easiest to install it in its own environment as shown below (though I still put it in my base environment when I can given how much I rely on it ¯\\\_(ツ)\_/¯):  
+Due to increasing program restrictions as *bit* has grown, it's easiest to install it in its own environment as shown below:  
 
 ```
 conda create -n bit -c conda-forge -c bioconda -c defaults -c astrobiomike bit
