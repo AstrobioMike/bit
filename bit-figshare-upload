@@ -4,6 +4,8 @@ set -e
 ########################################################################
 # This comes from, and has been modified from, the figshare docs here: #
 # https://docs.figshare.com/#upload_files_upload_bash_script           #
+#                                                                      #
+# Primarily modified to be able to handle larger files                 #
 ########################################################################
 
 GREEN='\033[0;32m'
@@ -15,7 +17,8 @@ NC='\033[0m'
 ### help menu
 if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "--help" ]; then
     printf "\n  This script is to enable command-line uploading of single files to figshare.\n"
-    printf "  It has been modified from the example in the figshare docs here:\n"
+    printf "  It has been modified (primarily to be able to deal with larger files) from\n"
+    printf "  the example in the figshare docs here:\n"
     printf "    ${YELLOW}https://docs.figshare.com/#upload_files_upload_bash_script${NC}\n\n"
 
     printf "  It requires that the shell environment variable 'FIGSHARE_TOKEN' holds\n"
@@ -60,8 +63,9 @@ printf "        ${YELLOW}Attempting to upload ${1}${NC}\n\n"
 # so doing it this way, which in my testing works at least on on ubuntu and darwin
 FILE_SIZE=$(ls -lt ${1} | tr -s " " | cut -f 5 -d " ")
 
-printf "${YELLOW}Generating needed md5sum...\n\n${NC}"
+printf "${YELLOW}Generating needed md5sum...\n${NC}"
 MD5=($(md5sum $FILE_PATH))
+printf "  ${MD5}\n\n"
 
 
 # List all of the existing items
@@ -126,25 +130,44 @@ PARTS_SIZE=$(($PARTS_SIZE+1))
 
 # Split item into needed parts
 printf "${YELLOW}Splitting the provided item into parts...\n${NC}"
-split -b $PARTS_SIZE $FILE_PATH part_ --numeric=1
+split -a 6 -b $PARTS_SIZE $FILE_PATH part_ --numeric=1
 # echo 'Splitting process completed!'
+
+# getting list of part-file numbers to be able to iterate over them (part of changing how we are sending them in the loop below)
+ls part_* | cut -f 2 -d "_" | sort -n > parts-order.tmp
+
 # Retrive the number of parts
-MAX_PART=$((($FILE_SIZE+$PARTS_SIZE-1)/$PARTS_SIZE))
+MAX_PART=$(tail -n 1 parts-order.tmp)
+
+# MAX_PART=$((($FILE_SIZE+$PARTS_SIZE-1)/$PARTS_SIZE))
 echo '  The total number of parts is: '$MAX_PART
 echo ''
 
 
 # Perform the PUT operation of parts
 printf "${YELLOW}Performing the PUT operation of parts...\n${NC}"
-for ((i=1; i<=$MAX_PART; i++))
-do
-    PART_VALUE='part_'$i
-    if [ "$i" -le 9 ]
-    then
-        PART_VALUE='part_0'$i
-    fi
+
+## this failed if over 100 parts were needed, rewrote so works with larger files too
+# for ((i=1; i<=$MAX_PART; i++))
+# do
+#     PART_VALUE='part_'$i
+#     if [ "$i" -le 9 ]
+#     then
+#         PART_VALUE='part_0'$i
+#     fi
+#     RESPONSE=$(curl -s -f -H 'Authorization: token '$ACCESS_TOKEN -X PUT "$UPLOAD_URL/$i" --data-binary @$PART_VALUE)
+#     echo "  Done uploading part nr: $i/"$MAX_PART
+# done
+
+
+for i in $(cat parts-order.tmp); do
+
+    PART_VALUE="part_${i}"
+
     RESPONSE=$(curl -s -f -H 'Authorization: token '$ACCESS_TOKEN -X PUT "$UPLOAD_URL/$i" --data-binary @$PART_VALUE)
+
     echo "  Done uploading part nr: $i/"$MAX_PART
+
 done
 
 echo '  Process was finished!'
@@ -156,7 +179,7 @@ printf "${YELLOW}Completing the file upload...\n${NC}"
 RESPONSE=$(curl -s -f -H 'Authorization: token '$ACCESS_TOKEN -X POST "$BASE_URL/$ITEM_ID/files/$FILE_ID")
 
 #remove the part files
-rm part_*
+rm part_* parts-order.tmp
 
 printf "\n        ${GREEN}DONE!${NC}\n\n"
 
