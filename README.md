@@ -35,6 +35,7 @@ There are of course several great and widely used packages of bioinformatics hel
 | summarizing [kraken2](https://github.com/DerrickWood/kraken2) outputs in a table with counts of full taxonomic lineages, and combining multiple samples | `bit-kraken2-to-taxon-summaries`, `bit-combine-kraken2-taxon-summaries` |  
 | combining [bracken](https://github.com/jenniferlu717/Bracken) outputs and adding full taxonomic lineage info | `bit-combine-bracken-and-add-lineage` |  
 | generating color/mapping/data files for use with trees being viewed on the [Interactive Tree of Life](https://itol.embl.de/) site | `bit-gen-iToL-map`, `bit-gen-iToL-colorstrip`, `bit-gen-iToL-text-dataset`, `bit-gen-iToL-binary-dataset` |  
+| upload a file to figshare | `bit-figshare-upload` |  
 
 
 And other just convenient things that are nice to have handy, like removing soft line wraps that some fasta files have (`bit-remove-wraps`), and printing out the column names of a TSV with numbers (`bit-colnames`) to quickly see which columns we want to provide to things like `cut` or `awk` 🙂  
