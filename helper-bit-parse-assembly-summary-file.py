@@ -38,35 +38,35 @@ with open(args.all_assemblies) as assemblies:
         if line[0].split(".")[0] in wanted_dict:
             dl_acc = str(line[0])
 
-          if not dl_acc:
-              dl_acc = "NA"
+            if not dl_acc:
+                dl_acc = "NA"
 
-          ass_name = str(line[15])
-          if not ass_name:
-              ass_name = "NA"
+            ass_name = str(line[15])
+            if not ass_name:
+                ass_name = "NA"
 
-          taxid = str(line[5])
-          if not taxid:
-              taxid = "NA"
+            taxid = str(line[5])
+            if not taxid:
+                taxid = "NA"
 
-          org_name = str(line[7])
-          if not org_name:
-              org_name = "NA"
+            org_name = str(line[7])
+            if not org_name:
+                org_name = "NA"
 
-          infra_name = str(line[8])
-          if not infra_name:
-              infra_name = "NA"
+            infra_name = str(line[8])
+            if not infra_name:
+                infra_name = "NA"
 
-          version_status = str(line[10])
-          if not version_status:
-              version_status = "NA"
+            version_status = str(line[10])
+            if not version_status:
+                version_status = "NA"
 
-          ass_level = str(line[11])
-          if not ass_level:
-              ass_level = "NA"
+            ass_level = str(line[11])
+            if not ass_level:
+                ass_level = "NA"
 
-          ftp_path = str(line[19])
-          if not ftp_path:
-              ftp_path = "NA"
+            ftp_path = str(line[19])
+            if not ftp_path:
+                ftp_path = "NA"
 
-          out_file.write(str(wanted_dict[str(line[0].split(".")[0])]) + "\t" + str(dl_acc) + "\t"  + str(ass_name) + "\t" + str(taxid) + "\t" + str(org_name) + "\t" + str(infra_name) + "\t" + str(version_status) + "\t" + str(ass_level) + "\t" + str(ftp_path) + "\n")
+            out_file.write(str(wanted_dict[str(line[0].split(".")[0])]) + "\t" + str(dl_acc) + "\t"  + str(ass_name) + "\t" + str(taxid) + "\t" + str(org_name) + "\t" + str(infra_name) + "\t" + str(version_status) + "\t" + str(ass_level) + "\t" + str(ftp_path) + "\n")
