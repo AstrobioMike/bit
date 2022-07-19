@@ -96,7 +96,7 @@ printf "\n"
 # printf "\n\n"
 
 # Initiate new upload:
-printf "${YELLOW}A new upload had been initiated...\n${NC}"
+printf "${YELLOW}A new upload has been initiated...\n${NC}"
 RESPONSE=$(curl -s -f -d '{"md5": "'${MD5}'", "name": "'${FILE_NAME}'", "size": '${FILE_SIZE}'}' -H 'Content-Type: application/json' -H 'Authorization: token '$ACCESS_TOKEN -X POST "$BASE_URL/$ITEM_ID/files")
 LOCATION=$(echo "$RESPONSE" | sed -r 's/.*"location": //' | sed 's/,.*//' | tr -d '"' | tr -d '}')
 echo '  The location of the uploaded file will be: '$LOCATION
@@ -166,7 +166,7 @@ for i in $(cat parts-order.tmp); do
 
     RESPONSE=$(curl -s -f -H 'Authorization: token '$ACCESS_TOKEN -X PUT "$UPLOAD_URL/$i" --data-binary @$PART_VALUE)
 
-    echo "  Done uploading part nr: $i/"$MAX_PART
+    echo "  Done uploading part: $i/"$MAX_PART
 
 done
 
