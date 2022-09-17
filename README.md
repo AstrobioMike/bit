@@ -1,6 +1,10 @@
 <a href="https://zenodo.org/badge/latestdoi/59388885"><img align="right" src="https://zenodo.org/badge/59388885.svg" alt="DOI"></a>
 <br>
-<a href="https://github.com/AstrobioMike/bit/edit/master/README.md#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-750+-blue" height="23"></a>
+<a href="https://github.com/AstrobioMike/bit/edit/master/README.md#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-850+-blue" height="23"></a>
+<br>
+<a href="https://twitter.com/AstrobioMike"><img align="right" alt="Twitter Follow" src="https://img.shields.io/twitter/follow/AstrobioMike?color=blue&style=social"></a>
+<br>
+
 # Bioinformatics Tools (bit)
 
 * [**Overview**](#overview)  
