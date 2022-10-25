@@ -451,31 +451,31 @@ def check_stored_gtdb_up_to_date(location):
 def get_gtdb_tab():
     """ reads in file with gtdb info """
 
-    # checking if there is a GTDB_dir (should be if conda install of bit was done)
+    # checking if there is a GTDB_DIR (should be if conda install of bit was done)
     try:
-        GTDB_dir = os.environ['GTDB_dir']
+        GTDB_DIR = os.environ['GTDB_DIR']
     except:
-        GTDB_dir = False
+        GTDB_DIR = False
 
     # working there if there is one
-    if GTDB_dir:
+    if GTDB_DIR:
 
-        if os.path.exists(GTDB_dir + "GTDB-arc-and-bac-metadata.tsv") and os.path.exists(GTDB_dir + "GTDB-version-info.txt"):
+        if os.path.exists(GTDB_DIR + "GTDB-arc-and-bac-metadata.tsv") and os.path.exists(GTDB_DIR + "GTDB-version-info.txt"):
 
             # making sure the stored version is the latest available from GTDB
-            check_stored_gtdb_up_to_date(GTDB_dir)
+            check_stored_gtdb_up_to_date(GTDB_DIR)
 
             # copying if just table wanted
             if args.get_table:
                 if not os.path.exists("GTDB-arc-and-bac-metadata.tsv"):
 
                     # reporting version info
-                    report_gtdb_version_info(GTDB_dir)
+                    report_gtdb_version_info(GTDB_DIR)
 
-                    shutil.copy(GTDB_dir + "GTDB-arc-and-bac-metadata.tsv", "GTDB-arc-and-bac-metadata.tsv")
+                    shutil.copy(GTDB_DIR + "GTDB-arc-and-bac-metadata.tsv", "GTDB-arc-and-bac-metadata.tsv")
                     print("")
                     # reporting version info
-                    report_gtdb_version_info(GTDB_dir)
+                    report_gtdb_version_info(GTDB_DIR)
                     wprint("GTDB table copied to:")
                     print(color_text("    GTDB-arc-and-bac-metadata.tsv\n"))
                     sys.exit(0)
@@ -491,30 +491,31 @@ def get_gtdb_tab():
             wprint(color_text("Reading in the GTDB info table...", "yellow"))
 
             # reporting version info
-            report_gtdb_version_info(GTDB_dir)
+            report_gtdb_version_info(GTDB_DIR)
 
-            gtdb_tab = pd.read_csv(GTDB_dir + "GTDB-arc-and-bac-metadata.tsv", sep="\t", low_memory=False)
+            gtdb_tab = pd.read_csv(GTDB_DIR + "GTDB-arc-and-bac-metadata.tsv", sep="\t", low_memory=False)
 
 
         # generating when table doesn't exist yet
         else:
             print("")
-            wprint(color_text("Downloading and parsing archaeal and bacterial metadata tables from GTDB (only needs to be done once)...", "yellow"))
+            wprint(color_text("Downloading and parsing archaeal and bacterial metadata tables from GTDB (only needs to be done once, or if there is a new version available)...", "yellow"))
+            print("")
 
-            gtdb_tab = gen_gtdb_tab(GTDB_dir)
+            gtdb_tab = gen_gtdb_tab(GTDB_DIR)
 
             # reporting version info
-            report_gtdb_version_info(GTDB_dir)
+            report_gtdb_version_info(GTDB_DIR)
 
             # copying to current directory if user just wants the table
             if args.get_table:
-                shutil.copy(GTDB_dir + "GTDB-arc-and-bac-metadata.tsv", "GTDB-arc-and-bac-metadata.tsv")
+                shutil.copy(GTDB_DIR + "GTDB-arc-and-bac-metadata.tsv", "GTDB-arc-and-bac-metadata.tsv")
                 print("")
                 wprint("GTDB table written to:")
                 print(color_text("    GTDB-arc-and-bac-metadata.tsv\n"))
                 sys.exit(0)
 
-    # if there is no GTDB_dir environmental variable (i.e. if not conda-installed)
+    # if there is no GTDB_DIR environmental variable (i.e. if not conda-installed)
     else:
         # checking if table and version info already exist in current directory
         if os.path.exists("GTDB-arc-and-bac-metadata.tsv") and os.path.exists("GTDB-version-info.txt"):
@@ -539,7 +540,8 @@ def get_gtdb_tab():
         else:
 
             print("")
-            wprint(color_text("Downloading and parsing archaeal and bacterial metadata tables from GTDB...", "yellow"))
+            wprint(color_text("Downloading and parsing archaeal and bacterial metadata tables from GTDB (only needs to be done once, or if there is a new version available)...", "yellow"))
+            print("")
 
             gtdb_tab = gen_gtdb_tab("./")
             report_gtdb_version_info("./")
