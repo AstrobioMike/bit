@@ -3,7 +3,6 @@
 from Bio import SeqIO
 import sys
 import argparse
-import os
 
 parser = argparse.ArgumentParser(description='This script will rename all sequences of a multifasta with the same name with an appended number to keep them unique. For version info, run `bit-version`.')
 
@@ -24,9 +23,9 @@ if len(sys.argv)==1:
 args = parser.parse_args()
 
 if args.prefix and args.suffix:
-	  print("\n  Both the '--prefix' and '--suffix' arguments cannot be provided at the same time.")
-	  print("  Provide only one please. Exiting for now.\n")
-	  sys.exit(1)
+	print("\n  Both the '--prefix' and '--suffix' arguments cannot be provided at the same time.")
+	print("  Provide only one please. Exiting for now.\n")
+	sys.exit(1)
 
 
 in_fasta = open(args.input_fasta, "r")
@@ -73,4 +72,3 @@ if args.suffix:
     out_fasta.close()
     
     sys.exit(0)
-
