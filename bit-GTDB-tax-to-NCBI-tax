@@ -152,6 +152,7 @@ def main():
         #### i'm starting to confuse myself, and thinking counting is not the best way, and what i actually did before was take a class name,
         ####    or whatever rank was appropriate, and added bacterium or archaeon to it
         #### i think that's the way to go, not yet sure how to automate it, i realize i did it semi-manually for BRAILLE MAGs
+        ####    maybe, whatever rank it's down to, count those just to that rank in ncbi, take highest, then make it <that rank> bacterium/archaeon
 
 
 
