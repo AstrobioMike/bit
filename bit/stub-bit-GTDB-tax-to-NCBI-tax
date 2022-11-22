@@ -8,14 +8,14 @@ It takes the tax of our newly classified MAGs/genomes, finds those in the GTDB m
 and choses the most abundant if there is not just one match.
 """
 
-print("\n\n    This program is just a stub right now, it was started but not finished.\n")
+print("\n\n    This program is just a stub right now, it was started but not finished after an easier path came up.\n")
 print("    The intent was for when we have new MAGs/genomes that we want to submit to NCBI,")
 print("    and we have taxonomy from the glorious GTDB (gtdb.ecogenomic.org/), but we need")
 print("    NCBI taxonomy also. This was starting to try to map to nearest based on the GTDB assigned")
 print("    tax. But a better way might just be to do a different, quick taxonomy assignment to NCBI.")
-print("    One quick way to do this could be with sourmash (). See here for example commands of sourmash gather")
-print("    and sourmash tax:)")
-print("        https://github.com/mblstamps/stamps2022/tree/main/kmers_and_sourmash#classify-the-taxonomy-of-the-mags-update-metagenome-classification\n\n")
+print("    One quick way to do this could be with sourmash (sourmash.readthedocs.io/en/latest/).")
+print("    See here for example commands of sourmash gather and sourmash tax:")
+print("        github.com/mblstamps/stamps2022/tree/main/kmers_and_sourmash#classify-the-taxonomy-of-the-mags-update-metagenome-classification\n\n")
 
 print("  Exiting now.\n\n")
 exit(0)
