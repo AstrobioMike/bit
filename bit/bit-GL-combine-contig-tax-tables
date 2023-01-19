@@ -168,14 +168,14 @@ def process_each_table(input_files, tax_dict, na_taxids):
     for i in range(len(input_files)):
         
 
-        tab = pd.read_csv(input_files[i], sep="\t", dtype = {'taxid': str})
+        tab = pd.read_csv(input_files[i], sep="\t", dtype = {'taxid': str}, low_memory = False)
 
         tax_dict, na_taxids = add_to_tax_dict(tab, tax_dict, na_taxids)
 
         # collapsing based on tax
             # first setting any taxids that are all NA at these standard ranks to "NA"
         tab.replace(na_taxids, NaN, inplace = True)
-        tax_tab = tab[['taxid', 'coverage']].groupby(by=['taxid'], dropna=False).sum()
+        tax_tab = tab[['taxid', 'coverage']].groupby(by = ['taxid'], dropna = False).sum()
         tax_collapsed_tabs.append(tax_tab)
 
     return(tax_collapsed_tabs, tax_dict)

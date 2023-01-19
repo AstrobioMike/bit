@@ -205,21 +205,21 @@ def process_each_table(input_files, KO_dict, tax_dict, na_taxids):
     for i in range(len(input_files)):
         
 
-        tab = pd.read_csv(input_files[i], sep="\t", dtype = {'taxid': str})
+        tab = pd.read_csv(input_files[i], sep="\t", dtype = {'taxid': str}, low_memory = False)
 
         KO_dict = add_to_KO_dict(tab, KO_dict)
 
         tax_dict, na_taxids = add_to_tax_dict(tab, tax_dict, na_taxids)
 
         # collapsing based on KO terms
-        KO_tab = tab[['KO_ID', 'coverage']].groupby(by=['KO_ID'], dropna=False).sum()
+        KO_tab = tab[['KO_ID', 'coverage']].groupby(by = ['KO_ID'], dropna = False).sum()
         
         KO_collapsed_tabs.append(KO_tab)
 
         # collapsing based on tax
             # first setting any taxids that are all NA at these standard ranks to "NA"
         tab.replace(na_taxids, NaN, inplace = True)
-        tax_tab = tab[['taxid', 'coverage']].groupby(by=['taxid'], dropna=False).sum()
+        tax_tab = tab[['taxid', 'coverage']].groupby(by = ['taxid'], dropna = False).sum()
         tax_collapsed_tabs.append(tax_tab)
 
 

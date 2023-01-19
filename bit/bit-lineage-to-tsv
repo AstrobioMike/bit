@@ -13,6 +13,9 @@ required.add_argument("-i", "--input-tsv", help = 'First column needs to be an i
 
 parser.add_argument("-o", "--output-tsv", help = 'Default: "formatted-tax.tsv"', action = "store", default = "formatted-tax.tsv")
 
+parser.add_argument("--make-taxid", help = "Provide this flag to make a unique taxid (string of all rank fields) for each lineage \
+                                            (will be added as second column of output)", action="store_true")
+
 args = parser.parse_args()
 
 
@@ -38,7 +41,13 @@ with open(args.input_tsv) as in_tab:
     with open(args.output_tsv, "w") as out_tab:
 
         # adding header
-        out_tab.write("seq_ID\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n")
+        if args.make_taxid:
+
+            out_tab.write("seq_ID\ttaxid\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n")
+
+        else:
+
+            out_tab.write("seq_ID\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n")
 
         for line in open(args.input_tsv):
 
@@ -67,6 +76,13 @@ with open(args.input_tsv) as in_tab:
                 lineage, t_genus = get_rank(lineage, "g__")
                 lineage, t_species = get_rank(lineage, "s__")
 
-                out_line = "\t".join([ID, t_domain, t_phylum, t_class, t_order, t_family, t_genus, t_species])
+                if args.make_taxid:
+
+                    taxid_string = "_".join([t_domain, t_phylum, t_class, t_order, t_family, t_genus, t_species]).replace(" ", "_")
+                    out_line = "\t".join([ID, taxid_string, t_domain, t_phylum, t_class, t_order, t_family, t_genus, t_species])
+
+                else:
+
+                    out_line = "\t".join([ID, t_domain, t_phylum, t_class, t_order, t_family, t_genus, t_species])
 
             out_tab.write(out_line + "\n")
