@@ -3,7 +3,6 @@
 if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
     printf "\n  Currently pulls genome summarize workflow from:\n"
     printf "      github.com/AstrobioMike/genome-assembly-summary\n\n"
-    printf "  For version info run \`GL-version\`.\n\n"
     exit
 fi
 
