@@ -56,7 +56,9 @@ Each command has a help menu accessible by either entering the command alone or 
 Due to increasing program restrictions as *bit* has grown, it's easiest to install it in its own environment as shown below:  
 
 ```
-conda create -n bit -c conda-forge -c bioconda -c defaults -c astrobiomike bit
+conda install -n base -c conda-forge mamba
+
+mamba create -n bit -c conda-forge -c bioconda -c defaults -c astrobiomike bit
 conda activate bit
 ```
 
