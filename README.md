@@ -73,7 +73,7 @@ If you happen to find *bit* useful in your work, please be sure to cite it 🙂
 
 You can get the version you are using by running `bit-version`.  
 
-If you are using a program in *bit* that also leverages another program, please be sure to cite them too. For instance, `bit-get-lineage-from-taxids` uses [TaxonKit](https://bioinf.shenwei.me/taxonkit/), and `bit-slim-down-go-terms` used [goatools](https://github.com/tanghaibao/goatools). For cases where a *bit* script relies on other programs like those, it will be indicated in the help menu of the *bit* program.  
+If you are using a program in *bit* that also leverages another program, please be sure to cite them too. For instance, `bit-get-lineage-from-taxids` uses [TaxonKit](https://bioinf.shenwei.me/taxonkit/), and `bit-slim-down-go-terms` uses [goatools](https://github.com/tanghaibao/goatools). For cases where a *bit* script relies on other programs like those, it will be indicated in the help menu of the *bit* program.  
 
 ---
 
