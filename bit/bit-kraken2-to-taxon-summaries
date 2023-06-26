@@ -18,7 +18,7 @@ U  A00159:145:H75T2DMXX:1:1102:6343:7560    unclassified (taxid 0)    271  0:237
 U  A00159:145:H75T2DMXX:1:1102:30101:11600  unclassified (taxid 0)    26   0:0
 U  A00159:145:H75T2DMXX:1:1101:19678:2221   unclassified (taxid 0)    279  0:245
 
-Unclassified are reported on one row with "Unclassified" specified at each rank.
+Unclassified are reported on one row with "Unclassified" specified at each rank. If names are included, like the example above, you would need to add the '--names-included' flag when running the program.
 """
 
 import sys
@@ -87,6 +87,7 @@ lineage_tab = pd.read_csv("bit-convert-kraken2-lineages.tmp", sep="\t")
 taxid_counts_df = pd.DataFrame.from_dict(taxid_counts_dict, orient="index").reset_index()
  # moving index to column and setting column names
 taxid_counts_df.rename(columns={"index":"taxid", 0:"read_counts"}, inplace=True)
+
  # setting to integer type so can be merged with lineage tab
 taxid_counts_df = taxid_counts_df.astype({"taxid":'int64'})
 
@@ -94,7 +95,14 @@ taxid_counts_df = taxid_counts_df.astype({"taxid":'int64'})
 combined_tab = lineage_tab.merge(taxid_counts_df).fillna("NA")
 
 # adding in unclassified row
-combined_tab = combined_tab.append({"taxid":0, "domain":"Unclassified", "phylum":"Unclassified", "class":"Unclassified", "order":"Unclassified", "family":"Unclassified", "genus":"Unclassified", "species":"Unclassified", "read_counts":unclassified_count}, ignore_index=True)
+    # pandas append deprecated and dropped as of pandas 2.0, using concat below
+# combined_tab = combined_tab.append({"taxid":0, "domain":"Unclassified", "phylum":"Unclassified", "class":"Unclassified", "order":"Unclassified", "family":"Unclassified", "genus":"Unclassified", "species":"Unclassified", "read_counts":unclassified_count}, ignore_index=True)
+unclassified_dict = {"taxid":0, "domain":"Unclassified", "phylum":"Unclassified", "class":"Unclassified", "order":"Unclassified", "family":"Unclassified", "genus":"Unclassified", "species":"Unclassified", "read_counts":unclassified_count}
+unclassified_tab = pd.DataFrame(unclassified_dict, index = [0]).reset_index()
+# dropping index column
+unclassified_tab = unclassified_tab.drop("index", axis = "columns")
+
+combined_tab = pd.concat([combined_tab, unclassified_tab], ignore_index = True)
 
 # adding in percent column
 combined_tab['percent_of_reads'] = combined_tab.read_counts / combined_tab.read_counts.sum() * 100
