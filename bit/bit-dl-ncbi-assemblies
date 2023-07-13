@@ -23,7 +23,7 @@ if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "help" ]; then
 
     printf "        - [-f <str>] default: genbank\n"
     printf "                  Specify the desired format. Available options currently\n"
-    printf "                  include: genbank, fasta, protein, gff, feature_tab, report, stats.\n\n"
+    printf "                  include: genbank, fasta, protein, nt_cds, gff, feature_tab, report, stats.\n\n"
 
     printf "        - [-j <int> ] default: 1\n"
     printf "                  The number of downloads you'd like to run in parallel. Write speeds\n"
@@ -66,9 +66,9 @@ if [ ! -n "$NCBI_acc_file" ]; then
 fi
 
 ## making sure format specified is interpretable
-if [[ "$format" != "genbank" && $format != "fasta" && $format != "protein" && $format != "gff" && $format != "feature_tab" && $format != "report" && $format != "stats" ]]; then
+if [[ "$format" != "genbank" && $format != "fasta" && $format != "protein" && $format != "nt_cds" && $format != "gff" && $format != "feature_tab" && $format != "report" && $format != "stats" ]]; then
     printf "\n  ${RED}Invalid argument passed to \'-f' option: $format\n\n${NC}"
-    printf "  Valid options are genbank, fasta, protein, or gff.\n"
+    printf "  Valid options are genbank, fasta, protein, gff, nt_cds, feature_tab, report, or stats.\n"
     printf "Exiting for now.\n\n"
     exit
 fi
@@ -174,7 +174,7 @@ if [ ! -s ncbi_assembly_info.tsv ]; then
     
     printf "\n    ${YELLOW}Assembly summary tables downloaded successfully. They are stored\n"
     printf "    in the current working directory as \"ncbi_assembly_info.tsv\".\n"
-    printf "    That file is left here in you'd like to use it again soon. But be\n"
+    printf "    That file is left here in case you'd like to use it again soon. But be\n"
     printf "    sure to delete it if you'd like. Now getting to work on our targets.${NC}\n\n"
 
 fi
@@ -221,6 +221,9 @@ elif [ $format == "protein" ]; then
 elif [ $format == "gff" ]; then
     ext="_genomic.gff.gz"
     my_ext=".gff.gz"
+elif [ $format == "nt_cds" ]; then
+    ext="_cds_from_genomic.fna.gz"
+    my_ext="_cds_from_genomic.fna.gz"
 elif [ $format == "feature_tab" ]; then
     ext="_feature_table.txt.gz"
     my_ext=".tsv.gz"
