@@ -1,0 +1,69 @@
+#!/usr/bin/env python
+import sys
+import argparse
+import os
+
+parser = argparse.ArgumentParser(description='This script is for creating a standard iToL colorstrip dataset file when given the IDs of the genomes we want to color (formatting comes from iToL help page here: https://itol.embl.de/help/dataset_color_strip_template.txt). For version info, run `bit-version`.')
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-g", "--target-genomes", help='Single-column file with the genomes to color (need to match the IDs in the tree file, with no ">")', action="store", required=True)
+parser.add_argument("-l", "--label", help='Label used in the legend table (default: "label1")', action="store", default="label1")
+parser.add_argument("-c", "--color", help='Color to use, pre-baked options include "blue", "green", "red", "purple", or "black", or can provide the hexcode (default: "blue", of course, \'cause it\'s the best)', action="store", default="blue")
+parser.add_argument("-w", "--width", help='width of the colorstrip (default: 25)', action="store", default="25")
+parser.add_argument("--color-branches-too", help="Add this flag if wanting to color branches also", action="store_true")
+parser.add_argument("-o", "--output_file", help='Output file for iToL (default: "iToL-colorstrip.txt")', action="store", dest="output_file", default="iToL-colorstrip.txt")
+
+
+
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(0)
+
+args = parser.parse_args()
+
+if args.color == "blue":
+    col = "#434da7"
+elif args.color == "green":
+    col = "#48a743"
+elif args.color == "red":
+    col = "#c01820"
+elif args.color == "purple":
+    col = "#512f9c"
+elif args.color == "black":
+    col = "#000000"
+else:
+    if not args.color.startswith("#"):
+        print("\n\tSorry, we're not prepared to handle \"" + str(args.color) + "\" as the color... :(\n")
+        parser.print_help(sys.stderr)
+        sys.exit(1)
+    else:
+        col = args.color
+
+target_list = []
+
+with open(args.target_genomes, "r") as target_genomes:
+    for genome in target_genomes:
+        target_list.append(genome.strip())
+
+out_file = open(args.output_file, "w")
+
+out_file.write("DATASET_COLORSTRIP" + "\n" + "SEPARATOR TAB" + "\n\n" + "DATASET_LABEL" + "\t" + str(args.label) + "\n" + "COLOR" + "\t" + str(col) + "\n\n")
+
+if args.color_branches_too:
+    out_file.write("COLOR_BRANCHES\t1\n\n")
+else:
+    out_file.write("COLOR_BRANCHES\t0\n\n")
+
+out_file.write("STRIP_WIDTH" + "\t" + str(args.width) + "\n\n")
+
+out_file.write("BORDER_WIDTH" + "\t" + "1" + "\n")
+out_file.write("BORDER_COLOR" + "\t" + "#999999" + "\n\n")
+
+out_file.write("DATA\n\n")
+
+# writing out primary data lines
+for target in target_list:
+    out_file.write(str(target) + "\t" + str(col) + "\t" + str(args.label) + "\n")
+
+out_file.close()

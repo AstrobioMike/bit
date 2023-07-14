@@ -1,0 +1,29 @@
+#!/usr/bin/env python
+
+from pybedtools import BedTool
+import sys
+import argparse
+import os
+
+parser = argparse.ArgumentParser(description='This script takes a multifasta file and tab-delimited file specifying which contigs and coordinates are wanted and returns a multifasta of the chopped out sequences. NOTE: It requires the python package "pybedtools". For version info, run `bit-version`.')
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input_fasta", help="Starting fasta file", action="store", dest="input_fasta", required=True)
+required.add_argument("-b", "--bed_file", help="Bed file of desired contigs and coordinates (3 columns - contig, start, end - no header, 0-based counting", dest="bed_file", required=True)
+parser.add_argument("-o", "--output_fasta", help='Name of output fasta file (default: "Extracted_seqs.fa")', action="store", dest="output_fasta", default="Extracted_seqs.fa")
+
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(0)
+
+args = parser.parse_args()
+
+coordinates_file = BedTool(args.bed_file)
+fasta = BedTool(args.input_fasta)
+seq = coordinates_file.sequence(fi=fasta)
+
+out_fasta = open(args.output_fasta, "w")
+out_fasta.write(open(seq.seqfn).read())
+
+out_fasta.close()

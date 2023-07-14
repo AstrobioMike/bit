@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+if [ "$#" == 0 ] || [ $1 == "-h" ]; then
+    printf "\n  This script removes line wraps from a fasta file. For version\n"
+    printf "  info, run \`bit-version\`.\n\n"
+    printf "    Usage:\n\t bit-remove-wraps input.fasta > new.fasta\n\n"
+    exit
+fi
+
+if [ -f $1 ]; then
+    awk '!/^>/ { printf "%s", $0; n="\n" } /^>/ { print n $0; n = "" } END { printf "%s", n }' "$1"
+    echo -e "     ${GREEN}Annoying line wraps removed! Cheers!${NC}" 1>&2
+
+else
+    echo -e "     ${RED}Input file not found :/${NC}" 1>&2
+    exit 1
+fi

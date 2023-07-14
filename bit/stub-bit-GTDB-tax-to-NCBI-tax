@@ -1,0 +1,202 @@
+#!/usr/bin/env python
+
+"""
+This is a helper program for when we want to upload new MAGs or genomes to NCBI, have them classified with 
+the glorious Genome Taxonomy Database (gtdb.ecogenomic.org/), but need NCBI taxonomy for submission to NCBI. 
+
+It takes the tax of our newly classified MAGs/genomes, finds those in the GTDB metadata, gets the associated NCBI info,
+and choses the most abundant if there is not just one match.
+"""
+
+print("\n\n    This program is just a stub right now, it was started but not finished after an easier path came up.\n")
+print("    The intent was for when we have new MAGs/genomes that we want to submit to NCBI,")
+print("    and we have taxonomy from the glorious GTDB (gtdb.ecogenomic.org/), but we need")
+print("    NCBI taxonomy also. This was starting to try to map to nearest based on the GTDB assigned")
+print("    tax. But a better way might just be to do a different, quick taxonomy assignment to NCBI.")
+print("    One quick way to do this could be with sourmash (sourmash.readthedocs.io/en/latest/).")
+print("    See here for example commands of sourmash gather and sourmash tax:")
+print("        github.com/mblstamps/stamps2022/tree/main/kmers_and_sourmash#classify-the-taxonomy-of-the-mags-update-metagenome-classification\n\n")
+
+print("  Exiting now.\n\n")
+exit(0)
+
+# import sys
+# import os
+# import urllib.request
+# import tarfile
+# import pandas as pd
+# import textwrap
+# import argparse
+# import shutil
+# import filecmp
+# from subprocess import run
+# from collections import Counter
+
+# parser = argparse.ArgumentParser(description="This is a helper program for when we want to upload new MAGs or genomes to NCBI,\
+#                                               have them classified with the glorious Genome Taxonomy Database (gtdb.ecogenomic.org/),\
+#                                               but need NCBI taxonomy for submission to NCBI.\n\n\
+#                                               \
+#                                               It takes the tax of our newly classified MAGs/genomes (from GTDB output), finds those in \
+#                                               the GTDB metadata, gets the associated NCBI info, and choses the most abundant \
+#                                               if there is not just one match.",
+#                                  epilog="Ex. usage: bit-new-GTDB-tax-to-NCBI-tax -i primary-GTDB-output-tsv. -o GTDB-and-reasonable-NCBI-tax-map.tsv\n")
+
+# required = parser.add_argument_group('required arguments')
+
+# required.add_argument("-i", "--input_table", help = "Primary output table from GTDB", action = "store", required = True)
+# parser.add_argument("-o", "--output_table", help = 'Output table (default: "GTDB-and-reasonable-NCBI-tax-map.tsv").', default = "GTDB-and-reasonable-NCBI-tax-map.tsv")
+
+# if len(sys.argv)==1:
+#     parser.print_help(sys.stderr)
+#     sys.exit(0)
+
+
+# args = parser.parse_args()
+
+# ################################################################################
+
+# def main():
+
+#     # checking or getting GTDB metadata (currently only supports latest)
+#     check_or_setup_db_process = run(["helper-bit-check-or-setup-GTDB-files.py"])
+
+#     if check_or_setup_db_process.returncode != 0: 
+#         exit(1)
+
+#     in_tab = pd.read_csv(args.input_table, sep = "\t", usecols = [0,1])
+
+#     search_dict = dict(zip(in_tab.user_genome, in_tab.classification))
+
+#     hit_dict = { key: "" for key in search_dict.keys() }
+
+#     # print(search_dict)
+#     # print(hit_dict)
+    
+#     gtdb_tab_path = os.environ["GTDB_DIR"] + "GTDB-arc-and-bac-metadata.tsv"
+    
+#     gtdb_tab = pd.read_csv(gtdb_tab_path, sep = "\t", usecols = [0,23,69,84,85])
+
+#     # starting output table
+#     out_tab = pd.DataFrame(columns = ["user_genome", "gtdb_classification", "majority_ncbi_taxid", "majority_ncbi_tax", "majority_ncbi_organism_name"])
+#     out_tab.user_genome = in_tab.user_genome
+#     out_tab.gtdb_classification = in_tab.classification
+
+#     # starting lists for info populated as we go
+#     majority_ncbi_taxid_list = []
+#     majority_ncbi_tax_list = []
+#     majority_ncbi_org_name_list = []
+
+#     # first looping through inputs (though overall will likely be faster to loop through the big GTDB tab once)
+#         # will re-visit that after i figure out the main process
+
+#     for genome_ID, gtdb_tax in search_dict.items():
+
+#         # starting lists for current possible entries (can add identical values to these then count all at end)
+#         curr_ncbi_taxid_list = []
+#         curr_ncbi_tax_list = []
+#         curr_ncbi_org_name_list = []
+
+#         print(genome_ID)
+#         print(gtdb_tax)
+
+#         # some are not fully classified, e.g.,:
+#             # "d__Bacteria;p__Proteobacteria;c__Alphaproteobacteria;o__Rhizobiales;f__Beijerinckiaceae;g__Methylobacterium;s__"
+#             # i don't yet know what it looks like if higher, like if it does this:
+#                 # "d__Bacteria;p__Proteobacteria;c__Alphaproteobacteria;o__Rhizobiales;f__Beijerinckiaceae;g__;s__"
+#             # or this:
+#                 # "d__Bacteria;p__Proteobacteria;c__Alphaproteobacteria;o__Rhizobiales;f__Beijerinckiaceae;g__"
+
+#         # for those, we need to: 
+#         #    only check up to only that spot in the gtdb ref table taxonomy
+#         #    take all that have it
+#         #    count the unique ones
+#         #    and return only the most abundant
+
+#         for rank_string in ["d__", ";p__", ";c__", ";o__", ";f__", ";g__", ";s__"]:
+
+#             if gtdb_tax.endswith(rank_string):
+
+#                 for index, row in gtdb_tab.iterrows():
+
+#                     curr_row_cut_tax = row["gtdb_taxonomy"].rsplit(rank_string, 1)[0] + rank_string
+
+#                     if curr_row_cut_tax == gtdb_tax:
+
+#                         curr_ncbi_taxid_list.append(round(row["ncbi_taxid"]))
+#                         curr_ncbi_tax_list.append(row["ncbi_taxonomy"].rsplit(rank_string, 1)[0])
+#                         curr_ncbi_org_name_list.append(row["ncbi_organism_name"])
+
+#             else:
+
+#                 for index, row in gtdb_tab.iterrows():
+
+#                     if row["gtdb_taxonomy"] == gtdb_tax:
+
+#                         curr_ncbi_taxid_list.append(round(row["ncbi_taxid"]))
+#                         curr_ncbi_tax_list.append(row["ncbi_taxonomy"])
+#                         curr_ncbi_org_name_list.append(row["ncbi_organism_name"])
+
+
+#         curr_ncbi_taxid_counts_dict = dict(Counter(curr_ncbi_taxid_list))
+#         curr_ncbi_tax_counts_dict = dict(Counter(curr_ncbi_tax_list))
+#         curr_ncbi_org_name_counts_dict = dict(Counter(curr_ncbi_org_name_list))
+
+#         # sorting them to be able to pick the highest
+#         curr_ncbi_taxid_counts_pairs = ((value, key) for (key, value) in curr_ncbi_taxid_counts_dict.items())
+#         curr_ncbi_tax_counts_pairs = ((value, key) for (key, value) in curr_ncbi_tax_counts_dict.items())
+#         curr_ncbi_org_name_counts_pairs = ((value, key) for (key, value) in curr_ncbi_org_name_counts_dict.items())
+
+#         curr_ncbi_taxid_counts_pairs_sorted = sorted(curr_ncbi_taxid_counts_pairs, reverse = True)
+#         curr_ncbi_tax_counts_pairs_sorted = sorted(curr_ncbi_tax_counts_pairs, reverse = True)
+#         curr_ncbi_org_name_counts_pairs_sorted = sorted(curr_ncbi_org_name_counts_pairs, reverse = True)
+
+#         curr_ncbi_taxid_counts_sorted_dict = {key: value for value, key in curr_ncbi_taxid_counts_pairs_sorted}
+#         curr_ncbi_tax_counts_sorted_dict = {key: value for value, key in curr_ncbi_tax_counts_pairs_sorted}
+#         curr_ncbi_org_name_counts_sorted_dict = {key: value for value, key in curr_ncbi_org_name_counts_pairs_sorted}
+
+#         print(curr_ncbi_taxid_counts_sorted_dict)
+#         print(curr_ncbi_tax_counts_sorted_dict)
+#         print(curr_ncbi_org_name_counts_sorted_dict)
+
+#         #### i stopped here, testing with the following:
+#             # python ./bit-GTDB-tax-to-NCBI-tax -i ~/temp/gtdbtk.bac120.summary.tsv
+
+#         #### i'm starting to confuse myself, and thinking counting is not the best way, and what i actually did before was take a class name,
+#         ####    or whatever rank was appropriate, and added bacterium or archaeon to it
+#         #### i think that's the way to go, not yet sure how to automate it, i realize i did it semi-manually for BRAILLE MAGs
+#         ####    maybe, whatever rank it's down to, count those just to that rank in ncbi, take highest, then make it <that rank> bacterium/archaeon
+
+
+
+#             # for index, row in gtdb_tab.iterrows():
+
+#             #     if row["gtdb_taxonomy"] == value:
+
+#             #         print(row)
+
+
+# ################################################################################
+
+# # setting some colors
+# tty_colors = {
+#     'green' : '\033[0;32m%s\033[0m',
+#     'yellow' : '\033[0;33m%s\033[0m',
+#     'red' : '\033[0;31m%s\033[0m'
+# }
+
+
+# ### functions ###
+# def color_text(text, color='green'):
+#     if sys.stdout.isatty():
+#         return tty_colors[color] % text
+#     else:
+#         return text
+
+
+# def wprint(text):
+#     print(textwrap.fill(text, width=80, initial_indent="  ", 
+#           subsequent_indent="  ", break_on_hyphens=False))
+
+
+# if __name__ == "__main__":
+#     main()

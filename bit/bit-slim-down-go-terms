@@ -1,0 +1,59 @@
+#!/usr/bin/env python
+
+## learned most goatools/python things from this great tutorial: GO Tutorial in Python - Solutions.ipynb, which comes from here: http://gohandbook.org/doku.php ; https://nbviewer.jupyter.org/urls/dessimozlab.github.io/go-handbook/GO%20Tutorial%20in%20Python%20-%20Solutions.ipynb
+
+import os
+import argparse
+import pandas as pd
+import sys
+import subprocess
+
+parser = argparse.ArgumentParser(description='This script wraps the goatools `map_to_slim.py` program (github.com/tanghaibao/Goatools#map-go-terms-to-goslim-terms). \
+                                              See there for more details, and if you use it in your work, be sure to properly cite them :) \
+                                              https://www.nature.com/articles/s41598-018-28948-z. It is included here to streamline integration with \
+                                              with the GO databases stored with `bit` and programs like `bit-summarize-go-annotations`. Stored databases \
+                                              can be updated with `bit-update-go-dbs`. For version info, run `bit-version`.')
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-a", "--association_file", help="Input annotations file. 2-column, tab-delimited, where the first column holds gene IDs, and the second column holds GO terms (can be multiple delimited with a semi-colon).", action="store", dest="input_ass_file", required=True)
+parser.add_argument("-g", "--initial_GO_obo_file", help='Initial GO obo file holding relationships of all terms used to perform the annotation (e.g. from: geneontology.org/docs/download-ontology/). By default will \
+                                                         this program will use "go-basic.obo" that is stored with `bit`. Or a different obo-formatted file can be specified here.',
+                    action="store", dest="initial_obo", default="go_basic")
+parser.add_argument("-s", "--slimmed_GO_obo_file", help='Slimmed GO obo file holding relationships to collapse GO terms (e.g. from: geneontology.org/docs/download-ontology/#subsets;). By default will \
+                                                         use "goslim_metagenomics.obo" that is stored with `bit`. Or a different obo-formatted file can be specified here.',
+                    action="store", dest="slimmed_obo", default="goslim_metagenomics")
+parser.add_argument("-m", "--mode", help='Set if the slimmer should return only direct ancestors, or all ancestors. Default setting is to return all.',
+                    choices=["all", "direct"], action="store", dest="mode", default="all")
+
+parser.add_argument("-o", "--output_file", help='Name for output slimmed annotation file. (default: "GO-slimmed.tsv").', action="store", dest="output_tab", default="GO-slimmed.tsv")
+
+if len(sys.argv)==1:
+  parser.print_help(sys.stderr)
+  sys.exit(0)
+
+args = parser.parse_args()
+
+### checking and setting up obo file locations
+go_data_dir = os.environ["GO_DB_DIR"]
+
+## downloading default GO databases if they are not present already
+checking_db_dir = subprocess.run(["helper-bit-setup-GO-dbs"])
+
+if args.initial_obo == "go_basic":
+    initial_obo = go_data_dir + "go-basic.obo"
+
+else:
+    initial_obo = args.initial_obo
+
+if args.slimmed_obo == "goslim_metagenomics":
+    slim_obo = go_data_dir + "goslim_metagenomics.obo"
+
+else:
+    slim_obo = args.slimmed_obo
+
+### building and running call to map_to_slim.py
+with open(args.output_tab, "w") as output:
+    map_to_slim = subprocess.run(["map_to_slim.py", "--association_file", args.input_ass_file, "--slim_out", args.mode, initial_obo, slim_obo], stdout=output)
+    map_to_slim
+

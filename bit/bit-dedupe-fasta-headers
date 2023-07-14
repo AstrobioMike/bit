@@ -1,0 +1,40 @@
+#!/usr/bin/env python
+
+from Bio import SeqIO
+import sys
+import argparse
+import os
+
+parser = argparse.ArgumentParser(description='This script will append a number to headers if that exact ID has already appeared in the fasta file. For version info, run `bit-version`.')
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input_fasta", help="Starting fasta file", action="store", dest="input_fasta", required=True)
+parser.add_argument("-o", "--output_fasta_name", help='Output fasta file (default: "Renamed.fasta").', dest="output_fasta_name", default="Renamed.fasta")
+
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(0)
+
+args = parser.parse_args()
+
+in_fasta = open(args.input_fasta, "r")
+out_fasta = open(args.output_fasta_name, "w")
+
+ids = {}
+
+for seq_record in SeqIO.parse(in_fasta, "fasta"):
+
+    if seq_record.id not in ids:
+        ids[seq_record.id] = 1
+        out_fasta.write(">" + seq_record.id + "\n")
+        out_fasta.write(str(seq_record.seq) + "\n")
+
+    else:
+        count = ids[seq_record.id] + 1
+        ids[seq_record.id] = count
+        out_fasta.write(">" + seq_record.id + "_" + str(count) + "\n")
+        out_fasta.write(str(seq_record.seq) + "\n")
+
+in_fasta.close()
+out_fasta.close()

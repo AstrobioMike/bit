@@ -1,0 +1,190 @@
+#!/usr/bin/env bash
+set -e
+
+########################################################################
+# This comes from, and has been modified from, the figshare docs here: #
+# https://docs.figshare.com/#upload_files_upload_bash_script           #
+#                                                                      #
+# Primarily modified to be able to handle larger files                 #
+########################################################################
+
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+RED='\033[0;31m'
+NC='\033[0m'
+
+
+### help menu
+if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "--help" ]; then
+    printf "\n  This script is to enable command-line uploading of single files to figshare.\n"
+    printf "  It has been modified (primarily to be able to deal with larger files) from\n"
+    printf "  the example in the figshare docs here:\n"
+    printf "    ${YELLOW}https://docs.figshare.com/#upload_files_upload_bash_script${NC}\n\n"
+
+    printf "  It requires that the shell environment variable 'FIGSHARE_TOKEN' holds\n"
+    printf "  your figshare access token. See here for info on generating that:\n"
+    printf "    ${YELLOW}https://help.figshare.com/article/how-to-get-a-personal-token${NC}\n\n"
+
+    printf "  The file we want to upload to figshare should be provided as a positional\n"
+    printf "  argument. Additional metadata for 'publishing' on figshare needs to be entered\n"
+    printf "  at the site after the command-line upload. For version info, run \`bit-version\`.\n\n"
+
+    printf "    Usage:\n\t bit-figshare-upload file-to-upload.tsv\n\n"
+
+    exit
+fi
+
+# checking token is set
+if [ -z ${FIGSHARE_TOKEN} ]; then
+
+    printf "\n  ${YELLOW}This script requires that the shell environment variable\n"
+    printf "  'FIGSHARE_TOKEN' be set to your figshare access token. See here for info on getting one:\n${NC}"
+    printf "    ${YELLOW}https://help.figshare.com/article/how-to-get-a-personal-token${NC}\n\n"
+
+    printf "\nExiting for now.\n\n"
+
+    exit 1
+
+fi
+
+BASE_URL='https://api.figshare.com/v2/account/articles'
+ACCESS_TOKEN=${FIGSHARE_TOKEN}
+FILE_NAME=${1}
+FILE_PATH=${PWD}/${FILE_NAME}
+
+# ####################################################################################
+
+printf "\n"
+printf "        ${YELLOW}Attempting to upload ${1}${NC}\n\n"
+
+# Retrieve the file size and MD5 values for the item which needs to be uploaded
+# the initial way this was written, `stat` would fail on darwin distributions
+# FILE_SIZE=$(stat -c%s $FILE_PATH)
+# so doing it this way, which in my testing works at least on on ubuntu and darwin
+FILE_SIZE=$(ls -lt ${1} | tr -s " " | cut -f 5 -d " ")
+
+printf "${YELLOW}Generating needed md5sum...\n${NC}"
+MD5=($(md5sum $FILE_PATH))
+printf "  ${MD5}\n\n"
+
+
+# List all of the existing items
+# echo 'List all of the existing items...'
+# RESPONSE=$(curl -s -f -H 'Authorization: token '$ACCESS_TOKEN -X GET "$BASE_URL")
+# echo "The item list dict contains: "$RESPONSE
+# echo ''
+
+
+# Create a new item
+printf "${YELLOW}Creating a new item...\n${NC}"
+RESPONSE=$(curl -s -f -d '{"title": "Sample upload item"}' -H 'Authorization: token '$ACCESS_TOKEN -H 'Content-Type: application/json' -X POST "$BASE_URL")
+LOCATION=$(echo "$RESPONSE" | sed -r 's/.*"location": //' | sed 's/,.*//' | tr -d '"')
+echo "  The location of the created item is "$LOCATION
+printf "\n"
+
+# Retrieve item id
+printf "${YELLOW}Retrieving the item ID...\n${NC}"
+ITEM_ID=$(echo "$RESPONSE" | sed -r "s/.*\/([0-9]+).*/\1/")
+echo "  The item id is "$ITEM_ID
+printf "\n"
+
+# # List item files
+# echo 'Retrieving the item files...'
+# printf "${YELLOW}\n${NC}"
+# FILES_LIST=$(curl -s -f -H 'Authorization: token '$ACCESS_TOKEN -X GET "$BASE_URL/$ITEM_ID/files")
+# echo 'The files list of the newly-create item should be an empty one. Returned results: '$FILES_LIST
+# printf "\n\n"
+
+# Initiate new upload:
+printf "${YELLOW}A new upload has been initiated...\n${NC}"
+RESPONSE=$(curl -s -f -d '{"md5": "'${MD5}'", "name": "'${FILE_NAME}'", "size": '${FILE_SIZE}'}' -H 'Content-Type: application/json' -H 'Authorization: token '$ACCESS_TOKEN -X POST "$BASE_URL/$ITEM_ID/files")
+LOCATION=$(echo "$RESPONSE" | sed -r 's/.*"location": //' | sed 's/,.*//' | tr -d '"' | tr -d '}')
+echo '  The location of the uploaded file will be: '$LOCATION
+printf "\n"
+
+# Retrieve file id
+printf "${YELLOW}The file id is retrieved...\n${NC}"
+FILE_ID=$(echo "$RESPONSE" | sed -r "s/.*\/([0-9]+).*/\1/")
+echo '  The file id is: '$FILE_ID
+printf "\n"
+
+# Retrieve the upload url
+printf "${YELLOW}Retrieving the upload URL...\n${NC}"
+RESPONSE=$(curl -s -f -H 'Authorization: token '$ACCESS_TOKEN -X GET "$BASE_URL/$ITEM_ID/files/$FILE_ID")
+
+# this way was not working on darwin
+# UPLOAD_URL=$(echo "$RESPONSE" | sed -r 's/.*"upload_url":\s"([^"]+)".*/\1/')
+# so done like so, which in my testing works at least on on ubuntu and darwin
+UPLOAD_URL=$(echo "$RESPONSE" | sed -r 's/.*"upload_url": //' | sed 's/,.*//' | tr -d '"')
+echo '  The upload URL is: '$UPLOAD_URL
+printf "\n"
+
+# Retrieve the upload parts
+# printf "${YELLOW}Retrieving the part value...\n${NC}"
+RESPONSE=$(curl -s -f -H 'Authorization: token '$ACCESS_TOKEN -X GET "$UPLOAD_URL")
+PARTS_SIZE=$(echo "$RESPONSE" | sed -r 's/"endOffset":([0-9]+).*/\1/' | sed -r 's/.*,([0-9]+)/\1/')
+PARTS_SIZE=$(($PARTS_SIZE+1))
+# echo 'The part value is: '$PARTS_SIZE
+# printf "\n"
+
+
+# Split item into needed parts
+printf "${YELLOW}Splitting the provided item into parts...\n${NC}"
+split -a 6 -b $PARTS_SIZE $FILE_PATH part_ --numeric=1
+# echo 'Splitting process completed!'
+
+# getting list of part-file numbers to be able to iterate over them (part of changing how we are sending them in the loop below)
+ls part_* | cut -f 2 -d "_" | sort -n > parts-order.tmp
+
+# Retrive the number of parts
+MAX_PART=$(tail -n 1 parts-order.tmp)
+
+# MAX_PART=$((($FILE_SIZE+$PARTS_SIZE-1)/$PARTS_SIZE))
+echo '  The total number of parts is: '$MAX_PART
+echo ''
+
+
+# Perform the PUT operation of parts
+printf "${YELLOW}Performing the PUT operation of parts...\n${NC}"
+
+## this failed if over 100 parts were needed, rewrote so works with larger files too
+# for ((i=1; i<=$MAX_PART; i++))
+# do
+#     PART_VALUE='part_'$i
+#     if [ "$i" -le 9 ]
+#     then
+#         PART_VALUE='part_0'$i
+#     fi
+#     RESPONSE=$(curl -s -f -H 'Authorization: token '$ACCESS_TOKEN -X PUT "$UPLOAD_URL/$i" --data-binary @$PART_VALUE)
+#     echo "  Done uploading part nr: $i/"$MAX_PART
+# done
+
+
+for i in $(cat parts-order.tmp); do
+
+    PART_VALUE="part_${i}"
+
+    RESPONSE=$(curl -s -f -H 'Authorization: token '$ACCESS_TOKEN -X PUT "$UPLOAD_URL/$i" --data-binary @$PART_VALUE)
+
+    echo "  Done uploading part: $i/"$MAX_PART
+
+done
+
+echo '  Process was finished!'
+echo ''
+
+
+# Complete upload
+printf "${YELLOW}Completing the file upload...\n${NC}"
+RESPONSE=$(curl -s -f -H 'Authorization: token '$ACCESS_TOKEN -X POST "$BASE_URL/$ITEM_ID/files/$FILE_ID")
+
+#remove the part files
+rm part_* parts-order.tmp
+
+printf "\n        ${GREEN}DONE!${NC}\n\n"
+
+
+# List all of the existing items
+# RESPONSE=$(curl -s -f -H 'Authorization: token '$ACCESS_TOKEN -X GET "$BASE_URL")
+# echo 'New list of items: '$RESPONSE
+# echo ''

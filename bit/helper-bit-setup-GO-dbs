@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+set -e
+
+## This is a helper script to setup the GO databases if they aren't already present
+
+YELLOW='\033[0;33m'
+NC='\033[0m'
+
+# checking env var is set
+
+if [ -z ${GO_DB_DIR} ]; then
+
+    printf "${YELLOW}  The environment variable 'GO_DB_DIR' does not seem to be set :(${NC}\n"
+    printf "  This should have been handled automatically if things were installed with conda.\n"
+    printf "  If you can't sort this out, please feel free to post an issue here:"
+    printf "        github.com/AstrobioMike/bit/issues\n\n"
+
+    exit
+
+fi
+
+if [ ! -s ${GO_DB_DIR}/go-basic.obo ] || [ ! -s ${GO_DB_DIR}/goslim_metagenomics.obo ]; then
+
+    rm -rf ${GO_DB_DIR}/go-basic.obo ${GO_DB_DIR}/goslim_metagenomics.obo ${GO_DB_DIR}/conda-placeholder
+
+    printf "\n    ${YELLOW}Downloading required GO data (only needs to be done once)...${NC}\n"
+
+    curl -L --silent --retry 10 -o ${GO_DB_DIR}/go-basic.obo http://purl.obolibrary.org/obo/go/go-basic.obo
+    curl -L --silent --retry 10 -o ${GO_DB_DIR}/goslim_metagenomics.obo http://current.geneontology.org/ontology/subsets/goslim_metagenomics.obo
+
+fi

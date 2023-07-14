@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+version='1.8.61'
+
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+printf "\n\t\tBioinformatics Tools ${GREEN}v${version}${NC}\n"
+printf "\t\tgithub.com/AstrobioMike/bit\n\n"
+
+printf "    If you happen to find this toolset useful in your work, please be sure to\n"
+printf "    cite it :)\n\n"
+
+printf "  Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122\n"
+printf "  https://doi.org/10.12688/f1000research.79530.1\n\n"
+
+today=$(date +'%A')
+
+printf "                                                   ${GREEN}Happy $today :)${NC}\n\n"

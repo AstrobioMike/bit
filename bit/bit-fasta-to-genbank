@@ -1,0 +1,34 @@
+#!/usr/bin/env python
+
+import argparse
+import sys
+from Bio import SeqIO
+from Bio.Alphabet import generic_dna
+import os
+
+parser = argparse.ArgumentParser(description="This script takes a fasta file and converts it into genbank format. For version info, run `bit-version`.")
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument('-i', '--input_fasta_file', action='store', dest='input_fasta', help='input fasta file', required=True)
+parser.add_argument("-o", "--output_genbank_file", action="store", dest="output_gb", default="new.gb", help='Output genbank file (default: "new.gb")')
+
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(0)
+
+args = parser.parse_args()
+
+input_fasta = open(args.input_fasta, "r")
+
+output_gb = open(args.output_gb, "w")
+
+sequences = list(SeqIO.parse(input_fasta, "fasta"))
+
+for seq in sequences:
+    seq.seq.alphabet = generic_dna
+
+SeqIO.write(sequences, output_gb, "genbank")
+
+input_fasta.close()
+output_gb.close()

@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+
+set -e
+
+if [ ! -z $1 ]; then
+    printf "\n  This script updates the GO obo files \"go-basic.obo\" \n"
+    printf "  and \"goslim_metagenomics.obo\" from the GO reference site\n"
+    printf "  (http://geneontology.org/docs/download-ontology/) to support\n"
+    printf "  programs like \`bit-summarize-go-annotations\`. For version info,\n"
+    printf "  run \`bit-version\`.\n\n"
+    printf "    Usage:\n\t bit-update-go-dbs\n\n"
+    exit
+fi
+
+# setting colors to use
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+printf "\n"
+
+curl -L --retry 10 -o ${GO_DB_DIR}/go-basic.obo http://purl.obolibrary.org/obo/go/go-basic.obo
+curl -L --retry 10 -o ${GO_DB_DIR}/goslim_metagenomics.obo http://current.geneontology.org/ontology/subsets/goslim_metagenomics.obo
+
+printf "\n\t\t${GREEN}The GO basic and metagenomics slim obo files have been updated!${NC}\n\n"
