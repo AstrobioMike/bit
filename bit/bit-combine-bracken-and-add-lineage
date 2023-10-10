@@ -53,6 +53,9 @@ if [ ! -n "$input_file" ]; then
     exit
 fi
 
+### SETTING THE TAXONKIT DATABASE TO DEFAULT EXPECTED DB IF NOT PROVIDED
+clean_database=${database:-"~/.taxonkit"}
+
 
 ### COMBINING MULTIPLE BRACKEN OUTPUT TABLES ###
 
@@ -74,7 +77,7 @@ fi
 
 ### GETTING FULL LINEAGE INFO WITH TAXONKIT ###
 printf "\n\t${GREEN}Getting full lineage info...${NC}\n\n"
-tail -n +2 combined-bracken.tmp | cut -f 2 | taxonkit lineage --data-dir ${database} | taxonkit reformat --data-dir ${database} -r NA | cut -f 3 | tr ";" "\t" | cut -f 1-7 > lineages.tmp
+tail -n +2 combined-bracken.tmp | cut -f 2 | taxonkit lineage --data-dir ${clean_database} | taxonkit reformat --data-dir ${clean_database} -r NA | cut -f 3 | tr ";" "\t" | cut -f 1-7 > lineages.tmp
 
     # adding a header
 cat <(printf "domain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n") lineages.tmp > lineages-tab.tmp
