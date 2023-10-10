@@ -24,6 +24,7 @@ if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "help" ]; then
     printf "\n    Optional:\n\n"
 
     printf '      - [-o <str>]  Specify the output file name. Default: "Combined-taxonomy.tsv"\n'
+    printf '      - [-d <str>]  Specify the taxonkit database location. Default: "~/.taxonkit"\n'
 
     printf "\n    Example usage:\n\n\t bit-combine-bracken-and-add-lineage -i input-files.tsv\n\n"
 
@@ -33,13 +34,15 @@ fi
 ### PARSING ARGUMENTS
 ## setting defaults
 output_file="Combined-taxonomy.tsv"
+database="~/.taxonkit"
 
-while getopts :i:o: args
+while getopts :i:o:d: args
 do
     case "${args}"
     in
         i) input_file=${OPTARG};;
         o) output_file=${OPTARG};;
+        d) database=${OPTARG};;
         \?) printf "\n  ${RED}Invalid argument: -${OPTARG}${NC}\n\n    Run with no arguments or '-h' only to see help menu.\n\n" >&2 && exit
     esac
 done
@@ -73,7 +76,7 @@ fi
 
 ### GETTING FULL LINEAGE INFO WITH TAXONKIT ###
 printf "\n\t${GREEN}Getting full lineage info...${NC}\n\n"
-tail -n +2 combined-bracken.tmp | cut -f 2 | taxonkit lineage | taxonkit reformat -r NA | cut -f 3 | tr ";" "\t" | cut -f 1-7 > lineages.tmp
+tail -n +2 combined-bracken.tmp | cut -f 2 | taxonkit lineage --data-dir ${database} | taxonkit reformat --data-dir ${database} -r NA | cut -f 3 | tr ";" "\t" | cut -f 1-7 > lineages.tmp
 
     # adding a header
 cat <(printf "domain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n") lineages.tmp > lineages-tab.tmp
