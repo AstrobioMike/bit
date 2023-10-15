@@ -171,6 +171,9 @@ def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representative
             # subsetting table and writing out that and accessions list
             gtdb_sub_tab = gtdb_tab[gtdb_tab[rank] == taxon]
 
+            # swapping spaces for dashes in case it's a species taxon
+            taxon = taxon.replace(" ", "-")
+
             tab_out_filename = "GTDB-" + taxon + "-" + rank + "-metadata.tsv"
             acc_out_filename = "GTDB-" + taxon + "-" + rank + "-accs.txt"
 
@@ -286,7 +289,6 @@ def get_unique_taxon_counts(taxon, gtdb_tab, gtdb_rep_tab=None, return_ranks_fou
 
         ranks_found_in = []
 
-        print("")
         for rank in ranks:
 
             if taxon in gtdb_tab[rank].unique():
@@ -441,7 +443,7 @@ def check_stored_gtdb_up_to_date(location):
     """ checks if the stored gtdb metadata table is the latest """
 
     # getting latest version info from GTDB
-    gtdb_latest_version_info = urllib.request.urlretrieve("https://data.ace.uq.edu.au/public/gtdb/data/releases/latest/VERSION", location + "GTDB-latest-version-info.txt")
+    gtdb_latest_version_info = urllib.request.urlretrieve("https://data.ace.uq.edu.au/public/gtdb/data/releases/latest/VERSION.txt", location + "GTDB-latest-version-info.txt")
 
     # comparing vs old
     if filecmp.cmp(location + "GTDB-latest-version-info.txt", location + "GTDB-version-info.txt"):
