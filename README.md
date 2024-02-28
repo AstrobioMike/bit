@@ -1,6 +1,6 @@
 <a href="https://zenodo.org/badge/latestdoi/59388885"><img align="right" src="https://zenodo.org/badge/59388885.svg" alt="DOI"></a>
 <br>
-<a href="https://github.com/AstrobioMike/bit#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-1,200+-blue" height="23"></a>
+<a href="https://github.com/AstrobioMike/bit#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-1,300+-blue" height="23"></a>
 <br>
 <a href="https://github.com/AstrobioMike/bit#citation-info"><img align="right" alt="Brief paper" src="https://img.shields.io/badge/Citation%20info-blue" height="23"></a>
 <br>
