@@ -1,18 +1,241 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python
 
-if [ "$1" == "--help" ] || [ "$1" == "-h" ]; then
-    printf "\n  Currently pulls genome summarize workflow from:\n"
-    printf "      github.com/AstrobioMike/genome-assembly-summary\n\n"
-    exit
-fi
+"""
+This is a program for downloading the files required to utilize the genome-assembly-summarize workflow from:
+    https://github.com/AstrobioMike/genome-assembly-summary
+"""
 
-curl -sLO https://github.com/AstrobioMike/genome-assembly-summary/archive/refs/heads/main.zip
+import sys
+import os
+import argparse
+import textwrap
+import requests
+from requests_html import HTMLSession
+import zipfile
+from io import BytesIO
+import re
+import json
+from urllib.request import urlopen
+from packaging import version
 
-unzip -qq main.zip
+parser = argparse.ArgumentParser(description = "This is a helper program for downloading the genome-assembly-summarize workflow from https://github.com/AstrobioMike/genome-assembly-summary. For bit verison info run `bit-version`. For workflow version info, it will be provided when downloading, and is atop the Snakefile.",
+                                 epilog="Ex. usage: bit-get-genome-summarize-wf\n")
 
-rm genome-assembly-summary-main/README.md main.zip
+parser.add_argument("--list-available-versions", help = "Provide this flag along with a specified workflow in order to get a printout of available versions",
+                    action = "store_true")
 
-mv genome-assembly-summary-main/ genome-assembly-stats-and-tax-workflow
+parser.add_argument("--wanted-version", help = "Specify the version you'd like to download (leaving out this argument will pull the latest by default)")
 
-printf "\n  Pulled genome summarize workflow from:\n"
-printf "      github.com/AstrobioMike/genome-assembly-summary\n\n"
+args = parser.parse_args()
+
+#### This was modeled after GL-get-workflow from my genelab-utils package, to hold this genome assembly one by itself because it isn't an official genelab workflow.
+#### There are holdovers in the code that are not relevant here because of that.
+#### When i store my other workflows and build them in, i should start with my genelab-utils GL-get-workflow as the foundation for adding to bit and deprecate this one. 
+
+### variables i'd likely want to adjust first ###
+
+base_repo = "https://github.com/AstrobioMike/genome-assembly-summary/"
+base_download_link = f"{base_repo}releases/download/"
+releases_page_link = "https://api.github.com/repos/AstrobioMike/genome-assembly-summary/releases"
+html_releases_page = "https://github.com/AstrobioMike/genome-assembly-summary/releases"
+
+target_wf = "genome-assembly-summary"
+
+# # core workflow info
+# workflow_dict = {
+
+#     "MG-Illumina": { "basename": "SW_MGIllumina" },
+#     "MG-remove-human-reads": { "basename": "SW_MGRemoveHumanReads-A" },
+#     "MG-estimate-host-reads": { "basename": "SW_MGEstHostReads" },
+#     "Amplicon-Illumina": { "basename": "SW_AmpIllumina-A" },
+#     "Amplicon-454-IonTorrent": { "basename": "SW_Amp454IonTor" },
+#     "RNAseq": { "basename": "NF_RCP-F" },
+#     "MethylSeq": { "basename": "NF_MethylSeq" }
+
+# }
+
+
+################################################################################
+
+def main():
+
+    dl_wf(target_wf)
+
+################################################################################
+
+### variables and functions ###
+
+tty_colors = {
+    'green' : '\033[0;32m%s\033[0m',
+    'yellow' : '\033[0;33m%s\033[0m',
+    'red' : '\033[0;31m%s\033[0m'
+}
+
+def color_text(text, color='green'):
+    if sys.stdout.isatty():
+        return tty_colors[color] % text
+    else:
+        return text
+
+
+def wprint(text):
+    print(textwrap.fill(text, width=80, initial_indent="  ", 
+          subsequent_indent="  ", break_on_hyphens=False))
+
+
+def report_message(message, color = "yellow"):
+    print("")
+    wprint(color_text(message, color))
+
+
+def get_versions_available(target_wf) -> list:
+
+    """ this finds which versions are available on the release page and returns them as a list """
+
+    # accessing release page in json format
+    releases_data = json.loads(urlopen(releases_page_link).read())
+
+    # getting all links available
+    links = []
+    for item in releases_data:
+        links.append(item['html_url'])
+
+    # starting empty list of available versions
+    available_versions = []
+
+    for link in links:
+
+        # getting just those for the requested workflow
+        if re.search(target_wf, link):
+
+            # getting just those that hold a tag which should help us get the version
+            if re.search("releases/tag", link):
+
+                # cutting out just the version info
+                link_basename = os.path.basename(link)
+
+                link_version = link_basename.replace("v", "").replace(".zip", "")
+
+                # adding to list
+                available_versions.append(link_version)
+
+    return(available_versions)
+
+
+def check_version_available(wanted_version, available_versions):
+
+    """ this checks if the requested version was found on the releases page """
+
+    if wanted_version not in available_versions:
+
+        report_message(f"The requested version, {wanted_version}, is not available.")
+        print(f"\n    Those available for the {target_wf} workflow include:\n")
+
+        for version in available_versions:
+
+            print(f"        {version}")
+
+        print("\n  Exiting for now.\n")
+        exit(1)
+
+
+def check_if_dir_already_exists(dir_name):
+
+    """ this checks if the output directory already exists, so as to not overwrite anything """
+
+    if os.path.exists(dir_name):
+
+        report_message(f"The output directory '{dir_name}/' already exists and we don't want to overwrite anything.")
+        print("\n    Please rename or remove it first.")
+        print("\n  Exiting for now.\n")
+        exit(1)
+
+
+def download_and_unzip(target_link):
+
+    """ this downloads and unzips the target workflow """
+
+    # python module zipfile does not retain permissions (see https://github.com/python/cpython/issues/59999 and https://github.com/python/cpython/pull/32289) 
+    # this was messing up places where files were expected to come in as executables, this was the old way
+    # # downloading
+    # target = requests.get(target_link)
+
+    # # extracting zip
+    # zip = zipfile.ZipFile(BytesIO(target.content))
+    # zip.extractall()
+
+    # now doing it with the system zip (that's part of the bit conda install) in order to retain permissions
+
+    # getting base filename
+    base_zip = os.path.basename(target_link)
+
+    # downloading
+    target = requests.get(target_link)
+
+    # writing out
+    with open(base_zip, "wb") as downloaded_zip:
+
+        downloaded_zip.write(target.content)
+
+    # extracting zip and removing archive
+    os.system(f"unzip -q {base_zip}")
+    os.remove(base_zip)
+
+    downloaded_basename = base_zip.replace(".zip", "")
+
+    report_message(f"The {target_wf} workflow was downloaded to '{downloaded_basename}/'", "green")
+
+    print(f"\n    It was pulled from this release page:\n         {releases_page_link}\n")
+
+
+def dl_wf(target_wf):
+
+    """ main download function """
+
+    # getting which versions are available for download
+    available_versions = get_versions_available(target_wf)
+
+    # sorting (so we can grab the latest if needed)
+    available_versions = sorted(available_versions, key = lambda x: version.Version(x), reverse = True)
+
+    # just reporting available versions if requested
+    if args.list_available_versions:
+
+        print(f"\n    Versions available for the {target_wf} workflow include:\n")
+
+        for each_version in available_versions:
+
+            print(f"        {each_version}")
+
+        print(f"\n    You can also browse these at the releases page:\n")
+        print(f"        {html_releases_page}\n")
+
+        exit(0)
+
+    if args.wanted_version:
+
+        # checking specified version exists and exiting if not
+        check_version_available(args.wanted_version, available_versions)
+
+        full_target_name = target_wf + "-wf_" + args.wanted_version
+
+        wanted_version = args.wanted_version
+
+    else:
+
+        full_target_name = target_wf + "-wf_" + available_versions[0]
+
+        wanted_version = available_versions[0]
+
+    # building full download link
+    full_link = f"{base_download_link}v{wanted_version}/{full_target_name}.zip"
+
+    # checking if output directory exists already, and exiting if yes
+    check_if_dir_already_exists(full_target_name)
+
+    download_and_unzip(full_link)
+
+################################################################################
+
+if __name__ == "__main__":
+    main()
