@@ -10,8 +10,8 @@ parser = argparse.ArgumentParser(description="This script takes a genbank file a
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_gb", help='input Genbank file (e.g. "*.gbk", "*.gb", "*.gbff")', action="store", dest="input_gb", required=True)
-parser.add_argument("-f", "--output_fasta", help='Output fasta file (default: "clean.faa")', action="store", dest="output_fasta", default="clean.faa")
+required.add_argument("-i", "--input-gb", help='input Genbank file (e.g. "*.gbk", "*.gb", "*.gbff")', action="store", dest="input_gb", required=True)
+parser.add_argument("-o", "--output-fasta", help='Output fasta file (default: "output.faa")', action="store", dest="output_fasta", default="output.faa")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -34,6 +34,8 @@ for rec in recs:
 
     for gene in genes:
 
+        print(gene)
+
         location = str(gene.location)
 
         # dumping gene if "location" section contains any of these terms set above: "join" means the gene call spans multiple contigs; "<" or ">" means the gene call runs off a contig
@@ -42,6 +44,8 @@ for rec in recs:
 
         if "note" in gene.qualifiers:
             note = str(gene.qualifiers["note"][0])
+        else:
+            note = ""
 
         # dumping gene if noted as any of these in the "note" section set above
         if any(exclusion_term in note for exclusion_term in note_terms_to_exclude):
@@ -65,7 +69,12 @@ for rec in recs:
         else:
             protein_id = "No_protein_id"
 
-        output_fasta.write(">" + locus_tag + "_" + protein_id + "\n" + str(gene.qualifiers["translation"][0]) + "\n")
+        if "product" in gene.qualifiers:
+            product = str(gene.qualifiers["product"][0])
+        else:
+            product = "No_product"
+
+        output_fasta.write(f">{product}_{locus_tag}_{protein_id}\n{gene.qualifiers['translation'][0]}\n")
 
 input_gb.close()
 output_fasta.close()
