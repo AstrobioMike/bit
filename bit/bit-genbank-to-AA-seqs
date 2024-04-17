@@ -34,8 +34,6 @@ for rec in recs:
 
     for gene in genes:
 
-        print(gene)
-
         location = str(gene.location)
 
         # dumping gene if "location" section contains any of these terms set above: "join" means the gene call spans multiple contigs; "<" or ">" means the gene call runs off a contig
