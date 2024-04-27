@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 
 """
-This is a program for downloading the files required to utilize the genome-assembly-summarize workflow from:
-    https://github.com/AstrobioMike/genome-assembly-summary
+This is a program for downloading the files required to utilize a one of the bit workflows.
 """
 
 import sys
@@ -10,60 +9,56 @@ import os
 import argparse
 import textwrap
 import requests
-import zipfile
-from io import BytesIO
 import re
 import json
 from urllib.request import urlopen
 from packaging import version
 
-print("\n  ####################################### NOTICE #######################################\n")
-print("    This has been deprecated in favor of the more general `bit-get-workflow` program.")
-print("    Please use that instead unless you have a specific reason to use this.\n")
-print("  ######################################################################################\n\n")
+parser = argparse.ArgumentParser(description = "This is a helper program for downloading bit workflows. Workflow version is included with the workflows. For bit verison info run `bit-version`. ",
+                                 epilog="Ex. usage: bit-get-workflow metagenomics\n")
 
-parser = argparse.ArgumentParser(description = "This is a helper program for downloading the genome-assembly-summarize workflow from https://github.com/AstrobioMike/genome-assembly-summary. For bit verison info run `bit-version`. For workflow version info, it will be provided when downloading, and is atop the Snakefile.",
-                                 epilog="Ex. usage: bit-get-genome-summarize-wf\n")
+required = parser.add_argument_group('required arguments')
+
+required.add_argument('workflow', choices = ['metagenomics',
+                                           'genome-summarize',
+                                           'sra-download'],
+                                           help = "The first positional argument should be which one of these workflows you'd like to download")
 
 parser.add_argument("--list-available-versions", help = "Provide this flag along with a specified workflow in order to get a printout of available versions",
                     action = "store_true")
 
 parser.add_argument("--wanted-version", help = "Specify the version you'd like to download (leaving out this argument will pull the latest by default)")
 
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(0)
+
 args = parser.parse_args()
 
-#### This was modeled after GL-get-workflow from my genelab-utils package, to hold this genome assembly one by itself because it isn't an official genelab workflow.
-#### There are holdovers in the code that are not relevant here because of that.
-#### When i store my other workflows and build them in, i should start with my genelab-utils GL-get-workflow as the foundation for adding to bit and deprecate this one. 
 
-### variables i'd likely want to adjust first ###
+### variables we'd likely want to adjust first ###
 
-base_repo = "https://github.com/AstrobioMike/genome-assembly-summary/"
-base_download_link = f"{base_repo}releases/download/"
-releases_page_link = "https://api.github.com/repos/AstrobioMike/genome-assembly-summary/releases"
-html_releases_page = "https://github.com/AstrobioMike/genome-assembly-summary/releases"
 
-target_wf = "genome-assembly-summary"
+base_repo = "https://github.com/astrobiomike/bit/"
+base_download_link = base_repo + "releases/download/"
+releases_page_link = "https://api.github.com/repos/astrobiomike/bit/releases"
+html_releases_page = base_repo + "releases"
 
-# # core workflow info
-# workflow_dict = {
 
-#     "MG-Illumina": { "basename": "SW_MGIllumina" },
-#     "MG-remove-human-reads": { "basename": "SW_MGRemoveHumanReads-A" },
-#     "MG-estimate-host-reads": { "basename": "SW_MGEstHostReads" },
-#     "Amplicon-Illumina": { "basename": "SW_AmpIllumina-A" },
-#     "Amplicon-454-IonTorrent": { "basename": "SW_Amp454IonTor" },
-#     "RNAseq": { "basename": "NF_RCP-F" },
-#     "MethylSeq": { "basename": "NF_MethylSeq" }
+# core workflow info
+workflow_dict = {
 
-# }
+    "metagenomics": { "basename": "metagenomics-wf" },
+    "genome-summarize": { "basename": "genome-summarize-wf" },
+    "sra-download": { "basename": "sra-download-wf" }
 
+}
 
 ################################################################################
 
 def main():
 
-    dl_wf(target_wf)
+    dl_wf()
 
 ################################################################################
 
@@ -92,12 +87,16 @@ def report_message(message, color = "yellow"):
     wprint(color_text(message, color))
 
 
-def get_versions_available(target_wf) -> list:
+def get_versions_available(target_wf):
 
-    """ this finds which versions are available on the release page and returns them as a list """
+    """ 
+    This finds which versions are available on the release page and returns them as a list,
+    and creates a dictionary holding the versions as keys and full workflow names as values.
+    """
 
     # accessing release page in json format
     releases_data = json.loads(urlopen(releases_page_link).read())
+
 
     # getting all links available
     links = []
@@ -106,6 +105,9 @@ def get_versions_available(target_wf) -> list:
 
     # starting empty list of available versions
     available_versions = []
+
+    # starting empty dictionary to hold version: full_workflow_basename
+    dict_of_versions_and_basenames = {}
 
     for link in links:
 
@@ -117,13 +119,17 @@ def get_versions_available(target_wf) -> list:
 
                 # cutting out just the version info
                 link_basename = os.path.basename(link)
-
-                link_version = link_basename.replace("v", "").replace(".zip", "")
-
+                version_info_dash_index = link_basename.rfind('-')
+                link_version = link_basename[version_info_dash_index + 1:].replace("v", "")
+                
                 # adding to list
                 available_versions.append(link_version)
 
-    return(available_versions)
+                # adding to dictionary of verisons 
+                dict_of_versions_and_basenames[link_version] = link_basename
+
+
+    return(available_versions, dict_of_versions_and_basenames)
 
 
 def check_version_available(wanted_version, available_versions):
@@ -133,7 +139,7 @@ def check_version_available(wanted_version, available_versions):
     if wanted_version not in available_versions:
 
         report_message(f"The requested version, {wanted_version}, is not available.")
-        print(f"\n    Those available for the {target_wf} workflow include:\n")
+        print(f"\n    Those available for the {args.workflow} workflow include:\n")
 
         for version in available_versions:
 
@@ -168,7 +174,7 @@ def download_and_unzip(target_link):
     # zip = zipfile.ZipFile(BytesIO(target.content))
     # zip.extractall()
 
-    # now doing it with the system zip (that's part of the bit conda install) in order to retain permissions
+    # now doing it with the system zip (that's part of bit) to retain permissions
 
     # getting base filename
     base_zip = os.path.basename(target_link)
@@ -187,17 +193,20 @@ def download_and_unzip(target_link):
 
     downloaded_basename = base_zip.replace(".zip", "")
 
-    report_message(f"The {target_wf} workflow was downloaded to '{downloaded_basename}/'", "green")
+    report_message(f"The {args.workflow} workflow was downloaded to '{downloaded_basename}/'", "green")
 
     print(f"\n    It was pulled from this release page:\n         {releases_page_link}\n")
 
 
-def dl_wf(target_wf):
+def dl_wf():
 
     """ main download function """
 
+    # getting the specific filename/directory name for the requested workflow (e.g. "MG-Illumina" is "SW_MGIllumina")
+    wf_basename = workflow_dict[args.workflow]["basename"]
+
     # getting which versions are available for download
-    available_versions = get_versions_available(target_wf)
+    available_versions, dict_of_versions_and_basenames = get_versions_available(wf_basename)
 
     # sorting (so we can grab the latest if needed)
     available_versions = sorted(available_versions, key = lambda x: version.Version(x), reverse = True)
@@ -205,7 +214,7 @@ def dl_wf(target_wf):
     # just reporting available versions if requested
     if args.list_available_versions:
 
-        print(f"\n    Versions available for the {target_wf} workflow include:\n")
+        print(f"\n    Versions available for the {args.workflow} workflow include:\n")
 
         for each_version in available_versions:
 
@@ -221,23 +230,22 @@ def dl_wf(target_wf):
         # checking specified version exists and exiting if not
         check_version_available(args.wanted_version, available_versions)
 
-        full_target_name = target_wf + "-wf_" + args.wanted_version
-
-        wanted_version = args.wanted_version
+        full_target_name = dict_of_versions_and_basenames[args.wanted_version]
+        # full_target_name = wf_basename + "_" + args.wanted_version
 
     else:
 
-        full_target_name = target_wf + "-wf_" + available_versions[0]
-
-        wanted_version = available_versions[0]
+        # full_target_name = wf_basename + "_" + available_versions[0]
+        full_target_name = dict_of_versions_and_basenames[available_versions[0]]
 
     # building full download link
-    full_link = f"{base_download_link}v{wanted_version}/{full_target_name}.zip"
+    full_link = base_download_link + full_target_name + "/bit-" + full_target_name + ".zip"
 
     # checking if output directory exists already, and exiting if yes
     check_if_dir_already_exists(full_target_name)
 
     download_and_unzip(full_link)
+
 
 ################################################################################
 
