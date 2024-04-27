@@ -1,0 +1,183 @@
+###################################################################################################
+## Snakefile for the "bit" SRA download workflow                                                 ##
+## Version 1.0.0                                                                                 ##
+## bit: https://github.com/AstrobioMike/bit                                                      ##
+##                                                                                               ##
+## If you use this workflow in a publication, please consider citing :)                          ##
+##   Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122.  ##
+##   https://doi.org/10.12688/f1000research.79530.1                                              ##
+###################################################################################################
+
+import os
+import pandas as pd
+
+configfile: "config.yaml"
+
+
+########################################
+############# General Info #############
+########################################
+
+"""
+See the corresponding 'config.yaml' file for general use information.
+Variables that may need to be adjusted should usually be changed there, not here.
+"""
+
+
+########################################
+######## Some colors and helpers #######
+########################################
+
+tty_colors = {
+    'green' : '\033[0;32m%s\033[0m',
+    'yellow' : '\033[0;33m%s\033[0m',
+    'red' : '\033[0;31m%s\033[0m'
+}
+
+def color_text(text, color='green'):
+    if sys.stdout.isatty():
+        return(tty_colors[color] % text)
+    else:
+        return(text)
+
+
+################################################
+#### Reading target SRA accesions into list ####
+################################################
+target_sra_accessions_list = [line.strip() for line in open(config["target_sra_accessions_file"])]
+
+## when i want to try integrating combinging runs that belong to the same sample given an input table, revisit what i did here: 
+    # https://github.com/AstrobioMike/NASA-Exo-N-project/blob/main/metagenomics/workflow/Snakefile
+
+################################################
+############## Pre-flight checks ###############
+################################################
+
+# making sure there are all unique names
+if len(set(target_sra_accessions_list)) != len(target_sra_accessions_list):
+
+    print(color_text(f"\n    Not all sample IDs in the '{config["target_sra_accessions_file"]}' file are unique :(\n", "yellow"))
+    print("    Exiting for now.\n")
+    exit(1)
+
+# making sure they all start with an expected prefix
+expected_prefixes = ["SRR", "ERR", "DRR"]
+for acc in target_sra_accessions_list:
+    if not any([acc.startswith(prefix) for prefix in expected_prefixes]):
+
+        print(color_text(f"\n    At least one of the sample IDs in the '{config["target_sra_accessions_file"]}' file (e.g., '{acc}') does not start with an expected prefix :(\n", "yellow"))
+        print(f"    Acceptable SRA prefixes are: {", ".join(expected_prefixes)}\n")
+        print("    Exiting for now.\n")
+        exit(1)
+
+# notice about single-end vs paired-end
+print(color_text("\n  ***************************** NOTICE ******************************", "yellow"))
+print(color_text("    This workflow currently only works for paired-end SRA datasets.\n           It WILL fail if run on a single-end SRA accession.", "yellow"))
+print(color_text("  *******************************************************************\n", "yellow"))
+
+
+########################################
+######## Setting up directories ########
+########################################
+
+dirs_to_create = ["fastq-files", "logs", "benchmarks"]
+
+if config["keep_sra_files"] == "TRUE":
+    dirs_to_create.append("sra-files")
+
+for dir in dirs_to_create:
+    try:
+        os.mkdir(dir)
+    except:
+        pass
+
+
+########################################
+############# Rules start ##############
+########################################
+
+
+rule all:
+    input:
+        expand("fastq-files/{acc}_R1.fastq.gz", acc = target_sra_accessions_list),
+        expand("fastq-files/{acc}_R2.fastq.gz", acc = target_sra_accessions_list)
+    shell:
+        """
+        bash scripts/combine-benchmarks.sh
+        """
+
+
+rule prefetch:
+    """
+    This rule runs prefetch on all target SRA accessions.
+    """
+    conda:
+        "envs/sra-dl.yaml"
+    params:
+        max_size = config["prefetch_max_size"]
+    output:
+        "{acc}-tmp/{acc}/{acc}.sra"
+    benchmark:
+        "benchmarks/{acc}-prefetch-benchmarks.tsv"
+    log:
+        "logs/prefetch-{acc}.log"
+    shell:
+        """
+        prefetch --max-size {params.max_size} --progress -O {wildcards.acc}-tmp {wildcards.acc} > {log} 2>&1
+        """
+
+
+rule fasterq_dump:
+    """
+    This rule runs fasterq-dump on all target SRA accessions.
+    """
+
+    input:
+        "{acc}-tmp/{acc}/{acc}.sra"
+    output:
+        "{acc}-tmp/{acc}_R1.fastq",
+        "{acc}-tmp/{acc}_R2.fastq"
+    params:
+        num_threads = config["num_threads"]
+    benchmark:
+        "benchmarks/{acc}-fasterq-dump-benchmarks.tsv"
+    log:
+        "logs/fasterq-dump-{acc}.log"
+    shell:
+        """
+        fasterq-dump --progress -O {wildcards.acc}-tmp/ --seq-defline '@$ac.$si/$ri $sn' --qual-defline '+' --threads {params.num_threads} {input} > {log} 2>&1
+
+        # renaming the files to have R1/R2 in their names if they are paired end
+        mv {wildcards.acc}-tmp/{wildcards.acc}_1.fastq {wildcards.acc}-tmp/{wildcards.acc}_R1.fastq
+        mv {wildcards.acc}-tmp/{wildcards.acc}_2.fastq {wildcards.acc}-tmp/{wildcards.acc}_R2.fastq
+        """
+
+
+rule gzip_fastq_files:
+    """
+    This rule gzips the fastq files.
+    """
+    input:
+        "{acc}-tmp/{acc}_R1.fastq",
+        "{acc}-tmp/{acc}_R2.fastq"
+    output:
+        "fastq-files/{acc}_R1.fastq.gz",
+        "fastq-files/{acc}_R2.fastq.gz"
+    params:
+        num_threads = config["num_threads"],
+        initial_sra_dir = "{acc}-tmp/",
+        keep_sra_files = config["keep_sra_files"]
+    shell:
+        """
+        pigz -p {params.num_threads} {wildcards.acc}-tmp/{wildcards.acc}*.fastq
+
+        # moving files to the final directory
+        mv {wildcards.acc}-tmp/{wildcards.acc}*.fastq.gz fastq-files/
+
+        # removing initial SRA directory unless specified otherwise in config.yaml
+        if [ "{params.keep_sra_files}" == "TRUE" ]; then
+            mv $(find {wildcards.acc}-tmp -name "*.sra") sra-files/
+        fi
+
+        rm -rf {params.initial_sra_dir}
+        """

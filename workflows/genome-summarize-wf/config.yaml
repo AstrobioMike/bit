@@ -1,0 +1,160 @@
+###################################################################################################
+## Config file for the "bit" genome summarize workflow.                                          ##
+## bit: https://github.com/AstrobioMike/bit                                                      ##
+##                                                                                               ##
+## If you use this workflow in a publication, please consider citing :)                          ##
+##   Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122.  ##
+##   https://doi.org/10.12688/f1000research.79530.1                                              ##
+###################################################################################################
+
+
+# this is just a prefix for the final output table
+output_prefix:
+    "Output"
+
+# set to True, with no quotes, if genomes are from eukarya, 
+# set to False, with no quotes if genomes bacteria/archaea
+is_euk:
+    False
+
+# path to where the genomes are located
+genomes_dir:
+    "../genomes"
+
+# extension the fasta files have (must not be gzipped as currently written; include the period preceding, e.g., ".fasta", ".fna", ".fa")
+    # gzip-compressed not accepted currently
+assembly_extension:
+    ".fasta"
+
+## reference database locations
+# these should be full paths to the directories that will hold the databases (more info below)
+CHECKM2_DATA_PATH:
+    "/checkm2-ref-dir"
+
+GTDB_DATA_PATH:
+    "/GTDB-tk-ref-dir"
+
+DIR_HOLDING_CAT_DIR:
+    "/dir-holding-CAT-ref-dir"
+    # actual directory name of CAT DB is below
+
+DIR_HOLDING_eukcc_DIR:
+    "/dir-holding-eukcc-db-dir"
+    # actual directory name of eukcc db is below
+
+## number of threads or cpus (depending on how the program labeled them) to use per snakemake job (set with the -j parameter to the snakemake call)
+    # passed to eukcc, CAT, checkm2, gtdb-tk
+threads:
+    20
+
+## number of cpus used by pplacer by gtdb-tk
+# pplacer can have issues with memory with multiple cpus; see e.g. https://ecogenomics.github.io/GTDBTk/faq.html#gtdb-tk-reaches-the-memory-limit-pplacer-crashes
+gtdb_tk_pplacer_cpus:
+    4
+
+logs_dir:
+    "logs/"
+
+checkm2_output_dir:
+    "checkm2-output/"
+
+gtdbtk_output_dir:
+    "gtdb-tk-output/"
+
+## keep all files?
+# set this to "YES" (all caps needed) if wanting to keep all produced files by all programs, anything else here
+# means all be deleted upon completion except for the primary output summary table
+keep_all_files:
+    "no"
+
+################################################################################################################
+##### Resource specifications that may need to be changed (mostly only necessary if using a job scheduler) #####
+####### Could leave these as-is to start, but they are here to be increased if a job fails due to memory #######
+################################################################################################################
+
+### these are all passed in the "resources" directive of their respective rules in the Snakefile, going to
+    # the "mem_mb" argument (so should be provided in terms of megabytes)
+
+# passed to rule gtdbtk_classify
+gtdbtk_memory_resources:
+    100000
+
+# passed to rule run_checkm2
+checkm2_memory_resources:
+    50000
+
+# passed to the run_CAT rule
+CAT_memory_resources:
+    40000
+
+# passed to the run_eukcc rule
+eukcc_memory_resources:
+    50000
+
+#######################################################
+################# REFERENCE DATABASES #################
+#######################################################
+# The workflow will check the locations specified above for the corresponding refernence databases, 
+# and install them if they are not already there. It looks for the below "TRIGGER" filenames (they 
+# all end with "*_DB_SETUP") in the directory of each database, which it creates when
+# it sets them up initially. 
+# If we want to point to DBs that already exist on our setup, that were not prepared by this workflow,
+# we need to add these (empty) "TRIGGER" files to their respective directories. The
+# workflow just checks the file is there to know it doesn't need to setup the DB. This might tricky
+# to figure out, and easiest would be to let the workflow do it so all DB versions match the program
+# versions for sure. 
+
+# there are some database filenames coded below that are noted as things that
+# we likely shouldn't change, so leave those unless you are sure you want to change them
+
+### checkm2 ###
+# likely shouldn't change
+CHECKM2_DB_FILENAME:
+    "uniref100.KO.1.dmnd"
+
+# likely shouldn't change
+CHECKM2_TRIGGER_FILE:
+    "CHECKM2_DB_SETUP"
+
+### gtdb-tk ###
+# likely shouldn't change
+GTDB_TRIGGER_FILE:
+    "GTDBTK_DB_SETUP"
+
+### CAT ###
+# likely shouldn't change all of the below
+CAT_DIR:
+    "CAT_prepare_20210107"
+CAT_DB:
+    "2021-01-07_CAT_database"
+CAT_TAX:
+    "2021-01-07_taxonomy"
+CAT_DL_FILE:
+    "CAT_prepare_20210107.tar.gz"
+CAT_DL_LINK:
+    "https://tbb.bio.uu.nl/bastiaan/CAT_prepare/CAT_prepare_20210107.tar.gz"
+CAT_COMPRESSED_NR_FAA:
+    "2021-01-07.nr.gz"
+CAT_TRIGGER_FILE:
+    "CAT_DB_SETUP"
+
+### eukcc ###
+# likely shouldn't change all below
+eukcc_db_dir:
+    "eukcc2_db_ver_1.1"
+eukcc_DL_FILE:
+    "eukcc2_db_ver_1.1.tar.gz"
+eukcc_DL_LINK:
+    "http://ftp.ebi.ac.uk/pub/databases/metagenomics/eukcc/eukcc2_db_ver_1.1.tar.gz"
+eukcc_TRIGGER_FILE:
+    "eukcc_DB_SETUP"
+
+## example usage command ##
+# snakemake --use-conda --conda-prefix ${CONDA_PREFIX}/envs -j 4 -p
+
+# `--use-conda` – this specifies to use the conda environments included in the workflow
+# `--conda-prefix` – this allows us to point to where the needed conda environments should be stored. Including this means if we use the workflow on a different dataset somewhere else in the future, it will re-use the same conda environments rather than make new ones. The value listed here, `${CONDA_PREFIX}/envs`, is the default location for conda environments (the variable `${CONDA_PREFIX}` will be expanded to the appropriate location on whichever system it is run on).
+# `-j` – this lets us set how many jobs Snakemake should run concurrently (keep in mind that many of the thread and cpu parameters set in the config.yaml file will be multiplied by this)
+# `-p` – specifies to print out each command being run to the screen
+
+# See `snakemake -h` for more options and details.

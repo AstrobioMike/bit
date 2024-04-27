@@ -1,0 +1,46 @@
+###################################################################################################
+## Config file for the "bit" SRA download workflow                                               ##
+## bit: https://github.com/AstrobioMike/bit                                                      ##
+##                                                                                               ##
+## If you use this workflow in a publication, please consider citing :)                          ##
+##   Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122.  ##
+##   https://doi.org/10.12688/f1000research.79530.1                                              ##
+###################################################################################################
+
+############################################################
+##################### VARIABLES TO SET #####################
+############################################################
+
+## single-column file with target sra accessions (these should start with SRR, ERR, or DRR)
+target_sra_accessions_file:
+    "target-sra-accs.txt"
+
+
+######################################################################
+###### These only need to be altered if we want to change them #######
+######################################################################
+
+## for more info on prefetch and fasterq-dump options, see: https://github.com/ncbi/sra-tools/wiki/08.-prefetch-and-fasterq-dump
+
+## number of threads to use PER snakemake job (which is set with the -j parameter passed to snakemake call)
+    # passed to fasterq-dump and pigz (many may be running concurrently)
+num_threads:
+    8
+
+## prefetch --max-size argument
+prefetch_max_size:
+    "500G"
+
+## keep sra objects after download (TRUE for yes, anything else is treated as no)
+keep_sra_files:
+    "FALSE"
+
+## example usage command ##
+# snakemake --use-conda --conda-prefix ${CONDA_PREFIX}/envs -j 2 -p
+
+# `--use-conda` – this specifies to use the conda environments included in the workflow
+# `--conda-prefix` – this allows us to point to where the needed conda environments should be stored. Including this means if we use the workflow on a different dataset somewhere else in the future, it will re-use the same conda environments rather than make new ones. The value listed here, `${CONDA_PREFIX}/envs`, is the default location for conda environments (the variable `${CONDA_PREFIX}` will be expanded to the appropriate location on whichever system it is run on).
+# `-j` – this lets us set how many jobs Snakemake should run concurrently (keep in mind that many of the thread and cpu parameters set in the config.yaml file will be multiplied by this)
+# `-p` – specifies to print out each command being run to the screen
+
+# See `snakemake -h` for more options and details.
