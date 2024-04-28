@@ -56,7 +56,7 @@ target_sra_accessions_list = [line.strip() for line in open(config["target_sra_a
 # making sure there are all unique names
 if len(set(target_sra_accessions_list)) != len(target_sra_accessions_list):
 
-    print(color_text(f"\n    Not all sample IDs in the '{config["target_sra_accessions_file"]}' file are unique :(\n", "yellow"))
+    print(color_text(f"\n    Not all sample IDs in the '{config['target_sra_accessions_file']}' file are unique :(\n", "yellow"))
     print("    Exiting for now.\n")
     exit(1)
 
@@ -65,8 +65,8 @@ expected_prefixes = ["SRR", "ERR", "DRR"]
 for acc in target_sra_accessions_list:
     if not any([acc.startswith(prefix) for prefix in expected_prefixes]):
 
-        print(color_text(f"\n    At least one of the sample IDs in the '{config["target_sra_accessions_file"]}' file (e.g., '{acc}') does not start with an expected prefix :(\n", "yellow"))
-        print(f"    Acceptable SRA prefixes are: {", ".join(expected_prefixes)}\n")
+        print(color_text(f"\n    At least one of the sample IDs in the '{config['target_sra_accessions_file']}' file (e.g., '{acc}') does not start with an expected prefix :(\n", "yellow"))
+        print(f"    Acceptable SRA prefixes are: {', '.join(expected_prefixes)}\n")
         print("    Exiting for now.\n")
         exit(1)
 
