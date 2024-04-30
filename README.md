@@ -55,14 +55,10 @@ Each command has a help menu accessible by either entering the command alone or 
 
 > If you are new to the wonderful world of [conda](https://conda.io/docs/) and want to learn more, one place you can start learning about it is [here](https://astrobiomike.github.io/unix/conda-intro) 🙂  
 
-The below exemplifies using conda to install mamba, then mamba for the environment creation because it is *much* faster for installs than conda. See [here](https://astrobiomike.github.io/unix/conda-intro#bonus-mamba-no-5) for an overview of mamba if wanted.
-
 Due to increasing program restrictions as *bit* has grown, it's easiest to install it in its own environment as shown below:  
 
 ```
-conda install -n base -c conda-forge mamba
-
-mamba create -n bit -c conda-forge -c bioconda -c defaults -c astrobiomike bit
+conda create -n bit -c astrobiomike -c conda-forge -c bioconda -c defaults bit
 conda activate bit
 ```
 
