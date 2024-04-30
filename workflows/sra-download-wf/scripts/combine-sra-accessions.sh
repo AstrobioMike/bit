@@ -38,6 +38,10 @@ print_help() {
 
 }
 
+if [ "$#" == 0 ] || [ $1 == "-h" ]; then
+    print_help
+fi
+
 
 ########################################
 ### Setting up and parsing arguments ###
@@ -47,7 +51,7 @@ remove_original_fastqs="false"
 while getopts ":i:d:x" args; do
     case "${args}"
     in
-        i) map_file=$OPTARG;;            
+        i) map_file=$OPTARG;;
         d) fastq_dir=$OPTARG;;
         x) remove_original_fastqs="true";;
         \?) printf "\n  ${RED}Invalid argument: -${OPTARG}${NC}\n" 1>&2
@@ -74,10 +78,6 @@ fi
 ########################################
 ########### Pre-flight checks ##########
 ########################################
-
-if [ "$#" == 0 ] || [ $1 == "-h" ]; then
-    print_help
-fi
 
 
 # check that the first positional argument is a file
