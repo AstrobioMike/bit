@@ -1520,8 +1520,8 @@ rule setup_gtdbtk_db:
         # but still needs to be set for this particular session that is downloading and setting up the db
         GTDBTK_DATA_PATH={params.gtdbtk_db_dir}
 
-        # now downloading
-        download-db.sh {params.gtdbtk_db_dir} > {log} 2>&1
+        # now downloading (see note in scripts/download-gtdbtk-refs.sh as to why using this instead of download-db.sh)
+        bash scripts/download-gtdbtk-refs.sh {params.gtdbtk_db_dir} > {log} 2>&1
 
         touch {output.gtdbtk_db_trigger}
         """
