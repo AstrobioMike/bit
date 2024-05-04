@@ -57,10 +57,22 @@ if len(set(sample_ID_list)) != len(sample_ID_list):
 ######## Setting up directories ########
 ########################################
 
-dirs_to_create = [config["fastqc_out_dir"], config["filtered_reads_dir"], config["genes_dir"], 
-                    config["annotations_and_tax_dir"], config["mapping_dir"], 
-                    config["combined_output_dir"], config["bins_dir"], config["MAGs_dir"], 
-                    config["logs_dir"], config["REF_DB_ROOT_DIR"], "benchmarks"]
+fastqc_out_dir = config["outputs_dir"] + "fastqc-outputs/"
+filtered_reads_dir = config["outputs_dir"] + "filtered-reads/"
+assemblies_dir = config["outputs_dir"] + "assemblies/"
+genes_dir = config["outputs_dir"] + "predicted-genes/"
+annotations_and_tax_dir = config["outputs_dir"] + "annotations-and-taxonomy/"
+mapping_dir = config["outputs_dir"] + "read-mapping/"
+combined_outputs_dir = config["outputs_dir"] + "combined-outputs/"
+bins_dir = config["outputs_dir"] + "bins/"
+MAGs_dir = config["outputs_dir"] + "MAGs/"
+logs_dir = "logs/"
+benchmarks_dir = "benchmarks/"
+
+dirs_to_create = [fastqc_out_dir, filtered_reads_dir, genes_dir, 
+                    annotations_and_tax_dir, mapping_dir, 
+                    combined_outputs_dir, bins_dir, MAGs_dir, 
+                    logs_dir, config["REF_DB_ROOT_DIR"], benchmarks_dir]
 
 
 for dir in dirs_to_create:
@@ -76,16 +88,16 @@ for dir in dirs_to_create:
 
 rule all:
     input:
-        config["combined_output_dir"] + config["additional_filename_prefix"] + f"Combined-gene-level-KO-function-coverages.tsv",
-        config["combined_output_dir"] + config["additional_filename_prefix"] + f"Combined-gene-level-taxonomy-coverages.tsv",
-        config["combined_output_dir"] + config["additional_filename_prefix"] + f"Combined-contig-level-taxonomy-coverages.tsv",
-        config["MAGs_dir"] + config["additional_filename_prefix"] + f"MAGs-overview.tsv",
-        config["MAGs_dir"] + config["additional_filename_prefix"] + f"MAG-KEGG-Decoder-out.tsv",
-        config["bins_dir"] + config["additional_filename_prefix"] + f"bins-overview.tsv",
-        config["assemblies_dir"] + config["additional_filename_prefix"] + f"assembly-summaries.tsv",
-        config["additional_filename_prefix"] + f"../processing-overview.tsv",
-        config["fastqc_out_dir"] + config["additional_filename_prefix"] + f"raw_multiqc_report.zip",
-        config["fastqc_out_dir"] + config["additional_filename_prefix"] + f"filtered_multiqc_report.zip"
+        combined_outputs_dir + config["additional_filename_prefix"] + f"Combined-gene-level-KO-function-coverages.tsv",
+        combined_outputs_dir + config["additional_filename_prefix"] + f"Combined-gene-level-taxonomy-coverages.tsv",
+        combined_outputs_dir + config["additional_filename_prefix"] + f"Combined-contig-level-taxonomy-coverages.tsv",
+        MAGs_dir + config["additional_filename_prefix"] + f"MAGs-overview.tsv",
+        MAGs_dir + config["additional_filename_prefix"] + f"MAG-KEGG-Decoder-out.tsv",
+        bins_dir + config["additional_filename_prefix"] + f"bins-overview.tsv",
+        assemblies_dir + config["additional_filename_prefix"] + f"assembly-summaries.tsv",
+        config["outputs_dir"] + config["additional_filename_prefix"] + f"processing-overview.tsv",
+        fastqc_out_dir + config["additional_filename_prefix"] + f"raw_multiqc_report.zip",
+        fastqc_out_dir + config["additional_filename_prefix"] + f"filtered_multiqc_report.zip"
     shell:
         """
         bash scripts/combine-benchmarks.sh
@@ -96,18 +108,18 @@ rule summarize_MAG_KO_annots_with_KEGG_Decoder:
     conda:
         "envs/keggdecoder.yaml"
     input:
-        config["MAGs_dir"] + config["additional_filename_prefix"] + f"MAG-level-KO-annotations.tsv"
+        MAGs_dir + config["additional_filename_prefix"] + f"MAG-level-KO-annotations.tsv"
     params:
-        MAGs_dir = config["MAGs_dir"],
-        mod_input_annotations = config["MAGs_dir"] + "mod-MAG-level-KO-annotations.tmp",
-        temp_output = config["MAGs_dir"] + "MAG-KEGG-Decoder-out.tmp",
-        mapping_file = config["MAGs_dir"] + "MAG-ID-map.tmp",
-        orig_html_output = config["MAGs_dir"] + "MAG-KEGG-Decoder-out.html",
-        final_html_output = config["MAGs_dir"] + config["additional_filename_prefix"] + f"MAG-KEGG-Decoder-out.html"
+        MAGs_dir = MAGs_dir,
+        mod_input_annotations = MAGs_dir + "mod-MAG-level-KO-annotations.tmp",
+        temp_output = MAGs_dir + "MAG-KEGG-Decoder-out.tmp",
+        mapping_file = MAGs_dir + "MAG-ID-map.tmp",
+        orig_html_output = MAGs_dir + "MAG-KEGG-Decoder-out.html",
+        final_html_output = MAGs_dir + config["additional_filename_prefix"] + f"MAG-KEGG-Decoder-out.html"
     output:
-        config["MAGs_dir"] + config["additional_filename_prefix"] + f"MAG-KEGG-Decoder-out.tsv"
+        MAGs_dir + config["additional_filename_prefix"] + f"MAG-KEGG-Decoder-out.tsv"
     benchmark:
-        "benchmarks/summarize_MAG_KO_annots_with_KEGG_Decoder-benchmarks.tsv"
+        benchmarks_dir + "summarize_MAG_KO_annots_with_KEGG_Decoder-benchmarks.tsv"
     shell:
         """
         # getting number of MAGs recovered
@@ -157,16 +169,16 @@ rule summarize_MAG_KO_annots_with_KEGG_Decoder:
 
 rule summarize_MAG_level_KO_annotations:
     input:
-        MAG_overview = config["MAGs_dir"] + config["additional_filename_prefix"] + f"MAGs-overview.tsv",
-        trigger = expand(config["annotations_and_tax_dir"] + "{ID}-gene-coverage-annotation-and-tax.tsv", ID = sample_ID_list)
+        MAG_overview = MAGs_dir + config["additional_filename_prefix"] + f"MAGs-overview.tsv",
+        trigger = expand(annotations_and_tax_dir + "{ID}-gene-coverage-annotation-and-tax.tsv", ID = sample_ID_list)
     params:
-        MAGs_dir = config["MAGs_dir"],
-        annot_and_tax_dir = config["annotations_and_tax_dir"],
+        MAGs_dir = MAGs_dir,
+        annot_and_tax_dir = annotations_and_tax_dir,
         tmp_contig_IDs = "curr-contig-ids.tmp"
     output:
-        config["MAGs_dir"] + config["additional_filename_prefix"] + f"MAG-level-KO-annotations.tsv"
+        MAGs_dir + config["additional_filename_prefix"] + f"MAG-level-KO-annotations.tsv"
     benchmark:
-        "benchmarks/summarize_MAG_level_KO_annotations-benchmarks.tsv"
+        benchmarks_dir + "summarize_MAG_level_KO_annotations-benchmarks.tsv"
     shell:
         """
         # only running if any MAGs were recovered
@@ -193,20 +205,20 @@ rule summarize_MAG_level_KO_annotations:
 
 rule generate_assembly_processing_overview_table:
     input:
-        trigger = config["MAGs_dir"] + config["additional_filename_prefix"] + f"MAGs-overview.tsv"
+        trigger = MAGs_dir + config["additional_filename_prefix"] + f"MAGs-overview.tsv"
     params:
         sample_IDs_file = config["sample_info_file"],
-        assemblies_dir = config["assemblies_dir"],
-        genes_dir = config["genes_dir"],
-        mapping_dir = config["mapping_dir"],
-        bins_dir = config["bins_dir"],
-        MAGs_dir = config["MAGs_dir"],
-        assembly_summaries = config["bins_dir"] + config["additional_filename_prefix"] + "bin-assembly-summaries.tsv",
-        checkm_results = config["bins_dir"] + config["additional_filename_prefix"] + "bins-checkm-out.tsv"
+        assemblies_dir = assemblies_dir,
+        genes_dir = genes_dir,
+        mapping_dir = mapping_dir,
+        bins_dir = bins_dir,
+        MAGs_dir = MAGs_dir,
+        assembly_summaries = bins_dir + config["additional_filename_prefix"] + "bin-assembly-summaries.tsv",
+        checkm_results = bins_dir + config["additional_filename_prefix"] + "bins-checkm-out.tsv"
     output:
-        config["additional_filename_prefix"] + f"../processing-overview.tsv"
+        config["outputs_dir"] + config["additional_filename_prefix"] + f"processing-overview.tsv"
     benchmark:
-        "benchmarks/generate_assembly_processing_overview_table-benchmarks.tsv"
+        benchmarks_dir + "generate_assembly_processing_overview_table-benchmarks.tsv"
     shell:
         """
         bash scripts/generate-assembly-based-overview-table.sh {params.sample_IDs_file} {params.assemblies_dir} {params.genes_dir} {params.mapping_dir} {params.bins_dir} {params.MAGs_dir} {output}
@@ -217,23 +229,23 @@ rule generate_assembly_processing_overview_table:
 
 rule generate_MAGs_overview_table:
     input:
-        assembly_summaries = config["MAGs_dir"] + config["additional_filename_prefix"] + "MAG-assembly-summaries.tsv",
-        checkm_results = config["MAGs_dir"] + config["additional_filename_prefix"] + "MAGs-checkm-out.tsv",
-        gtdb_done_trigger = config["MAGs_dir"] + "gtdbtk-out"
+        assembly_summaries = MAGs_dir + config["additional_filename_prefix"] + "MAG-assembly-summaries.tsv",
+        checkm_results = MAGs_dir + config["additional_filename_prefix"] + "MAGs-checkm-out.tsv",
+        gtdb_done_trigger = MAGs_dir + "gtdbtk-out"
     params:
-        gtdb_results = config["MAGs_dir"] + "gtdbtk-out/gtdbtk.*.summary.tsv",
-        checkm_tmp = config["MAGs_dir"] + "checkm-estimates.tmp",
-        gtdb_tmp = config["MAGs_dir"] + "gtdb-taxonomies.tmp",
-        checkm_w_header_tmp = config["MAGs_dir"] + "checkm-estimates-with-headers.tmp",
-        gtdb_w_header_tmp = config["MAGs_dir"] + "gtdb-taxonomies-with-headers.tmp",
-        overview_tmp = config["MAGs_dir"] + "MAGs-overview.tmp",
-        overview_header_tmp = config["MAGs_dir"] + "MAGs-overview-header.tmp",
-        overview_sorted_tmp = config["MAGs_dir"] + "MAGs-overview-sorted.tmp",
-        MAGs_dir = config["MAGs_dir"]
+        gtdb_results = MAGs_dir + "gtdbtk-out/gtdbtk.*.summary.tsv",
+        checkm_tmp = MAGs_dir + "checkm-estimates.tmp",
+        gtdb_tmp = MAGs_dir + "gtdb-taxonomies.tmp",
+        checkm_w_header_tmp = MAGs_dir + "checkm-estimates-with-headers.tmp",
+        gtdb_w_header_tmp = MAGs_dir + "gtdb-taxonomies-with-headers.tmp",
+        overview_tmp = MAGs_dir + "MAGs-overview.tmp",
+        overview_header_tmp = MAGs_dir + "MAGs-overview-header.tmp",
+        overview_sorted_tmp = MAGs_dir + "MAGs-overview-sorted.tmp",
+        MAGs_dir = MAGs_dir
     output:
-        config["MAGs_dir"] + config["additional_filename_prefix"] + f"MAGs-overview.tsv"
+        MAGs_dir + config["additional_filename_prefix"] + f"MAGs-overview.tsv"
     benchmark:
-        "benchmarks/generate_MAGs_overview_table-benchmarks.tsv"
+        benchmarks_dir + "generate_MAGs_overview_table-benchmarks.tsv"
     shell:
         """
         # only running if any MAGs were recovered
@@ -280,14 +292,14 @@ rule summarize_MAG_assemblies:
     conda:
         "envs/bit.yaml"
     input:
-        trigger = config["MAGs_dir"] + config["additional_filename_prefix"] + "MAGs-checkm-out.tsv"
+        trigger = MAGs_dir + config["additional_filename_prefix"] + "MAGs-checkm-out.tsv"
     params:
-        intermediate_file = config["MAGs_dir"] + "MAG-summaries.tmp",
-        MAGs_dir = config["MAGs_dir"]
+        intermediate_file = MAGs_dir + "MAG-summaries.tmp",
+        MAGs_dir = MAGs_dir
     output:
-        config["MAGs_dir"] + config["additional_filename_prefix"] + "MAG-assembly-summaries.tsv"
+        MAGs_dir + config["additional_filename_prefix"] + "MAG-assembly-summaries.tsv"
     benchmark:
-        "benchmarks/summarize_MAG_assemblies-benchmarks.tsv"
+        benchmarks_dir + "summarize_MAG_assemblies-benchmarks.tsv"
     shell:
         """
         # only running if any MAGs were recovered
@@ -313,23 +325,23 @@ rule gtdbtk_on_MAGs:
     conda:
         "envs/gtdb-tk.yaml"
     input:
-        trigger = config["MAGs_dir"] + config["additional_filename_prefix"] + "MAGs-checkm-out.tsv",
+        trigger = MAGs_dir + config["additional_filename_prefix"] + "MAGs-checkm-out.tsv",
         gtdbtk_db_trigger = config["REF_DB_ROOT_DIR"] + config["GTDB_DATA_PATH"] + "/" + config["GTDB_TRIGGER_FILE"]
     params:
-        MAGs_dir = config["MAGs_dir"],
+        MAGs_dir = MAGs_dir,
         gtdbtk_db_dir = config["REF_DB_ROOT_DIR"] + config["GTDB_DATA_PATH"],
         pplacer_cpus = config["gtdb_tk_pplacer_cpus"],
         gtdb_tk_scratch_location = config["gtdb_tk_scratch_location"],
         gtdb_mash_db = config["REF_DB_ROOT_DIR"] + config["GTDB_DATA_PATH"] + config["GTDB_MASH_REF_PATH"]
     output:
-        directory(config["MAGs_dir"] + "gtdbtk-out")
+        directory(MAGs_dir + "gtdbtk-out")
     resources:
         cpus = config["gtdb_tk_num_cpus"],
         mem_mb = config["gtdbtk_memory_resources"]
     log:
-        config["logs_dir"] + "gtdbtk-run.log"
+        logs_dir + "gtdbtk-run.log"
     benchmark:
-        "benchmarks/run_gtdbtk_on_MAGs-with-1-pplacer-cpu-benchmarks.tsv"
+        benchmarks_dir + "run_gtdbtk_on_MAGs-with-1-pplacer-cpu-benchmarks.tsv"
     shell:
         """
         # setting db dir variable if not set in the environment for some reason
@@ -373,17 +385,17 @@ rule filter_checkm_results_and_copy_MAGs:
     """
 
     input:
-        config["bins_dir"] + config["additional_filename_prefix"] + "bins-checkm-out.tsv"
+        bins_dir + config["additional_filename_prefix"] + "bins-checkm-out.tsv"
     output:
-        config["MAGs_dir"] + config["additional_filename_prefix"] + "MAGs-checkm-out.tsv"
+        MAGs_dir + config["additional_filename_prefix"] + "MAGs-checkm-out.tsv"
     params:
-        bins_dir = config["bins_dir"],
-        MAGs_dir = config["MAGs_dir"],
-        tmp_file = config["MAGs_dir"] + "MAGs-checkm-out.tmp",
+        bins_dir = bins_dir,
+        MAGs_dir = MAGs_dir,
+        tmp_file = MAGs_dir + "MAGs-checkm-out.tmp",
         min_est_comp = config["minimum_estimated_completion"],
         max_est_redund = config["maximum_estimated_redundancy"],
     benchmark:
-        "benchmarks/filtering_checkm_results_and_copying_MAGs-benchmarks.tsv"
+        benchmarks_dir + "filtering_checkm_results_and_copying_MAGs-benchmarks.tsv"
     shell:
         """        
         # only running if there were bins recovered
@@ -412,17 +424,17 @@ rule filter_checkm_results_and_copy_MAGs:
 
 rule generate_bins_overview_table:
     input:
-        assembly_summaries = config["bins_dir"] + config["additional_filename_prefix"] + "bin-assembly-summaries.tsv",
-        checkm_results = config["bins_dir"] + config["additional_filename_prefix"] + "bins-checkm-out.tsv",
-        timing_trigger = config["MAGs_dir"] + config["additional_filename_prefix"] + "MAGs-checkm-out.tsv"
+        assembly_summaries = bins_dir + config["additional_filename_prefix"] + "bin-assembly-summaries.tsv",
+        checkm_results = bins_dir + config["additional_filename_prefix"] + "bins-checkm-out.tsv",
+        timing_trigger = MAGs_dir + config["additional_filename_prefix"] + "MAGs-checkm-out.tsv"
     params:
-        checkm_tmp = config["bins_dir"] + "checkm-estimates.tmp",
-        checkm_w_header_tmp = config["bins_dir"] + "checkm-estimates-with-headers.tmp",
-        bins_dir = config["bins_dir"]
+        checkm_tmp = bins_dir + "checkm-estimates.tmp",
+        checkm_w_header_tmp = bins_dir + "checkm-estimates-with-headers.tmp",
+        bins_dir = bins_dir
     output:
-        config["bins_dir"] + config["additional_filename_prefix"] + f"bins-overview.tsv"
+        bins_dir + config["additional_filename_prefix"] + f"bins-overview.tsv"
     benchmark:
-        "benchmarks/generate_bins_overview_table-benchmarks.tsv"
+        benchmarks_dir + "generate_bins_overview_table-benchmarks.tsv"
     shell:
         """
         # only running if there were bins recovered
@@ -459,10 +471,10 @@ rule run_checkm2_on_bins:
     conda:
         "envs/checkm2.yaml"
     input:
-        trigger = expand(config["mapping_dir"] + "{ID}-metabat-assembly-depth.tsv", ID = sample_ID_list),
+        trigger = expand(mapping_dir + "{ID}-metabat-assembly-depth.tsv", ID = sample_ID_list),
         checkm2_db_trigger = config["REF_DB_ROOT_DIR"] + config["CHECKM2_DATA_PATH"] + "/" + config["CHECKM2_TRIGGER_FILE"]
     params:
-        bins_dir = config["bins_dir"],
+        bins_dir = bins_dir,
         output_dir = "checkm2-output-dir",
         checkm2_db_dir = config["REF_DB_ROOT_DIR"] + config["CHECKM2_DATA_PATH"],
         checkm2_db_filename = config["CHECKM2_DB_FILENAME"]
@@ -470,11 +482,11 @@ rule run_checkm2_on_bins:
         cpus = config["num_cpus"],
         mem_mb = config["checkm_memory_resources"]
     output:
-        checkm2_results_tab = config["bins_dir"] + config["additional_filename_prefix"] + "bins-checkm-out.tsv"
+        checkm2_results_tab = bins_dir + config["additional_filename_prefix"] + "bins-checkm-out.tsv"
     log:
-        config["logs_dir"] + "checkm2.log"
+        logs_dir + "checkm2.log"
     benchmark:
-        "benchmarks/run_checkm2_on_bins-benchmarks.tsv"
+        benchmarks_dir + "run_checkm2_on_bins-benchmarks.tsv"
     shell:
         """
         # setting db dir variable if not set in the environment for some reason
@@ -503,14 +515,14 @@ rule summarize_bin_assemblies:
     conda:
         "envs/bit.yaml"
     input:
-        trigger = expand(config["mapping_dir"] + "{ID}-metabat-assembly-depth.tsv", ID = sample_ID_list)
+        trigger = expand(mapping_dir + "{ID}-metabat-assembly-depth.tsv", ID = sample_ID_list)
     params:
-        intermediate_file = config["bins_dir"] + "bin-summaries.tmp",
-        bins_dir = config["bins_dir"]
+        intermediate_file = bins_dir + "bin-summaries.tmp",
+        bins_dir = bins_dir
     output:
-        config["bins_dir"] + config["additional_filename_prefix"] + "bin-assembly-summaries.tsv"
+        bins_dir + config["additional_filename_prefix"] + "bin-assembly-summaries.tsv"
     benchmark:
-        "benchmarks/summarize_bin_assemblies-benchmarks.tsv"
+        benchmarks_dir + "summarize_bin_assemblies-benchmarks.tsv"
     shell:
         """
         # only running if any bins were recovered
@@ -538,21 +550,21 @@ rule metabat_binning:
     conda:
         "envs/metabat.yaml"
     input:
-        assembly = config["assemblies_dir"] + "{ID}-assembly.fasta",
-        bam = config["mapping_dir"] + "{ID}.bam"
+        assembly = assemblies_dir + "{ID}-assembly.fasta",
+        bam = mapping_dir + "{ID}.bam"
     params:
-        bins_dir = config["bins_dir"],
-        prefix = config["bins_dir"] + "{ID}-bin",
+        bins_dir = bins_dir,
+        prefix = bins_dir + "{ID}-bin",
         tmp_bins_file = "{ID}-bin-files.tmp",
         tmp_rename_script = "{ID}-rename.tmp"
     resources:
         cpus = config["num_threads"]
     output:
-        depth_file = config["mapping_dir"] + "{ID}-metabat-assembly-depth.tsv"
+        depth_file = mapping_dir + "{ID}-metabat-assembly-depth.tsv"
     log:
-        config["logs_dir"] + "{ID}-bam-summarize-and-metabat.log"
+        logs_dir + "{ID}-bam-summarize-and-metabat.log"
     benchmark:
-        "benchmarks/metabat_binning-{ID}-benchmarks.tsv"
+        benchmarks_dir + "metabat_binning-{ID}-benchmarks.tsv"
     shell:
         """
         # only running if the assembly produced anything
@@ -590,14 +602,14 @@ rule make_combined_contig_tax_tables:
     conda:
         "envs/bit.yaml"
     input:
-        expand(config["annotations_and_tax_dir"] + "{ID}-contig-coverage-and-tax.tsv", ID = sample_ID_list)
+        expand(annotations_and_tax_dir + "{ID}-contig-coverage-and-tax.tsv", ID = sample_ID_list)
     params:
-        out_prefix = config["combined_output_dir"] + config["additional_filename_prefix"] + "Combined",
+        out_prefix = combined_outputs_dir + config["additional_filename_prefix"] + "Combined",
     output:
-        combined_tax = config["combined_output_dir"] + config["additional_filename_prefix"] + "Combined-contig-level-taxonomy-coverages.tsv",
-        norm_combined_tax = config["combined_output_dir"] + config["additional_filename_prefix"] + "Combined-contig-level-taxonomy-coverages-CPM.tsv"
+        combined_tax = combined_outputs_dir + config["additional_filename_prefix"] + "Combined-contig-level-taxonomy-coverages.tsv",
+        norm_combined_tax = combined_outputs_dir + config["additional_filename_prefix"] + "Combined-contig-level-taxonomy-coverages-CPM.tsv"
     benchmark:
-        "benchmarks/make_combined_contig_tax_tables-benchmarks.tsv"
+        benchmarks_dir + "make_combined_contig_tax_tables-benchmarks.tsv"
     shell:
         """
         bit-GL-combine-contig-tax-tables {input} -o {params.out_prefix}
@@ -608,16 +620,16 @@ rule make_combined_gene_level_tables:
     conda:
         "envs/bit.yaml"
     input:
-        expand(config["annotations_and_tax_dir"] + "{ID}-gene-coverage-annotation-and-tax.tsv", ID = sample_ID_list)
+        expand(annotations_and_tax_dir + "{ID}-gene-coverage-annotation-and-tax.tsv", ID = sample_ID_list)
     params:
-        out_prefix = config["combined_output_dir"] + config["additional_filename_prefix"] + "Combined",
+        out_prefix = combined_outputs_dir + config["additional_filename_prefix"] + "Combined",
     output:
-        combined_annots = config["combined_output_dir"] + config["additional_filename_prefix"] + "Combined-gene-level-KO-function-coverages.tsv",
-        norm_combined_annots = config["combined_output_dir"] + config["additional_filename_prefix"] + "Combined-gene-level-KO-function-coverages-CPM.tsv",
-        combined_tax = config["combined_output_dir"] + config["additional_filename_prefix"] + "Combined-gene-level-taxonomy-coverages.tsv",
-        norm_combined_tax = config["combined_output_dir"] + config["additional_filename_prefix"] + "Combined-gene-level-taxonomy-coverages-CPM.tsv"
+        combined_annots = combined_outputs_dir + config["additional_filename_prefix"] + "Combined-gene-level-KO-function-coverages.tsv",
+        norm_combined_annots = combined_outputs_dir + config["additional_filename_prefix"] + "Combined-gene-level-KO-function-coverages-CPM.tsv",
+        combined_tax = combined_outputs_dir + config["additional_filename_prefix"] + "Combined-gene-level-taxonomy-coverages.tsv",
+        norm_combined_tax = combined_outputs_dir + config["additional_filename_prefix"] + "Combined-gene-level-taxonomy-coverages-CPM.tsv"
     benchmark:
-        "benchmarks/make_combined_gene_level_tables-benchmarks.tsv"
+        benchmarks_dir + "make_combined_gene_level_tables-benchmarks.tsv"
     shell:
         """
         bit-GL-combine-KO-and-tax-tables {input} -o {params.out_prefix}
@@ -629,19 +641,19 @@ rule combine_contig_tax_and_coverage:
     This rule combines the contig-level taxonomic and coverage information for each individual sample. 
     """
     input:
-        cov = config["mapping_dir"] + "{ID}-contig-coverages.tsv",
-        tax = config["annotations_and_tax_dir"] + "{ID}-contig-tax.tsv"
+        cov = mapping_dir + "{ID}-contig-coverages.tsv",
+        tax = annotations_and_tax_dir + "{ID}-contig-tax.tsv"
     params:
-        assembly = config["assemblies_dir"] + "{ID}-assembly.fasta",
-        AAs = config["genes_dir"] + "{ID}-genes.faa",
-        contig_tmp = config["annotations_and_tax_dir"] + "{ID}-contig.tmp",
-        header_tmp = config["annotations_and_tax_dir"] + "{ID}-contig-header.tmp",
-        contig_p1_tmp = config["annotations_and_tax_dir"] + "{ID}-contig-p1.tmp",
-        tax_col_tmp = config["annotations_and_tax_dir"] + "{ID}-tax-col.tmp"
+        assembly = assemblies_dir + "{ID}-assembly.fasta",
+        AAs = genes_dir + "{ID}-genes.faa",
+        contig_tmp = annotations_and_tax_dir + "{ID}-contig.tmp",
+        header_tmp = annotations_and_tax_dir + "{ID}-contig-header.tmp",
+        contig_p1_tmp = annotations_and_tax_dir + "{ID}-contig-p1.tmp",
+        tax_col_tmp = annotations_and_tax_dir + "{ID}-tax-col.tmp"
     output:
-        config["annotations_and_tax_dir"] + "{ID}-contig-coverage-and-tax.tsv"
+        annotations_and_tax_dir + "{ID}-contig-coverage-and-tax.tsv"
     benchmark:
-        "benchmarks/combine_contig_tax_and_coverage-{ID}-benchmarks.tsv"
+        benchmarks_dir + "combine_contig_tax_and_coverage-{ID}-benchmarks.tsv"
     shell:
         """
         # only running if the assembly produced anything
@@ -680,18 +692,18 @@ rule combine_gene_annots_tax_and_coverage:
     This rule combines the gene-level functional annotations, taxonomic classifications, and coverage information for each individual sample.
     """
     input:
-        cov = config["mapping_dir"] + "{ID}-gene-coverages.tsv",
-        annots = config["annotations_and_tax_dir"] + "{ID}-annotations.tsv",
-        tax = config["annotations_and_tax_dir"] + "{ID}-gene-tax.tsv"
+        cov = mapping_dir + "{ID}-gene-coverages.tsv",
+        annots = annotations_and_tax_dir + "{ID}-annotations.tsv",
+        tax = annotations_and_tax_dir + "{ID}-gene-tax.tsv"
     params:
-        assembly = config["assemblies_dir"] + "{ID}-assembly.fasta",
-        AAs = config["genes_dir"] + "{ID}-genes.faa",
-        gene_tmp = config["annotations_and_tax_dir"] + "{ID}-gene.tmp",
-        header_tmp = config["annotations_and_tax_dir"] + "{ID}-gene-header.tmp"
+        assembly = assemblies_dir + "{ID}-assembly.fasta",
+        AAs = genes_dir + "{ID}-genes.faa",
+        gene_tmp = annotations_and_tax_dir + "{ID}-gene.tmp",
+        header_tmp = annotations_and_tax_dir + "{ID}-gene-header.tmp"
     output:
-        config["annotations_and_tax_dir"] + "{ID}-gene-coverage-annotation-and-tax.tsv"
+        annotations_and_tax_dir + "{ID}-gene-coverage-annotation-and-tax.tsv"
     benchmark:
-        "benchmarks/combine_gene_annots_tax_and_coverage-{ID}-benchmarks.tsv"
+        benchmarks_dir + "combine_gene_annots_tax_and_coverage-{ID}-benchmarks.tsv"
     shell:
         """
         # only running if the assembly produced anything and genes were identified (they are required for this)
@@ -723,24 +735,24 @@ rule get_cov_and_det:
     conda:
         "envs/mapping.yaml"
     input:
-        bam = config["mapping_dir"] + "{ID}.bam",
-        nt = config["genes_dir"] + "{ID}-genes.fasta"
+        bam = mapping_dir + "{ID}.bam",
+        nt = genes_dir + "{ID}-genes.fasta"
     params:
-        assembly = config["assemblies_dir"] + "{ID}-assembly.fasta",
-        gene_cov_and_det_tmp = config["mapping_dir"] + "{ID}-gene-cov-and-det.tmp",
-        contig_cov_and_det_tmp = config["mapping_dir"] + "{ID}-contig-cov-and-det.tmp",
-        gene_cov_tmp = config["mapping_dir"] + "{ID}-gene-cov.tmp",
-        contig_cov_tmp = config["mapping_dir"] + "{ID}-contig-cov.tmp",
+        assembly = assemblies_dir + "{ID}-assembly.fasta",
+        gene_cov_and_det_tmp = mapping_dir + "{ID}-gene-cov-and-det.tmp",
+        contig_cov_and_det_tmp = mapping_dir + "{ID}-contig-cov-and-det.tmp",
+        gene_cov_tmp = mapping_dir + "{ID}-gene-cov.tmp",
+        contig_cov_tmp = mapping_dir + "{ID}-contig-cov.tmp",
         pileup_mem = config["pileup_mem"]
     output:
-        gene_covs = config["mapping_dir"] + "{ID}-gene-coverages.tsv",
-        contig_covs = config["mapping_dir"] + "{ID}-contig-coverages.tsv"
+        gene_covs = mapping_dir + "{ID}-gene-coverages.tsv",
+        contig_covs = mapping_dir + "{ID}-contig-coverages.tsv"
     resources:
         mem_mb = config["pileup_memory_resources"]
     log:
-        config["logs_dir"] + "{ID}-pileup.log"
+        logs_dir + "{ID}-pileup.log"
     benchmark:
-        "benchmarks/get_cov_and_det-{ID}-benchmarks.tsv"
+        benchmarks_dir + "get_cov_and_det-{ID}-benchmarks.tsv"
     shell:
         """
         # only running if the assembly produced anything
@@ -801,22 +813,22 @@ if config["single_end_data"] != "TRUE":
         conda:
             "envs/mapping.yaml"
         input:
-            assembly = config["assemblies_dir"] + "{ID}-assembly.fasta",
-            R1 = config["filtered_reads_dir"] + "{ID}" + config["filtered_R1_suffix"],
-            R2 = config["filtered_reads_dir"] + "{ID}" + config["filtered_R2_suffix"]
+            assembly = assemblies_dir + "{ID}-assembly.fasta",
+            R1 = filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"],
+            R2 = filtered_reads_dir + "{ID}" + config["filtered_R2_suffix"]
         params:
-            index = config["mapping_dir"] + "{ID}-index",
-            mapping_info = config["mapping_dir"] + "{ID}-mapping-info.txt",
+            index = mapping_dir + "{ID}-index",
+            mapping_info = mapping_dir + "{ID}-mapping-info.txt",
             num_threads = config["num_threads"]
         resources:
             cpus = config["num_threads"],
             mem_mb = config["mapping_memory_resources"]
         output:
-            config["mapping_dir"] + "{ID}.bam"
+            mapping_dir + "{ID}.bam"
         log:
-            config["logs_dir"] + "{ID}-bowtie2-build.log"
+            logs_dir + "{ID}-bowtie2-build.log"
         benchmark:
-            "benchmarks/run_mapping-{ID}-benchmarks.tsv"
+            benchmarks_dir + "run_mapping-{ID}-benchmarks.tsv"
         shell:
             """
             # only running if the assembly produced anything
@@ -844,21 +856,21 @@ else:
         conda:
             "envs/mapping.yaml"
         input:
-            assembly = config["assemblies_dir"] + "{ID}-assembly.fasta",
-            R1 = config["filtered_reads_dir"] + "{ID}" + config["filtered_suffix"]
+            assembly = assemblies_dir + "{ID}-assembly.fasta",
+            R1 = filtered_reads_dir + "{ID}" + config["filtered_suffix"]
         params:
-            index = config["mapping_dir"] + "{ID}-index",
-            mapping_info = config["mapping_dir"] + "{ID}-mapping-info.txt",
+            index = mapping_dir + "{ID}-index",
+            mapping_info = mapping_dir + "{ID}-mapping-info.txt",
             num_threads = config["num_threads"]
         resources:
             cpus = config["num_threads"],
             mem_mb = config["mapping_memory_resources"]
         output:
-            config["mapping_dir"] + "{ID}.bam"
+            mapping_dir + "{ID}.bam"
         log:
-            config["logs_dir"] + "{ID}-bowtie2-build.log"
+            logs_dir + "{ID}-bowtie2-build.log"
         benchmark:
-            "benchmarks/run_mapping-{ID}-benchmarks.tsv"
+            benchmarks_dir + "run_mapping-{ID}-benchmarks.tsv"
         shell:
             """
             # only running if the assembly produced anything
@@ -885,16 +897,16 @@ rule tax_classification:
     conda:
         "envs/cat.yaml"
     input:
-        assembly = config["assemblies_dir"] + "{ID}-assembly.fasta",
-        AA = config["genes_dir"] + "{ID}-genes.faa",
+        assembly = assemblies_dir + "{ID}-assembly.fasta",
+        AA = genes_dir + "{ID}-genes.faa",
         cat_db_trigger = config["REF_DB_ROOT_DIR"] + config["CAT_DIR"] + "/" + config["CAT_TRIGGER_FILE"]
     output:
-        gene_tax_out = config["annotations_and_tax_dir"] + "{ID}-gene-tax.tsv",
-        contig_tax_out = config["annotations_and_tax_dir"] + "{ID}-contig-tax.tsv"
+        gene_tax_out = annotations_and_tax_dir + "{ID}-gene-tax.tsv",
+        contig_tax_out = annotations_and_tax_dir + "{ID}-contig-tax.tsv"
     params:
-        tmp_out_prefix = config["annotations_and_tax_dir"] + "{ID}-tax-out.tmp",
-        tmp_genes = config["annotations_and_tax_dir"] + "{ID}-gene-tax.tmp",
-        tmp_contigs = config["annotations_and_tax_dir"] + "{ID}-contig-tax.tmp",
+        tmp_out_prefix = annotations_and_tax_dir + "{ID}-tax-out.tmp",
+        tmp_genes = annotations_and_tax_dir + "{ID}-gene-tax.tmp",
+        tmp_contigs = annotations_and_tax_dir + "{ID}-contig-tax.tmp",
         cat_db = config["REF_DB_ROOT_DIR"] + config["CAT_DIR"] + "/" + config["CAT_DB"],
         cat_tax = config["REF_DB_ROOT_DIR"] + config["CAT_DIR"] + "/" + config["CAT_TAX"],
         block_size = config["block_size"]
@@ -902,9 +914,9 @@ rule tax_classification:
         cpus = config["num_cpus"],
         mem_mb = config["CAT_memory_resources"]
     log:
-        config["logs_dir"] + "{ID}-CAT.log"
+        logs_dir + "{ID}-CAT.log"
     benchmark:
-        "benchmarks/run_tax_classification-{ID}-benchmarks.tsv"
+        benchmarks_dir + "run_tax_classification-{ID}-benchmarks.tsv"
     shell:
         """
         # only running if assembly produced any contigs and genes were identified (they are required for this)
@@ -942,22 +954,22 @@ rule KO_annotation:
     conda:
         "envs/kofamscan.yaml"
     input:
-        AAs = config["genes_dir"] + "{ID}-genes.faa",
+        AAs = genes_dir + "{ID}-genes.faa",
         kofamscan_db_trigger = config["REF_DB_ROOT_DIR"] + config["KOFAMSCAN_DIR"] + "/" + config["KOFAMSCAN_TRIGGER_FILE"]
     output:
-        config["annotations_and_tax_dir"] + "{ID}-annotations.tsv"
+        annotations_and_tax_dir + "{ID}-annotations.tsv"
     params:
-        assembly = config["assemblies_dir"] + "{ID}-assembly.fasta",
+        assembly = assemblies_dir + "{ID}-assembly.fasta",
         ko_db_dir = config["REF_DB_ROOT_DIR"] + config["KOFAMSCAN_DIR"],
-        tmp_out = config["annotations_and_tax_dir"] + "{ID}-KO-tab.tmp",
-        tmp_dir = config["annotations_and_tax_dir"] + "{ID}-tmp-KO-dir"
+        tmp_out = annotations_and_tax_dir + "{ID}-KO-tab.tmp",
+        tmp_dir = annotations_and_tax_dir + "{ID}-tmp-KO-dir"
     resources:
         cpus = config["num_cpus"],
         mem_mb = config["KOFamScan_memory_resources"]
     log:
-        config["logs_dir"] + "{ID}-kofamscan.log"
+        logs_dir + "{ID}-kofamscan.log"
     benchmark:
-        "benchmarks/run_KO_annotation-{ID}-benchmarks.tsv"
+        benchmarks_dir + "run_KO_annotation-{ID}-benchmarks.tsv"
     shell:
         """
         # only running if assembly produced any contigs and genes were identified (they are required for this)
@@ -986,15 +998,15 @@ rule call_genes:
     conda:
         "envs/prodigal.yaml"
     input:
-        assembly = config["assemblies_dir"] + "{ID}-assembly.fasta"
+        assembly = assemblies_dir + "{ID}-assembly.fasta"
     output:
-        AA = config["genes_dir"] + "{ID}-genes.faa",
-        nt = config["genes_dir"] + "{ID}-genes.fasta",
-        gff = config["genes_dir"] + "{ID}-genes.gff"
+        AA = genes_dir + "{ID}-genes.faa",
+        nt = genes_dir + "{ID}-genes.fasta",
+        gff = genes_dir + "{ID}-genes.gff"
     log:
-        config["logs_dir"] + "{ID}-prodigal.log"
+        logs_dir + "{ID}-prodigal.log"
     benchmark:
-        "benchmarks/call_genes-{ID}-benchmarks.tsv"
+        benchmarks_dir + "call_genes-{ID}-benchmarks.tsv"
     shell:
         """
         # only running if assembly produced any contigs
@@ -1022,11 +1034,11 @@ rule summarize_assemblies:
     conda:
         "envs/bit.yaml"
     input:
-        expand(config["assemblies_dir"] + "{ID}-assembly.fasta", ID = sample_ID_list)        
+        expand(assemblies_dir + "{ID}-assembly.fasta", ID = sample_ID_list)        
     output:
-        config["assemblies_dir"] + config["additional_filename_prefix"] + f"assembly-summaries.tsv"
+        assemblies_dir + config["additional_filename_prefix"] + f"assembly-summaries.tsv"
     benchmark:
-        "benchmarks/summarize_assemblies-benchmarks.tsv"
+        benchmarks_dir + "summarize_assemblies-benchmarks.tsv"
     shell:
         """
         bit-summarize-assembly -o {output} {input}
@@ -1042,21 +1054,21 @@ if config["single_end_data"] != "TRUE":
         conda:
             "envs/megahit.yaml"
         input:
-            R1 = config["filtered_reads_dir"] + "{ID}" + config["filtered_R1_suffix"],
-            R2 = config["filtered_reads_dir"] + "{ID}" + config["filtered_R2_suffix"]
+            R1 = filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"],
+            R2 = filtered_reads_dir + "{ID}" + config["filtered_R2_suffix"]
         params:
-            assemblies_dir = config["assemblies_dir"],
+            assemblies_dir = assemblies_dir,
             max_mem = config["max_mem_megahit"],
-            failed_assemblies_file = config["assemblies_dir"] + config["additional_filename_prefix"] + f"Failed-assemblies.tsv"
+            failed_assemblies_file = assemblies_dir + config["additional_filename_prefix"] + f"Failed-assemblies.tsv"
         resources:
             cpus = config["num_threads"],
             mem_mb = config["megahit_memory_resources"]
         output:
-            config["assemblies_dir"] + "{ID}-assembly.fasta"
+            assemblies_dir + "{ID}-assembly.fasta"
         log:
-            config["logs_dir"] + "{ID}-assembly.log"
+            logs_dir + "{ID}-assembly.log"
         benchmark:
-            "benchmarks/assemble-{ID}-benchmarks.tsv"
+            benchmarks_dir + "assemble-{ID}-benchmarks.tsv"
         shell:
             """
             # removing output directory if exists already but rule still needs to be run (because there is no --force option to megahit i dont't think):
@@ -1082,20 +1094,20 @@ else:
         conda:
             "envs/megahit.yaml"
         input:
-            R1 = config["filtered_reads_dir"] + "{ID}" + config["filtered_suffix"]
+            R1 = filtered_reads_dir + "{ID}" + config["filtered_suffix"]
         params:
-            assemblies_dir = config["assemblies_dir"],
+            assemblies_dir = assemblies_dir,
             max_mem = config["max_mem_megahit"],
-            failed_assemblies_file = config["assemblies_dir"] + config["additional_filename_prefix"] + f"Failed-assemblies.tsv"
+            failed_assemblies_file = assemblies_dir + config["additional_filename_prefix"] + f"Failed-assemblies.tsv"
         resources:
             cpus = config["num_threads"],
             mem_mb = config["megahit_memory_resources"]
         output:
-            config["assemblies_dir"] + "{ID}-assembly.fasta"
+            assemblies_dir + "{ID}-assembly.fasta"
         log:
-            config["logs_dir"] + "{ID}-assembly.log"
+            logs_dir + "{ID}-assembly.log"
         benchmark:
-            "benchmarks/assemble-{ID}-benchmarks.tsv"
+            benchmarks_dir + "assemble-{ID}-benchmarks.tsv"
         shell:
             """
             # removing output directory if exists already but rule still needs to be run (because there is no --force option to megahit i dont't think):
@@ -1129,12 +1141,12 @@ if config["single_end_data"] != "TRUE":
                 in1 = config["input_reads_dir"] + "{ID}" + config["input_R1_suffix"],
                 in2 = config["input_reads_dir"] + "{ID}" + config["input_R2_suffix"]
             output:
-                out1 = config["filtered_reads_dir"] + "{ID}" + config["filtered_R1_suffix"],
-                out2 = config["filtered_reads_dir"] + "{ID}" + config["filtered_R2_suffix"]
+                out1 = filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"],
+                out2 = filtered_reads_dir + "{ID}" + config["filtered_R2_suffix"]
             log:
-                config["logs_dir"] + "{ID}-bbduk.log"
+                logs_dir + "{ID}-bbduk.log"
             benchmark:
-                "benchmarks/bbduk-{ID}-benchmarks.tsv"
+                benchmarks_dir + "bbduk-{ID}-benchmarks.tsv"
             shell:
                 """
                 bbduk.sh in={input.in1} in2={input.in2} out1={output.out1} out2={output.out2} \
@@ -1155,12 +1167,12 @@ if config["single_end_data"] != "TRUE":
                 in1 = config["input_reads_dir"] + "{ID}" + config["input_R1_suffix"],
                 in2 = config["input_reads_dir"] + "{ID}" + config["input_R2_suffix"]
             output:
-                out1 = config["filtered_reads_dir"] + "{ID}" + config["filtered_R1_suffix"],
-                out2 = config["filtered_reads_dir"] + "{ID}" + config["filtered_R2_suffix"]
+                out1 = filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"],
+                out2 = filtered_reads_dir + "{ID}" + config["filtered_R2_suffix"]
             log:
-                config["logs_dir"] + "{ID}-bbduk.log"
+                logs_dir + "{ID}-bbduk.log"
             benchmark:
-                "benchmarks/bbduk-{ID}-benchmarks.tsv"
+                benchmarks_dir + "bbduk-{ID}-benchmarks.tsv"
             shell:
                 """
                 bbduk.sh in={input.in1} in2={input.in2} out1={output.out1} out2={output.out2} \
@@ -1183,11 +1195,11 @@ else:
             input:
                 in1 = config["input_reads_dir"] + "{ID}" + config["input_suffix"]
             output:
-                out1 = config["filtered_reads_dir"] + "{ID}" + config["filtered_suffix"]
+                out1 = filtered_reads_dir + "{ID}" + config["filtered_suffix"]
             log:
-                config["logs_dir"] + "{ID}-bbduk.log"
+                logs_dir + "{ID}-bbduk.log"
             benchmark:
-                "benchmarks/bbduk-{ID}-benchmarks.tsv"
+                benchmarks_dir + "bbduk-{ID}-benchmarks.tsv"
             shell:
                 """
                 bbduk.sh in={input.in1} out1={output.out1} \
@@ -1207,11 +1219,11 @@ else:
             input:
                 in1 = config["input_reads_dir"] + "{ID}" + config["input_suffix"]
             output:
-                out1 = config["filtered_reads_dir"] + "{ID}" + config["filtered_suffix"]
+                out1 = filtered_reads_dir + "{ID}" + config["filtered_suffix"]
             log:
-                config["logs_dir"] + "{ID}-bbduk.log"
+                logs_dir + "{ID}-bbduk.log"
             benchmark:
-                "benchmarks/bbduk-{ID}-benchmarks.tsv"
+                benchmarks_dir + "bbduk-{ID}-benchmarks.tsv"
             shell:
                 """
                 bbduk.sh in={input.in1} out1={output.out1} \
@@ -1242,9 +1254,9 @@ if config["single_end_data"] != "TRUE":
             int_zip = config["additional_filename_prefix"] + "raw_multiqc_report.zip",
             config_file = "config/multiqc.config"
         output:
-            final_out_zip = config["fastqc_out_dir"] + config["additional_filename_prefix"] + f"raw_multiqc_report.zip"
+            final_out_zip = fastqc_out_dir + config["additional_filename_prefix"] + f"raw_multiqc_report.zip"
         benchmark:
-            "benchmarks/raw_multiqc-benchmarks.tsv"
+            benchmarks_dir + "raw_multiqc-benchmarks.tsv"
         shell:
             """
             multiqc -q -n {params.out_filename_prefix} --force --cl-config 'max_table_rows: 99999999' --interactive --config {params.config_file} {input} > /dev/null 2>&1
@@ -1278,7 +1290,7 @@ if config["single_end_data"] != "TRUE":
             config["input_reads_dir"] + "{ID}" + config["input_R1_suffix"].rsplit(".", 2)[0] + "_fastqc.zip",
             config["input_reads_dir"] + "{ID}" + config["input_R2_suffix"].rsplit(".", 2)[0] + "_fastqc.zip"
         benchmark:
-            "benchmarks/raw_fastqc-{ID}-benchmarks.tsv"
+            benchmarks_dir + "raw_fastqc-{ID}-benchmarks.tsv"
         shell:
             """
             fastqc {input} -t 2 -q
@@ -1287,10 +1299,10 @@ if config["single_end_data"] != "TRUE":
 
     use rule raw_multiqc_PE as filtered_multiqc_PE with:
         input:
-            expand(config["filtered_reads_dir"] + "{ID}" + config["filtered_R1_suffix"].rsplit(".", 2)[0] + "_fastqc.zip", ID = sample_ID_list),
-            expand(config["filtered_reads_dir"] + "{ID}" + config["filtered_R2_suffix"].rsplit(".", 2)[0] + "_fastqc.zip", ID = sample_ID_list)
+            expand(filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"].rsplit(".", 2)[0] + "_fastqc.zip", ID = sample_ID_list),
+            expand(filtered_reads_dir + "{ID}" + config["filtered_R2_suffix"].rsplit(".", 2)[0] + "_fastqc.zip", ID = sample_ID_list)
         params:
-            reads_dir = config["filtered_reads_dir"],
+            reads_dir = filtered_reads_dir,
             int_out_dir = config["additional_filename_prefix"] + "filtered_multiqc_report",
             out_filename_prefix = config["additional_filename_prefix"] + "filtered_multiqc",
             int_out_data_dir = config["additional_filename_prefix"] + "filtered_multiqc_data",
@@ -1298,20 +1310,20 @@ if config["single_end_data"] != "TRUE":
             int_zip = config["additional_filename_prefix"] + "filtered_multiqc_report.zip",
             config_file = "config/multiqc.config"
         output:
-            final_out_zip = config["fastqc_out_dir"] + config["additional_filename_prefix"] + f"filtered_multiqc_report.zip"
+            final_out_zip = fastqc_out_dir + config["additional_filename_prefix"] + f"filtered_multiqc_report.zip"
         benchmark:
-            "benchmarks/filtered_multiqc-benchmarks.tsv"
+            benchmarks_dir + "filtered_multiqc-benchmarks.tsv"
 
 
     use rule raw_fastqc_PE as filtered_fastqc_PE with:
         input:
-            config["filtered_reads_dir"] + "{ID}" + config["filtered_R1_suffix"],
-            config["filtered_reads_dir"] + "{ID}" + config["filtered_R2_suffix"]
+            filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"],
+            filtered_reads_dir + "{ID}" + config["filtered_R2_suffix"]
         output:
-            config["filtered_reads_dir"] + "{ID}" + config["filtered_R1_suffix"].rsplit(".", 2)[0] + "_fastqc.zip",
-            config["filtered_reads_dir"] + "{ID}" + config["filtered_R2_suffix"].rsplit(".", 2)[0] + "_fastqc.zip"
+            filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"].rsplit(".", 2)[0] + "_fastqc.zip",
+            filtered_reads_dir + "{ID}" + config["filtered_R2_suffix"].rsplit(".", 2)[0] + "_fastqc.zip"
         benchmark:
-            "benchmarks/filtered_fastqc-{ID}-benchmarks.tsv"
+            benchmarks_dir + "filtered_fastqc-{ID}-benchmarks.tsv"
 
 
 
@@ -1335,9 +1347,9 @@ else:
             int_zip = config["additional_filename_prefix"] + "raw_multiqc_report.zip",
             config_file = "config/multiqc.config"
         output:
-            final_out_zip = config["fastqc_out_dir"] + config["additional_filename_prefix"] + f"raw_multiqc_report.zip"
+            final_out_zip = fastqc_out_dir + config["additional_filename_prefix"] + f"raw_multiqc_report.zip"
         benchmark:
-            "benchmarks/raw_multiqc-benchmarks.tsv"
+            benchmarks_dir + "raw_multiqc-benchmarks.tsv"
         shell:
             """
             multiqc -q -n {params.out_filename_prefix} --force --cl-config 'max_table_rows: 99999999' --interactive --config {params.config_file} {input} > /dev/null 2>&1
@@ -1369,7 +1381,7 @@ else:
         output:
             config["input_reads_dir"] + "{ID}" + config["input_suffix"].rsplit(".", 2)[0] + "_fastqc.zip"
         benchmark:
-            "benchmarks/raw_fastqc-{ID}-benchmarks.tsv"
+            benchmarks_dir + "raw_fastqc-{ID}-benchmarks.tsv"
         shell:
             """
             fastqc {input} -t 2 -q
@@ -1378,9 +1390,9 @@ else:
 
     use rule raw_multiqc_SE as filtered_multiqc_SE with:
         input:
-            expand(config["filtered_reads_dir"] + "{ID}" + config["filtered_suffix"].rsplit(".", 2)[0] + "_fastqc.zip", ID = sample_ID_list)
+            expand(filtered_reads_dir + "{ID}" + config["filtered_suffix"].rsplit(".", 2)[0] + "_fastqc.zip", ID = sample_ID_list)
         params:
-            reads_dir = config["filtered_reads_dir"],
+            reads_dir = filtered_reads_dir,
             int_out_dir = config["additional_filename_prefix"] + "filtered_multiqc_report",
             out_filename_prefix = config["additional_filename_prefix"] + "filtered_multiqc",
             int_out_data_dir = config["additional_filename_prefix"] + "filtered_multiqc_data",
@@ -1388,18 +1400,18 @@ else:
             int_zip = config["additional_filename_prefix"] + "filtered_multiqc_report.zip",
             config_file = "config/multiqc.config"
         output:
-            final_out_zip = config["fastqc_out_dir"] + config["additional_filename_prefix"] + f"filtered_multiqc_report.zip"
+            final_out_zip = fastqc_out_dir + config["additional_filename_prefix"] + f"filtered_multiqc_report.zip"
         benchmark:
-            "benchmarks/filtered_multiqc-benchmarks.tsv"
+            benchmarks_dir + "filtered_multiqc-benchmarks.tsv"
 
 
     use rule raw_fastqc_SE as filtered_fastqc_SE with:
         input:
-            config["filtered_reads_dir"] + "{ID}" + config["filtered_suffix"]
+            filtered_reads_dir + "{ID}" + config["filtered_suffix"]
         output:
-            config["filtered_reads_dir"] + "{ID}" + config["filtered_suffix"].rsplit(".", 2)[0] + "_fastqc.zip"
+            filtered_reads_dir + "{ID}" + config["filtered_suffix"].rsplit(".", 2)[0] + "_fastqc.zip"
         benchmark:
-            "benchmarks/filtered_fastqc-{ID}-benchmarks.tsv"
+            benchmarks_dir + "filtered_fastqc-{ID}-benchmarks.tsv"
 
 
 ### database checking and setup rules ###
@@ -1417,7 +1429,7 @@ rule setup_checkm2_db:
         checkm2_db_dir = config["REF_DB_ROOT_DIR"] + config["CHECKM2_DATA_PATH"],
         checkm2_db_filename = config["CHECKM2_DB_FILENAME"]
     log:
-        config["logs_dir"] + "setup-checkm2-db.log"
+        logs_dir + "setup-checkm2-db.log"
     shell:
         """
         # adding wanted location to this conda env PATH (checkm2 looks in the CHECKM2DB variable),
@@ -1455,9 +1467,9 @@ rule setup_KOFamScan_db:
         compressed_ko_list = config["REF_DB_ROOT_DIR"] + config["KOFAMSCAN_DIR"] + "/ko_list.gz",
         compressed_profiles = config["REF_DB_ROOT_DIR"] + config["KOFAMSCAN_DIR"] + "/profiles.tar.gz"
     log:
-        config["logs_dir"] + "setup-kofamscan-db.log"
+        logs_dir + "setup-kofamscan-db.log"
     benchmark:
-        "benchmarks/setup_KOFamScan_db-benchmarks.tsv"
+        benchmarks_dir + "setup_KOFamScan_db-benchmarks.tsv"
     shell:
         """
         mkdir -p {params.ko_db_dir}
@@ -1505,9 +1517,9 @@ rule setup_gtdbtk_db:
     params:
         gtdbtk_db_dir = config["REF_DB_ROOT_DIR"] + config["GTDB_DATA_PATH"]
     log:
-        config["logs_dir"] + "setup-gtdbtk-db.log"
+        logs_dir + "setup-gtdbtk-db.log"
     benchmark:
-        "benchmarks/setup_gtdbtk_db-benchmarks.tsv"
+        benchmarks_dir + "setup_gtdbtk_db-benchmarks.tsv"
     shell:
         """
         mkdir -p {params.gtdbtk_db_dir}
@@ -1543,9 +1555,9 @@ rule setup_CAT_db:
         cat_dl_link = config["CAT_DL_LINK"],
         REF_DB_ROOT_DIR = config["REF_DB_ROOT_DIR"]
     log:
-        config["logs_dir"] + "setup-CAT-db.log"
+        logs_dir + "setup-CAT-db.log"
     benchmark:
-        "benchmarks/setup_CAT_db-benchmarks.tsv"
+        benchmarks_dir + "setup_CAT_db-benchmarks.tsv"
     shell:
         """
         mkdir -p {params.REF_DB_ROOT_DIR}

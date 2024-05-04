@@ -104,34 +104,14 @@ filtered_R2_suffix:
 filtered_suffix:
     "_filtered.fastq.gz"
 
-## output directories (all relative to processing directory; will be created; should include trailing "/")
-fastqc_out_dir:
-    "workflow-outputs/fastqc-outputs/"
-filtered_reads_dir:
-    "workflow-outputs/filtered-reads/"
-assemblies_dir:
-    "workflow-outputs/assemblies/"
-genes_dir:
-    "workflow-outputs/predicted-genes/"
-annotations_and_tax_dir:
-    "workflow-outputs/annotations-and-taxonomy/"
-mapping_dir:
-    "workflow-outputs/read-mapping/"
-combined_output_dir:
-    "workflow-outputs/combined-outputs/"
-bins_dir:
-    "workflow-outputs/bins/"
-MAGs_dir:
-    "workflow-outputs/MAGs/"
-logs_dir:
-    "logs/"
-
+## primary workflow output directory (relative to processing directory; will be created if needed; should include the trailing "/")
+outputs_dir:
+    "workflow-outputs/"
 
 ## additional prefix to add to output files that describe more than one sample (to make them unique compared to other datasets)
 # leave as empty, i.e. "", if not wanted, include separator at end if adding one, e.g. "Swift1S_"
 additional_filename_prefix:
     ""
-
 
 ## setting for trimming recommended when working with Swift 1S libraries
     # adds `swift=t` setting to bbduk quality trimming/filtering command
