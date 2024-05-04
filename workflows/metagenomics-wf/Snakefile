@@ -69,9 +69,9 @@ MAGs_dir = config["outputs_dir"] + "MAGs/"
 logs_dir = "logs/"
 benchmarks_dir = "benchmarks/"
 
-dirs_to_create = [fastqc_out_dir, filtered_reads_dir, genes_dir, 
-                    annotations_and_tax_dir, mapping_dir, 
-                    combined_outputs_dir, bins_dir, MAGs_dir, 
+dirs_to_create = [config["outputs_dir"], fastqc_out_dir, filtered_reads_dir,
+                    genes_dir, annotations_and_tax_dir, mapping_dir,
+                    combined_outputs_dir, bins_dir, MAGs_dir,
                     logs_dir, config["REF_DB_ROOT_DIR"], benchmarks_dir]
 
 
@@ -80,7 +80,6 @@ for dir in dirs_to_create:
         os.mkdir(dir)
     except:
         pass
-
 
 ########################################
 ############# Rules start ##############
