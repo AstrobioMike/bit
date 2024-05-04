@@ -22,7 +22,7 @@ sample_info_file:
 
 ## input reads directory (can be relative to workflow directory, or needs to be full path)
 input_reads_dir:
-    "example-metagenomic-reads/"
+    "example-metagenomics-reads/"
 
 ## if data are single-end only (only one read-file per sample), set this to "TRUE", anything else is considered paired-end
 single_end_data:
