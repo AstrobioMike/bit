@@ -60,7 +60,7 @@ if len(set(sample_ID_list)) != len(sample_ID_list):
 dirs_to_create = [config["fastqc_out_dir"], config["filtered_reads_dir"], config["genes_dir"], 
                     config["annotations_and_tax_dir"], config["mapping_dir"], 
                     config["combined_output_dir"], config["bins_dir"], config["MAGs_dir"], 
-                    config["logs_dir"], "benchmarks"]
+                    config["logs_dir"], config["REF_DB_ROOT_DIR"], "benchmarks"]
 
 
 for dir in dirs_to_create:

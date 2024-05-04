@@ -22,7 +22,7 @@ sample_info_file:
 
 ## input reads directory (can be relative to workflow directory, or needs to be full path)
 input_reads_dir:
-    "../../example-metagenomic-reads/"
+    "example-metagenomic-reads/"
 
 ## if data are single-end only (only one read-file per sample), set this to "TRUE", anything else is considered paired-end
 single_end_data:
@@ -106,23 +106,23 @@ filtered_suffix:
 
 ## output directories (all relative to processing directory; will be created; should include trailing "/")
 fastqc_out_dir:
-    "../fastqc-outputs/"
+    "workflow-outputs/fastqc-outputs/"
 filtered_reads_dir:
-    "../filtered-reads/"
+    "workflow-outputs/filtered-reads/"
 assemblies_dir:
-    "../assemblies/"
+    "workflow-outputs/assemblies/"
 genes_dir:
-    "../predicted-genes/"
+    "workflow-outputs/predicted-genes/"
 annotations_and_tax_dir:
-    "../annotations-and-taxonomy/"
+    "workflow-outputs/annotations-and-taxonomy/"
 mapping_dir:
-    "../read-mapping/"
+    "workflow-outputs/read-mapping/"
 combined_output_dir:
-    "../combined-outputs/"
+    "workflow-outputs/combined-outputs/"
 bins_dir:
-    "../bins/"
+    "workflow-outputs/bins/"
 MAGs_dir:
-    "../MAGs/"
+    "workflow-outputs/MAGs/"
 logs_dir:
     "logs/"
 
