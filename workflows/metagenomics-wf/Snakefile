@@ -331,7 +331,7 @@ rule gtdbtk_on_MAGs:
         gtdbtk_db_dir = config["REF_DB_ROOT_DIR"] + config["GTDB_DATA_PATH"],
         pplacer_cpus = config["gtdb_tk_pplacer_cpus"],
         gtdb_tk_scratch_location = config["gtdb_tk_scratch_location"],
-        gtdb_mash_db = config["REF_DB_ROOT_DIR"] + config["GTDB_DATA_PATH"] + config["GTDB_MASH_REF_PATH"]
+        gtdb_mash_db = config["REF_DB_ROOT_DIR"] + config["GTDB_DATA_PATH"] + "/" + config["GTDB_MASH_REF_PATH"]
     output:
         directory(MAGs_dir + "gtdbtk-out")
     resources:
