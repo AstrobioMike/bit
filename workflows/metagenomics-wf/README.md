@@ -1,5 +1,5 @@
 # [bit](https://github.com/AstrobioMike/bit) metagenomics workflow
-This is a [snakemake](https://snakemake.github.io/) workflow for short-read metagenomics data. It processes via an assembly-based approach through to merged taxonomy and KO coverage tables, as well as recovering and characterizing MAGs.
+This is a [snakemake](https://snakemake.github.io/) workflow for short-read metagenomics data. It processes via an assembly-based approach through to merged taxonomy and KO coverage tables, as well as recovering and characterizing MAGs. For all workflows available with _bit_, see [here](https://github.com/AstrobioMike/bit?tab=readme-ov-file#workflows).
 
 ---
 
