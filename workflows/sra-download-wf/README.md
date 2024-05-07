@@ -6,7 +6,7 @@ This is a [snakemake](https://snakemake.github.io/) workflow for downloading rea
 * [**Overview**](#overview)
 * [**Usage**](#usage)
   * [Retrieving the workflow](#retrieving-the-workflow)
-  * [Creating the input file and modifying the config.yaml](#creating-the-input-file-and-modifying-the-config.yaml)
+  * [Creating the input file and modifying the config.yaml](#creating-the-input-file-and-modifying-the-configyaml)
   * [Running the workflow](#running-the-workflow)
 * [**Version info**](#version-info)
 
