@@ -48,7 +48,7 @@ Before running it, you first need to set some variables in the config.yaml file 
 
 The workflow cannot currently run on a mix of input bacteria/archaea genomes and eukaryotic genomes, it can only run on bacteria/archaea by themselves, or eukarya by themselves (as set by a parameter in the config.yaml file).
 
-In the config.yaml file, you mostly just need to point to where the input fasta files are, specify what their extensions are, where the reference databases are stored (or where you want them to go), and then you can run the snakemake workflow as exemplified below. 
+In the config.yaml file, you mostly just need to point to where the input fasta files are, specify what their extensions are, where the reference databases are stored (or where you want them to go if this is the first time running the workflow), and then you can run the snakemake workflow as exemplified below. 
 
 ### Running the workflow
 After variables are set in the config.yaml, here's an example of how it could be run (note that it should still be run inside the _bit_ conda environment):
