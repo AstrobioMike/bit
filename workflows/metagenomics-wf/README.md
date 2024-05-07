@@ -14,6 +14,10 @@ This is a [snakemake](https://snakemake.github.io/) workflow for short-read meta
 
 ## Overview
 
+<p align="center">
+<a href="../../images/bit-metagenomics-overview.pdf"><img src="../../images/bit-metagenomics-overview.png"></a>
+</p>
+
 This workflow perform an assembly-based approach to ultimately recover taxonomic and KO coverage tables across all samples, as well as attempt to recover and characterize bacterial/archaeal MAGs. It currently only assembles individual samples, and does not perform any co-assembly.
 
   - [fastqc](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/)/[multiqc(https://multiqc.info/)](https://github.com/AstrobioMike/bit#bioinformatics-tools-bit) for read-quality assessment and summarization
