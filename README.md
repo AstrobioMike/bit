@@ -9,8 +9,8 @@
 # Bioinformatics Tools (bit)
 
 * [**Overview**](#overview)
-  * [**Programs**](#programs)
-  * [**Workflows**](#workflows)
+  * [Programs](#programs)
+  * [Workflows](#workflows)
 * [**Conda install**](#conda-install)  
 * [**Citation info**](#citation-info)  
 * [**Shameless plug**](#shameless-plug)  
