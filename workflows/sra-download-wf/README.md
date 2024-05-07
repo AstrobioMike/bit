@@ -1,5 +1,5 @@
 # [bit](https://github.com/AstrobioMike/bit) sra-download workflow
-This is a [snakemake](https://snakemake.github.io/) workflow for downloading reads from [NCBI's SRA](https://www.ncbi.nlm.nih.gov/sra) in fastq format.
+This is a [snakemake](https://snakemake.github.io/) workflow for downloading reads from [NCBI's SRA](https://www.ncbi.nlm.nih.gov/sra) in fastq format. For all workflows available with _bit_, see [here](https://github.com/AstrobioMike/bit?tab=readme-ov-file#workflows).
 
 ---
 
