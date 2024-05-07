@@ -1,5 +1,5 @@
 # [bit](https://github.com/AstrobioMike/bit) genome-summarize workflow
-This is a [snakemake](https://snakemake.github.io/) workflow for generating and combining genome assembly stats, quality estimates, and taxonomy info. Inputs are fasta files of genome assemblies.
+This is a [snakemake](https://snakemake.github.io/) workflow for generating and combining genome assembly stats, quality estimates, and taxonomy info. Inputs are fasta files of genome assemblies. For all workflows available with _bit_, see [here](https://github.com/AstrobioMike/bit?tab=readme-ov-file#workflows).
 
 ---
 
