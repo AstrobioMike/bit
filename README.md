@@ -64,7 +64,7 @@ The [snakemake](https://snakemake.github.io/) workflows packaged with _bit_ are 
 | Workflow | Purpose |  
 | ------- | ------- |  
 | sra-download | downloads sra reads via prefetch and fasterq-dump, with helper program for combining run accessions if needed (see here for usage details) |  
-| genome-summarize | generates genome assembly stats, quality estimates, and taxonomy info (see here for usage details and overview) |
+| [genome-summarize](workflows/genome-summarize-wf/README.md) | generates genome assembly stats, quality estimates, and taxonomy info (see [here](workflows/genome-summarize-wf/README.md) for usage details and overview) |
 | metagenomics | processes short-read metagenomics data via assembly through to merged taxonomy and KO coverage tables, and recovers and characterizes MAGs (see here for usage details and overview)
 
 For greater detail and usage information, see the pages linked above for each workflow.
