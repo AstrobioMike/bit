@@ -6,7 +6,7 @@ This is a [snakemake](https://snakemake.github.io/) workflow for downloading rea
 * [**Overview**](#overview)
 * [**Usage**](#usage)
   * [Retrieving the workflow](#retrieving-the-workflow)
-  * [Modifying the config.yaml](#modifying-the-config.yaml)
+  * [Creating the input file and modifying the config.yaml](#creating-the-input-file-and-modifying-the-config.yaml)
   * [Running the workflow](#running-the-workflow)
 * [**Version info**](#version-info)
 
@@ -27,7 +27,7 @@ _bit_ should be installed via conda as described [here](https://github.com/Astro
 bit-get-workflow sra-download
 ```
 
-### Modifying the config.yaml
+### Creating the input file and modifying the config.yaml
 Before running it, you first need to make a file holding the target run accessions, one per line in a single-column.
 
 The path to that file needs to be set for the "target_sra_accessions_file" variable in the config.yaml.
