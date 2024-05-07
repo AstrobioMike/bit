@@ -8,7 +8,9 @@
 
 # Bioinformatics Tools (bit)
 
-* [**Overview**](#overview)  
+* [**Overview**](#overview)
+  * [**Programs**](#programs)
+  * [**Workflows**](#workflows)
 * [**Conda install**](#conda-install)  
 * [**Citation info**](#citation-info)  
 * [**Shameless plug**](#shameless-plug)  
@@ -16,38 +18,58 @@
 ---
 
 ## Overview 
-There are of course several great and widely used packages of bioinformatics helper programs out there. Some of these include the likes of [seqtk](https://github.com/lh3/seqtk), [fastX-toolkit](http://hannonlab.cshl.edu/fastx_toolkit/), and [bbtools](https://jgi.doe.gov/data-and-tools/bbtools/) – all of which I use regularly and have helped me do the things I was trying to get done. But there are always more tasks that crop up that may not yet have a helper program or script already written that we can find.  
+There are of course several great and widely used packages of bioinformatics helper programs out there. Some of these include the likes of [seqkit](https://github.com/shenwei356/seqkit), [seqtk](https://github.com/lh3/seqtk), [fastX-toolkit](http://hannonlab.cshl.edu/fastx_toolkit/), and [bbtools](https://jgi.doe.gov/data-and-tools/bbtools/) – all of which I use regularly and have helped me do things I was trying to get done. But there are always more tasks that crop up that may not yet have a helper program or script already written that we can find.  
 
-[*bit*](https://doi.org/10.12688/f1000research.79530.1) is a collection of one-liners, short scripts, and programs that run in a Unix-like command-line environment that I have been adding to over several years. Anytime I need to write something to perform a task that has more than a one-off, ad hoc use, I consider adding it here. This includes things like:
+[*bit*](https://doi.org/10.12688/f1000research.79530.1) is a collection of one-liners, short scripts, [programs](#programs) and [workflows](#workflows) that I have been adding to over several years. Anytime I need to write something to perform a task that has more than a one-off, ad hoc use, I consider adding it here. 
 
-| Purpose | Script(s) | 
+*bit* runs in a Unix-like environment and is recommended to be installed with [conda](https://conda.io/docs/) as shown [below](#conda-install).  
+
+---
+
+### Programs
+Some of the helper programs/scripts in _bit_ include:
+
+| Program/script | Purpose | 
 | ------- | ------- |
-| quickly summarizing nucleotide assemblies | `bit-summarize-assembly` |  
-| splitting a fasta file based on headers | `bit-parse-fasta-by-headers` |  
-| renaming sequences in a fasta | `bit-rename-fasta-headers` |  
-| re-ordering a fasta file | `bit-reorder-fasta` |  
-| pulling out sequences from a fasta by their coordinates | `bit-extract-seqs-by-coords` |  
-| pulling amino-acid or nucleotide sequences out of a GenBank file | `bit-genbank-to-AA-seqs`, `bit-genbank-to-fasta` |  
-| counting the number of bases per sequence in a fasta file | `bit-count-bases-per-seq` |  
-| calculating [variation](http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment | `bit-calc-variation-in-msa` |  
-| filtering a table based on wanted IDs | `bit-filter-table` |  
-| downloading NCBI assemblies in different formats by just providing accession numbers | `bit-dl-ncbi-assemblies` |  
-| searching the (stellar) [Genome Taxonomy Database](https://gtdb.ecogenomic.org/) by taxonomy and getting their NCBI accessions | `bit-get-accessions-from-GTDB` |  
-| getting full lineage info from a list of taxon IDs (making use of the also stellar [TaxonKit](https://bioinf.shenwei.me/taxonkit/)) | `bit-get-lineage-from-taxids` |  
-| filtering [KOFamScan](https://github.com/takaram/kofam_scan) results | `bit-filter-KOFamScan-results` |  
-| getting information about a specific [GO](http://geneontology.org/) term | `bit-get-go-term-info` |  
-| summarizing GO annotations | `bit-summarize-go-annotations` |  
-| summarizing [kraken2](https://github.com/DerrickWood/kraken2) outputs in a table with counts of full taxonomic lineages, and combining multiple samples | `bit-kraken2-to-taxon-summaries`, `bit-combine-kraken2-taxon-summaries` |  
-| combining [bracken](https://github.com/jenniferlu717/Bracken) outputs and adding full taxonomic lineage info | `bit-combine-bracken-and-add-lineage` |  
-| generating color/mapping/data files for use with trees being viewed on the [Interactive Tree of Life](https://itol.embl.de/) site | `bit-gen-iToL-map`, `bit-gen-iToL-colorstrip`, `bit-gen-iToL-text-dataset`, `bit-gen-iToL-binary-dataset` |  
-| uploading a file to figshare | `bit-figshare-upload` |  
-
+|  `bit-dl-ncbi-assemblies` | downloading NCBI assemblies in different formats by just providing accession numbers |  
+| `bit-get-accessions-from-GTDB` | searching the (stellar) [Genome Taxonomy Database](https://gtdb.ecogenomic.org/) by taxonomy and getting their NCBI accessions |  
+| `bit-summarize-assembly` | quickly summarizing nucleotide assemblies |  
+| `bit-summarize-column` | quickly summarizing a numeric column |  
+| `bit-parse-fasta-by-headers` | splitting a fasta file based on headers |  
+| `bit-rename-fasta-headers` | renaming sequences in a fasta |  
+| `bit-reorder-fasta` | re-ordering a fasta file |  
+| `bit-extract-seqs-by-coords` | pulling out sequences from a fasta by their coordinates |  
+| `bit-genbank-to-AA-seqs`, `bit-genbank-to-fasta` | pulling amino-acid or nucleotide sequences out of a GenBank file |  
+| `bit-count-bases-per-seq` | counting the number of bases per sequence in a fasta file |  
+| `bit-calc-variation-in-msa` | calculating [variation](http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |  
+| `bit-filter-table` | filtering a table based on wanted IDs |  
+| `bit-get-lineage-from-taxids` | getting full lineage info from a list of taxon IDs (making use of the also stellar [TaxonKit](https://bioinf.shenwei.me/taxonkit/)) |  
+| `bit-filter-KOFamScan-results` | filtering [KOFamScan](https://github.com/takaram/kofam_scan) results |  
+| `bit-get-go-term-info` | getting information about a specific [GO](http://geneontology.org/) term |  
+| `bit-summarize-go-annotations` | summarizing GO annotations |  
+| `bit-kraken2-to-taxon-summaries`, `bit-combine-kraken2-taxon-summaries` | summarizing [kraken2](https://github.com/DerrickWood/kraken2) outputs in a table with counts of full taxonomic lineages, and combining multiple samples |  
+| `bit-combine-bracken-and-add-lineage` | combining [bracken](https://github.com/jenniferlu717/Bracken) outputs and adding full taxonomic lineage info |  
+| `bit-gen-iToL-map`, `bit-gen-iToL-colorstrip`, `bit-gen-iToL-text-dataset`, `bit-gen-iToL-binary-dataset` | generating color/mapping/data files for use with trees being viewed on the [Interactive Tree of Life](https://itol.embl.de/) site |  
+| `bit-figshare-upload` | uploading a file to figshare |  
 
 And other just convenient things that are nice to have handy, like removing soft line wraps that some fasta files have (`bit-remove-wraps`), and printing out the column names of a TSV with numbers (`bit-colnames`) to quickly see which columns we want to provide to things like `cut` or `awk` 🙂  
 
 Each command has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. Once installed, you can see all available commands by entering `bit-` and pressing tab twice.  
 
-*bit* runs in a Unix-like environment and is recommended to be installed with [conda](https://conda.io/docs/) as shown below.  
+---
+
+### Workflows
+The [snakemake](https://snakemake.github.io/) workflows packaged with _bit_ are retrievable with `bit-get-workflow` and currently include:
+
+| Workflow | Purpose |  
+| ------- | ------- |  
+| sra-download | downloads sra reads via prefetch and fasterq-dump, with helper program for combining run accessions if needed (see here for usage details) |  
+| genome-summarize | generates genome assembly stats, quality estimates, and taxonomy info (see here for usage details and overview) |
+| metagenomics | processes short-read metagenomics data via assembly through to merged taxonomy and KO coverage tables, and recovers and characterizes MAGs (see here for usage details and overview)
+
+For greater detail and usage information, see the pages linked above for each workflow.
+
+> Note that workflows are versioned independently of the _bit_ package. When you pull one with `bit-get-workflow`, the directory name will have the version, and it is also listed at the top of the Snakefile. 
 
 ---
 
