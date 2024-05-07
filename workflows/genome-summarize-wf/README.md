@@ -6,7 +6,7 @@ This is a [snakemake](https://snakemake.github.io/) workflow for generating and 
 * [**Overview**](#overview)
 * [**Usage**](#usage)
   * [Retrieving the workflow](#retrieving-the-workflow)
-  * [Modifying the config.yaml](#modifying-the-config.yaml)
+  * [Modifying the config.yaml](#modifying-the-configyaml)
   * [Running the workflow](#running-the-workflow)
 * [**Version info**](#version-info)
 
