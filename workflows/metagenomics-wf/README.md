@@ -20,7 +20,7 @@ This is a [snakemake](https://snakemake.github.io/) workflow for short-read meta
 
 This workflow perform an assembly-based approach to ultimately recover taxonomic and KO coverage tables across all samples, as well as attempt to recover and characterize bacterial/archaeal MAGs. It currently only assembles individual samples, and does not perform any co-assembly.
 
-  - [fastqc](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/)/[multiqc(https://multiqc.info/)](https://github.com/AstrobioMike/bit#bioinformatics-tools-bit) for read-quality assessment and summarization
+  - [fastqc](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/)/[multiqc](https://multiqc.info/) for read-quality assessment and summarization
   - [bbmap/bbduk](https://jgi.doe.gov/data-and-tools/software-tools/bbtools/bb-tools-user-guide/bbduk-guide/) for read quality-filtering and trimming
   - [megahit](https://github.com/voutcn/megahit) for assembly
   - [prodigal](https://github.com/hyattpd/Prodigal) for gene prediction
