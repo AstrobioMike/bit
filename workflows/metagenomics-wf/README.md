@@ -8,6 +8,7 @@ This is a [snakemake](https://snakemake.github.io/) workflow for short-read meta
   * [Retrieving the workflow](#retrieving-the-workflow)
   * [Creating the input file and modifying the config.yaml](#creating-the-input-file-and-modifying-the-configyaml)
   * [Running the workflow](#running-the-workflow)
+* [**Primary outputs**](#primary-outputs)
 * [**Version info**](#version-info)
 
 ---
@@ -65,6 +66,45 @@ snakemake --use-conda --conda-prefix ${CONDA_PREFIX}/envs -j 4 -p
 - `-p` – specifies to print out each command being run to the screen
 
 See `snakemake -h` for more options and details.
+
+---
+
+## Primary outputs
+A primary output directory is produced called "workflow-outputs", with the following sub-directories and contents:
+
+- `fastqc-outputs/`
+  - multiqc summaries of fastqc reports for input and filtered reads
+- `filtered-reads/`
+  - quality-filtered reads
+- `assemblies/`
+  - assemblies in fasta format
+  - a tab-delimited table with assembly summary metrics ("assembly-summaries.tsv")
+- `predicted-genes/`
+  - predicted genes in fasta, faa, and gff format
+- `read-mapping/`
+  - bam files from mapping reads to their respective assemblies, as well as the mapping summary info, and the depth/coverage info used with metabat for binning
+- `annotations-and-taxonomy/`
+  - contig-level coverages and taxonomy files, and gene-level coverages, KO annotations, and taxonomy files
+- `bins/`
+  - bins recovered in fasta format
+  - an overview summary table ("bins-overview.tsv"), including summary metrics and checkm2 quality estimates
+- `MAGs/`
+  - bins that surpass the quality thresholds set in config.yaml (>= 90% estimated completion; <= 10 % estimation redundancy/contamination) in fasta format
+  - an overview summary table ("MAGs-overview.tsv"), including GTDB-assigned taxonomy
+  - KO annotations per MAG ("MAG-level-KO-annotations.tsv")
+  - MAG-level KO summaries via KEGGDecoder ("MAG-KEGG-Decoder-out.html" and "MAG-KEGG-Decoder-out.tsv")
+- `combined-outputs/`
+  - combined contig-level taxonomic coverages across samples
+  - combined gene-level KO coverages across samples
+    - for each of those there is also a version normalized to coverage per million "CPM", where it's like percent except instead of being out of 100, it is out of 1,000,000
+      - these CPM tables might be useful for some visualizations, but that type of conversion is typically not suitable for any statistics or hierarchical clustering/ordination
+
+Please feel free to post an issue or email with any confusion about any of the outputs produced!
+
+### Other outputs
+The `workflow-outputs` directory will also hold a "processing-overview.tsv" which just contains some basic info about major steps in the processing.
+
+In the directory the workflow was executed from: a `logs/` directory will hold log files for the majority of steps performed; and a `benchmarks/` directory will hold time and resource utlization info for most steps performed.
 
 ---
 
