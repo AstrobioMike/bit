@@ -4,7 +4,7 @@ from Bio import SeqIO
 import sys
 import argparse
 
-parser = argparse.ArgumentParser(description="This script is for nucleotide multifastas and will return \
+parser = argparse.ArgumentParser(description = "This script is for nucleotide multifastas and will return \
                                               a tab-delimited file with 4 columns: header, sequence length, \
                                               gc of whole sequence, and gc of each window of the specified \
                                               window size (-w) for each step of the specified step size (-s). \
