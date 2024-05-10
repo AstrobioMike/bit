@@ -30,18 +30,57 @@ args = parser.parse_args()
 ## setting up master dataframe
 df_colnames = []
 for assembly in args.input_assembly:
+
     assembly_base = os.path.basename(assembly)
+
     df_colnames.append(assembly_base.rsplit(".", 1)[0])
 
-df_index = ["Assembly", "Total contigs", "Total length", "Ambiguous characters", "GC content", "Maximum contig length", "Minimum contig length", "N50", "N75", "N90", "L50", "L75", "L90", "Num. contigs >= 100", "Num. contigs >= 500", "Num. contigs >= 1000", "Num. contigs >= 5000", "Num. contigs >= 10000", "Num. contigs >= 50000", "Num. contigs >= 100000"]
+# checking for a situation where inputs may have the same basename, due to being from different directories
+# if so, setting a flag and reporting them as the full input paths instead of just basenames
+use_paths_instead_of_basenames = False
+
+for assembly in df_colnames:
+
+    num_occurences = 0
+
+    for assembly_2 in df_colnames:
+
+        if assembly_2 == assembly:
+
+            num_occurences += 1
+
+    if num_occurences > 1:
+
+        use_paths_instead_of_basenames = True
+
+if use_paths_instead_of_basenames:
+
+    df_colnames = []
+
+    for assembly in args.input_assembly:
+
+        df_colnames.append(assembly.rsplit(".", 1)[0])
+
+
+## creating output table foundation
+df_index = ["Assembly", "Total contigs", "Total length", "Ambiguous characters", 
+            "GC content", "Maximum contig length", "Minimum contig length", "N50", 
+            "N75", "N90", "L50", "L75", "L90", "Num. contigs >= 100", 
+            "Num. contigs >= 500", "Num. contigs >= 1000", "Num. contigs >= 5000", 
+            "Num. contigs >= 10000", "Num. contigs >= 50000", "Num. contigs >= 100000"]
 
 df = pd.DataFrame(columns = df_colnames, index = df_index)
 
 for assembly in args.input_assembly:
 
-    assembly_base = os.path.basename(assembly)
-        
-    assembly_name=assembly_base.rsplit(".", 1)[0]
+    if use_paths_instead_of_basenames:
+
+        assembly_name = assembly.rsplit(".", 1)[0]
+
+    else:
+        assembly_base = os.path.basename(assembly)
+
+        assembly_name = assembly_base.rsplit(".", 1)[0]
 
     try:
         df.at["Assembly", str(assembly_name)] = assembly_name
