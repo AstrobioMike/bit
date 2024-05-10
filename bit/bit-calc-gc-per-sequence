@@ -3,14 +3,15 @@
 from Bio import SeqIO
 import sys
 import argparse
-import os
 
-parser = argparse.ArgumentParser(description="This script takes a nucleotide multifasta and returns a tab-delimited file with 3 columns: header, sequence length, and GC. For version info, run `bit-version`.")
+parser = argparse.ArgumentParser(description = "This script takes a nucleotide multifasta and returns \
+                                             a tab-delimited file with 3 columns: header, sequence length, and GC. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_fasta", help="fasta file", action="store", dest="input_fasta", required=True)
-parser.add_argument("-o", "--output_txt_file", help='Name of output txt file (default: "GC_out.txt")', action="store", dest="output_file", default="GC_out.txt")
+required.add_argument("-i", "--input-fasta", help = "fasta file", action = "store", required = True)
+parser.add_argument("-o", "--output-file", help='Name of output tsv file (default: "GC-out.tsv")', 
+                    action = "store", default = "GC-out.tsv")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -18,21 +19,19 @@ if len(sys.argv)==1:
 
 args = parser.parse_args()
 
-in_fasta = open(args.input_fasta, "r")
-out_file = open(args.output_file, "w")
+with open(args.input_fasta, "r") as in_fasta:
 
-out_file.write("header" + "\t" + "length" + "\t" + "gc" + "\n")
+    with open(args.output_file, "w") as out_file:
 
-for cur_record in SeqIO.parse(in_fasta, "fasta"):
-    gene_name = cur_record.name
-    A_count = cur_record.seq.count('A')
-    C_count = cur_record.seq.count('C')
-    G_count = cur_record.seq.count('G')
-    T_count = cur_record.seq.count('T')
-    length = len(cur_record.seq)
-    gc_percentage = float(G_count + C_count) / length
-    gc_percentage = round(gc_percentage,2)
-    out_file.write(str(gene_name)+"\t"+str(length)+"\t"+str(gc_percentage)+"\n")
+        out_file.write("header" + "\t" + "length" + "\t" + "gc" + "\n")
 
-in_fasta.close()
-out_file.close()
+        for cur_record in SeqIO.parse(in_fasta, "fasta"):
+            gene_name = cur_record.name
+            A_count = cur_record.seq.count('A')
+            C_count = cur_record.seq.count('C')
+            G_count = cur_record.seq.count('G')
+            T_count = cur_record.seq.count('T')
+            length = len(cur_record.seq)
+            gc_percentage = float(G_count + C_count) / length
+            gc_percentage = round(gc_percentage,2)
+            out_file.write(str(gene_name)+"\t"+str(length)+"\t"+str(gc_percentage)+"\n")
