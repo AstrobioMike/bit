@@ -20,17 +20,19 @@ print_help() {
     printf "              Sample-1\tSRR123456\n"
     printf "              Sample-1\tSRR123457\n"
     printf "              Sample-2\tSRR123458\n"
-    printf "              Sample-2\tSRR123459\n\n"
+    printf "              Sample-3\tSRR123459\n"
+    printf "              Sample-3\tSRR123460\n\n"
 
     printf "  It takes two positional arguments, the first being the tsv mapping file,\n"
     printf "  and the second being the path to the directory holding all the fastq files.\n\n"
 
-    printf "    Ex. Usage:\n\t bash combine-sra-accessions.sh -i map.tsv -d fastq-files/ \n\n"
+    printf "    Ex. Usage:\n\t bash scripts/combine-sra-accessions.sh -i map.tsv -d fastq-files/ \n\n"
 
-    printf "  Note that this is a simple bash script, it will run cat one sample-set at a time,\n"
+    printf "  Note that this is a simple bash script, it will work on one sample-set at a time,\n"
     printf "  and there is not much checked to catch human error on the input table.\n\n"
 
-    printf "  You can also provide the '-x' flag if you want to remove the initial fastq files.\n"
+    printf "  By default it will remove the initial fastq files. Provide the '-k' flag if you want to\n"
+    printf "  keep them.\n"
 
     printf "\n  ${YELLOW}********************************************************************${NC}\n\n"
 
@@ -46,14 +48,14 @@ fi
 ########################################
 ### Setting up and parsing arguments ###
 ########################################
-remove_original_fastqs="false"
+remove_original_fastqs="true"
 
-while getopts ":i:d:x" args; do
+while getopts ":i:d:k" args; do
     case "${args}"
     in
         i) map_file=$OPTARG;;
         d) fastq_dir=$OPTARG;;
-        x) remove_original_fastqs="true";;
+        k) remove_original_fastqs="false";;
         \?) printf "\n  ${RED}Invalid argument: -${OPTARG}${NC}\n" 1>&2
             print_help
             ;;
@@ -122,16 +124,32 @@ do
 
     printf "  Currently working on: ${sample} ...\r"
 
-    target_R1s=$(grep ${sample} ${path_to_map} | cut -f 2 | sed 's/$/_R1.fastq.gz/' | tr '\n' ' ' )
-    target_R2s=$(grep ${sample} ${path_to_map} | cut -f 2 | sed 's/$/_R2.fastq.gz/' | tr '\n' ' ' )
+    target_R1s=$(grep ${sample} ${path_to_map} | cut -f 2 | sed 's/$/_R1.fastq.gz/' | tr '\n' ' ' | sed 's/ $//')
+    target_R2s=$(grep ${sample} ${path_to_map} | cut -f 2 | sed 's/$/_R2.fastq.gz/' | tr '\n' ' ' | sed 's/ $//')
 
-    cat ${target_R1s} > ${sample}_R1.fastq.gz
-    cat ${target_R2s} > ${sample}_R2.fastq.gz
 
     if [ ${remove_original_fastqs} == "true" ]; then
 
-        rm ${target_R1s}
-        rm ${target_R2s}
+        # checking if there are multiple, if so we cat them; if just one, we just mv/rename it
+        if printf "${target_R1s}" | grep -q " "; then
+
+            cat ${target_R1s} > ${sample}_R1.fastq.gz
+            cat ${target_R2s} > ${sample}_R2.fastq.gz
+
+            rm ${target_R1s}
+            rm ${target_R2s}
+
+        else
+
+            mv ${target_R1s} ${sample}_R1.fastq.gz
+            mv ${target_R2s} ${sample}_R2.fastq.gz
+
+        fi
+
+    else
+
+        cat ${target_R1s} > ${sample}_R1.fastq.gz
+        cat ${target_R2s} > ${sample}_R2.fastq.gz
 
     fi
 
@@ -141,14 +159,14 @@ done
 cd ${starting_dir}
 
 printf "\n\n                     ${GREEN}DONE!${NC}\n\n"
-printf "  ${YELLOW}The combined fastq files are in the directory: ${fastq_dir}${NC}\n"
+printf "  ${YELLOW}The combined fastq files are in the directory: ${fastq_dir}${NC}\n\n"
 
 if [ ${remove_original_fastqs} == "true" ]; then
 
-    printf "  ${YELLOW}The original fastq files were removed as requested by providing the '-x' flag.${NC}\n\n"
+    printf "  ${YELLOW}The original fastq files were removed because the '-k' flag was not provided.${NC}\n\n"
 
 else
-    
-    printf "  ${YELLOW}Note that the original fastq files were left because the '-x' flag was not provided.${NC}\n\n"
+
+    printf "  ${YELLOW}Note that the original fastq files were left because the '-k' flag was provided.${NC}\n\n"
 
 fi
