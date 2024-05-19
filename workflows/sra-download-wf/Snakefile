@@ -131,7 +131,8 @@ rule fasterq_dump:
     """
     This rule runs fasterq-dump on all target SRA accessions.
     """
-
+    conda:
+        "envs/sra-dl.yaml"
     input:
         "{acc}-tmp/{acc}/{acc}.sra"
     output:
@@ -157,6 +158,8 @@ rule gzip_fastq_files:
     """
     This rule gzips the fastq files.
     """
+    conda:
+        "envs/sra-dl.yaml"
     input:
         "{acc}-tmp/{acc}_R1.fastq",
         "{acc}-tmp/{acc}_R2.fastq"
