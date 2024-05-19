@@ -1,6 +1,6 @@
 ###################################################################################################
 ## Snakefile for the "bit" assembly-based metagenomics processing workflow                       ##
-## Version 1.0.0                                                                                 ##
+## Version 1.0.1                                                                                 ##
 ## bit: https://github.com/AstrobioMike/bit                                                      ##
 ##                                                                                               ##
 ## If you use this workflow in a publication, please consider citing :)                          ##
@@ -69,10 +69,19 @@ MAGs_dir = config["outputs_dir"] + "MAGs/"
 logs_dir = "logs/"
 benchmarks_dir = "benchmarks/"
 
-dirs_to_create = [config["outputs_dir"], fastqc_out_dir, filtered_reads_dir,
-                    genes_dir, annotations_and_tax_dir, mapping_dir,
-                    combined_outputs_dir, bins_dir, MAGs_dir,
-                    logs_dir, config["REF_DB_ROOT_DIR"], benchmarks_dir]
+if config["perform_binning_and_MAG_recovery"] == "TRUE":
+
+    dirs_to_create = [config["outputs_dir"], fastqc_out_dir, filtered_reads_dir,
+                        genes_dir, annotations_and_tax_dir, mapping_dir,
+                        combined_outputs_dir, bins_dir, MAGs_dir,
+                        logs_dir, config["REF_DB_ROOT_DIR"], benchmarks_dir]
+
+else:
+
+    dirs_to_create = [config["outputs_dir"], fastqc_out_dir, filtered_reads_dir,
+                        genes_dir, annotations_and_tax_dir, mapping_dir,
+                        combined_outputs_dir, logs_dir, config["REF_DB_ROOT_DIR"], 
+                        benchmarks_dir]
 
 
 for dir in dirs_to_create:
@@ -85,23 +94,39 @@ for dir in dirs_to_create:
 ############# Rules start ##############
 ########################################
 
-rule all:
-    input:
-        combined_outputs_dir + config["additional_filename_prefix"] + f"Combined-gene-level-KO-function-coverages.tsv",
-        combined_outputs_dir + config["additional_filename_prefix"] + f"Combined-gene-level-taxonomy-coverages.tsv",
-        combined_outputs_dir + config["additional_filename_prefix"] + f"Combined-contig-level-taxonomy-coverages.tsv",
-        MAGs_dir + config["additional_filename_prefix"] + f"MAGs-overview.tsv",
-        MAGs_dir + config["additional_filename_prefix"] + f"MAG-KEGG-Decoder-out.tsv",
-        bins_dir + config["additional_filename_prefix"] + f"bins-overview.tsv",
-        assemblies_dir + config["additional_filename_prefix"] + f"assembly-summaries.tsv",
-        config["outputs_dir"] + config["additional_filename_prefix"] + f"processing-overview.tsv",
-        fastqc_out_dir + config["additional_filename_prefix"] + f"raw_multiqc_report.zip",
-        fastqc_out_dir + config["additional_filename_prefix"] + f"filtered_multiqc_report.zip"
-    shell:
-        """
-        bash scripts/combine-benchmarks.sh
-        """
+if config["perform_binning_and_MAG_recovery"] == "TRUE":
 
+    rule all:
+        input:
+            combined_outputs_dir + config["additional_filename_prefix"] + f"Combined-gene-level-KO-function-coverages.tsv",
+            combined_outputs_dir + config["additional_filename_prefix"] + f"Combined-gene-level-taxonomy-coverages.tsv",
+            combined_outputs_dir + config["additional_filename_prefix"] + f"Combined-contig-level-taxonomy-coverages.tsv",
+            MAGs_dir + config["additional_filename_prefix"] + f"MAGs-overview.tsv",
+            MAGs_dir + config["additional_filename_prefix"] + f"MAG-KEGG-Decoder-out.tsv",
+            bins_dir + config["additional_filename_prefix"] + f"bins-overview.tsv",
+            assemblies_dir + config["additional_filename_prefix"] + f"assembly-summaries.tsv",
+            config["outputs_dir"] + config["additional_filename_prefix"] + f"processing-overview.tsv",
+            fastqc_out_dir + config["additional_filename_prefix"] + f"raw_multiqc_report.zip",
+            fastqc_out_dir + config["additional_filename_prefix"] + f"filtered_multiqc_report.zip"
+        shell:
+            """
+            bash scripts/combine-benchmarks.sh
+            """
+
+else:
+
+    rule all:
+        input:
+            combined_outputs_dir + config["additional_filename_prefix"] + f"Combined-gene-level-KO-function-coverages.tsv",
+            combined_outputs_dir + config["additional_filename_prefix"] + f"Combined-gene-level-taxonomy-coverages.tsv",
+            combined_outputs_dir + config["additional_filename_prefix"] + f"Combined-contig-level-taxonomy-coverages.tsv",
+            assemblies_dir + config["additional_filename_prefix"] + f"assembly-summaries.tsv",
+            fastqc_out_dir + config["additional_filename_prefix"] + f"raw_multiqc_report.zip",
+            fastqc_out_dir + config["additional_filename_prefix"] + f"filtered_multiqc_report.zip"
+        shell:
+            """
+            bash scripts/combine-benchmarks.sh
+            """
 
 rule summarize_MAG_KO_annots_with_KEGG_Decoder:
     conda:

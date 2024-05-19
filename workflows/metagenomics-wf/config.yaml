@@ -50,6 +50,10 @@ REF_DB_ROOT_DIR:
 ##### The rest only need to be altered if we want to change them #####
 ######################################################################
 
+## perform binning and MAG recovery? "TRUE" for yes, anything else means the workflow won't do any binning, MAG recovery, or characterization of bins/MAGs
+perform_binning_and_MAG_recovery:
+    "TRUE"
+
 ## number of threads to use PER snakemake job (which is set with the -j parameter passed to snakemake call)
     # passed to megahit, bowtie2, samtools, metabat2, checkm-pplacer (many may be running concurrently)
 num_threads:
@@ -157,10 +161,6 @@ gtdbtk_memory_resources:
 # passed to rule checkm_on_bins:
 checkm_memory_resources:
     250000
-
-# passed to humann3 on rules humann3_PE and humann3_SE:
-humann3_memory_resources:
-    100000
 
 # passed to CAT in tax_classification rule:
 CAT_memory_resources:
