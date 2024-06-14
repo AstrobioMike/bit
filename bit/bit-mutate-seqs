@@ -1,0 +1,108 @@
+#!/usr/bin/env python
+
+from Bio import SeqIO
+import random
+import sys
+import argparse
+
+parser = argparse.ArgumentParser(description='This script will mutate all sequences of a nucleotide or amino acide multifasta with\
+                                              the specified mutation rate. It was created for testing classifiers and does not take\
+                                              into consideration things like transition/transversion rates. It also does\
+                                              not introduce indels. For version info, run `bit-version`.')
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input-fasta", help = "Starting fasta file", action = "store", required = True)
+
+parser.add_argument("-m", "--mutation-rate", help = 'Wanted mutation rate, must be a float between 0 and 1 (default: "0.01")', \
+                    action = "store", type = float, default = 0.01)
+parser.add_argument("-t", "--molecule-type", help = "'NT' for nucleotides or 'AA' for amino acids (default = 'NT')", \
+                    action = "store", choices = ["NT", "AA"], default = 'NT')
+parser.add_argument("-o", "--output-fasta", help='Output mutated fasta file (default: "mutated.fasta").', \
+                    action = "store", default = "mutated.fasta")
+parser.add_argument("-l", "--output-log", help='Output tsv file stating how many characters were changed in each input sequence (default: "mutated-log.tsv").', \
+                    action = "store", default = "mutated-log.tsv")
+
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(0)
+
+args = parser.parse_args()
+
+################################################################################
+
+logfile = "mutated-log.tsv"
+
+def main():
+
+    # checking mutation rate is within 0 and 1
+    validate_mutation_rate(args.mutation_rate)
+
+    # setting substitution type
+    available_substitutions = get_available_substitutions(args.molecule_type)
+
+    # doing mutations per sequence
+    with open (args.input_fasta, "r") as in_fasta, open(args.output_fasta, "w") as out_fasta, open(logfile, "w") as log:
+
+        # starting log file
+        log.write("seq_id\tseq_length\tnum_characters_mutated\n")
+
+        for seq_record in SeqIO.parse(in_fasta, "fasta"):
+
+            num_mutations = round(len(seq_record) * args.mutation_rate)
+
+            seq = mutate(seq_record.seq, num_mutations, available_substitutions)
+
+            out_fasta.write(f">{seq_record.id}\n")
+            out_fasta.write(f"{seq}\n")
+
+            # writing out log file
+            log.write(f"{seq_record.id}\t{len(seq_record)}\t{num_mutations}\n")
+
+################################################################################
+
+### functions
+def mutate(seq : str, num_mutations: int, available_substitutions: list):
+
+    # keeping track of which indexes were changed, so we don't change the same one twice (since this is for wanting a desired variation rate, not mimicking biology)
+    changed_base_indexes = []
+
+    # making as many changes as wanted
+    for _ in range(0, num_mutations):
+
+        # getting current index we will change (that wasn't already changed)
+        m_index = random.choice([m_index for m_index in range(len(seq)) if m_index not in changed_base_indexes])
+
+        # getting a new character for that position (that isn't the character already present)
+        m_base = random.choice([base for base in available_substitutions if base != seq[m_index]])
+
+        # mutating the sequence at that spot
+        seq = seq[:m_index] + m_base + seq[m_index+1:]
+
+        # tracking that this position was changed already
+        changed_base_indexes.append(m_index)
+
+    return seq
+
+
+def validate_mutation_rate(mutation_rate):
+    if not 0 <= mutation_rate <= 1:
+        print("\n    The '--mutation-rate' argument needs to be between 0 and and 1.\n")
+        print("  Exiting for now.\n")
+        sys.exit(1)
+
+
+def get_available_substitutions(molecule_type):
+
+    if molecule_type == 'NT':
+        return ['A', 'T', 'C', 'G']
+
+    else:
+        return ['A', 'R', 'N', 'D', 
+                'C', 'E', 'Q', 'G', 
+                'H', 'I', 'L', 'K', 
+                'M', 'F', 'P', 'S', 
+                'T', 'W', 'Y', 'V']
+
+if __name__ == "__main__":
+    main()
