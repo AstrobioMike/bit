@@ -31,8 +31,6 @@ args = parser.parse_args()
 
 ################################################################################
 
-logfile = "mutated-log.tsv"
-
 def main():
 
     # checking mutation rate is within 0 and 1
@@ -42,7 +40,7 @@ def main():
     available_substitutions = get_available_substitutions(args.molecule_type)
 
     # doing mutations per sequence
-    with open (args.input_fasta, "r") as in_fasta, open(args.output_fasta, "w") as out_fasta, open(logfile, "w") as log:
+    with open (args.input_fasta, "r") as in_fasta, open(args.output_fasta, "w") as out_fasta, open(args.output_log, "w") as log:
 
         # starting log file
         log.write("seq_id\tseq_length\tnum_characters_mutated\n")
@@ -86,6 +84,7 @@ def mutate(seq : str, num_mutations: int, available_substitutions: list):
 
 
 def validate_mutation_rate(mutation_rate):
+
     if not 0 <= mutation_rate <= 1:
         print("\n    The '--mutation-rate' argument needs to be between 0 and and 1.\n")
         print("  Exiting for now.\n")
