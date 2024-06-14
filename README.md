@@ -1,4 +1,4 @@
-<a href="https://github.com/AstrobioMike/bit#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-1,300+-blue" height="22"></a>
+<a href="https://github.com/AstrobioMike/bit#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-1,500+-blue" height="22"></a>
 <br>
 <a href="https://github.com/AstrobioMike/bit#citation-info"><img align="right" alt="Brief paper" src="https://img.shields.io/badge/Citation%20info-blue" height="22"></a>
 <br>
@@ -35,12 +35,13 @@ Some of the helper programs/scripts in _bit_ include:
 | `bit-get-accessions-from-GTDB` | searching the (stellar) [Genome Taxonomy Database](https://gtdb.ecogenomic.org/) by taxonomy and getting their NCBI accessions |  
 | `bit-summarize-assembly` | quickly summarizing nucleotide assemblies |  
 | `bit-summarize-column` | quickly summarizing a numeric column |  
-| `bit-parse-fasta-by-headers` | splitting a fasta file based on headers |  
+| `bit-mutate-seqs` | introduce point mutations in nucleotide or amino acid fasta files |  
+| `bit-count-bases-per-seq` | counting the number of bases per sequence in a fasta file |  
 | `bit-rename-fasta-headers` | renaming sequences in a fasta |  
+| `bit-parse-fasta-by-headers` | splitting a fasta file based on headers |  
 | `bit-reorder-fasta` | re-ordering a fasta file |  
 | `bit-extract-seqs-by-coords` | pulling out sequences from a fasta by their coordinates |  
 | `bit-genbank-to-AA-seqs`, `bit-genbank-to-fasta` | pulling amino-acid or nucleotide sequences out of a GenBank file |  
-| `bit-count-bases-per-seq` | counting the number of bases per sequence in a fasta file |  
 | `bit-calc-variation-in-msa` | calculating [variation](http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |  
 | `bit-filter-table` | filtering a table based on wanted IDs |  
 | `bit-get-lineage-from-taxids` | getting full lineage info from a list of taxon IDs (making use of the also stellar [TaxonKit](https://bioinf.shenwei.me/taxonkit/)) |  
