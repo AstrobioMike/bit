@@ -35,7 +35,7 @@ Some of the helper programs/scripts in _bit_ include:
 | `bit-get-accessions-from-GTDB` | searching the (stellar) [Genome Taxonomy Database](https://gtdb.ecogenomic.org/) by taxonomy and getting their NCBI accessions |  
 | `bit-summarize-assembly` | quickly summarizing nucleotide assemblies |  
 | `bit-summarize-column` | quickly summarizing a numeric column |  
-| `bit-mutate-seqs` | introduce point mutations in nucleotide or amino acid fasta files |  
+| `bit-mutate-seqs` | introduce point mutations (substitutions/indels) in nucleotide or amino acid fasta files |  
 | `bit-count-bases-per-seq` | counting the number of bases per sequence in a fasta file |  
 | `bit-rename-fasta-headers` | renaming sequences in a fasta |  
 | `bit-parse-fasta-by-headers` | splitting a fasta file based on headers |  
