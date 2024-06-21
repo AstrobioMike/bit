@@ -104,7 +104,7 @@ Please feel free to post an issue or email with any confusion about any of the o
 ### Other outputs
 The `workflow-outputs` directory will also hold a "processing-overview.tsv" which just contains some basic info about major steps in the processing.
 
-In the directory the workflow was executed from: a `logs/` directory will hold log files for the majority of steps performed; and a `benchmarks/` directory will hold time and resource utlization info for most steps performed.
+In the directory the workflow was executed from: a `logs/` directory will hold log files for the majority of steps performed; and a `benchmarks/` directory will hold time and resource utlization info (as described [here](https://stackoverflow.com/a/66872577) for most steps performed.
 
 ---
 
