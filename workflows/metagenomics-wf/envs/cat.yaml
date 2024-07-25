@@ -5,4 +5,4 @@ channels:
     - defaults
 dependencies:
     - cat=5.2.2
-    - diamond=2.1.9
+    - diamond=2.0.6

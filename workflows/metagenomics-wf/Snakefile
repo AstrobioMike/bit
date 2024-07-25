@@ -1,6 +1,6 @@
 ###################################################################################################
 ## Snakefile for the "bit" assembly-based metagenomics processing workflow                       ##
-## Version 1.0.1                                                                                 ##
+## Version 1.0.2                                                                                 ##
 ## bit: https://github.com/AstrobioMike/bit                                                      ##
 ##                                                                                               ##
 ## If you use this workflow in a publication, please consider citing :)                          ##
