@@ -33,7 +33,7 @@ This workflow perform an assembly-based approach to ultimately recover taxonomic
   - [GTDB-tk](https://github.com/Ecogenomics/GTDBTk#gtdb-tk) for assigning taxonomy of bacterial/archaeal MAGs ("MAGs" defined by cutoffs in config.yaml)
   - [KEGG-decoder](https://github.com/bjtully/BioData/tree/master/KEGGDecoder) for functionally summarizing recovered MAGs
 
-All required databases will be setup by the workflow if they don't exist already whenever they are used for the first time.
+> All required databases will be setup by the workflow if they don't exist already whenever they are used for the first time. They can take up to 400 GB during initial setup, and take up around 300 GB afterwards. 
 
 ---
 
