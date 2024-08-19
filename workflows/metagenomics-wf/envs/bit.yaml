@@ -6,3 +6,4 @@ channels:
     - astrobiomike
 dependencies:
     - bit=1.8.65
+    - numpy=1.26.4
