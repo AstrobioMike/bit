@@ -63,10 +63,10 @@ if use_paths_instead_of_basenames:
 
 
 ## creating output table foundation
-df_index = ["Assembly", "Total contigs", "Total length", "Ambiguous characters", 
-            "GC content", "Maximum contig length", "Minimum contig length", "N50", 
-            "N75", "N90", "L50", "L75", "L90", "Num. contigs >= 100", 
-            "Num. contigs >= 500", "Num. contigs >= 1000", "Num. contigs >= 5000", 
+df_index = ["Assembly", "Total contigs", "Total length", "Ambiguous characters",
+            "GC content", "Maximum contig length", "Minimum contig length", "N50",
+            "N75", "N90", "L50", "L75", "L90", "Num. contigs >= 100",
+            "Num. contigs >= 500", "Num. contigs >= 1000", "Num. contigs >= 5000",
             "Num. contigs >= 10000", "Num. contigs >= 50000", "Num. contigs >= 100000"]
 
 df = pd.DataFrame(columns = df_colnames, index = df_index)
@@ -84,11 +84,11 @@ for assembly in args.input_assembly:
 
     try:
         df.at["Assembly", str(assembly_name)] = assembly_name
-    except AttributeError: 
+    except AttributeError:
         print("  An attribute exception was thrown by pandas. Maybe the inputs don't have unique names?")
         print("  As written, this cuts off the extension based on last period to generate names.")
         sys.exit(1)
-    
+
     # putting in a catch if file is empty (which can happen if an assembly produced no contigs)
         # this will leave it in the table, but with NAs (written out as "NA")
     if os.stat(assembly).st_size == 0:
@@ -103,7 +103,7 @@ for assembly in args.input_assembly:
     for key in fasta.composition:
         if key not in ["A","T","G","C"]:
             num_ambiguous_chars += fasta.composition[key]
-    
+
     df.at["Ambiguous characters", str(assembly_name)] = num_ambiguous_chars
     df.at["GC content", str(assembly_name)] = round(fasta.gc_content, 2)
     df.at["Maximum contig length", str(assembly_name)] = len(fasta.longest)
@@ -136,10 +136,10 @@ if args.output_tsv:
     if args.transpose_output_tsv:
         df = df.T
         df.to_csv(args.output_tsv, sep="\t", index=False, na_rep = "NA")
-    
+
     else:
         df.to_csv(args.output_tsv, sep="\t", header=False, na_rep = "NA")
-    
+
 else:
     print("")
     print(df.to_string(header=False))
