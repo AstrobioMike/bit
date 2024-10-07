@@ -10,6 +10,7 @@ NC='\033[0m'
 my_ext=$2
 ext=$3
 format=$4
+http_flag=$5
 
 assembly=$(echo "$1" | cut -f 1)
 downloaded_accession=$(echo "$1" | cut -f 2)
@@ -22,15 +23,19 @@ base_link=$(echo "$1" | cut -f 9)
 # if not there, attempting to build ourselves
 if [ $base_link == "na" ] || [ -z $base_link ]; then
 
-    p1=$(printf "ftp://ftp.ncbi.nlm.nih.gov/genomes/all")
+    if [ $http_flag == "false" ]; then
+        p1=$(printf "ftp://ftp.ncbi.nlm.nih.gov/genomes/all")
+    else
+        p1=$(printf "https://ftp.ncbi.nlm.nih.gov/genomes/all")
+    fi
 
     # checking if GCF or GCA
-    if [[ $assembly == "GCF"* ]]; then 
+    if [[ $assembly == "GCF"* ]]; then
         p2="GCF"
     else
         p2="GCA"
     fi
-    
+
     p3=$(echo $assembly | cut -f 2 -d "_" | cut -c 1-3)
     p4=$(echo $assembly | cut -f 2 -d "_" | cut -c 4-6)
     p5=$(echo $assembly | cut -f 2 -d "_" | cut -c 7-9)

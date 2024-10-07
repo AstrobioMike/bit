@@ -30,6 +30,10 @@ if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "help" ]; then
     printf "                  can become problematic generally with around 15 or more, so a max\n"
     printf "                  of 12 will be used to be safe even if more are requested.\n\n"
 
+    printf "        - [-P]\n"
+    printf "                  Provide this flag with no arguments if your system can't use ftp,\n"
+    printf "                  and you'd like to try using http.\n\n"
+
     printf "    Example usage:\n\n\t bit-dl-ncbi-assemblies -w ncbi_accessions.txt -f protein -j 4\n\n"
 
     exit
@@ -40,15 +44,17 @@ printf "\n"
 ## setting default ##
 format="genbank"
 num_jobs=1
+http_flag='false'
 
 ## parsing arguments
-while getopts :w:f:j: args
+while getopts :w:f:j:P args
 do
     case "${args}"
     in
         w) NCBI_acc_file=${OPTARG};;
         f) format=${OPTARG};;
         j) num_jobs=${OPTARG};;
+        P) http_flag='true';;
         \?) printf "\n  ${RED}Invalid argument: -${OPTARG}${NC}\n\n    Run 'bit-dl-ncbi-assemblies' with no arguments or '-h' only to see help menu.\n\n" >&2 && exit
     esac
 done
@@ -102,8 +108,16 @@ rm -rf NCBI-accessions-not-downloaded.txt
 ## downloading assembly summaries (if not present in cwd already) ##
 if [ ! -s ncbi_assembly_info.tsv ]; then
 
-    printf "    ${GREEN}Downloading ncbi assembly summaries to be able to construct ftp links...${NC}\n\n"
-    curl --connect-timeout 30 --retry 10 ftp://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt > ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
+    printf "    ${GREEN}Downloading ncbi assembly summaries to be able to construct links...${NC}\n\n"
+    if [ $http_flag == "false" ]; then
+        genbank_assembly_summary_tab_link="ftp://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
+        refseq_assembly_summary_tab_link="ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt"
+    else
+        genbank_assembly_summary_tab_link="https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
+        refseq_assembly_summary_tab_link="https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt"
+    fi
+
+    curl --connect-timeout 30 --retry 10 ${genbank_assembly_summary_tab_link} > ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
 
     # making sure file downloaded with no errors, trying again if it did not (i can't figure out why, but it fails sometimes and then works others)
     # trying a max of 10 times
@@ -121,7 +135,7 @@ if [ ! -s ncbi_assembly_info.tsv ]; then
 
             printf "\n    ${YELLOW}Snag downloading GenBank assembly summary table, trying up to 15 times. Attempt: ${attempt}${NC}\n\n"
 
-            if ! curl --connect-timeout 30 --retry 10 ftp://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt > ncbi_assembly_info.tsv ; then
+            if ! curl --connect-timeout 30 --retry 10 ${genbank_assembly_summary_tab_link} > ncbi_assembly_info.tsv ; then
                 echo "failed" > capture_any_dl_errors.tmp
             else
                 rm -rf capture_any_dl_errors.tmp
@@ -140,7 +154,7 @@ if [ ! -s ncbi_assembly_info.tsv ]; then
     rm -rf capture_any_dl_errors.tmp
 
     printf "\n"
-    curl --connect-timeout 30 --retry 10 ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt >> ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
+    curl --connect-timeout 30 --retry 10 ${refseq_assembly_summary_tab_link} >> ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
 
     # doing the same as above, trying a few times because sometimes seems to work and others not for reasons I can't pin down yet
     attempt=1
@@ -154,7 +168,7 @@ if [ ! -s ncbi_assembly_info.tsv ]; then
 
             printf "\n    ${YELLOW}Snag downloading RefSeq assembly summary table, trying up to 15 times. Attempt: ${attempt}${NC}\n\n"
 
-            if ! curl --connect-timeout 30 --retry 10 ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt >> ncbi_assembly_info.tsv ; then
+            if ! curl --connect-timeout 30 --retry 10 ${refseq_assembly_summary_tab_link} >> ncbi_assembly_info.tsv ; then
                 echo "failed" > capture_any_dl_errors.tmp
             else
                 rm -rf capture_any_dl_errors.tmp
@@ -171,7 +185,7 @@ if [ ! -s ncbi_assembly_info.tsv ]; then
     done
 
     rm -rf capture_any_dl_errors.tmp
-    
+
     printf "\n    ${YELLOW}Assembly summary tables downloaded successfully. They are stored\n"
     printf "    in the current working directory as \"ncbi_assembly_info.tsv\".\n"
     printf "    That file is left here in case you'd like to use it again soon. But be\n"
@@ -256,10 +270,14 @@ if [ $num_jobs == "1" ]; then
         # if not there, attempting to build ourselves
         if [ $base_link == "na" ] || [ -z $base_link ]; then
 
-            p1=$(printf "ftp://ftp.ncbi.nlm.nih.gov/genomes/all")
+            if [ $http_flag == "false" ]; then
+                p1=$(printf "ftp://ftp.ncbi.nlm.nih.gov/genomes/all")
+            else
+                p1=$(printf "https://ftp.ncbi.nlm.nih.gov/genomes/all")
+            fi
 
             # checking if GCF or GCA
-            if [[ $assembly == "GCF"* ]]; then 
+            if [[ $assembly == "GCF"* ]]; then
                 p2="GCF"
             else
                 p2="GCA"
@@ -306,7 +324,7 @@ if [ $num_jobs == "1" ]; then
     done < $tmp_file
 
 else
-    cat $tmp_file | parallel -j $num_jobs helper-bit-dl-ncbi-assemblies-parallel.sh {} $my_ext $ext $format
+    cat $tmp_file | parallel -j $num_jobs helper-bit-dl-ncbi-assemblies-parallel.sh {} $my_ext $ext $format $http_flag
 fi
 
 rm $tmp_file
