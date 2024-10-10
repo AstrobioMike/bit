@@ -1,0 +1,207 @@
+#!/usr/bin/env python
+
+import os
+import argparse
+import pandas as pd
+import sys
+import textwrap
+import subprocess
+from io import StringIO
+from Bio import SeqIO
+
+parser = argparse.ArgumentParser(description="This script takes a set of target genes or regions to find \
+                                 (currently NT only), searches for them in input assemblies (currently just with \
+                                 blastn), and returns the general BLAST output table as well as a \
+                                 filtered/simplified summary table that just reports how many times each target \
+                                 was found in each input assembly based on specified minimum coverage and \
+                                 percent identity thresholds. For version info, run `bit-version`.",
+                                 epilog="Ex. usage: ez-screen -a assembly.fasta -t targets.fasta")
+
+required = parser.add_argument_group('REQUIRED PARAMETERS')
+optional = parser.add_argument_group('OPTIONAL PARAMETERS')
+
+required.add_argument("-a", "--assemblies", help = "Assembly files in fasta format", metavar = "<FILE>", required = True,
+                      nargs = '+')
+required.add_argument("-t", "--targets", help = "Targets you want to search for, e.g. genes/regions, in nucleotide form",
+                      metavar = "<FILE>", required = True)
+
+optional.add_argument("-o", "--output-prefix", help = 'Output prefix (default: "ez-screen")', action = "store",
+                      metavar = "<STR>", default = "ez-screen")
+
+optional.add_argument("-m", "--min-perc-id",
+                      help = 'Minimum percent ID for a hit to be counted as found in output summary table (default: 90)',
+                      metavar = "<INT>", action = "store", default = 90)
+
+optional.add_argument("-M", "--min-perc-cov",
+                      help = 'Minimum percent coverage of a target by a hit for it to be counted as found in output summary table (default: 95)',
+                      metavar = "<INT>", action = "store", default = 95)
+
+
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(0)
+
+args = parser.parse_args()
+
+################################################################################
+
+def main():
+
+    preflight()
+
+    targets = get_targets()
+
+    summary_df = pd.DataFrame()
+
+    for assembly in args.assemblies:
+
+        report_message(f"Working on input: {assembly} ...")
+
+        blast_df = run_blast(assembly)
+        filtered_blast_df = filter_blast_results(blast_df, assembly)
+        summary_df = update_summary_table(filtered_blast_df, targets, assembly, summary_df)
+
+    summary_df.to_csv(args.output_prefix + "-summary-table.tsv", sep = "\t", index_label = "input-assembly")
+
+    report_finished()
+
+################################################################################
+##### global vars #####
+blast_results_dir = args.output_prefix + "-blast-results"
+
+##### primary functions #####
+
+def preflight():
+
+    check_inputs(args.assemblies, args.targets)
+
+    if not os.path.exists(blast_results_dir):
+        os.makedirs(blast_results_dir)
+
+
+def check_inputs(assemblies, targets):
+    """ Check that input files exist """
+
+    for assembly in assemblies:
+        if not os.path.exists(assembly):
+            report_failure(f"Specified input assembly file not found: {assembly}")
+
+    if not os.path.exists(targets):
+        report_failure(f"Specified input targets file not found: {targets}")
+
+
+def run_blast(assembly, targets = args.targets, output_prefix = args.output_prefix):
+    """ Run BLAST to search for targets in assembly """
+
+    blast_command = [
+        "blastn",
+        "-task", "blastn",
+        "-query", targets,
+        "-subject", assembly,
+        "-outfmt", "6 qseqid qlen sseqid slen qstart qend sstart send length qcovs qcovhsp qcovus pident evalue bitscore",
+    ]
+
+    try:
+        blast_results = subprocess.check_output(blast_command, stderr = subprocess.STDOUT, text = True)
+    except subprocess.CalledProcessError as e:
+        report_failure("BLAST failed with the following error:  \n" + e.output)
+
+    blast_results = StringIO(blast_results)
+
+    blast_df = pd.read_csv(blast_results, sep = "\t", header = None, names = [
+        "qseqid", "qlen", "sseqid", "slen", "qstart", "qend", "sstart",
+        "send", "length", "qcovs", "qcovhsp", "qcovus", "pident", "evalue", "bitscore"
+    ])
+
+    assembly_base = os.path.splitext(os.path.basename(assembly))[0]
+
+    blast_df.to_csv(f"{blast_results_dir}/{assembly_base}-blast-results.tsv", sep = "\t", index = False)
+
+    return blast_df
+
+
+def get_targets():
+    """ Create a list of the targets based on input fasta headers """
+
+    targets = []
+
+    for record in SeqIO.parse(args.targets, "fasta"):
+        targets.append(record.id)
+
+    return targets
+
+
+def filter_blast_results(blast_df, assembly, min_perc_id = args.min_perc_id, min_perc_cov = args.min_perc_cov, output_prefix = args.output_prefix):
+    """ Filter BLAST results based on user-specified thresholds """
+
+    filtered_blast_df = blast_df[(blast_df["pident"] >= min_perc_id) & (blast_df["qcovhsp"] >= min_perc_cov)]
+
+    assembly_base = os.path.splitext(os.path.basename(assembly))[0]
+
+    filtered_blast_df.to_csv(f"{blast_results_dir}/{assembly_base}-filtered-blast-results.tsv", sep="\t", index=False)
+
+    return filtered_blast_df
+
+
+def update_summary_table(filtered_blast_df, targets, assembly, summary_df):
+    """ Update the summary table with results from the current assembly """
+
+    assembly_base = os.path.splitext(os.path.basename(assembly))[0]
+
+    target_counts = filtered_blast_df["qseqid"].value_counts()
+
+    new_row = pd.DataFrame(columns=targets, index=[assembly_base])
+
+    for target in targets:
+        new_row.at[assembly_base, target] = target_counts.get(target, 0)
+
+    summary_df = pd.concat([summary_df, new_row])
+
+    return summary_df
+
+
+def report_finished():
+
+    report_message("Done!", color = "green")
+    print(f"    Summary table written to: {args.output_prefix}-summary-table.tsv")
+    print(f"    Full and filtered BLAST results written in subdirectory: {blast_results_dir}/\n")
+
+################################################################################
+##### general utils #####
+
+tty_colors = {
+    'green' : '\033[0;32m%s\033[0m',
+    'yellow' : '\033[0;33m%s\033[0m',
+    'red' : '\033[0;31m%s\033[0m'
+}
+
+
+def color_text(text, color = 'green'):
+    if sys.stdout.isatty():
+        return tty_colors[color] % text
+    else:
+        return text
+
+
+def wprint(text):
+    """ print wrapper """
+
+    print(textwrap.fill(text, width = 80, initial_indent = "  ",
+          subsequent_indent = "  ", break_on_hyphens = False))
+
+
+def report_message(message, color = "yellow"):
+    print("")
+    wprint(color_text(message, color))
+
+
+def report_failure(message, color = "red"):
+    print("")
+    wprint(color_text(message, color))
+    print("\nExiting for now :(\n")
+    sys.exit(1)
+
+################################################################################
+
+if __name__ == "__main__":
+    main()
