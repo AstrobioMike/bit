@@ -1,4 +1,4 @@
-<a href="https://github.com/AstrobioMike/bit#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-1,500+-blue" height="22"></a>
+<a href="https://github.com/AstrobioMike/bit#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-1,700+-blue" height="22"></a>
 <br>
 <a href="https://github.com/AstrobioMike/bit#citation-info"><img align="right" alt="Brief paper" src="https://img.shields.io/badge/Citation%20info-blue" height="22"></a>
 <br>
@@ -31,27 +31,28 @@ Some of the helper programs/scripts in _bit_ include:
 
 | Program/script | Purpose | 
 | ------- | ------- |
-| `bit-dl-ncbi-assemblies` | downloading NCBI assemblies in different formats by just providing accession numbers |  
-| `bit-get-accessions-from-GTDB` | searching the (stellar) [Genome Taxonomy Database](https://gtdb.ecogenomic.org/) by taxonomy and getting their NCBI accessions |  
-| `bit-summarize-assembly` | quickly summarizing nucleotide assemblies |  
-| `bit-summarize-column` | quickly summarizing a numeric column |  
+| `bit-dl-ncbi-assemblies` | download NCBI assemblies in different formats by just providing accession numbers |  
+| `bit-get-accessions-from-GTDB` | search the (stellar) [Genome Taxonomy Database](https://gtdb.ecogenomic.org/) by taxonomy and get their NCBI accessions |  
+| `bit-summarize-assembly` | quickly summarize nucleotide assemblies |  
+| `bit-ez-screen` | quickly search for nucleotide targets in nucleotide input fastas, filtered based on target-coverage and percent ID, and summarized in a simple table |  
+| `bit-summarize-column` | quickly summarize a numeric column |  
 | `bit-mutate-seqs` | introduce point mutations (substitutions/indels) in nucleotide or amino acid fasta files |  
-| `bit-count-bases-per-seq` | counting the number of bases per sequence in a fasta file |  
-| `bit-rename-fasta-headers` | renaming sequences in a fasta |  
-| `bit-parse-fasta-by-headers` | splitting a fasta file based on headers |  
-| `bit-reorder-fasta` | re-ordering a fasta file |  
-| `bit-extract-seqs-by-coords` | pulling out sequences from a fasta by their coordinates |  
-| `bit-genbank-to-AA-seqs`, `bit-genbank-to-fasta` | pulling amino-acid or nucleotide sequences out of a GenBank file |  
-| `bit-calc-variation-in-msa` | calculating [variation](http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |  
-| `bit-filter-table` | filtering a table based on wanted IDs |  
-| `bit-get-lineage-from-taxids` | getting full lineage info from a list of taxon IDs (making use of the also stellar [TaxonKit](https://bioinf.shenwei.me/taxonkit/)) |  
-| `bit-filter-KOFamScan-results` | filtering [KOFamScan](https://github.com/takaram/kofam_scan) results |  
-| `bit-get-go-term-info` | getting information about a specific [GO](http://geneontology.org/) term |  
-| `bit-summarize-go-annotations` | summarizing GO annotations |  
-| `bit-kraken2-to-taxon-summaries`, `bit-combine-kraken2-taxon-summaries` | summarizing [kraken2](https://github.com/DerrickWood/kraken2) outputs in a table with counts of full taxonomic lineages, and combining multiple samples |  
-| `bit-combine-bracken-and-add-lineage` | combining [bracken](https://github.com/jenniferlu717/Bracken) outputs and adding full taxonomic lineage info |  
-| `bit-gen-iToL-map`, `bit-gen-iToL-colorstrip`, `bit-gen-iToL-text-dataset`, `bit-gen-iToL-binary-dataset` | generating color/mapping/data files for use with trees being viewed on the [Interactive Tree of Life](https://itol.embl.de/) site |  
-| `bit-figshare-upload` | uploading a file to figshare |  
+| `bit-count-bases-per-seq` | count the number of bases per sequence in a fasta file |  
+| `bit-rename-fasta-headers` | rename sequences in a fasta |  
+| `bit-parse-fasta-by-headers` | split a fasta file based on headers |  
+| `bit-reorder-fasta` | re-order a fasta file |  
+| `bit-extract-seqs-by-coords` | pull out sequences from a fasta by their coordinates |  
+| `bit-genbank-to-AA-seqs`, `bit-genbank-to-fasta` | pull amino-acid or nucleotide sequences out of a GenBank file |  
+| `bit-calc-variation-in-msa` | calculate [variation](http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |  
+| `bit-filter-table` | filter a table based on wanted IDs |  
+| `bit-get-lineage-from-taxids` | get full lineage info from a list of taxon IDs (making use of the also stellar [TaxonKit](https://bioinf.shenwei.me/taxonkit/)) |  
+| `bit-filter-KOFamScan-results` | filter [KOFamScan](https://github.com/takaram/kofam_scan) results |  
+| `bit-get-go-term-info` | get information about a specific [GO](http://geneontology.org/) term |  
+| `bit-summarize-go-annotations` | summarize GO annotations |  
+| `bit-kraken2-to-taxon-summaries`, `bit-combine-kraken2-taxon-summaries` | summarize [kraken2](https://github.com/DerrickWood/kraken2) outputs in a table with counts of full taxonomic lineages, and combining multiple samples |  
+| `bit-combine-bracken-and-add-lineage` | combine [bracken](https://github.com/jenniferlu717/Bracken) outputs and adding full taxonomic lineage info |  
+| `bit-gen-iToL-map`, `bit-gen-iToL-colorstrip`, `bit-gen-iToL-text-dataset`, `bit-gen-iToL-binary-dataset` | generate color/mapping/data files for use with trees being viewed on the [Interactive Tree of Life](https://itol.embl.de/) site |  
+| `bit-figshare-upload` | upload a file to figshare |  
 
 And other just convenient things that are nice to have handy, like removing soft line wraps that some fasta files have (`bit-remove-wraps`), and printing out the column names of a TSV with numbers (`bit-colnames`) to quickly see which columns we want to provide to things like `cut` or `awk` 🙂  
 
