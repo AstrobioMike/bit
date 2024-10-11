@@ -1,0 +1,75 @@
+#!/usr/bin/env python
+
+import sys
+import argparse
+import pandas as pd
+from Bio import SeqIO
+
+parser = argparse.ArgumentParser(description="This script takes a genbank-formatted file and extracts basic info \
+                                 for every 'CDS' feature including: 'gene', 'protein_id', 'locus_tag', and 'product'. \
+                                 It then writes those out to a tab-delimited file. For version info, run `bit-version`.",
+                                 epilog="Ex. usage: bit-genbank-to-cds-table -i input.gb -o output.tsv")
+
+required = parser.add_argument_group('REQUIRED PARAMETERS')
+optional = parser.add_argument_group('OPTIONAL PARAMETERS')
+
+required.add_argument("-i", "--input-genbank", help = "Input genbank file",
+                      metavar = "<FILE>", required = True)
+
+optional.add_argument("-o", "--output-tsv", help = 'Output tsv (default: "output.tsv")', action = "store",
+                      metavar = "<FILE>", default = "output.tsv")
+
+if len(sys.argv)==1:
+    parser.print_help(sys.stderr)
+    sys.exit(0)
+
+args = parser.parse_args()
+
+################################################################################
+
+def main():
+
+    cds_dataframe = parse_genbank_cds_to_dataframe(args.input_genbank)
+
+    save_dataframe_to_tsv(cds_dataframe, args.output_tsv)
+
+    print(f"\n    CDS table written to '{args.output_tsv}'!\n")
+
+################################################################################
+
+
+def parse_genbank_cds_to_dataframe(file_path):
+    cds_entries = []
+
+    with open(file_path, "r") as handle:
+
+        for record in SeqIO.parse(handle, "genbank"):
+
+            for feature in record.features:
+                if feature.type == "CDS":
+
+                    gene = feature.qualifiers.get("gene", ["NA"])[0]
+                    locus_tag = feature.qualifiers.get("locus_tag", ["NA"])[0]
+                    product = feature.qualifiers.get("product", ["NA"])[0]
+                    protein_id = feature.qualifiers.get("protein_id", ["NA"])[0]
+
+                    cds_entries.append({
+                        "gene": gene,
+                        "protein_id": protein_id,
+                        "locus_tag": locus_tag,
+                        "product": product,
+                    })
+
+    cds_df = pd.DataFrame(cds_entries)
+
+    return cds_df
+
+
+def save_dataframe_to_tsv(df, output_file):
+
+    df.to_csv(output_file, sep = '\t', index = False)
+
+################################################################################
+
+if __name__ == "__main__":
+    main()

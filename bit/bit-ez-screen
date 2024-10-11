@@ -15,7 +15,7 @@ parser = argparse.ArgumentParser(description="This script takes a set of target 
                                  filtered/simplified summary table that just reports how many times each target \
                                  was found in each input assembly based on specified minimum coverage and \
                                  percent identity thresholds. For version info, run `bit-version`.",
-                                 epilog="Ex. usage: ez-screen -a assembly.fasta -t targets.fasta")
+                                 epilog="Ex. usage: bit-ez-screen -a assembly.fasta -t targets.fasta")
 
 required = parser.add_argument_group('REQUIRED PARAMETERS')
 optional = parser.add_argument_group('OPTIONAL PARAMETERS')
