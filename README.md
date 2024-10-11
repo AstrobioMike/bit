@@ -42,6 +42,7 @@ Some of the helper programs/scripts in _bit_ include:
 | `bit-parse-fasta-by-headers` | split a fasta file based on headers |  
 | `bit-reorder-fasta` | re-order a fasta file |  
 | `bit-extract-seqs-by-coords` | pull out sequences from a fasta by their coordinates |  
+| `bit-genbank-to-cds-table` | pull out general CDS info into a tsv from a GenBank file |  
 | `bit-genbank-to-AA-seqs`, `bit-genbank-to-fasta` | pull amino-acid or nucleotide sequences out of a GenBank file |  
 | `bit-calc-variation-in-msa` | calculate [variation](http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |  
 | `bit-filter-table` | filter a table based on wanted IDs |  
