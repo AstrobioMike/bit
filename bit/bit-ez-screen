@@ -1,5 +1,17 @@
 #!/usr/bin/env python
 
+"""
+coverage threshold is applied differently for short vs long targets (coded as < 10,000 bases vs >= 10,000 bases)
+
+    "short" ones are based on percent of subject covered by alignment based
+        on blast_df["length"] / blast_df["slen"]) * 100 for individual alignments
+        that surpass the percent identity threshold
+
+    "long" ones are based on total percent of subject covered by alignment based on
+        the merged regions of all alignments that surpass the percent identity threshold
+"""
+
+
 import os
 import argparse
 import pandas as pd
@@ -8,13 +20,16 @@ import textwrap
 import subprocess
 from io import StringIO
 from Bio import SeqIO
+from tqdm import tqdm
 
 parser = argparse.ArgumentParser(description="This script takes a set of target genes or regions to find \
                                  (currently NT only), searches for them in input assemblies (currently just with \
                                  blastn), and returns the general BLAST output table as well as a \
-                                 filtered/simplified summary table that just reports how many times each target \
-                                 was found in each input assembly based on specified minimum coverage and \
-                                 percent identity thresholds. For version info, run `bit-version`.",
+                                 simplified summary table that just reports how many times each target \
+                                 was found in each input assembly (if the target was < 10,000 bases), \
+                                 or if the target was detected at all (if the target was >= 10,000 bases), based \
+                                 on tunable minimum target coverage and percent-identity thresholds. For \
+                                 version info, run `bit-version`.",
                                  epilog="Ex. usage: bit-ez-screen -a assembly.fasta -t targets.fasta")
 
 required = parser.add_argument_group('REQUIRED PARAMETERS')
@@ -33,7 +48,8 @@ optional.add_argument("-m", "--min-perc-id",
                       metavar = "<INT>", action = "store", default = 90)
 
 optional.add_argument("-M", "--min-perc-cov",
-                      help = 'Minimum percent coverage of a target by a hit for it to be counted as found in output summary table (default: 95)',
+                      help = 'Minimum percent coverage of a target for it to be counted as found \
+                              in output summary table (default: 95)',
                       metavar = "<INT>", action = "store", default = 95)
 
 
@@ -49,34 +65,51 @@ def main():
 
     preflight()
 
-    targets = get_targets()
-
-    summary_df = pd.DataFrame()
-
-    for assembly in args.assemblies:
-
-        report_message(f"Working on input: {assembly} ...")
-
-        blast_df = run_blast(assembly)
-        filtered_blast_df = filter_blast_results(blast_df, assembly)
-        summary_df = update_summary_table(filtered_blast_df, targets, assembly, summary_df)
-
-    summary_df.to_csv(args.output_prefix + "-summary-table.tsv", sep = "\t", index_label = "input-assembly")
+    run_screen()
 
     report_finished()
 
 ################################################################################
+
 ##### global vars #####
 blast_results_dir = args.output_prefix + "-blast-results"
+long_target_length_cutoff = 10000
 
 ##### primary functions #####
-
 def preflight():
 
     check_inputs(args.assemblies, args.targets)
 
     if not os.path.exists(blast_results_dir):
         os.makedirs(blast_results_dir)
+
+
+def run_screen():
+
+    targets_dict = get_targets()
+
+    summary_df = pd.DataFrame()
+
+    total_assemblies = len(args.assemblies)
+
+    print("")
+
+    for i, assembly in enumerate(tqdm(args.assemblies, total = total_assemblies,
+                                      desc = "Processing assemblies", unit = "assembly",
+                                      bar_format="{l_bar}{bar} | {n_fmt}/{total_fmt} processed, {remaining} remaining")):
+
+        blast_df = run_blast(assembly)
+        filtered_blast_df, long_targets_results_dict = filter_blast_results(blast_df, targets_dict)
+        summary_df = update_summary_table(filtered_blast_df, long_targets_results_dict, targets_dict, assembly, summary_df)
+
+    summary_df.to_csv(args.output_prefix + "-summary-table.tsv", sep = "\t", index_label = "input-assembly")
+
+
+def report_finished():
+
+    report_message("Done!", color = "green")
+    print(f"    Summary table written to: {args.output_prefix}-summary-table.tsv")
+    print(f"    Full and filtered BLAST results written in subdirectory: {blast_results_dir}/\n")
 
 
 def check_inputs(assemblies, targets):
@@ -96,8 +129,8 @@ def run_blast(assembly, targets = args.targets, output_prefix = args.output_pref
     blast_command = [
         "blastn",
         "-task", "blastn",
-        "-query", targets,
-        "-subject", assembly,
+        "-query", assembly,
+        "-subject", targets,
         "-outfmt", "6 qseqid qlen sseqid slen qstart qend sstart send length qcovs qcovhsp qcovus pident evalue bitscore",
     ]
 
@@ -115,56 +148,107 @@ def run_blast(assembly, targets = args.targets, output_prefix = args.output_pref
 
     assembly_base = os.path.splitext(os.path.basename(assembly))[0]
 
+    # adding percent of subject covered by alignment
+    blast_df["perc-subj-cov"] = round((blast_df["length"] / blast_df["slen"]) * 100, 1)
+
     blast_df.to_csv(f"{blast_results_dir}/{assembly_base}-blast-results.tsv", sep = "\t", index = False)
 
     return blast_df
 
 
 def get_targets():
-    """ Create a list of the targets based on input fasta headers """
+    """ creates a dictionary of the targets based on input fasta headers as keys and lengths as values"""
 
-    targets = []
+    targets_dict = {}
 
     for record in SeqIO.parse(args.targets, "fasta"):
-        targets.append(record.id)
+        targets_dict[record.id] = len(record.seq)
 
-    return targets
+    return targets_dict
 
 
-def filter_blast_results(blast_df, assembly, min_perc_id = args.min_perc_id, min_perc_cov = args.min_perc_cov, output_prefix = args.output_prefix):
+def filter_blast_results(blast_df, targets_dict, min_perc_id = args.min_perc_id, min_perc_cov = args.min_perc_cov):
     """ Filter BLAST results based on user-specified thresholds """
 
-    filtered_blast_df = blast_df[(blast_df["pident"] >= min_perc_id) & (blast_df["qcovhsp"] >= min_perc_cov)]
+    # if query is targets and subject is assembly
+    # short_targets_df, long_targets_df = blast_df[blast_df["qlen"] < long_target_length_cutoff], blast_df[blast_df["qlen"] >= long_target_length_cutoff]
 
-    assembly_base = os.path.splitext(os.path.basename(assembly))[0]
+    # if query is assembly and subject is targets
+    short_targets_df, long_targets_df = blast_df[blast_df["slen"] < long_target_length_cutoff], blast_df[blast_df["slen"] >= long_target_length_cutoff]
 
-    filtered_blast_df.to_csv(f"{blast_results_dir}/{assembly_base}-filtered-blast-results.tsv", sep="\t", index=False)
+    filtered_short_blast_df = short_targets_df[(short_targets_df["pident"] >= min_perc_id) & (short_targets_df["perc-subj-cov"] >= min_perc_cov)]
 
-    return filtered_blast_df
+    if not long_targets_df.empty:
+
+        filtered_long_blast_df = long_targets_df[(long_targets_df["pident"] >= min_perc_id)]
+        long_targets_results_dict = gen_long_targets_results_dict(filtered_long_blast_df, targets_dict)
+
+    else:
+        long_targets_results_dict = None
+
+    return filtered_short_blast_df, long_targets_results_dict
 
 
-def update_summary_table(filtered_blast_df, targets, assembly, summary_df):
+def gen_long_targets_results_dict(filtered_long_blast_df, targets_dict):
+    """ remove overlapping alignments and calculate total percent of subject covered by alignment """
+
+    long_subject_ids = [key for key, value in targets_dict.items() if value >= long_target_length_cutoff]
+
+    long_targets_detected_dict = {}
+
+    for ID in long_subject_ids:
+
+        sub_df = filtered_long_blast_df[filtered_long_blast_df["sseqid"] == ID]
+
+        if sub_df.empty:
+            long_targets_detected_dict[ID] = "NOT-DETECTED"
+            continue
+
+        sub_df = sub_df.sort_values(by = ["sstart"])
+
+        merged_regions = []
+
+        for index, row in sub_df.iterrows():
+
+            start, end = row['sstart'], row['send']
+
+            # if this is the first region or no overlap, adding the region
+            if not merged_regions or start > merged_regions[-1][1]:
+                merged_regions.append([start, end])
+            else:
+                # otherwise, merging the current region with the previous one
+                merged_regions[-1][1] = max(merged_regions[-1][1], end)
+
+        total_subject_bases_covered = sum(end - start + 1 for start, end in merged_regions)
+
+        if total_subject_bases_covered >= args.min_perc_cov * targets_dict[ID] / 100:
+            long_targets_detected_dict[ID] = "DETECTED"
+        else:
+            long_targets_detected_dict[ID] = "NOT-DETECTED"
+
+    return long_targets_detected_dict
+
+
+def update_summary_table(filtered_short_blast_df, long_targets_detected_dict, targets_dict, assembly, summary_df):
     """ Update the summary table with results from the current assembly """
 
     assembly_base = os.path.splitext(os.path.basename(assembly))[0]
 
-    target_counts = filtered_blast_df["qseqid"].value_counts()
+    target_counts = filtered_short_blast_df["sseqid"].value_counts()
 
-    new_row = pd.DataFrame(columns=targets, index=[assembly_base])
+    new_row = pd.DataFrame(columns = targets_dict.keys(), index = [assembly_base])
 
-    for target in targets:
+    for target in targets_dict.keys():
         new_row.at[assembly_base, target] = target_counts.get(target, 0)
+
+    if long_targets_detected_dict:
+        for col, new_value in long_targets_detected_dict.items():
+            new_row.at[assembly_base, col] = new_value
 
     summary_df = pd.concat([summary_df, new_row])
 
     return summary_df
 
-
-def report_finished():
-
-    report_message("Done!", color = "green")
-    print(f"    Summary table written to: {args.output_prefix}-summary-table.tsv")
-    print(f"    Full and filtered BLAST results written in subdirectory: {blast_results_dir}/\n")
 
 ################################################################################
 ##### general utils #####
