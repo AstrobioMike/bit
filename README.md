@@ -34,7 +34,7 @@ Some of the helper programs/scripts in _bit_ include:
 | `bit-dl-ncbi-assemblies` | download NCBI assemblies in different formats by just providing accessions |  
 | `bit-get-accessions-from-GTDB` | search the (stellar) [Genome Taxonomy Database](https://gtdb.ecogenomic.org/) by taxonomy and get their NCBI accessions |  
 | `bit-summarize-assembly` | quickly summarize nucleotide assemblies |  
-| `bit-ez-screen` | quickly search for nucleotide targets in nucleotide input fastas, filtered based on target-coverage and percent ID, and summarized in a simple table |  
+| `bit-ez-screen` | quickly search for nucleotide targets in nucleotide input fastas, filtered based on tunable target-coverage and percent ID thresholds, and summarized in a simple table |  
 | `bit-summarize-column` | quickly summarize a numeric column |  
 | `bit-mutate-seqs` | introduce point mutations (substitutions/indels) in nucleotide or amino acid fasta files |  
 | `bit-count-bases-per-seq` | count the number of bases per sequence in a fasta file |  
