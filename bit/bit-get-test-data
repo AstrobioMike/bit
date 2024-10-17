@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-This is a program for downloading test data files. 
+This is a program for downloading test data files.
 """
 
 import sys
@@ -10,7 +10,7 @@ import argparse
 import textwrap
 
 parser = argparse.ArgumentParser(description = "This is a helper program for downloading test data for use with bit workflows and programs. For bit verison info run `bit-version`. ",
-                                 epilog="Ex. usage: bit-get-test-data metagenomics\n")
+                                 epilog = "Ex. usage: bit-get-test-data metagenomics\n")
 
 required = parser.add_argument_group('required arguments')
 
@@ -48,7 +48,7 @@ def color_text(text, color='green'):
 
 
 def wprint(text):
-    print(textwrap.fill(text, width=80, initial_indent="  ", 
+    print(textwrap.fill(text, width=80, initial_indent="  ",
           subsequent_indent="  ", break_on_hyphens=False))
 
 

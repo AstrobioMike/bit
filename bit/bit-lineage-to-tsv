@@ -9,12 +9,12 @@ parser = argparse.ArgumentParser(description = 'This script converts lineages in
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input-tsv", help = 'First column needs to be an identifier, second column the lineage', action = "store", required = True)
+required.add_argument("-i", "--input-tsv", metavar = "<FILE>", help = 'input table, first column needs to be an identifier, second column the lineage', action = "store", required = True)
 
-parser.add_argument("-o", "--output-tsv", help = 'Default: "formatted-tax.tsv"', action = "store", default = "formatted-tax.tsv")
+parser.add_argument("-o", "--output-tsv", metavar = "<FILE>", help = 'output file (default: "formatted-tax.tsv")', action = "store", default = "formatted-tax.tsv")
 
 parser.add_argument("--make-taxid", help = "Provide this flag to make a unique taxid (string of all rank fields) for each lineage \
-                                            (will be added as second column of output)", action="store_true")
+                                            (will be added as second column of output)", action = "store_true")
 
 args = parser.parse_args()
 
@@ -56,7 +56,7 @@ with open(args.input_tsv) as in_tab:
 
             # this is if there is no second column (no lineage)
             if len(line) == 1:
-                
+
                 out_line = f"{ID}\tNA\tNA\tNA\tNA\tNA\tNA\tNA"
 
             else:

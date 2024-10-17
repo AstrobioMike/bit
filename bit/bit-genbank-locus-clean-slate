@@ -9,18 +9,18 @@ import sys
 import os
 import subprocess
 
-parser = argparse.ArgumentParser(description="Clean slate for LOCUS names in genbank files that are problematic (can be the case, for example, if annotated by NCBI but not officially released yet). This is only helpful if the original LOCUS names don't matter to us, of course. For version info, run `bit-version`.")
+parser = argparse.ArgumentParser(description = "Clean slate for LOCUS names in genbank files that are problematic (can be the case, for example, if annotated by NCBI but not officially released yet). This is only helpful if the original LOCUS names don't matter to us, of course. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_gb", help='Input Genbank file (e.g. "*.gbk", "*.gb", "*.gbff")', action="store", dest="input_gb", required=True)
-parser.add_argument("-w", "--desired_name", help='New locus name prefix  (default: "Unknown"', action="store", dest="wanted_name", default="Unknown")
-parser.add_argument("-o", "--output_gb", help='Output genbank file (default: "clean.gb")', action="store", dest="output_gb", default="clean.gb")
+required.add_argument("-i", "--input-gb", metavar = "<FILE>", help = 'Input Genbank file (e.g. "*.gbk", "*.gb", "*.gbff")', action = "store", required = True)
+parser.add_argument("-w", "--wanted-name", metavar = "<STR>", help = 'New locus name prefix  (default: "Unknown")', action = "store", default = "Unknown")
+parser.add_argument("-o", "--output-gb", metavar = "<FILE>", help = 'Output genbank file (default: "clean.gb")', action = "store", default = "clean.gb")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
     sys.exit(0)
-    
+
 args = parser.parse_args()
 
 tmp_file = args.input_gb + ".tmp"

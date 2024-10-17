@@ -14,7 +14,7 @@ import pandas as pd
 import textwrap
 import argparse
 
-parser = argparse.ArgumentParser(description="This is a helper program to facilitate setting up the reference files for the \
+parser = argparse.ArgumentParser(description = "This is a helper program to facilitate setting up the reference files for the \
                                               glorious Genome Taxonomy Database (gtdb.ecogenomic.org). It's really meant for internal \
                                               use only by other bit programs.")
 
@@ -50,7 +50,7 @@ def color_text(text, color='green'):
 
 
 def wprint(text):
-    print(textwrap.fill(text, width=80, initial_indent="  ", 
+    print(textwrap.fill(text, width=80, initial_indent="  ",
           subsequent_indent="  ", break_on_hyphens=False))
 
 
@@ -154,7 +154,7 @@ def check_and_or_get_gtdb_files(GTDB_DIR):
         print("")
         wprint(color_text("Downloading and parsing archaeal and bacterial metadata tables from GTDB (only needs to be done once, or when a new version is available)...", "yellow"))
         print("")
-        
+
         gen_gtdb_tab(GTDB_DIR)
 
 

@@ -7,7 +7,7 @@ import argparse
 import os
 
 
-parser = argparse.ArgumentParser(description='This script outputs general summary stats for an assembly provided \
+parser = argparse.ArgumentParser(description = 'This script outputs general summary stats for an assembly provided \
                                               in fasta format. If given an output file, writes out a tsv, otherwise \
                                               prints to the screen. "Ambiguous characters" reports total counts of \
                                               of any letter that is not "A", "T", "C", or "G". For version info, run \
@@ -15,11 +15,11 @@ parser = argparse.ArgumentParser(description='This script outputs general summar
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("input_assembly", metavar='fasta_file', type=str, nargs="+", help="Input assembly file(s).")
+required.add_argument("input-assembly", metavar = "<FILE(s)>", type = str, nargs = "+", help = "Input assembly file(s).")
 
-parser.add_argument("-o", "--output-tsv", help='Name of output tsv file (if none provided, prints to screen)', action="store", dest="output_tsv", default=False)
+parser.add_argument("-o", "--output-tsv", metavar = "<FILE>", help = 'Name of output tsv file (if none provided, prints to screen)', action = "store", default = False)
+parser.add_argument("-t", "--transpose-output-tsv", help = 'Set this flag if we want to have the output table have genomes as rows rather than columns.', action = "store_true")
 
-parser.add_argument("-t", "--transpose-output-tsv", help='Set this flag if we want to have the output table have genomes as rows rather than columns.', action="store_true")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)

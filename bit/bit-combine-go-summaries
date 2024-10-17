@@ -11,9 +11,15 @@ parser = argparse.ArgumentParser(description='This script is for combining GO su
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_files", nargs="+", type=str, help="space-delimited list of `bit-summarize-go-annotations` output files", action="store", dest="input_files", required=True)
-parser.add_argument("-n", "--sample_names", help='Sample names provided as a comma-delimited list, be sure it matches the order of the input files (by default will use basename of input files up to last period)', action="store", default='', dest="sample_names")
-parser.add_argument("-o", "--output_file", help='Output combined summaries (default: "combined-GO-summaries.tsv")', action="store", dest="output_file", default="combined-GO-summaries.tsv")
+required.add_argument("-i", "--input-files", metavar = "<FILE(s)>", nargs = "+",
+                      type = str, help = "space-delimited list of `bit-summarize-go-annotations` output files",
+                      action = "store", required = True)
+parser.add_argument("-n", "--sample-names", metavar = "<NAME(s)>",
+                    help = 'Sample names provided as a comma-delimited list, be sure it matches the order of the input files (by default will use basename of input files up to last period)',
+                    action = "store", default = '')
+parser.add_argument("-o", "--output-file", metavar = "<FILE>",
+                    help = 'Output combined summaries (default: "combined-GO-summaries.tsv")',
+                    action = "store", default = "combined-GO-summaries.tsv")
 
 if len(sys.argv)==1:
   parser.print_help(sys.stderr)
@@ -32,7 +38,7 @@ if len(args.sample_names) == 0:
     for file in args.input_files:
         curr_sample = os.path.basename(file).rsplit('.', 1)[0]
         total_counts[curr_sample] = 0
-        
+
         if file in all_samples:
             print('\n    It seems the file "' + file + '" is trying to get in here twice.')
             print("\n    That's not gonna fly :(\n")
@@ -69,7 +75,7 @@ for sample_key in all_samples:
     curr_tab = pd.read_csv(sample_key, sep="\t")
 
 
-    # adding to building GO dictionary of all GO terms in the input tables    
+    # adding to building GO dictionary of all GO terms in the input tables
     for row in curr_tab.itertuples():
 
         if row[1] not in GO_dict:

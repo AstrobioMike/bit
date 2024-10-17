@@ -9,9 +9,9 @@ parser = argparse.ArgumentParser('This script takes a multifasta file and reorde
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_fasta", help="Original fasta file", action="store", dest="input_fasta", required=True)
-required.add_argument("-w", "--wanted_sequence_order", help="Single-column file with headers in desired order", action="store", dest="ordered_headers", required=True)
-parser.add_argument("-o", "--output_fasta", help='Reordered output fasta (default: "Reordered.fa").', dest="output_fasta", default="Reordered.fa")
+required.add_argument("-i", "--input-fasta", metavar = "<FILE>", help = "Original fasta file", action = "store", required = True)
+required.add_argument("-w", "--wanted-sequence-order", metavar = "<FILE>", help = "Single-column file with headers in desired order", action = "store", dest = "ordered_headers", required = True)
+parser.add_argument("-o", "--output-fasta", help = 'Reordered output fasta (default: "reordered.fasta")', default = "reordered.fasta")
 
 
 if len(sys.argv)==1:

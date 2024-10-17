@@ -12,10 +12,10 @@ parser = argparse.ArgumentParser(description = "This script is for nucleotide mu
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input-fasta", help = "fasta file", action = "store", required = True)
-required.add_argument("-o", "--output-file", help = "Name of output tsv file", action = "store", required = True)
-parser.add_argument("-w", "--window-size", help = "Desired size of sliding window (default: 100)", action = "store", dest = "window", default = 100)
-parser.add_argument("-s", "--step-size", help = "Desired size of steps between each window (default: 1)", action = "store", dest = "step", default = 1)
+required.add_argument("-i", "--input-fasta", metavar = "<FILE>", help = "fasta file", action = "store", required = True)
+required.add_argument("-o", "--output-file", metavar = "<FILE>", help = "Name of output tsv file", action = "store", required = True)
+parser.add_argument("-w", "--window-size", metavar = "<INT>", help = "Desired size of sliding window (default: 100)", action = "store", dest = "window", default = 100)
+parser.add_argument("-s", "--step-size", metavar = "<INT>", help = "Desired size of steps between each window (default: 1)", action = "store", dest = "step", default = 1)
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)

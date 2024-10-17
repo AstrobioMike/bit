@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-This was originally a helper program of GToTree (https://github.com/AstrobioMike/GToTree/wiki) 
-to facilitate accessing and using taxonomy and genomes from the glorious Genome Taxonomy 
+This was originally a helper program of GToTree (https://github.com/AstrobioMike/GToTree/wiki)
+to facilitate accessing and using taxonomy and genomes from the glorious Genome Taxonomy
 Database (gtdb.ecogenomic.org/), but found use for it much more than in GToTree so included here too.
 """
 
@@ -16,7 +16,7 @@ import argparse
 import shutil
 import filecmp
 
-parser = argparse.ArgumentParser(description="This is a helper program to facilitate using taxonomy \
+parser = argparse.ArgumentParser(description = "This is a helper program to facilitate using taxonomy \
                                               and genomes from the Genome Taxonomy Database (gtdb.ecogenomic.org).\
                                               It primarily returns NCBI accessions and GTDB summary tables based on GTDB-taxonomy\
                                               searches, which could then be passed to, e.g., `bit-dl-ncbi-assemblies`. It also \
@@ -26,20 +26,20 @@ parser = argparse.ArgumentParser(description="This is a helper program to facili
                                               For version info, run `bit-version`.",
                                  epilog="Ex. usage: bit-get-accessions-from-GTDB -t Archaea --GTDB-representatives-only\n")
 
-parser.add_argument("-t", "--target-taxon", help="Target taxon (enter 'all' for all)", action="store", dest="target_taxon")
-parser.add_argument("-r", "--target-rank", help='Target rank', action="store", dest="target_rank")
-parser.add_argument("--get-table", action="store_true", help="Provide just this flag alone to download and parse a GTDB metadata \
+parser.add_argument("-t", "--target-taxon", metavar = "<STR>", help = "Target taxon (enter 'all' for all)", action = "store")
+parser.add_argument("-r", "--target-rank", metavar = "<STR>", help = 'Target rank', action = "store")
+parser.add_argument("--get-table", action = "store_true", help = "Provide just this flag alone to download and parse a GTDB metadata \
                                            table. Archaea and Bacteria tables pulled from here \
                                            (https://data.ace.uq.edu.au/public/gtdb/data/releases/latest/) and combined, and the \
                                            GTDB taxonomy column is split for easier manual searching if wanted.")
-parser.add_argument("--get-rank-counts", action="store_true", help="Provide just this flag alone to see counts of how many \
+parser.add_argument("--get-rank-counts", action = "store_true", help = "Provide just this flag alone to see counts of how many \
                                            unique taxa there are for each rank.")
-parser.add_argument("--get-taxon-counts", action="store_true", help="Provide this flag along with a specified taxon to the `-t` flag \
+parser.add_argument("--get-taxon-counts", action = "store_true", help = "Provide this flag along with a specified taxon to the `-t` flag \
                                                                      to see how many of that taxon are in the database.")
-parser.add_argument("--GTDB-representatives-only", action="store_true", help="Provide this flag along with a specified taxon to the `-t` flag \
+parser.add_argument("--GTDB-representatives-only", action = "store_true", help = "Provide this flag along with a specified taxon to the `-t` flag \
                                                                         to pull accessions only for genomes designated as GTDB species \
                                                                         representatives (see e.g.: https://gtdb.ecogenomic.org/faq#gtdb_species_clusters).")
-parser.add_argument("--RefSeq-representatives-only", action="store_true", help="Provide this flag along with a specified taxon to the `-t` flag \
+parser.add_argument("--RefSeq-representatives-only", action = "store_true", help = "Provide this flag along with a specified taxon to the `-t` flag \
                                                                         to pull accessions only for genomes designated as RefSeq representative \
                                                                         genomes (see e.g.: https://www.ncbi.nlm.nih.gov/refseq/about/prokaryotes/#representative_genomes).\
                                                                         (Useful for subsetting a view across a broad level of diversity.)")
@@ -139,7 +139,7 @@ def color_text(text, color='green'):
 
 
 def wprint(text):
-    print(textwrap.fill(text, width=80, initial_indent="  ", 
+    print(textwrap.fill(text, width=80, initial_indent="  ",
           subsequent_indent="  ", break_on_hyphens=False))
 
 
@@ -420,7 +420,7 @@ def gen_gtdb_tab(location):
 
 def report_gtdb_version_info(location):
     """ reporting GTDB version info """
-    
+
     version_info = []
 
     with open(location + "GTDB-version-info.txt") as version_info_file:

@@ -13,24 +13,24 @@ parser = argparse.ArgumentParser(description = "This script will mutate all sequ
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input-fasta", help = "Starting fasta file", action = "store", required = True)
+required.add_argument("-i", "--input-fasta", metavar = "<FILE>", help = "Starting fasta file", action = "store", required = True)
 
-parser.add_argument("-m", "--mutation-rate", help = 'Wanted mutation rate, must be a float between 0 and 1 (default: "0.01")', \
+parser.add_argument("-m", "--mutation-rate",metavar = "<FLOAT>",  help = 'Wanted mutation rate, must be a float between 0 and 1 (default: "0.01")', \
                     action = "store", type = float, default = 0.01)
 parser.add_argument("-t", "--molecule-type", help = "'NT' for nucleotides or 'AA' for amino acids (default = 'NT')", \
                     action = "store", choices = ["NT", "AA"], default = 'NT')
-parser.add_argument("-o", "--output-fasta", help = 'Output mutated fasta file (default: "mutated.fasta").', \
+parser.add_argument("-o", "--output-fasta", metavar = "<FILE>", help = 'Output mutated fasta file (default: "mutated.fasta").', \
                     action = "store", default = "mutated.fasta")
-parser.add_argument("-l", "--output-log", help = 'Output file stating seed used and how many characters were changed in each input sequence (default: "mutated.log").', \
+parser.add_argument("-l", "--output-log", metavar = "<FILE>", help = 'Output file stating seed used and how many characters were changed in each input sequence (default: "mutated.log").', \
                     action = "store", default = "mutated.log")
-parser.add_argument("-f", "--frequency-of-indels", help = "Specify the frequency of indels wanted, must be a float between 0 and 1. This \
+parser.add_argument("-f", "--frequency-of-indels", metavar = "<FLOAT>", help = "Specify the frequency of indels wanted, must be a float between 0 and 1. This \
                                                            is a subset of the overall mutation rate provided via the '-m' argument. \
                                                            E.g., providing '-f 0.2' means 1 out of every 5 mutations will be an indel \
                                                            By default, no indels are incorporated (default = 0.0). The coded likelihood \
                                                            of adding an insertion/deletion is 50/50, with all characters equally likely \
                                                            to be inserted.", \
                     action = "store", type = float, default = 0.0)
-parser.add_argument("-s", "--seed-for-randomization", help = "Can optionally set the seed used for the python 'random' module", \
+parser.add_argument("-s", "--seed-for-randomization", metavar = "<INT>", help = "Can optionally set the seed used for the python 'random' module", \
                     action = "store", type = int)
 
 if len(sys.argv)==1:

@@ -4,26 +4,26 @@ import sys
 import argparse
 import os
 
-parser = argparse.ArgumentParser(description='This script is for parsing NCBI\'s assembly summary file down\
+parser = argparse.ArgumentParser(description = 'This script is for parsing NCBI\'s assembly summary file down\
                                               to the provided accessions. It is used by the `bit-dl-ncbi-assemblies`\
                                               script. For version info, run `bit-version`.')
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-a", "--assembly_summary", help="NCBI's assembly summary file", action="store", dest="all_assemblies", required=True)
-required.add_argument("-w", "--wanted_accessions", help="Single-column file with wanted accessions", action="store", dest="wanted_accs", required=True)
-parser.add_argument("-o", "--output_file", help='Wanted summary info only (default: "Wanted.tsv")', action="store", dest="output_file", default="Wanted.tsv")
+required.add_argument("-a", "--assembly-summary", metavar = "<FILE>", help = "NCBI's assembly summary file", action = "store", dest = "all_assemblies", required = True)
+required.add_argument("-w", "--wanted-accessions", metavar = "<FILE>", help = "Single-column file with wanted accessions", action = "store", dest = "wanted_accs", required = True)
+parser.add_argument("-o", "--output-file", help = 'Output file of wanted summary info only (default: "wanted.tsv")', action = "store", default = "wanted.tsv")
 
 if len(sys.argv)==1:
-  parser.print_help(sys.stderr)
-  sys.exit(0)
+    parser.print_help(sys.stderr)
+    sys.exit(0)
 
 args = parser.parse_args()
 
 wanted_dict = {}
 
 with open(args.wanted_accs, "r") as wanted_accs:
-  
+
     for line in wanted_accs:
         root_acc = line.strip().split(".")[0]
         wanted_dict[str(root_acc)] = line.strip()
@@ -34,7 +34,7 @@ with open(args.all_assemblies) as assemblies:
 
     for line in assemblies:
         line = line.split("\t")
-    
+
         if line[0].split(".")[0] in wanted_dict:
             dl_acc = str(line[0])
 

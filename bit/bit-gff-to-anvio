@@ -5,19 +5,19 @@ import re
 import sys
 import os
 
-parser = argparse.ArgumentParser(description="This script takes a gff file and converts it into the format required\
+parser = argparse.ArgumentParser(description = "This script takes a gff file and converts it into the format required\
                                               for importing external gene calls and functions into anvi'o. It was\
                                               made based on the gff3 format. Currently, it does not take into account 'call_type',\
                                               and assumes all are for coding sequences. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_gff", help='input gff file (e.g. "*.gff")', action="store", dest="input_gff", required=True)
-parser.add_argument("-s", "--annotation_source", help='Annotation source (default: "NCBI_PGAP")', action="store", dest="source", default="NCBI_PGAP")
-parser.add_argument("-v", "--annotation_version", help='Annotation source version (default: "v4.6")', action="store", dest="version", default="v4.6")
-parser.add_argument("-o", "--output_gene_calls_tsv", help='Output tsv file (default: "external_gene_calls.tsv")', action="store", dest="output_gene_calls_tsv", default="external_gene_calls.tsv")
-parser.add_argument("-a", "--output_functions_tsv", help='Output functions file (default: "functions.tsv")', action="store", dest="output_functions_tsv", default="functions.tsv")
-parser.add_argument("-m", "--output_mappings_tsv", help='Output mapping file for anvio "gene_callers_id"s to protein accessions and locus tags if present (default: "mappings.tsv")', action="store", dest="output_mappings_tsv", default="mappings.tsv")
+required.add_argument("-i", "--input-gff", metavar = "<FILE>", help = 'input gff file (e.g., "input.gff")', action = "store", required = True)
+parser.add_argument("-s", "--annotation-source", metavar = "<STR>", help = 'Annotation source (default: "NCBI_PGAP")', action = "store", dest = "source", default = "NCBI_PGAP")
+parser.add_argument("-v", "--annotation-version", metavar = "<STR>", help = 'Annotation source version (default: "v4.6")', action = "store", dest = "version", default = "v4.6")
+parser.add_argument("-o", "--output-gene-calls-tsv", metavar = "<FILE>", help = 'Output gene-calls tsv file (default: "external-gene-calls.tsv")', action = "store", default = "external-gene-calls.tsv")
+parser.add_argument("-a", "--output-functions-tsv", metavar = "<FILE>", help = 'Output functions file (default: "functions.tsv")', action = "store", default = "functions.tsv")
+parser.add_argument("-m", "--output-mappings-tsv", metavar = "<FILE>", help = 'Output mapping file for anvio "gene_callers_id"s to protein accessions and locus tags if present (default: "mappings.tsv")', action = "store", default = "mappings.tsv")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -52,7 +52,7 @@ with open(args.input_gff, "r") as inputs:
 
         else:
             line_split = line.split("\t")
-            
+
             # setting contig length value, this will enable us to filter out those that extend beyond the end of the contig, if "region" lines are present in the gff file
             if line_split[2] == "region":
                 max_stop = line_split[4]
@@ -111,8 +111,8 @@ with open(args.input_gff, "r") as inputs:
                     product = re.sub('%2C', ',', product) # for some reason the commas in here are "%2C", so changing
                     product = re.sub('%3B', ';', product) # these are dumb too
                     ## some of these have different spaces due to odd characters, fixing to match what i get from my genbank-to-anvio parser
-                    product = re.sub(r'([0-9]), ([0-9])' , r'\1,\2', product) 
-                    product = re.sub(r"([0-9]),\r([0-9])" , r'\1,\2', product) 
+                    product = re.sub(r'([0-9]), ([0-9])' , r'\1,\2', product)
+                    product = re.sub(r"([0-9]),\r([0-9])" , r'\1,\2', product)
                     product = re.sub(r'([A-Za-z0-9])- ', r'\1-', product)
                     product = re.sub(r' -([A-Za-z0-9])', r'-\1', product)
                     product = product.replace('( ', '(')

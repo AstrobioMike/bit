@@ -1,9 +1,9 @@
 #!/usr/bin/env python
 
 """
-This is a helper program of mine taken from GToTree (https://github.com/AstrobioMike/GToTree/wiki) 
-to download NCBI tax data for using TaxonKit (https://bioinf.shenwei.me/taxonkit/) with 
-bit-get-lineage-from-taxids. 
+This is a helper program of mine taken from GToTree (https://github.com/AstrobioMike/GToTree/wiki)
+to download NCBI tax data for using TaxonKit (https://bioinf.shenwei.me/taxonkit/) with
+bit-get-lineage-from-taxids.
 """
 
 import sys
@@ -16,9 +16,9 @@ import filecmp
 import tarfile
 import gzip
 
-parser = argparse.ArgumentParser(description="This is a helper program to setup NCBI tax data for programs that use TaxonKit (bioinf.shenwei.me/taxonkit/) \
+parser = argparse.ArgumentParser(description = "This is a helper program to setup NCBI tax data for programs that use TaxonKit (bioinf.shenwei.me/taxonkit/) \
                                               to retrieve taxonomy info.", \
-                                 epilog="Ex. usage: helper-bit-get-ncbi-tax-data\n")
+                                 epilog = "Ex. usage: helper-bit-get-ncbi-tax-data\n")
 
 args = parser.parse_args()
 
@@ -61,7 +61,7 @@ def color_text(text, color='green'):
 
 
 def wprint(text):
-    print(textwrap.fill(text, width=80, initial_indent="  ", 
+    print(textwrap.fill(text, width=80, initial_indent="  ",
           subsequent_indent="  ", break_on_hyphens=False))
 
 

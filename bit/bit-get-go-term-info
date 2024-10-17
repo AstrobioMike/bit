@@ -9,15 +9,15 @@ import pandas as pd
 import sys
 import subprocess
 
-parser = argparse.ArgumentParser(description="Get quick information on individual GO terms. For version info, run `bit-version`.")
-parser.add_argument('GO_term', help= 'GO term you want to investigate, e.g. "GO:0010501"')
+parser = argparse.ArgumentParser(description = "Get quick information on individual GO terms. For version info, run `bit-version`.")
+parser.add_argument('GO-term', metavar = "<STR>", help =  'GO term you want to investigate, e.g. "GO:0010501"')
 
-parser.add_argument("-g", "--GO_obo_file", help='GO obo file to use (e.g. from: geneontology.org/docs/download-ontology/). By default will \
+parser.add_argument("-g", "--GO-obo-file", metavar = "<STR>", help = 'GO obo file to use (e.g. from: geneontology.org/docs/download-ontology/). By default will \
                                                  use "go-basic.obo". "goslim_metagenomics.obo" is also a pre-packaged option (enter `-g goslim_metagenomics` to specify it). Or \
                                                  a different obo-formatted file can be specified here.',
-                    action="store", dest="obo", default="go_basic")
+                    action = "store", dest = "obo", default = "go_basic")
 
-parser.add_argument("--parents-only", help="Add this flag to report parents only, and no children.", action="store_true")
+parser.add_argument("--parents-only", help = "Add this flag to report parents only, and no children.", action = "store_true")
 
 
 if len(sys.argv)==1:
@@ -95,7 +95,7 @@ if parents:
 
 else:
     print("\nThere are no parent terms for " + str(input_go_id) + ".")
-  
+
   # getting child terms and their info unless --parents-only flag was specified
 if not args.parents_only:
     children = input_go_term.get_all_children()

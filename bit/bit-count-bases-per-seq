@@ -12,8 +12,8 @@ parser = argparse.ArgumentParser(description = "This script takes a multifasta a
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input-fasta", help = "Original fasta file", action = "store", required=True)
-parser.add_argument("-o", "--output-file", help = 'Name of output tab-delimited file (default: "Num-bps.tsv")', action = "store", \
+required.add_argument("-i", "--input-fasta", metavar = "<FILE>", help = "Original fasta file", action = "store", required = True)
+parser.add_argument("-o", "--output-file", metavar = "<FILE>", help = 'Name of output tab-delimited file (default: "Num-bps.tsv")', action = "store", \
                     default = "Num-bps.tsv")
 
 if len(sys.argv) == 1:

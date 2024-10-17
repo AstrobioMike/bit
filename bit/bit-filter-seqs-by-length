@@ -9,10 +9,10 @@ parser = argparse.ArgumentParser(description="This script takes a multifasta as 
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_fasta", help="Original fasta file", action="store", dest="input_fasta", required=True)
-required.add_argument("-m", "--min_length", help="minimum length retained", action="store", dest="min_len", required=True)
-parser.add_argument("-M", "--max_length", help="maximum length retained", action="store", dest="max_len", default="9223372036854775807")
-parser.add_argument("-o", "--output_file", help='Name of output fasta file (default: "filtered.fasta")', action="store", dest="output_file", default="filtered.fasta")
+required.add_argument("-i", "--input-fasta", help = "Original fasta file", metavar = "<FILE>", action = "store", required = True)
+required.add_argument("-m", "--min-length", metavar = "<INT>", help = "minimum length retained", action = "store", dest = "min_len", required = True)
+parser.add_argument("-M", "--max-length", metavar = "<INT>", help = "maximum length retained", action = "store", dest = "max_len", default = "9223372036854775807")
+parser.add_argument("-o", "--output-file", metavar = "<FILE>", help = 'Name of output fasta file (default: "filtered.fasta")', action = "store", default = "filtered.fasta")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)

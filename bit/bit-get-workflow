@@ -78,7 +78,7 @@ def color_text(text, color='green'):
 
 
 def wprint(text):
-    print(textwrap.fill(text, width=80, initial_indent="  ", 
+    print(textwrap.fill(text, width=80, initial_indent="  ",
           subsequent_indent="  ", break_on_hyphens=False))
 
 
@@ -89,7 +89,7 @@ def report_message(message, color = "yellow"):
 
 def get_versions_available(target_wf):
 
-    """ 
+    """
     This finds which versions are available on the release page and returns them as a list,
     and creates a dictionary holding the versions as keys and full workflow names as values.
     """
@@ -121,11 +121,11 @@ def get_versions_available(target_wf):
                 link_basename = os.path.basename(link)
                 version_info_dash_index = link_basename.rfind('-')
                 link_version = link_basename[version_info_dash_index + 1:].replace("v", "")
-                
+
                 # adding to list
                 available_versions.append(link_version)
 
-                # adding to dictionary of verisons 
+                # adding to dictionary of verisons
                 dict_of_versions_and_basenames[link_version] = link_basename
 
 
@@ -165,7 +165,7 @@ def download_and_unzip(target_link):
 
     """ this downloads and unzips the target workflow """
 
-    # python module zipfile does not retain permissions (see https://github.com/python/cpython/issues/59999 and https://github.com/python/cpython/pull/32289) 
+    # python module zipfile does not retain permissions (see https://github.com/python/cpython/issues/59999 and https://github.com/python/cpython/pull/32289)
     # this was messing up places where files were expected to come in as executables, this was the old way
     # # downloading
     # target = requests.get(target_link)

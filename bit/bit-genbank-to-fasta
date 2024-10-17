@@ -9,13 +9,13 @@ parser = argparse.ArgumentParser(description="Parse nucleotide sequences from Ge
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_gb", help='input Genbank file (e.g. "*.gbk", "*.gb", "*.gbff")', action="store", dest="input_gb", required=True)
-parser.add_argument("-o", "--output_fasta", help='Output fasta file (default: "genbank.fa")', action="store", dest="output_fasta", default="genbank.fa")
+required.add_argument("-i", "--input-gb", metavar = "<FILE>", help = 'input Genbank file (e.g. "*.gbk", "*.gb", "*.gbff")', action = "store", required = True)
+parser.add_argument("-o", "--output-fasta", metavar = "<FILE>", help = 'Output fasta file (default: "genbank.fa")', action = "store", default = "genbank.fa")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
     sys.exit(0)
-   
+
 args = parser.parse_args()
 
 input_gb = open(args.input_gb, "r")

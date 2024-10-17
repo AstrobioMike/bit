@@ -9,8 +9,9 @@ parser = argparse.ArgumentParser(description="This script takes a nucleotide mul
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_fasta", help="fasta file", action="store", dest="input_fasta", required=True)
-parser.add_argument("-o", "--output_bed_file", help='Name of output bed file (default: "Output.bed")', action="store", dest="output_file", default="Output.bed")
+required.add_argument("-i", "--input-fasta", metavar = "<FILE>", help = "input fasta file", action = "store", required = True)
+parser.add_argument("-o", "--output-bed-file", metavar = "<FILE>", help = 'Name of output bed file (default: "Output.bed")',
+                    action = "store", default = "Output.bed")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -21,7 +22,7 @@ args = parser.parse_args()
 # in_fasta = open(args.input_fasta, "r")
 # out_file = open(args.output_file, "w")
 
-with open(args.output_file, "w") as out:
+with open(args.output_bed_file, "w") as out:
     with open(args.input_fasta, "r") as in_fasta:
 
         for record in SeqIO.parse(in_fasta, "fasta"):

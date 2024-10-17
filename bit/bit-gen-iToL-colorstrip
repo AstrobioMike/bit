@@ -3,17 +3,16 @@ import sys
 import argparse
 import os
 
-parser = argparse.ArgumentParser(description='This script is for creating a standard iToL colorstrip dataset file when given the IDs of the genomes we want to color (formatting comes from iToL help page here: https://itol.embl.de/help/dataset_color_strip_template.txt). For version info, run `bit-version`.')
+parser = argparse.ArgumentParser(description = 'This script is for creating a standard iToL colorstrip dataset file when given the IDs of the genomes we want to color (formatting comes from iToL help page here: https://itol.embl.de/help/dataset_color_strip_template.txt). For version info, run `bit-version`.')
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-g", "--target-genomes", help='Single-column file with the genomes to color (need to match the IDs in the tree file, with no ">")', action="store", required=True)
-parser.add_argument("-l", "--label", help='Label used in the legend table (default: "label1")', action="store", default="label1")
-parser.add_argument("-c", "--color", help='Color to use, pre-baked options include "blue", "green", "red", "purple", or "black", or can provide the hexcode (default: "blue", of course, \'cause it\'s the best)', action="store", default="blue")
-parser.add_argument("-w", "--width", help='width of the colorstrip (default: 25)', action="store", default="25")
-parser.add_argument("--color-branches-too", help="Add this flag if wanting to color branches also", action="store_true")
-parser.add_argument("-o", "--output_file", help='Output file for iToL (default: "iToL-colorstrip.txt")', action="store", dest="output_file", default="iToL-colorstrip.txt")
-
+required.add_argument("-g", "--target-genomes", metavar = "<FILE>", help = 'Single-column file with the genomes to color (need to match the IDs in the tree file, with no ">")', action = "store", required = True)
+parser.add_argument("-l", "--label", metavar = "<STR>", help = 'Label used in the legend table (default: "label1")', action = "store", default = "label1")
+parser.add_argument("-c", "--color", metavar = "<STR>", help = 'Color to use, pre-baked options include "blue", "green", "red", "purple", or "black", or can provide the hexcode (default: "blue", of course, \'cause it\'s the best)', action = "store", default = "blue")
+parser.add_argument("-w", "--width", metavar = "<INT>", help = 'width of the colorstrip (default: 25)', action = "store", default = "25")
+parser.add_argument("--color-branches-too", help = "Add this flag if wanting to color branches also", action = "store_true")
+parser.add_argument("-o", "--output-file", metavar = "<FILE>", help = 'Output file for iToL (default: "iToL-colorstrip.txt")', action = "store", default = "iToL-colorstrip.txt")
 
 
 if len(sys.argv)==1:

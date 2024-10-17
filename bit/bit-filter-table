@@ -3,18 +3,18 @@
 import argparse
 import gzip
 
-parser = argparse.ArgumentParser(description='Ad hoc script for filtering a table based on values in a specified column. For version info, run `bit-version`.')
+parser = argparse.ArgumentParser(description = 'Ad hoc script for filtering a table based on values in a specified column. For version info, run `bit-version`.')
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_table", help='Input table', action="store", dest="in_tab", required=True)
-required.add_argument("-w", "--wanted_values", help='Wanted values', action="store", dest="wanted", required=True)
+required.add_argument("-i", "--input-table", metavar = "<FILE>", help = 'Input table', action = "store", dest = "in_tab", required = True)
+required.add_argument("-w", "--wanted-values", metavar = "<FILE>", help = 'Wanted values', action = "store", dest = "wanted", required = True)
 
-parser.add_argument("-o", "--output_table", help='Output table (default: "Output.tsv")', action="store", dest="out_tab", default="Output.tsv")
-parser.add_argument("-d", "--delimiter", help='Delimiter (default: "\\t")', action="store", dest="delimiter", default="\t")
-parser.add_argument("-c", "--column", help='Column to filter on (default: 1)', action="store", dest="column", default=1, type=int)
-parser.add_argument("--no-header", help='Add if there is no header', action="store_true")
-parser.add_argument("--gz", help='Add if the input is gzipped (output will not be)', action="store_true")
+parser.add_argument("-o", "--output-file", metavar = "<FILE>", help='Output table filename (default: "Output.tsv")', action = "store", dest = "out_tab", default = "Output.tsv")
+parser.add_argument("-d", "--delimiter", metavar = "<STR>", help = 'Delimiter (default: "\\t")', action = "store", default = "\t")
+parser.add_argument("-c", "--column", metavar = "<INT>", help = 'Index of column to filter on (default: 1)', action = "store", default = 1, type = int)
+parser.add_argument("--no-header", help='Add if there is no header', action = "store_true")
+parser.add_argument("--gz", help = 'Add if the input is gzipped (output will not be)', action = "store_true")
 
 args = parser.parse_args()
 

@@ -4,15 +4,15 @@ import sys
 import argparse
 import os
 
-parser = argparse.ArgumentParser(description='This script is for creating a standard iToL text dataset. For version info, run `bit-version`.')
+parser = argparse.ArgumentParser(description = 'This script is for creating a standard iToL text dataset. For version info, run `bit-version`.')
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-g", "--target_genomes", help='Single-column file with the genomes to color (need to match the IDs in the tree file)', action="store", dest="target_genomes", required=True)
-required.add_argument("-l", "--text_to_add", help='Text to add to the target genomes', action="store", dest="text", required=True)
-parser.add_argument("-c", "--color", help='Color to use of either: "blue", "green", "red", "purple", or "black" (default: "blue", of course, \'cause it\'s the best)', action="store", dest="color", default="blue")
+required.add_argument("-g", "--target-genomes", metavar = "<FILE>", help = 'Single-column file with the genomes to color (need to match the IDs in the tree file)', action = "store", required = True)
+required.add_argument("-l", "--text-to-add", metavar = "<STR>", help = 'Text to add to the target genomes', action = "store", dest = "text", required = True)
+parser.add_argument("-c", "--color", metavar = "<STR>", help = 'Color to use of either: "blue", "green", "red", "purple", or "black" (default: "blue", of course, \'cause it\'s the best)', action = "store", default = "blue")
 
-parser.add_argument("-o", "--output_file", help='Output file for iToL (default: "iToL-text-dataset.txt")', action="store", dest="output_file", default="iToL-text-dataset.txt")
+parser.add_argument("-o", "--output-file", metavar = "<FILE>", help = 'Output file for iToL (default: "iToL-text-dataset.txt")', action = "store", default = "iToL-text-dataset.txt")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -51,7 +51,7 @@ out_file.write("DATASET_LABEL\tdata\n\n")
 # setting dataset main color
 out_file.write("COLOR\t" + str(col) + "\n\n")
 
-# writing lines for each labels 
+# writing lines for each labels
 out_file.write("DATA\n")
 
 for target in target_list:

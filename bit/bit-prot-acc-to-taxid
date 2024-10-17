@@ -8,7 +8,7 @@ class colors:
   GREEN = '\033[0;32m'
   NC = '\033[0m'
 
-parser = argparse.ArgumentParser(description='This script takes NCBI protein accessions and returns a two-column \
+parser = argparse.ArgumentParser(description = 'This script takes NCBI protein accessions and returns a two-column \
                                               tab-delimited file with protein accessions and taxids. It requires the \
                                               "prot.accession2taxid" database (unzipped) that can be downloaded from here: \
                                               ftp://ftp.ncbi.nih.gov/pub/taxonomy/accession2taxid/prot.accession2taxid.gz\
@@ -16,9 +16,9 @@ parser = argparse.ArgumentParser(description='This script takes NCBI protein acc
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-r", "--ref_map", help="prot_acc_to_taxid_map", action="store", dest="input_ref", required=True)
-required.add_argument("-w", "--wanted_prot_accessions", help="Single-column file with protein accessions", action="store", dest="prot_accs", required=True)
-parser.add_argument("-o", "--output_file", help='Output file of prot_acc and taxID', action="store", dest="file_out", default="Wanted_prot_accs_and_taxids.tsv")
+required.add_argument("-r", "--ref-map", metavar = "<FILE>", help = "reference prot_acc_to_taxid_map database", action = "store", dest = "input_ref", required = True)
+required.add_argument("-w", "--wanted_prot_accessions", metavar = "<FILE>", help = "Single-column file with protein accessions", action = "store", dest = "prot_accs", required = True)
+parser.add_argument("-o", "--output-file", metavar = "<FILE>", help = 'Output file of prot_acc and taxID (default: "wanted-prot-accs-and-taxids.tsv")', action = "store", dest = "file_out", default = "wanted-prot-accs-and-taxids.tsv")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -43,11 +43,11 @@ num = 0
 print("\nNow beginning trek through reference mapping file.\n")
 
 with open(args.input_ref) as refs:
-    
+
     for line in refs:
         line = line.split("\t")
         num += 1
-        
+
         if num % 1000000 == 0:
             mega_num = num / 1000000
             sys.stdout.write("\r  On line " + colors.GREEN + str(mega_num) + colors.NC + " million of prot_acc_to_taxid_map...")

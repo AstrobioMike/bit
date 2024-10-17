@@ -9,8 +9,9 @@ parser = argparse.ArgumentParser(description='This script will append a number t
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_fasta", help="Starting fasta file", action="store", dest="input_fasta", required=True)
-parser.add_argument("-o", "--output_fasta_name", help='Output fasta file (default: "Renamed.fasta").', dest="output_fasta_name", default="Renamed.fasta")
+required.add_argument("-i", "--input-fasta", metavar = "<FILE>", help = "Starting fasta file",
+                      action = "store", required = True)
+parser.add_argument("-o", "--output-fasta", metavar = "<FILE>", help = 'Output fasta file (default: "Renamed.fasta").', default = "Renamed.fasta")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -19,7 +20,7 @@ if len(sys.argv)==1:
 args = parser.parse_args()
 
 in_fasta = open(args.input_fasta, "r")
-out_fasta = open(args.output_fasta_name, "w")
+out_fasta = open(args.output_fasta, "w")
 
 ids = {}
 

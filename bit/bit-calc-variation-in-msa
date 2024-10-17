@@ -13,11 +13,11 @@ parser = argparse.ArgumentParser(description='This script takes an alignment in 
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_alignment_fasta", help="Input alignment fasta file", action="store", dest="input_alignment_fasta", required=True)
+required.add_argument("-i", "--input_alignment_fasta", metavar = "<FILE>", help = "Input alignment fasta file", action = "store", dest = "input_alignment_fasta", required = True)
 
-parser.add_argument("-g", "--gap_treatment", help='How to treat gaps, either "nan", "ignore", "error", "include" (default: "ignore")', choices=["nan", "ignore", "error", "include"], action="store", dest="gap_treatment", default="ignore")
-parser.add_argument("-t", "--type", help='Either "DNA" or "Protein" (default: "Protein")', choices=["DNA", "Protein"], action="store", dest="type", default="Protein")
-parser.add_argument("-o", "--output_file", help='Name of output tab-separated file (default: "variation.tsv")', action="store", dest="output_tsv", default="variation.tsv")
+parser.add_argument("-g", "--gap_treatment", metavar = "<STR>", help = 'How to treat gaps, either "nan", "ignore", "error", "include" (default: "ignore")', choices = ["nan", "ignore", "error", "include"], action = "store", dest = "gap_treatment", default = "ignore")
+parser.add_argument("-t", "--type", metavar = "<STR>", help = 'Either "DNA" or "Protein" (default: "Protein")', choices = ["DNA", "Protein"], action = "store", dest = "type", default = "Protein")
+parser.add_argument("-o", "--output_file", metavar = "<FILE>", help = 'Name of output tab-separated file (default: "variation.tsv")', action = "store", dest = "output_tsv", default = "variation.tsv")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)

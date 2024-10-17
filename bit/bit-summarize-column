@@ -7,20 +7,19 @@ import argparse
 import os
 
 
-parser = argparse.ArgumentParser(description='This script outputs general summary stats for a numeric column. It can take stdin or \
+parser = argparse.ArgumentParser(description = 'This script outputs general summary stats for a numeric column. It can take stdin or \
                                               a file as input. It will run on the first (or only column) if not specified. Otherwise \
                                               you can indicate which column to summarize by column position or name. For version info, \
                                               run `bit-version`.')
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input-file", type = argparse.FileType('r'), default = '-', help = "Input file or stdin if none provided")
+required.add_argument("-i", "--input-file", metavar = "<FILE>", type = argparse.FileType('r'), default = '-', help = "Input file or stdin if none provided")
 
-parser.add_argument("-c", "--column", help = "Specify the target column to summarize. Can be a number specifying the column index (1-based, like unix cut/awk), \
+parser.add_argument("-c", "--column", metavar = "<TEXT>", help = "Specify the target column to summarize. Can be a number specifying the column index (1-based, like unix cut/awk), \
                                                      or can be a column name if also including the `--header` flag. (default: 1)", action = "store", default = 1)
 
-parser.add_argument("-d", "--delimiter", help = "Specify the delimiter (default = '\\t')", action = "store", default = "\t")
-
+parser.add_argument("-d", "--delimiter", metavar = "<STR>", help = "Specify the delimiter (default = '\\t')", action = "store", default = "\t")
 
 parser.add_argument("--header", help = "Add this flag if your input has a header with column names", action = "store_true")
 
@@ -43,7 +42,7 @@ else:
 input_df = pd.read_csv(args.input_file, sep = args.delimiter, header = input_header)
 
 ## getting target column
-try: 
+try:
     args.column = int(args.column)
 except:
     pass
@@ -61,7 +60,7 @@ if isinstance(args.column, int):
         target_array = target_array.astype(int)
 
 elif isinstance(args.column, str):
-    
+
     # checking header was set to true if the user specified a column by name
     if not args.header:
         print("\n    If trying to specify which column by header name, you need to explicity add the `--header` flag also.\n")

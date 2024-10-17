@@ -8,7 +8,7 @@ import argparse
 import pandas as pd
 import sys
 
-parser = argparse.ArgumentParser(description='This script takes an GO-annotated tab-delimited file with gene IDs in the first column, and associated \
+parser = argparse.ArgumentParser(description = 'This script takes an GO-annotated tab-delimited file with gene IDs in the first column, and associated \
                                               GO terms in second column (can be multiple delimited by semi-colons). By default, it returns one \
                                               tab-delimited summary table with counts and percentages for each GO term. If the `--by_namespace` \
                                               flag is added, it will also return separate summaries for each GO namespace. For version info,  \
@@ -16,18 +16,18 @@ parser = argparse.ArgumentParser(description='This script takes an GO-annotated 
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_GO_annotations", help="Input annotations file", action="store", dest="input_annotations", required=True)
-parser.add_argument("-g", "--GO_obo_file", help='GO obo file to use (e.g. from: http://geneontology.org/docs/download-ontology/). By default will \
+required.add_argument("-i", "--input-GO-annotations", metavar = "<FILE>", help = "Input annotations file", action = "store", dest="input_annotations", required = True)
+parser.add_argument("-g", "--GO-obo-file", metavar = "<STR>", help = 'GO obo file to use (e.g. from: http://geneontology.org/docs/download-ontology/). By default will \
                                                  use "goslim_metagenomics.obo". "go-basic.obo" is also a pre-packaged option (enter `-g go_basic` to specify it). Or \
                                                  a different obo-formatted file can be specified here (it should probably be the one the annotations are based off of, or were slimmed based on).',
-                    action="store", dest="obo", default="goslim_metagenomics")
-parser.add_argument("-o", "--output_file", help='Output file name. (default: "GO-summary.tsv").', action="store", dest="output_file", default="GO-summary.tsv")
-parser.add_argument("--keep-zeroes", help="By default the program will remove any rows with for GO terms with 0 counts to them. Add this flag \
-                                             to keep them.", action="store_true")
-parser.add_argument("--by-namespace", help='By default the program will return a single summary table with all GO terms combined. Add this flag \
+                    action = "store", dest = "obo", default = "goslim_metagenomics")
+parser.add_argument("-o", "--output-file", metavar = "<FILE>", help = 'Output file name (default: "GO-summary.tsv").', action = "store", default = "GO-summary.tsv")
+parser.add_argument("--keep-zeroes", help = "By default the program will remove any rows with for GO terms with 0 counts to them. Add this flag \
+                                             to keep them.", action = "store_true")
+parser.add_argument("--by-namespace", help = 'By default the program will return a single summary table with all GO terms combined. Add this flag \
                                             to also return individual tables for each GO namespace. (Will append namespace ID in front of last extension \
                                             of specified output file name, e.g. with default "GO-summary.tsv" will also produce "GO-summary-MF.tsv" for \
-                                            the Molecular Function namespace.', action="store_true")
+                                            the Molecular Function namespace.', action = "store_true")
 
 
 if len(sys.argv)==1:

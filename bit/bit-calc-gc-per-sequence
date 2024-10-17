@@ -5,12 +5,13 @@ import sys
 import argparse
 
 parser = argparse.ArgumentParser(description = "This script takes a nucleotide multifasta and returns \
-                                             a tab-delimited file with 3 columns: header, sequence length, and GC. For version info, run `bit-version`.")
+                                             a tab-delimited file with 3 columns: header, sequence length, \
+                                             and GC. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input-fasta", help = "fasta file", action = "store", required = True)
-parser.add_argument("-o", "--output-file", help='Name of output tsv file (default: "GC-out.tsv")', 
+required.add_argument("-i", "--input-fasta", metavar = "<FILE>", help = "fasta file", action = "store", required = True)
+parser.add_argument("-o", "--output-file", metavar = "<FILE>", help = 'Name of output tsv file (default: "GC-out.tsv")',
                     action = "store", default = "GC-out.tsv")
 
 if len(sys.argv)==1:

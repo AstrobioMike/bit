@@ -5,7 +5,7 @@ import argparse
 import pandas as pd
 from Bio import SeqIO
 
-parser = argparse.ArgumentParser(description="This script takes a genbank-formatted file and extracts basic info \
+parser = argparse.ArgumentParser(description = "This script takes a genbank-formatted file and extracts basic info \
                                  for every 'CDS' feature including: 'gene', 'protein_id', 'locus_tag', and 'product'. \
                                  It then writes those out to a tab-delimited file. For version info, run `bit-version`.",
                                  epilog="Ex. usage: bit-genbank-to-cds-table -i input.gb -o output.tsv")
@@ -13,10 +13,10 @@ parser = argparse.ArgumentParser(description="This script takes a genbank-format
 required = parser.add_argument_group('REQUIRED PARAMETERS')
 optional = parser.add_argument_group('OPTIONAL PARAMETERS')
 
-required.add_argument("-i", "--input-genbank", help = "Input genbank file",
+required.add_argument("-i", "--input-gb", help = "input genbank file",
                       metavar = "<FILE>", required = True)
 
-optional.add_argument("-o", "--output-tsv", help = 'Output tsv (default: "output.tsv")', action = "store",
+optional.add_argument("-o", "--output-tsv", help = 'output tsv (default: "output.tsv")', action = "store",
                       metavar = "<FILE>", default = "output.tsv")
 
 if len(sys.argv)==1:
@@ -29,7 +29,7 @@ args = parser.parse_args()
 
 def main():
 
-    cds_dataframe = parse_genbank_cds_to_dataframe(args.input_genbank)
+    cds_dataframe = parse_genbank_cds_to_dataframe(args.input_gb)
 
     save_dataframe_to_tsv(cds_dataframe, args.output_tsv)
 

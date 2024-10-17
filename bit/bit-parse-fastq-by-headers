@@ -9,16 +9,16 @@ import gzip
 import subprocess
 
 
-parser = argparse.ArgumentParser(description='This script is for parsing a single fastq file by pulling out sequences with the desired headers (paired-end not supported yet).\
+parser = argparse.ArgumentParser(description = 'This script is for parsing a single fastq file by pulling out sequences with the desired headers (paired-end not supported yet).\
                                               For version info, run `bit-version`.')
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input_fastq", help="Starting fastq file", action="store", required=True)
-required.add_argument("-w", "--sequence_headers", help="Single-column file with sequence headers (if the headers in the fastq file have whitespace in them, it is okay to provide just the part up to the whitespace in this input file)", action="store", required=True)
-parser.add_argument("-o", "--output_fastq", help='Output fastq file name (default: "Wanted.fq", ".gz" will be added if compressed)', action="store", default="Wanted.fq")
-parser.add_argument("--inverse", help="Add this flag to pull out all sequences with headers NOT in the provided header file.", action="store_true")
-parser.add_argument("--gz", help="Add this flag if the input is gzipped (output will be too)", action="store_true")
+required.add_argument("-i", "--input-fastq", metavar = "<FILE>", help = "Starting fastq file", action = "store", required = True)
+required.add_argument("-w", "--sequence-headers", metavar = "<FILE>", help = "Single-column file with target sequence headers (if the headers in the fastq file have whitespace in them, it is okay to provide just the part up to the whitespace in this input file)", action = "store", required = True)
+parser.add_argument("-o", "--output-fastq", metavar = "<FILE>", help='Output fastq file name (default: "wanted.fq", ".gz" will be added if compressed)', action = "store", default = "wanted.fq")
+parser.add_argument("--inverse", help = "Add this flag to pull out all sequences with headers NOT in the provided header file.", action = "store_true")
+parser.add_argument("--gz", help = "Add this flag if the input is gzipped (output will be too)", action = "store_true")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -65,7 +65,7 @@ def color_text(text, color='green'):
 def wprint(text):
     """ print wrapper """
 
-    print(textwrap.fill(text, width=80, initial_indent="  ", 
+    print(textwrap.fill(text, width=80, initial_indent="  ",
           subsequent_indent="  ", break_on_hyphens=False))
 
 
@@ -122,7 +122,7 @@ def parse_fastq(headers_of_int_set, input_fastq, output_fastq, inverse, gz):
             for header, seq, qual in FastqGeneralIterator(fastq_in):
 
                 if header not in headers_of_int_set and header.split(" ")[0] not in headers_of_int_set:
-                
+
                     output_file.write("@%s\n%s\n+\n%s\n" % (header, seq, qual))
 
     fastq_in.close()

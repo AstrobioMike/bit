@@ -6,12 +6,12 @@ import re
 import sys
 import os
 
-parser = argparse.ArgumentParser(description="This script takes a genbank file and returns amino acid sequences for all coding sequences. For version info, run `bit-version`.")
+parser = argparse.ArgumentParser(description = "This script takes a genbank file and returns amino acid sequences for all coding sequences. For version info, run `bit-version`.")
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input-gb", help='input Genbank file (e.g. "*.gbk", "*.gb", "*.gbff")', action="store", dest="input_gb", required=True)
-parser.add_argument("-o", "--output-fasta", help='Output fasta file (default: "output.faa")', action="store", dest="output_fasta", default="output.faa")
+required.add_argument("-i", "--input-gb", metavar = "<FILE>", help = 'input Genbank file (e.g. "*.gbk", "*.gb", "*.gbff")', action = "store", required = True)
+parser.add_argument("-o", "--output-fasta", metavar = "<FILE>", help = 'Output fasta file (default: "output.faa")', action = "store", default = "output.faa")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
