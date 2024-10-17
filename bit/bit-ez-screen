@@ -50,7 +50,7 @@ optional.add_argument("-m", "--min-perc-id",
 optional.add_argument("-M", "--min-perc-cov",
                       help = 'Minimum percent coverage of a target for it to be counted as found \
                               in output summary table (default: 95)',
-                      metavar = "<INT>", action = "store", default = 95)
+                      metavar = "<INT>", action = "store", default = 95, type = float)
 
 
 if len(sys.argv)==1:
@@ -192,6 +192,13 @@ def filter_blast_results(blast_df, targets_dict, min_perc_id = args.min_perc_id,
 def gen_long_targets_results_dict(filtered_long_blast_df, targets_dict):
     """ remove overlapping alignments and calculate total percent of subject covered by alignment """
 
+    # the sstart and sstop positions aren't necessarily in order from lowest to highest,
+    # which is needed for how we merge the covered regions below
+    # so here was are making new columns that are the min and max of the two
+    filtered_long_blast_df = filtered_long_blast_df.copy() # make a copy to avoid SettingWithCopyWarning
+    filtered_long_blast_df["mod_sstart"] = filtered_long_blast_df[["sstart", "send"]].min(axis = 1)
+    filtered_long_blast_df["mod_send"] = filtered_long_blast_df[["sstart", "send"]].max(axis = 1)
+
     long_subject_ids = [key for key, value in targets_dict.items() if value >= long_target_length_cutoff]
 
     long_targets_detected_dict = {}
@@ -204,13 +211,13 @@ def gen_long_targets_results_dict(filtered_long_blast_df, targets_dict):
             long_targets_detected_dict[ID] = "NOT-DETECTED"
             continue
 
-        sub_df = sub_df.sort_values(by = ["sstart"])
+        sub_df = sub_df.sort_values(by = ["mod_sstart"])
 
         merged_regions = []
 
         for index, row in sub_df.iterrows():
 
-            start, end = row['sstart'], row['send']
+            start, end = row['mod_sstart'], row['mod_send']
 
             # if this is the first region or no overlap, adding the region
             if not merged_regions or start > merged_regions[-1][1]:
