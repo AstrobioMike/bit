@@ -10,9 +10,9 @@ parser = argparse.ArgumentParser(description = 'This script takes a multifasta f
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("-i", "--input-fasta", help = "Starting fasta file", action = "store", required = True)
-required.add_argument("-b", "--bed-file", help = "Bed file of desired contigs and coordinates (3 columns - contig, start, end - no header, 0-based counting", required = True)
-parser.add_argument("-o", "--output-fasta", help = 'Name of output fasta file (default: "extracted-seqs.fa")', action = "store", default = "extracted-seqs.fa")
+required.add_argument("-i", "--input-fasta", metavar = "<FILE>", help = "Starting fasta file", action = "store", required = True)
+required.add_argument("-b", "--bed-file", metavar = "<FILE>", help = "Bed file of desired contigs and coordinates (3 columns - contig, start, end - no header, 0-based counting", required = True)
+parser.add_argument("-o", "--output-fasta", metavar = "<FILE>", help = 'Name of output fasta file (default: "extracted-seqs.fasta")', action = "store", default = "extracted-seqs.fasta")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -24,7 +24,5 @@ coordinates_file = BedTool(args.bed_file)
 fasta = BedTool(args.input_fasta)
 seq = coordinates_file.sequence(fi = fasta)
 
-out_fasta = open(args.output_fasta, "w")
-out_fasta.write(open(seq.seqfn).read())
-
-out_fasta.close()
+with open(args.output_fasta, "w") as out_fasta:
+    out_fasta.write(open(seq.seqfn).read())
