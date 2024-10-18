@@ -49,8 +49,8 @@ optional.add_argument("-m", "--min-perc-id",
 
 optional.add_argument("-M", "--min-perc-cov",
                       help = 'Minimum percent coverage of a target for it to be counted as found \
-                              in output summary table (default: 95)',
-                      metavar = "<INT>", action = "store", default = 95, type = float)
+                              in output summary table (default: 90)',
+                      metavar = "<INT>", action = "store", default = 90, type = float)
 
 
 if len(sys.argv)==1:
