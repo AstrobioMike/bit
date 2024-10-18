@@ -94,109 +94,24 @@ fi
 ## making sure input file is there, and storing total number of targets ##
 if [ -f "$NCBI_acc_file" ]; then
     NCBI_input_genomes_total=$(wc -l $NCBI_acc_file | sed "s/^ *//" | cut -d " " -f 1)
-    printf "    Targeting $NCBI_input_genomes_total genomes in $format format.\n\n"
 else
     printf "\n${RED}      You specified $NCBI_acc_file, but that file cannot be found :(${NC}\n"
     printf "\nExiting for now.\n\n"
     exit
 fi
 
-
-# making sure output file to hold accessions not downloaded doesn't exist already, as it gets appended to
-rm -rf NCBI-accessions-not-downloaded.txt
-
-## downloading assembly summaries (if not present in cwd already) ##
-if [ ! -s ncbi_assembly_info.tsv ]; then
-
-    printf "    ${GREEN}Downloading ncbi assembly summaries to be able to construct links...${NC}\n\n"
-    if [ $http_flag == "false" ]; then
-        genbank_assembly_summary_tab_link="ftp://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
-        refseq_assembly_summary_tab_link="ftp://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt"
-    else
-        genbank_assembly_summary_tab_link="https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
-        refseq_assembly_summary_tab_link="https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt"
-    fi
-
-    curl --connect-timeout 30 --retry 10 ${genbank_assembly_summary_tab_link} > ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
-
-    # making sure file downloaded with no errors, trying again if it did not (i can't figure out why, but it fails sometimes and then works others)
-    # trying a max of 10 times
-    attempt=1
-
-    while [ -s capture_any_dl_errors.tmp ]; do
-
-        if [[ ${attempt} -lt 16 ]]; then
-
-            # waiting a few seconds
-            sleep 3
-
-            # incrementing counter
-            attempt=$((attempt+1))
-
-            printf "\n    ${YELLOW}Snag downloading GenBank assembly summary table, trying up to 15 times. Attempt: ${attempt}${NC}\n\n"
-
-            if ! curl --connect-timeout 30 --retry 10 ${genbank_assembly_summary_tab_link} > ncbi_assembly_info.tsv ; then
-                echo "failed" > capture_any_dl_errors.tmp
-            else
-                rm -rf capture_any_dl_errors.tmp
-            fi
-
-        else
-
-                printf "\n\n  ${RED}Download of NCBI assembly summaries failed :(${NC}\n  Is the internet connection weak?\n\nExiting for now.\n\n"
-                rm -rf capture_any_dl_errors.tmp ncbi_assembly_info.tsv
-                exit
-
-        fi
-
-    done
-
-    rm -rf capture_any_dl_errors.tmp
-
-    printf "\n"
-    curl --connect-timeout 30 --retry 10 ${refseq_assembly_summary_tab_link} >> ncbi_assembly_info.tsv || echo "failed" > capture_any_dl_errors.tmp
-
-    # doing the same as above, trying a few times because sometimes seems to work and others not for reasons I can't pin down yet
-    attempt=1
-
-    while [ -s capture_any_dl_errors.tmp ]; do
-
-        if [[ ${attempt} -lt 16 ]]; then
-
-            # incrementing counter
-            attempt=$((attempt+1))
-
-            printf "\n    ${YELLOW}Snag downloading RefSeq assembly summary table, trying up to 15 times. Attempt: ${attempt}${NC}\n\n"
-
-            if ! curl --connect-timeout 30 --retry 10 ${refseq_assembly_summary_tab_link} >> ncbi_assembly_info.tsv ; then
-                echo "failed" > capture_any_dl_errors.tmp
-            else
-                rm -rf capture_any_dl_errors.tmp
-            fi
-
-        else
-
-                printf "\n\n  ${RED}Download of NCBI assembly summaries failed :(${NC}\n  Is the internet connection weak?\n\nExiting for now.\n\n"
-                rm -rf capture_any_dl_errors.tmp ncbi_assembly_info.tsv
-                exit
-
-        fi
-
-    done
-
-    rm -rf capture_any_dl_errors.tmp
-
-    printf "\n    ${YELLOW}Assembly summary tables downloaded successfully. They are stored\n"
-    printf "    in the current working directory as \"ncbi_assembly_info.tsv\".\n"
-    printf "    That file is left here in case you'd like to use it again soon. But be\n"
-    printf "    sure to delete it if you'd like. Now getting to work on our targets.${NC}\n\n"
-
+## checking if ncbi metadata exists and is less than 4 weeks old, or downloading it ##
+if [ $http_flag == "true" ]; then
+    helper-bit-get-ncbi-assembly-tables --use-http
+else
+    helper-bit-get-ncbi-assembly-tables
 fi
 
+printf "    Targeting $NCBI_input_genomes_total genome(s) in $format format...\n\n"
 
 ## parsing assembly summaries and generating base ftp link info tab ##
 tmp_file=$(date +%s).bit-dl-ncbi.tmp
-helper-bit-parse-assembly-summary-file.py -a ncbi_assembly_info.tsv -w $NCBI_acc_file -o $tmp_file
+helper-bit-parse-assembly-summary-file.py -a ${NCBI_assembly_data_dir}ncbi-assembly-info.tsv -w $NCBI_acc_file -o $tmp_file
 
 # checking which not found:
 comm -23 <(sort $NCBI_acc_file) <(cut -f1 $tmp_file | sort) > NCBI-accessions-not-found.tmp
@@ -209,7 +124,7 @@ if [ -s NCBI-accessions-not-found.tmp ]; then
     remaining_targets=$(($NCBI_input_genomes_total - $num_not_found))
 
     printf "\n     ${RED}******************************* ${NC}NOTICE ${RED}*******************************${NC}  \n"
-    printf "\t\t  $num_not_found input accessions were not found at NCBI.\n\n"
+    printf "\t\t  $num_not_found input accession(s) not found at NCBI.\n\n"
     printf "\t\t  Written to \"NCBI-accessions-not-found.txt\".\n"
     printf "     ${RED}********************************************************************** ${NC}\n\n"
 

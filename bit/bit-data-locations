@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 
 """
-This is a helper program of bit, initially written for GToTree (https://github.com/AstrobioMike/GToTree/wiki), 
-to check and set required environmental variables. 
+This is a helper program of bit, initially written for GToTree (https://github.com/AstrobioMike/GToTree/wiki),
+to check and set required environmental variables.
 """
 
 import sys
@@ -71,7 +71,7 @@ def color_text(text, color='green'):
 
 
 def wprint(text):
-    print(textwrap.fill(text, width=80, initial_indent="  ", 
+    print(textwrap.fill(text, width=80, initial_indent="  ",
           subsequent_indent="  ", break_on_hyphens=False))
 
 
@@ -86,19 +86,25 @@ def check_and_report_env_variables():
     # GO data
     go_dir_path, go_dir_path_writable = check_location_var_is_set_and_writable("GO_DB_DIR")
 
+    # NCBI assembly summary table
+    ncbi_assembly_summary_dir_path, ncbi_assembly_summary_dir_path_writable = check_location_var_is_set_and_writable("NCBI_assembly_data_dir")
+
+
     print(color_text("\n    bit environment variables are set as follows:\n", "yellow"))
 
-    print("\t  {:<28} {:>10}".format("\033[4mvariable\033[0m", "\033[4mpath\033[0m"))
-    print("\t  {:<20} {:>10}".format("TAXONKIT_DB", taxonkit_dir_path))
-    print("\t  {:<20} {:>10}".format("GTDB_DIR", GTDB_DIR_path))
-    print("\t  {:<20} {:>10}".format("GO_DB_DIR", go_dir_path))
+    print("\t  {:<38} {:>10}".format("\033[4mvariable\033[0m", "\033[4mpath\033[0m"))
+    print("\t  {:<30} {:>10}".format("TAXONKIT_DB", taxonkit_dir_path))
+    print("\t  {:<30} {:>10}".format("GTDB_DIR", GTDB_DIR_path))
+    print("\t  {:<30} {:>10}".format("GO_DB_DIR", go_dir_path))
+    print("\t  {:<30} {:>10}".format("NCBI_assembly_data_dir", ncbi_assembly_summary_dir_path))
     print()
 
 
     # reporting if any are not writable
     writable_dict = {"TAXONKIT_DB" : taxonkit_dir_path_writable,
                      "GTDB_DIR" : GTDB_DIR_path_writable,
-                     "GO_DB_DIR" : go_dir_path_writable}
+                     "GO_DB_DIR" : go_dir_path_writable,
+                     "NCBI_assembly_data_dir" : ncbi_assembly_summary_dir_path_writable}
 
     for entry in writable_dict.keys():
 
@@ -144,7 +150,7 @@ def get_variable_path(variable):
 
 def set_variable_path(variable, curr_path):
 
-    # if current path exists, making sure user wants to change it 
+    # if current path exists, making sure user wants to change it
     if curr_path:
 
         print("\n  --------------------------------------------------------------------------------")
@@ -205,7 +211,7 @@ def set_variable_path(variable, curr_path):
             print(color_text("\n    That location is not writable for you (press `ctrl + c` if wanting to exit).\n", "red"))
 
         except PathNotAbsolute:
-            print(color_text("\n    Please provide an absolute path (press `ctrl + c` if wanting to exit).\n", "red"))            
+            print(color_text("\n    Please provide an absolute path (press `ctrl + c` if wanting to exit).\n", "red"))
 
     print("\n  --------------------------------------------------------------------------------\n")
 
@@ -215,8 +221,9 @@ def set_variable_path(variable, curr_path):
 def set_env_variables():
 
     paths_dict = {"TAXONKIT_DB" : "",
-                 "GTDB_DIR" : "",
-                 "GO_DB_DIR" : ""}
+                  "GTDB_DIR" : "",
+                  "GO_DB_DIR" : "",
+                  "NCBI_assembly_data_dir" : ""}
 
     for entry in paths_dict.keys():
 
@@ -229,14 +236,14 @@ def set_env_variables():
 
 
 def modify_conda_activate_startup_script(paths_dict):
-    """ 
+    """
     adjust it so it holds the appropriate environment variables so when opened in the future,
     the variables are loaded properly
     """
 
     # here is the file in the conda env: ls ${CONDA_PREFIX}/etc/conda/activate.d/bit.sh
 
-    # some users may not have write permissions to the conda environment area, which holds the launch script 
+    # some users may not have write permissions to the conda environment area, which holds the launch script
         # when the conda env starts up, which sets the variables
         # so, going to create one in their home directory if they don't have write access
         # this also meant adding a code block to the normal conda activate script that checks for this file,
@@ -266,7 +273,7 @@ def modify_conda_activate_startup_script(paths_dict):
 
         new_one = os.path.join(user_config_location, "bit.sh")
 
-    
+
     # reading file lines into list
     with open(path_to_startup_script) as initial_file:
 
@@ -278,7 +285,7 @@ def modify_conda_activate_startup_script(paths_dict):
 
     for line in initial_lines:
 
-        ## skipping the lines within the if statement about sourcing the startup script in the user's home 
+        ## skipping the lines within the if statement about sourcing the startup script in the user's home
            # location if we are writing to the user's home location to avoid a singularity
         if not os.access(path_to_startup_script, os.W_OK):
 
@@ -306,7 +313,7 @@ def modify_conda_activate_startup_script(paths_dict):
     # writing to new file
     # in conda area if we have write access
     if os.access(path_to_startup_script, os.W_OK):
-        
+
         with open(new_one_tmp, "w") as outfile:
 
             outfile.write('\n'.join(new_lines))
