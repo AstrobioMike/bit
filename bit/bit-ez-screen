@@ -52,6 +52,9 @@ optional.add_argument("-M", "--min-perc-cov",
                               in output summary table (default: 90)',
                       metavar = "<INT>", action = "store", default = 90, type = float)
 
+optional.add_argument("-T", "--transpose-output-tsv", help = 'Set this flag if we want to have the output table have targets as rows rather than columns.', action = "store_true")
+
+
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -102,7 +105,11 @@ def run_screen():
         filtered_blast_df, long_targets_results_dict = filter_blast_results(blast_df, targets_dict)
         summary_df = update_summary_table(filtered_blast_df, long_targets_results_dict, targets_dict, assembly, summary_df)
 
-    summary_df.to_csv(args.output_prefix + "-summary-table.tsv", sep = "\t", index_label = "input-assembly")
+    if args.transpose_output_tsv:
+        summary_df = summary_df.T
+        summary_df.to_csv(args.output_prefix + "-summary-table.tsv", sep = "\t", index_label = "target")
+    else:
+        summary_df.to_csv(args.output_prefix + "-summary-table.tsv", sep = "\t", index_label = "input-assembly")
 
 
 def report_finished():
