@@ -44,13 +44,13 @@ optional.add_argument("-o", "--output-prefix", help = 'Output prefix (default: "
                       metavar = "<STR>", default = "ez-screen")
 
 optional.add_argument("-m", "--min-perc-id",
-                      help = 'Minimum percent ID for a hit to be counted as found in output summary table (default: 90)',
-                      metavar = "<INT>", action = "store", default = 90, type = float)
+                      help = 'Minimum percent ID for a hit to be counted as found in output summary table (default: 80)',
+                      metavar = "<INT>", action = "store", default = 80, type = float)
 
 optional.add_argument("-M", "--min-perc-cov",
                       help = 'Minimum percent coverage of a target for it to be counted as found \
-                              in output summary table (default: 90)',
-                      metavar = "<INT>", action = "store", default = 90, type = float)
+                              in output summary table (default: 80)',
+                      metavar = "<INT>", action = "store", default = 80, type = float)
 
 optional.add_argument("-T", "--transpose-output-tsv", help = 'Set this flag if we want to have the output table have targets as rows rather than columns.', action = "store_true")
 
@@ -66,9 +66,9 @@ args = parser.parse_args()
 
 def main():
 
-    preflight()
+    assembly_path_dict = preflight()
 
-    run_screen()
+    run_screen(assembly_path_dict)
 
     report_finished()
 
@@ -86,13 +86,23 @@ def preflight():
     if not os.path.exists(blast_results_dir):
         os.makedirs(blast_results_dir)
 
+    # checking if there'd be any duplicates with just basenames (like same filename from different path),
+    # and retaining input path info if so
+    assembly_basenames = [os.path.splitext(os.path.basename(assembly))[0] for assembly in args.assemblies]
+    basename_counts = {basename: assembly_basenames.count(basename) for basename in assembly_basenames}
 
-def run_screen():
+    if any(count > 1 for count in basename_counts.values()):
+        assembly_path_dict = {assembly: assembly for assembly in args.assemblies}
+    else:
+        assembly_path_dict = {assembly: os.path.splitext(os.path.basename(assembly))[0] for assembly in args.assemblies}
+
+    return assembly_path_dict
+
+
+def run_screen(assembly_path_dict):
 
     targets_dict = get_targets()
-
     summary_df = pd.DataFrame()
-
     total_assemblies = len(args.assemblies)
 
     print("")
@@ -103,7 +113,9 @@ def run_screen():
 
         blast_df = run_blast(assembly)
         filtered_blast_df, long_targets_results_dict = filter_blast_results(blast_df, targets_dict)
-        summary_df = update_summary_table(filtered_blast_df, long_targets_results_dict, targets_dict, assembly, summary_df)
+
+        unique_assembly_name = assembly_path_dict[assembly]
+        summary_df = update_summary_table(filtered_blast_df, long_targets_results_dict, targets_dict, unique_assembly_name, summary_df)
 
     if args.transpose_output_tsv:
         summary_df = summary_df.T
@@ -125,9 +137,13 @@ def check_inputs(assemblies, targets):
     for assembly in assemblies:
         if not os.path.exists(assembly):
             report_failure(f"Specified input assembly file not found: {assembly}")
+        if os.path.isdir(assembly):
+            report_failure(f"Specified input assembly is a directory, but needs to be a file or files: {assembly}")
 
     if not os.path.exists(targets):
         report_failure(f"Specified input targets file not found: {targets}")
+    if os.path.isdir(assembly):
+        report_failure(f"Specified input targets is a directory, but needs to be a file: {assembly}")
 
 
 def run_blast(assembly, targets = args.targets, output_prefix = args.output_prefix):
@@ -243,26 +259,23 @@ def gen_long_targets_results_dict(filtered_long_blast_df, targets_dict):
     return long_targets_detected_dict
 
 
-def update_summary_table(filtered_short_blast_df, long_targets_detected_dict, targets_dict, assembly, summary_df):
+def update_summary_table(filtered_short_blast_df, long_targets_detected_dict, targets_dict, unique_assembly_name, summary_df):
     """ Update the summary table with results from the current assembly """
-
-    assembly_base = os.path.splitext(os.path.basename(assembly))[0]
 
     target_counts = filtered_short_blast_df["sseqid"].value_counts()
 
-    new_row = pd.DataFrame(columns = targets_dict.keys(), index = [assembly_base])
+    new_row = pd.DataFrame(columns=targets_dict.keys(), index=[unique_assembly_name])
 
     for target in targets_dict.keys():
-        new_row.at[assembly_base, target] = target_counts.get(target, 0)
+        new_row.at[unique_assembly_name, target] = target_counts.get(target, 0)
 
     if long_targets_detected_dict:
         for col, new_value in long_targets_detected_dict.items():
-            new_row.at[assembly_base, col] = new_value
+            new_row.at[unique_assembly_name, col] = new_value
 
     summary_df = pd.concat([summary_df, new_row])
 
     return summary_df
-
 
 ################################################################################
 ##### general utils #####
