@@ -15,7 +15,7 @@ parser = argparse.ArgumentParser(description = 'This script outputs general summ
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("input-assembly", metavar = "<FILE(s)>", type = str, nargs = "+", help = "Input assembly file(s).")
+required.add_argument("input_assembly", metavar = "<FILE(s)>", type = str, nargs = "+", help = "Input assembly file(s).")
 
 parser.add_argument("-o", "--output-tsv", metavar = "<FILE>", help = 'Name of output tsv file (if none provided, prints to screen)', action = "store", default = False)
 parser.add_argument("-t", "--transpose-output-tsv", help = 'Set this flag if we want to have the output table have genomes as rows rather than columns.', action = "store_true")
