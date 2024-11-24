@@ -30,7 +30,7 @@ if args.prefix and args.suffix:
 
 in_fasta = open(args.input_fasta, "r")
 wanted_text = args.wanted_text
-out_fasta = open(args.output_fasta_name, "w")
+out_fasta = open(args.output_fasta, "w")
 
 # changing full name and adding number if prefix or suffix specified
 if not args.prefix and not args.suffix:
