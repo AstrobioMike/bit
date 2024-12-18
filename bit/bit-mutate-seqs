@@ -60,7 +60,7 @@ def main():
 
         # starting log file
         log.write(f"# seed used: {seed}\n")
-        log.write(f"# indel frequency utilizes: {args.frequency_of_indels}\n")
+        log.write(f"# indel frequency utilized: {args.frequency_of_indels}\n")
         log.write("# the rest below is a tab-delimited table summarizing the changes introduced to each input sequence\n")
         log.write("seq_id\tseq_length\ttotal_num_changes_made\tnum_characters_mutated\ttotal_indels_introduced\tnum_insertions_introduced\tnum_deletions_introduced\n")
 
@@ -124,72 +124,63 @@ def get_available_substitutions(molecule_type):
                 'T', 'W', 'Y', 'V']
 
 
-def mutate(seq : str, available_substitutions: list):
+def mutate(seq: str, available_substitutions: list):
 
-    # keeping track of which indexes were changed, so we don't change the same one twice (since this is for wanting a desired variation rate, not mimicking biology)
-    character_changed_indexes = []
+    # converting sequence to a list for mutability
+    seq_list = list(seq)
 
-    # calculating total number of mutations
-    total_num_mutations = round(len(seq) * args.mutation_rate)
+    # keeping track of which indexes were changed, so we don't change the same one twice
+    # (since this is for wanting a desired variation rate, not mimicking biology)
+    character_changed_indexes = set()
 
-    # calculating number of indels wanted (if any)
+    # calculating mutation parameters
+    seq_length = len(seq_list)
+    total_num_mutations = round(seq_length * args.mutation_rate)
     num_indels = round(total_num_mutations * args.frequency_of_indels)
-
-    # calculating how many characters will just be swapped (if not all)
     num_characters_to_mutate = total_num_mutations - num_indels
 
-    # starting values for number of insertions and deletions added (if any)
+    # tracking counts of insertions and deletions (if any)
     num_insertions_introduced = 0
     num_deletions_introduced = 0
 
-    # doing all character changes first, then incorporating indels
-    for _ in range(0, num_characters_to_mutate):
+    # doing all character changes first (substitutions), then incorporating indels next
+    for _ in range(num_characters_to_mutate):
 
         # getting current index we will change (that wasn't already changed)
-        m_index = random.choice([m_index for m_index in range(len(seq)) if m_index not in character_changed_indexes])
+        while True:
 
-        # getting a new character for that position (that isn't the character already present)
-        m_character = random.choice([character for character in available_substitutions if character != seq[m_index]])
+            m_index = random.randrange(seq_length)
+
+            if m_index not in character_changed_indexes:
+                character_changed_indexes.add(m_index)
+                break
 
         # mutating the sequence at that spot
-        seq = seq[:m_index] + m_character + seq[m_index+1:]
-
-        # tracking that this position was changed already
-        character_changed_indexes.append(m_index)
+        current_char = seq_list[m_index]
+        new_char = random.choice([char for char in available_substitutions if char != current_char])
+        seq_list[m_index] = new_char
 
     # now incorporating indels if specified (note this will not keep track if the same spot is being altered more than once)
-    if num_indels != 0:
+    for _ in range(num_indels):
+        process = random.choice(["insertion", "deletion"])
+        m_index = random.randrange(len(seq_list))
 
-        for _ in range(0, num_indels):
+        if process == "insertion":
+            new_char = random.choice(available_substitutions)
+            seq_list.insert(m_index, new_char)
+            num_insertions_introduced += 1
 
-            # random to decide if doing an insertion or deletion
-            process = random.choice(["insertion", "deletion"])
+        elif process == "deletion":
 
-            if process == "insertion":
-
-                # getting current index we will incorporate an indel at (not tracking if an index was already altered by an indel incorporation)
-                m_index = random.choice(range(len(seq)))
-
-                # getting a new character to add
-                m_character = random.choice(available_substitutions)
-
-                # adding insertion
-                seq = seq[:m_index] + m_character + seq[m_index:]
-
-                num_insertions_introduced += 1
-
-            elif process == "deletion":
-
-                # getting current index we will incorporate an indel at (not tracking if an index was already altered by an indel incorporation)
-                m_index = random.choice(range(len(seq)))
-
-                # incorporating deletion
-                seq = seq[:m_index] + seq[m_index+1:]
-
+            # unlikely to ever be needed, but putting a check there is something to delete
+            if seq_list:
+                seq_list.pop(m_index)
                 num_deletions_introduced += 1
 
-    return seq, total_num_mutations, num_characters_to_mutate, num_indels, num_insertions_introduced, num_deletions_introduced
+    # converting list back to string
+    mutated_seq = ''.join(seq_list)
 
+    return mutated_seq, total_num_mutations, num_characters_to_mutate, num_indels, num_insertions_introduced, num_deletions_introduced
 
 if __name__ == "__main__":
     main()
