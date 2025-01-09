@@ -1,0 +1,195 @@
+#!/usr/bin/env python
+
+import sys
+import os
+import pandas as pd # type: ignore
+import matplotlib.pyplot as plt # type: ignore
+import textwrap
+import argparse
+
+parser = argparse.ArgumentParser(description = "This script takes as input a kraken2 report and generates bar plots for the most abundant taxa at each rank. \
+                                                For version info, run `bit-version`.",
+                                                epilog = "Ex. usage: bit-gen-kraken2-tax-plots -i kraken2.report -o out")
+
+required = parser.add_argument_group('required arguments')
+
+required.add_argument("-i", "--input-kraken2-report", metavar = "<FILE>", help = "Input kraken2 report", action = "store", required = True, dest = "input_kraken")
+
+parser.add_argument("-o", "--output-prefix", metavar = "<STR>", help = 'Prefix for output plots if wanted (default: "")', action = "store", default = "", dest = "out_prefix")
+parser.add_argument("-m", "--maximum-taxa-per-plot", metavar = "<INT>", help = 'The maximum number of unique taxa included in a plot (the rest are represented in "Other"; default: 10)',
+                    action = "store", type = int, default = 10, dest = "max_taxa")
+
+if len(sys.argv) == 1:
+    parser.print_help(sys.stderr)
+    sys.exit(0)
+
+args = parser.parse_args()
+
+################################################################################
+
+def main():
+
+    df = read_in_kraken_report(args.input_kraken)
+
+    df = reduce_kraken_report(df)
+
+    df = add_domain_letter_to_taxon_name(df)
+
+    total_reads = df.loc[df["rank_code"] == "U", "clade_reads"].sum() + df.loc[df["rank_code"] == "R", "clade_reads"].sum()
+    unclassified_percent = df.loc[df["rank_code"] == "U", "percent"].sum()
+
+    for code, rank_name in rank_dict.items():
+
+        sub_df = df[df["rank_code"] == code].copy()
+
+        if sub_df.empty:
+            continue
+
+        sub_df = sub_df.groupby("taxon_name", as_index = False)["percent"].sum()
+
+        make_barplot(sub_df, rank_name, args.out_prefix, args.max_taxa, total_reads, unclassified_percent)
+
+################################################################################
+
+rank_dict = {
+    "D": "Domain",
+    "P": "Phylum",
+    "C": "Class",
+    "O": "Order",
+    "F": "Family",
+    "G": "Genus",
+    "S": "Species",
+}
+
+def preflight_checks():
+
+    if not os.path.exists(args.input_kraken):
+        print(f"\n    Specified input file not found: {args.input_kraken}")
+        print("\n    Exiting for now :(\n")
+        sys.exit(1)
+
+
+def read_in_kraken_report(filepath: str) -> pd.DataFrame:
+    """
+    Expected columns per line (in one typical format):
+
+        1. Percentage of reads covered by the clade rooted at this taxon
+        2. Number of reads covered by the clade rooted at this taxon
+        3. Number of reads assigned directly to this taxon
+        4. A rank code, indicating (U)nclassified, (D)omain, (K)ingdom, (P)hylum, (C)lass, (O)rder, (F)amily, (G)enus, or (S)pecies. All other ranks are simply '-'.
+        5. NCBI taxonomy ID
+        6. indented scientific name
+    """
+
+    df = pd.read_csv(filepath, sep = "\t", header = None,
+        names=["percent", "clade_reads", "this_level_reads",
+               "rank_code", "tax_id", "taxon_name"],
+        skip_blank_lines = True,
+        dtype={
+            "percent": float,
+            "clade_reads": int,
+            "this_level_reads": int,
+            "rank_code": str,
+            "tax_id": str,
+            "taxon_name": str
+        }
+    )
+
+    # removing leading/trailing whitespace from the 'taxon_name' column, as it's indented by rank
+    df["taxon_name"] = df["taxon_name"].str.strip()
+
+    return df
+
+
+def reduce_kraken_report(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Simplify the Kraken report by removing unnecessary columns and rows.
+
+    We'll keep the taxon name, rank code, and number of reads assigned to that taxon.
+    """
+
+    target_ranks = set(rank_dict.keys())
+
+    # adding unclassied and root, as i might do something with them
+    target_ranks.update(["U", "R"])
+
+    filtered_df = df.loc[df["rank_code"].isin(target_ranks)].copy()
+
+    return filtered_df[["rank_code", "taxon_name", "percent", "clade_reads"]]
+
+
+def add_domain_letter_to_taxon_name(df: pd.DataFrame) -> pd.DataFrame:
+    """ Adding a domain letter to each taxon name, for easier interpretation. """
+
+    domain_map = {
+        "Bacteria": "B",
+        "Archaea": "A",
+        "Eukaryota": "E",
+        "Viruses": "V",
+        "root": "R",
+        "unclassified": "U",
+    }
+
+    current_domain_letter = "?"
+
+    for i, row in df.iterrows():
+
+        if row["rank_code"] == "D":
+
+            this_domain_name = row["taxon_name"]
+            current_domain_letter = domain_map.get(this_domain_name, "?")
+
+        else:
+
+            df.at[i, "taxon_name"] = f"({current_domain_letter}) {row['taxon_name']}"
+
+    return df
+
+
+def make_barplot(df: pd.DataFrame, rank_name: str, out_prefix: str, max_taxa: int, total_reads: int, unclassified_percent: float) -> None:
+
+    df_sorted = df.sort_values("percent", ascending = False).reset_index(drop = True)
+    top_df = df_sorted.head(max_taxa).copy()
+
+    sum_others = df_sorted["percent"][max_taxa:].sum()
+    if sum_others > 0:
+        other_df = pd.DataFrame({"taxon_name": ["Other"], "percent": [sum_others]})
+        top_df = pd.concat([top_df, other_df], ignore_index = True)
+
+    # wrapping names if they are longer than 30 characters
+    def wrap_name(x):
+        return "\n".join(textwrap.wrap(x, width = 30))
+
+    top_df["taxon_name_wrapped"] = top_df["taxon_name"].apply(wrap_name)
+
+    x_positions = range(len(top_df))
+
+    fig, ax = plt.subplots(figsize = (8, 6))
+
+    ax.bar(x_positions, top_df["percent"], color = "steelblue")
+
+    ax.set_xticks(x_positions)
+    ax.set_xticklabels(top_df["taxon_name_wrapped"], rotation = 45, ha = 'right')
+
+    ax.set_ylabel("% of total reads")
+
+    main_title = f"{rank_name.capitalize()}-level dominant taxa"
+    ax.set_title(f"{main_title}")
+
+    additional_text = f"Sample total reads: {total_reads:,}\nPercent unclassified:       {unclassified_percent:.2f}%"
+    ax.text(0.97, 0.97, additional_text, transform = ax.transAxes, ha = 'right', va = 'top', fontsize = 7, color = "black")
+
+    fig.tight_layout()
+
+    if out_prefix == "":
+        out_png = f"{rank_name.lower()}-barplot.png"
+    else:
+        out_png = f"{out_prefix}-{rank_name.lower()}-barplot.png"
+
+    plt.savefig(out_png, dpi=150)
+    plt.close()
+    print(f"Generated: {out_png}")
+
+
+if __name__ == "__main__":
+    main()
