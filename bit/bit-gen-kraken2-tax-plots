@@ -18,6 +18,10 @@ required.add_argument("-i", "--input-kraken2-report", metavar = "<FILE>", help =
 parser.add_argument("-o", "--output-prefix", metavar = "<STR>", help = 'Prefix for output plots if wanted (default: "")', action = "store", default = "", dest = "out_prefix")
 parser.add_argument("-m", "--maximum-taxa-per-plot", metavar = "<INT>", help = 'The maximum number of unique taxa included in a plot (the rest are represented in "Other"; default: 10)',
                     action = "store", type = int, default = 10, dest = "max_taxa")
+parser.add_argument("-p", "--minimum-percent-threshold", metavar = "<FLOAT>",
+                    help = 'The minimum percent of reads a taxon must have in order to be included (the rest are represented in "Other"). This overrides --maximum-taxa-per-plot if set > 0. (default: 0.0 and to use --maximum-taxa-per-plot instead)',
+                    action = "store", type = float, default = 0.0, dest = "min_percent")
+
 
 if len(sys.argv) == 1:
     parser.print_help(sys.stderr)
@@ -45,9 +49,31 @@ def main():
         if sub_df.empty:
             continue
 
-        sub_df = sub_df.groupby("taxon_name", as_index = False)["percent"].sum()
+        sub_df = sub_df.groupby("taxon_name", as_index = False)["percent"].sum() # in case there are duplicates (which i don't think should happen)
 
-        make_barplot(sub_df, rank_name, args.out_prefix, args.max_taxa, total_reads, unclassified_percent)
+        if args.min_percent > 0:
+
+            above_thresh_df = sub_df[sub_df["percent"] >= args.min_percent].copy()
+            below_thresh_df = sub_df[sub_df["percent"] < args.min_percent].copy()
+
+            sum_others = below_thresh_df["percent"].sum()
+
+            if above_thresh_df.empty and sum_others == 0:
+
+                print(f"No taxa pass the {args.min_percent}% threshold at rank {rank_name}. Skipping plot.")
+                continue
+
+            if sum_others > 0:
+
+                other_df = pd.DataFrame({"taxon_name": ["Other"], "percent": [sum_others]})
+                above_thresh_df = pd.concat([above_thresh_df, other_df], ignore_index=True)
+
+            make_barplot_threshold(above_thresh_df, rank_name, args.out_prefix, total_reads, unclassified_percent)
+
+        else:
+
+            make_barplot_top_N(sub_df, rank_name, args.out_prefix, args.max_taxa, total_reads, unclassified_percent)
+
 
 ################################################################################
 
@@ -110,7 +136,7 @@ def reduce_kraken_report(df: pd.DataFrame) -> pd.DataFrame:
 
     target_ranks = set(rank_dict.keys())
 
-    # adding unclassied and root, as i might do something with them
+    # adding unclassied and root, as i might do something with them at some point
     target_ranks.update(["U", "R"])
 
     filtered_df = df.loc[df["rank_code"].isin(target_ranks)].copy()
@@ -146,38 +172,73 @@ def add_domain_letter_to_taxon_name(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def make_barplot(df: pd.DataFrame, rank_name: str, out_prefix: str, max_taxa: int, total_reads: int, unclassified_percent: float) -> None:
+def make_barplot_threshold(sub_df: pd.DataFrame, rank_name: str, out_prefix: str,
+                           total_reads: int, unclassified_percent: float) -> None:
+    """
+    Make a barplot for all taxa that meet the user-specified min-percent threshold.
+    """
+    df_sorted = sub_df.sort_values("percent", ascending=False).reset_index(drop=True)
 
-    df_sorted = df.sort_values("percent", ascending = False).reset_index(drop = True)
+    # No 'Other' slice is automatically created here, because the user wants
+    # to strictly see only those that exceed the threshold.
+
+    plot_barplot_and_save(df_sorted, rank_name, out_prefix, total_reads, unclassified_percent)
+
+
+def make_barplot_top_N(sub_df: pd.DataFrame, rank_name: str, out_prefix: str, max_taxa: int,
+                      total_reads: int, unclassified_percent: float) -> None:
+    """
+    Make a barplot for the top N taxa, combining the remainder into 'Other'.
+    """
+    df_sorted = sub_df.sort_values("percent", ascending=False).reset_index(drop=True)
     top_df = df_sorted.head(max_taxa).copy()
 
     sum_others = df_sorted["percent"][max_taxa:].sum()
     if sum_others > 0:
         other_df = pd.DataFrame({"taxon_name": ["Other"], "percent": [sum_others]})
-        top_df = pd.concat([top_df, other_df], ignore_index = True)
+        top_df = pd.concat([top_df, other_df], ignore_index=True)
 
-    # wrapping names if they are longer than 30 characters
+    plot_barplot_and_save(top_df, rank_name, out_prefix, total_reads, unclassified_percent)
+
+
+def plot_barplot_and_save(df_to_plot: pd.DataFrame, rank_name: str, out_prefix: str,
+                          total_reads: int, unclassified_percent: float) -> None:
+    """
+    Given a (filtered) dataframe, plot and save the barplot.
+    """
+
+    df_sorted = df_to_plot.copy()
+
+    # making sure "Other" is the last entry
+    if "Other" in df_sorted["taxon_name"].values:
+
+        other_row = df_sorted[df_sorted["taxon_name"] == "Other"]
+        df_sorted = df_sorted[df_sorted["taxon_name"] != "Other"]
+        df_sorted = pd.concat([df_sorted, other_row], ignore_index=True)
+
+    df_to_plot = df_sorted.copy()
+
     def wrap_name(x):
-        return "\n".join(textwrap.wrap(x, width = 30))
+        return "\n".join(textwrap.wrap(x, width=30))
 
-    top_df["taxon_name_wrapped"] = top_df["taxon_name"].apply(wrap_name)
+    df_to_plot["taxon_name_wrapped"] = df_to_plot["taxon_name"].apply(wrap_name)
 
-    x_positions = range(len(top_df))
+    x_positions = range(len(df_to_plot))
 
-    fig, ax = plt.subplots(figsize = (8, 6))
-
-    ax.bar(x_positions, top_df["percent"], color = "steelblue")
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.bar(x_positions, df_to_plot["percent"], color="steelblue")
 
     ax.set_xticks(x_positions)
-    ax.set_xticklabels(top_df["taxon_name_wrapped"], rotation = 45, ha = 'right')
-
+    ax.set_xticklabels(df_to_plot["taxon_name_wrapped"], rotation=45, ha='right')
     ax.set_ylabel("% of total reads")
 
     main_title = f"{rank_name.capitalize()}-level dominant taxa"
     ax.set_title(f"{main_title}")
 
-    additional_text = f"Sample total reads: {total_reads:,}\nPercent unclassified:       {unclassified_percent:.2f}%"
-    ax.text(0.97, 0.97, additional_text, transform = ax.transAxes, ha = 'right', va = 'top', fontsize = 7, color = "black")
+    additional_text = (f"Sample total reads: {total_reads:,}\n"
+                       f"Percent unclassified:       {unclassified_percent:.2f}%")
+    ax.text(0.97, 0.97, additional_text, transform=ax.transAxes,
+            ha='right', va='top', fontsize=7, color="black")
 
     fig.tight_layout()
 
