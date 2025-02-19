@@ -1,0 +1,133 @@
+  1.60	425595	425595	U	0	unclassified
+ 98.40	27241409	1000000	-	1	root
+ 98.40	26241409	18	-	131567	  cellular organisms
+ 96.78	25808376	6630	D	2	    Bacteria
+ 40.87	10899862	2866	P	1224	      Proteobacteria
+ 22.29	5944707	4385	C	1236	        Gammaproteobacteria
+ 10.99	2930062	0	O	91347	          Enterobacteriales
+ 10.99	2930062	753102	F	543	            Enterobacteriaceae
+  2.69	717629	0	G	561	              Escherichia
+  2.69	717629	449674	S	562	                Escherichia coli
+  1.45	387186	0	G	590	              Salmonella
+  1.45	387186	14870	S	28901	                Salmonella enterica
+  1.21	322076	0	G	551	              Erwinia
+  1.21	322076	322076	S	338565	                Erwinia tasmaniensis
+  1.15	306087	1532	G	629	              Yersinia
+  1.10	292996	0	G	84565	              Sodalis
+  1.10	292996	0	S	63612	                Sodalis glossinidius
+  5.57	1485700	96	O	72274	          Pseudomonadales
+  3.04	809855	0	F	135621	            Pseudomonadaceae
+  3.04	809855	5332	G	286	              Pseudomonas
+  1.92	511201	8807	S	303	                  Pseudomonas putida
+  1.10	293151	0	S	316	                    Pseudomonas stutzeri
+  2.53	675749	67	F	468	            Moraxellaceae
+  1.57	417808	4219	G	497	              Psychrobacter
+  1.55	413504	0	S	330922	                Psychrobacter cryohalolentis
+  2.95	786915	287	O	135622	          Alteromonadales
+  1.17	311874	0	F	267890	            Shewanellaceae
+  1.17	311874	86221	G	22	              Shewanella
+  1.08	287498	0	F	267894	            Psychromonadaceae
+  1.08	287498	0	G	67572	              Psychromonas
+  1.08	287498	0	S	357794	                Psychromonas ingrahamii
+  9.25	2468005	919	C	28216	        Betaproteobacteria
+  6.01	1601893	328	O	80840	          Burkholderiales
+  4.29	1143197	382	F	119060	            Burkholderiaceae
+  4.18	1113622	3460	G	32008	              Burkholderia
+  2.46	655478	0	S	148447	                Burkholderia phymatum
+  1.72	458324	0	F	506	            Alcaligenaceae
+  1.72	458324	328551	G	517	              Bordetella
+  2.39	638275	125	O	206351	          Neisseriales
+  1.24	330985	0	F	1499392	            Chromobacteriaceae
+  1.24	330985	0	G	535	                Chromobacterium
+  1.24	330985	0	S	536	                  Chromobacterium violaceum
+  1.15	307165	0	F	481	            Neisseriaceae
+  1.15	307165	27929	G	482	              Neisseria
+  7.38	1967202	206	C	28211	        Alphaproteobacteria
+  6.12	1631747	698	O	356	          Rhizobiales
+  3.09	824087	841	F	41294	            Bradyrhizobiaceae
+  3.09	823190	0	G	1073	              Rhodopseudomonas
+  3.09	823190	3599	S	1076	                Rhodopseudomonas palustris
+  1.59	424519	190	F	82115	            Rhizobiaceae
+  1.59	424312	3475	G	28105	                Sinorhizobium
+  1.58	420783	0	S	382	                  Sinorhizobium meliloti
+  1.43	382406	549	F	118882	            Brucellaceae
+  1.43	381841	0	G	528	              Ochrobactrum
+  1.43	381841	0	S	529	                Ochrobactrum anthropi
+  1.35	359093	11	C	28221	          Deltaproteobacteria
+ 27.45	7319764	1567	P	1239	      Firmicutes
+ 20.93	5581780	2613	C	91061	        Bacilli
+ 16.04	4276646	1127	O	1385	          Bacillales
+ 10.82	2884169	830	F	186817	            Bacillaceae
+ 10.81	2883248	1623	G	1386	              Bacillus
+  4.08	1086754	28739	S	1396	                  Bacillus cereus
+  1.06	281618	0	S	79880	                Bacillus clausii
+  1.01	269485	0	S	86665	                Bacillus halodurans
+  1.00	265462	0	S	1423	                  Bacillus subtilis
+  4.54	1210706	0	F	90964	            Staphylococcaceae
+  4.54	1210706	17646	G	1279	              Staphylococcus
+  4.47	1192940	347499	S	1280	                Staphylococcus aureus
+  4.88	1302521	1022	O	186826	          Lactobacillales
+  3.77	1005307	2020	F	1300	            Streptococcaceae
+  2.24	598366	9126	G	1301	              Streptococcus
+  1.52	404921	0	G	1357	              Lactococcus
+  1.52	404921	17621	S	1358	                Lactococcus lactis
+  1.11	296170	75	F	33958	            Lactobacillaceae
+  1.11	296082	2921	G	1578	              Lactobacillus
+  6.51	1736411	28	C	186801	        Clostridia
+  6.51	1736367	212	O	186802	          Clostridiales
+  4.81	1282298	40	F	31979	            Clostridiaceae
+  3.43	914028	1443	G	1485	              Clostridium
+  1.57	418932	0	S	1520	                Clostridium beijerinckii
+  1.06	281791	147235	S	1491	                Clostridium botulinum
+  1.38	368230	162	G	114627	              Alkaliphilus
+  1.38	368065	0	S	208226	                Alkaliphilus metalliredigens
+ 11.43	3048230	2	P	201174	      Actinobacteria
+ 11.43	3048223	471	C	1760	        Actinobacteria
+ 11.43	3047699	395	O	85007	          Corynebacteriales
+  7.58	2020485	0	F	1762	            Mycobacteriaceae
+  7.58	2020485	526947	G	1763	              Mycobacterium
+  1.22	326114	326114	S	164757	                Mycobacterium sp. JLS
+  1.17	310855	122091	S	1764	                  Mycobacterium avium
+  1.06	281340	0	S	1781	                Mycobacterium marinum
+  2.33	622073	61	F	85025	            Nocardiaceae
+  2.33	622004	0	G	1827	              Rhodococcus
+  2.33	622004	0	S	132919	                Rhodococcus jostii
+  1.52	404746	0	F	1653	            Corynebacteriaceae
+  1.52	404746	3211	G	1716	              Corynebacterium
+  8.19	2183394	487	P	1117	      Cyanobacteria
+  3.89	1037209	0	O	1161	        Nostocales
+  3.89	1037209	13211	F	1162	          Nostocaceae
+  2.21	590395	62	G	1177	            Nostoc
+  2.21	590086	0	S	272131	              Nostoc punctiforme
+  1.63	433603	0	G	1163	            Anabaena
+  1.63	433603	0	S	1172	              Anabaena variabilis
+  3.14	838658	85	O	1118	          Chroococcales
+  1.75	466304	16	G	1129	            Synechococcus
+  1.75	466278	429959	S	32046	              Synechococcus elongatus
+  1.40	372257	0	G	43988	            Cyanothece
+  1.40	372257	372257	S	43989	              Cyanothece sp. ATCC 51142
+  1.15	307019	0	O	1212	        Prochlorales
+  1.15	307019	0	F	1217	          Prochlorococcaceae
+  1.15	307019	0	G	1218	            Prochlorococcus
+  1.15	307019	35364	S	1219	              Prochlorococcus marinus
+  2.64	703206	12	P	976	        Bacteroidetes
+  1.48	395674	0	C	200643	          Bacteroidia
+  1.48	395674	696	O	171549	            Bacteroidales
+  1.48	394968	0	F	815	              Bacteroidaceae
+  1.48	394968	2779	G	816	                Bacteroides
+  1.47	392179	0	S	818	                  Bacteroides thetaiotaomicron
+  1.15	307508	0	C	768503	          Cytophagia
+  1.15	307508	0	O	768507	            Cytophagales
+  1.15	307508	0	F	89373	              Cytophagaceae
+  1.15	307508	0	G	978	                Cytophaga
+  1.15	307508	0	S	985	                  Cytophaga hutchinsonii
+  1.90	506820	0	P	203691	      Spirochaetes
+  1.90	506820	1	C	203692	        Spirochaetia
+  1.60	427296	0	P	200795	      Chloroflexi
+  1.60	427295	6	C	32061	        Chloroflexia
+  1.60	427279	0	O	189772	          Herpetosiphonales
+  1.60	427279	0	F	189773	            Herpetosiphonaceae
+  1.60	427279	0	G	64	              Herpetosiphon
+  1.60	427279	0	S	65	                Herpetosiphon aurantiacus
+  1.62	433015	2	D	2157	    Archaea
+  1.30	345556	2	P	28890	      Euryarchaeota

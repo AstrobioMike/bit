@@ -35,12 +35,11 @@ def main():
 
     df = read_in_kraken_report(args.input_kraken)
 
+    total_reads, unclassified_percent, percent_reads_stuck_at_root = get_stats(df)
+
     df = reduce_kraken_report(df)
 
     df = add_domain_letter_to_taxon_name(df)
-
-    total_reads = df.loc[df["rank_code"] == "U", "clade_reads"].sum() + df.loc[df["rank_code"] == "R", "clade_reads"].sum()
-    unclassified_percent = df.loc[df["rank_code"] == "U", "percent"].sum()
 
     for code, rank_name in rank_dict.items():
 
@@ -68,11 +67,11 @@ def main():
                 other_df = pd.DataFrame({"taxon_name": ["Other"], "percent": [sum_others]})
                 above_thresh_df = pd.concat([above_thresh_df, other_df], ignore_index=True)
 
-            make_barplot_threshold(above_thresh_df, rank_name, args.out_prefix, total_reads, unclassified_percent)
+            make_barplot_threshold(above_thresh_df, rank_name, args.out_prefix, total_reads, unclassified_percent, percent_reads_stuck_at_root)
 
         else:
 
-            make_barplot_top_N(sub_df, rank_name, args.out_prefix, args.max_taxa, total_reads, unclassified_percent)
+            make_barplot_top_N(sub_df, rank_name, args.out_prefix, args.max_taxa, total_reads, unclassified_percent, percent_reads_stuck_at_root)
 
 
 ################################################################################
@@ -127,6 +126,17 @@ def read_in_kraken_report(filepath: str) -> pd.DataFrame:
     return df
 
 
+def get_stats(df: pd.DataFrame) -> tuple:
+
+    total_reads = df.loc[df["rank_code"] == "U", "clade_reads"].sum() + df.loc[df["taxon_name"] == "root", "clade_reads"].sum()
+    unclassified_percent = df.loc[df["rank_code"] == "U", "percent"].sum()
+    total_reads_stuck_at_root = df.loc[df["taxon_name"] == "root", "this_level_reads"].sum()
+    percent_reads_stuck_at_root = total_reads_stuck_at_root / total_reads * 100
+    percent_reads_stuck_at_root = f"{percent_reads_stuck_at_root:.2f}".rstrip('0').rstrip('.')
+
+    return total_reads, unclassified_percent, percent_reads_stuck_at_root
+
+
 def reduce_kraken_report(df: pd.DataFrame) -> pd.DataFrame:
     """
     Simplify the Kraken report by removing unnecessary columns and rows.
@@ -138,6 +148,9 @@ def reduce_kraken_report(df: pd.DataFrame) -> pd.DataFrame:
 
     # adding unclassied and root, as i might do something with them at some point
     target_ranks.update(["U", "R"])
+
+    # getting number of reads stuck at root
+
 
     filtered_df = df.loc[df["rank_code"].isin(target_ranks)].copy()
 
@@ -173,7 +186,7 @@ def add_domain_letter_to_taxon_name(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def make_barplot_threshold(sub_df: pd.DataFrame, rank_name: str, out_prefix: str,
-                           total_reads: int, unclassified_percent: float) -> None:
+                           total_reads: int, unclassified_percent: float, percent_reads_stuck_at_root: str) -> None:
     """
     Make a barplot for all taxa that meet the user-specified min-percent threshold.
     """
@@ -182,11 +195,11 @@ def make_barplot_threshold(sub_df: pd.DataFrame, rank_name: str, out_prefix: str
     # No 'Other' slice is automatically created here, because the user wants
     # to strictly see only those that exceed the threshold.
 
-    plot_barplot_and_save(df_sorted, rank_name, out_prefix, total_reads, unclassified_percent)
+    plot_barplot_and_save(df_sorted, rank_name, out_prefix, total_reads, unclassified_percent, percent_reads_stuck_at_root)
 
 
 def make_barplot_top_N(sub_df: pd.DataFrame, rank_name: str, out_prefix: str, max_taxa: int,
-                      total_reads: int, unclassified_percent: float) -> None:
+                      total_reads: int, unclassified_percent: float, percent_reads_stuck_at_root: str) -> None:
     """
     Make a barplot for the top N taxa, combining the remainder into 'Other'.
     """
@@ -198,11 +211,11 @@ def make_barplot_top_N(sub_df: pd.DataFrame, rank_name: str, out_prefix: str, ma
         other_df = pd.DataFrame({"taxon_name": ["Other"], "percent": [sum_others]})
         top_df = pd.concat([top_df, other_df], ignore_index=True)
 
-    plot_barplot_and_save(top_df, rank_name, out_prefix, total_reads, unclassified_percent)
+    plot_barplot_and_save(top_df, rank_name, out_prefix, total_reads, unclassified_percent, percent_reads_stuck_at_root)
 
 
 def plot_barplot_and_save(df_to_plot: pd.DataFrame, rank_name: str, out_prefix: str,
-                          total_reads: int, unclassified_percent: float) -> None:
+                          total_reads: int, unclassified_percent: float, percent_reads_stuck_at_root: str) -> None:
     """
     Given a (filtered) dataframe, plot and save the barplot.
     """
@@ -236,7 +249,8 @@ def plot_barplot_and_save(df_to_plot: pd.DataFrame, rank_name: str, out_prefix: 
     ax.set_title(f"{main_title}")
 
     additional_text = (f"Sample total reads: {total_reads:,}\n"
-                       f"Percent unclassified:       {unclassified_percent:.2f}%")
+                       f"Percent unclassified: {unclassified_percent:.2f}%\n"
+                       f"Percent reads at Root: {percent_reads_stuck_at_root}%")
     ax.text(0.97, 0.97, additional_text, transform=ax.transAxes,
             ha='right', va='top', fontsize=7, color="black")
 
