@@ -258,7 +258,8 @@ def plot_barplot_and_save(df_to_plot: pd.DataFrame, rank_name: str, out_prefix: 
     ax.set_title(f"{main_title}")
     ax.set_ylabel("% of total reads", fontsize=10)
     ax.text(0.97, 0.97, additional_text, transform=ax.transAxes,
-    ha='right', va='top', fontsize=9, color="black")
+            ha='right', va='top', fontsize=9, color="black",
+            bbox=dict(facecolor='white', alpha=0.6, linewidth=0.2, boxstyle="round,pad=0.2"))
 
 
     fig.tight_layout()
