@@ -1,4 +1,4 @@
-<a href="https://github.com/AstrobioMike/bit#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-1,700+-blue" height="22"></a>
+<a href="https://github.com/AstrobioMike/bit#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-2,000+-blue" height="22"></a>
 <br>
 <a href="https://github.com/AstrobioMike/bit#citation-info"><img align="right" alt="Brief paper" src="https://img.shields.io/badge/Citation%20info-blue" height="22"></a>
 <br>
@@ -50,6 +50,7 @@ Some of the helper programs/scripts in _bit_ include:
 | `bit-filter-KOFamScan-results` | filter [KOFamScan](https://github.com/takaram/kofam_scan) results |  
 | `bit-get-go-term-info` | get information about a specific [GO](http://geneontology.org/) term |  
 | `bit-summarize-go-annotations` | summarize GO annotations |  
+| `bit-gen-kraken2-tax-plots` | provide a kraken2 output report file and easily generate bar plots for the most abundant taxa at each rank |  
 | `bit-kraken2-to-taxon-summaries`, `bit-combine-kraken2-taxon-summaries` | summarize [kraken2](https://github.com/DerrickWood/kraken2) outputs in a table with counts of full taxonomic lineages, and combining multiple samples |  
 | `bit-combine-bracken-and-add-lineage` | combine [bracken](https://github.com/jenniferlu717/Bracken) outputs and adding full taxonomic lineage info |  
 | `bit-gen-iToL-map`, `bit-gen-iToL-colorstrip`, `bit-gen-iToL-text-dataset`, `bit-gen-iToL-binary-dataset` | generate color/mapping/data files for use with trees being viewed on the [Interactive Tree of Life](https://itol.embl.de/) site |  
