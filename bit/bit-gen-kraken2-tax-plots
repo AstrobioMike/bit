@@ -21,7 +21,7 @@ parser.add_argument("-m", "--maximum-taxa-per-plot", metavar = "<INT>", help = '
 parser.add_argument("-p", "--minimum-percent-threshold", metavar = "<FLOAT>",
                     help = 'The minimum percent of reads a taxon must have in order to be included (the rest are represented in "Other"). This overrides --maximum-taxa-per-plot if set > 0. (default: 0.0 and to use --maximum-taxa-per-plot instead)',
                     action = "store", type = float, default = 0.0, dest = "min_percent")
-parser.add_argument("--no-root", help = "Don't add the percent of reads stuck at Root to the overlain text on plots", action = "store_true")
+parser.add_argument("--no-annots", help = "Don't add annotations (total num. reads; % unclassified; % stuck at root) as overlain text on plots", action = "store_true")
 
 
 if len(sys.argv) == 1:
@@ -246,20 +246,16 @@ def plot_barplot_and_save(df_to_plot: pd.DataFrame, rank_name: str, out_prefix: 
     ax.set_xticks(x_positions)
     ax.set_xticklabels(df_to_plot["taxon_name_wrapped"], rotation=45, ha='right')
 
-
-    if args.no_root:
-        additional_text = (f"Sample total reads: {total_reads:,}\n"
-                            f"Percent unclassified: {unclassified_percent:.2f}%")
-    else:
-        additional_text = (f"Sample total reads: {total_reads:,}\n"
-                            f"Percent unclassified: {unclassified_percent:.2f}%\n"
-                            f"Percent reads at Root: {percent_reads_stuck_at_root}%")
-
     ax.set_title(f"{main_title}")
     ax.set_ylabel("% of total reads", fontsize=10)
-    ax.text(0.97, 0.97, additional_text, transform=ax.transAxes,
-            ha='right', va='top', fontsize=9, color="black",
-            bbox=dict(facecolor='white', alpha=0.6, linewidth=0.2, boxstyle="round,pad=0.2"))
+
+    if not args.no_annots:
+        additional_text = (f"Sample total reads: {total_reads:,}\n"
+                            f"Percent unclassified: {unclassified_percent:.2f}%\n"
+                            f"Percent reads solely at Root: {percent_reads_stuck_at_root}%")
+        ax.text(0.97, 0.97, additional_text, transform=ax.transAxes,
+                ha='right', va='top', fontsize=9, color="black",
+                bbox=dict(facecolor='white', alpha=0.6, linewidth=0.2, boxstyle="round,pad=0.2"))
 
 
     fig.tight_layout()
