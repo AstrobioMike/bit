@@ -21,7 +21,7 @@ parser.add_argument("-m", "--maximum-taxa-per-plot", metavar = "<INT>", help = '
 parser.add_argument("-p", "--minimum-percent-threshold", metavar = "<FLOAT>",
                     help = 'The minimum percent of reads a taxon must have in order to be included (the rest are represented in "Other"). This overrides --maximum-taxa-per-plot if set > 0. (default: 0.0 and to use --maximum-taxa-per-plot instead)',
                     action = "store", type = float, default = 0.0, dest = "min_percent")
-parser.add_argument("--no-annots", help = "Don't add annotations (total num. reads; % unclassified; % stuck at root) as overlain text on plots", action = "store_true")
+parser.add_argument("--no-annots", help = "Don't add annotations (total num. reads; perc. unclassified; perc. stuck at root) as overlain text on plots", action = "store_true")
 
 
 if len(sys.argv) == 1:
