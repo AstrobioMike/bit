@@ -11,7 +11,7 @@ parser = argparse.ArgumentParser(
     description="This script generates whole-reference detection and coverage info\
         for specified references given the reference fasta(s) and a mosdepth-produced\
         *per-base.bed.gz file. For version info, run `bit-version`.",
-    epilog="Ex. usage: get_cov_stats.py -r reference.fasta -b asm-per-base.bed.gz",
+    epilog="Ex. usage: bit-get-cov-stats -r reference.fasta -b asm-per-base.bed.gz",
 )
 required = parser.add_argument_group("REQUIRED PARAMETERS")
 optional = parser.add_argument_group("OPTIONAL PARAMETERS")
