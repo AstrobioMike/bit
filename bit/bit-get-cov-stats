@@ -1,0 +1,141 @@
+#!/usr/bin/env python
+
+import argparse
+import sys
+from pathlib import Path
+import gzip
+from dataclasses import dataclass, field
+from Bio import SeqIO #type: ignore
+
+parser = argparse.ArgumentParser(
+    description="This script generates whole-reference detection and coverage info\
+        for specified references given the reference fasta(s) and a mosdepth-produced\
+        *per-base.bed.gz file. For version info, run `bit-version`.",
+    epilog="Ex. usage: get_cov_stats.py -r reference.fasta -b asm-per-base.bed.gz",
+)
+required = parser.add_argument_group("REQUIRED PARAMETERS")
+optional = parser.add_argument_group("OPTIONAL PARAMETERS")
+
+required.add_argument(
+    "-r",
+    "--reference-fastas",
+    metavar="<STR>",
+    help='Path to reference fasta file(s)',
+    required=True,
+    nargs="+",
+)
+required.add_argument(
+    "-b",
+    "--bed-file",
+    metavar="<PATH(s)>",
+    help="Path to mosdepth-produced *per-base.bed.gz file",
+    required=True,
+)
+optional.add_argument(
+    "-o",
+    "--outpath",
+    metavar="<STR>",
+    help='Name of the output file (default: "coverage-stats.tsv")',
+    default="coverage-stats.tsv",
+)
+
+
+def main(reference_fastas, bed_file, outpath):
+
+    preflight_checks(reference_fastas, bed_file)
+
+    refs = parse_refs(reference_fastas)
+
+    refs = parse_bed_file(refs, bed_file)
+
+    generate_output(refs, outpath)
+
+
+def preflight_checks(reference_fastas, bed_file):
+    paths_list = reference_fastas + [bed_file]
+    check_files_are_found(paths_list)
+
+
+def check_files_are_found(paths_list):
+    for path in paths_list:
+        if not Path(path).is_file():
+            print(f"\n    We were not able to find the input file: {path}")
+            notify_premature_exit()
+
+
+def notify_premature_exit():
+    print("\n    Exiting for now :(\n")
+    sys.exit(1)
+
+
+def parse_refs(reference_fastas):
+    refs = []
+    for fasta in reference_fastas:
+        ref = RefData(fasta)
+        ref.load_fasta()
+        refs.append(ref)
+
+    return refs
+
+
+@dataclass
+class RefData:
+    path: str
+    headers: set = field(default_factory=set)
+    total_length: int = 0
+    total_coverage_count: int = 0
+    total_bases_detected_at_all: int = 0
+    total_bases_detected_at_10x: int = 0
+
+    def load_fasta(self):
+        with open(self.path, "r") as f:
+            for record in SeqIO.parse(f, "fasta"):
+                self.headers.add(record.id)
+                self.total_length += len(record.seq)
+
+    def update_from_bed_line(self, header: str, start: int, end: int, num_reads: int):
+        if header in self.headers:
+            cur_range_covered = end - start
+            self.total_coverage_count += num_reads * cur_range_covered
+            if num_reads > 0:
+                self.total_bases_detected_at_all += cur_range_covered
+            if num_reads >= 10:
+                self.total_bases_detected_at_10x += cur_range_covered
+
+    def compute_metrics(self):
+        detection = round(self.total_bases_detected_at_all / self.total_length, 4)
+        detection_at_10x = round(self.total_bases_detected_at_10x / self.total_length, 4)
+        average_coverage = round(self.total_coverage_count / self.total_length, 4)
+        return detection, detection_at_10x, average_coverage
+
+
+def parse_bed_file(refs, bed_file):
+
+    with gzip.open(bed_file, "rt") as f:
+        for line in f:
+            header, start, end, num_reads = line.strip().split("\t")
+            for ref in refs:
+                ref.update_from_bed_line(header, int(start), int(end), int(num_reads))
+
+    return(refs)
+
+
+def generate_output(refs, outpath):
+    with open(outpath, "w") as f:
+        f.write("Ref\tDetection\tDetection_at_10x\tAverage_coverage\n")
+        for ref in refs:
+            detection, detection_at_10x, average_coverage = ref.compute_metrics()
+            f.write(f"{ref.path}\t{detection}\t{detection_at_10x}\t{average_coverage}\n")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) == 1:  # pragma: no cover
+        parser.print_help(sys.stderr)
+        sys.exit(0)
+    args = parser.parse_args()
+
+    main(
+        args.reference_fastas,
+        args.bed_file,
+        args.outpath,
+    )
