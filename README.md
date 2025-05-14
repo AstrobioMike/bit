@@ -25,6 +25,14 @@ There are of course several great and widely used packages of bioinformatics hel
 *bit* runs in a Unix-like environment and is recommended to be installed with [conda](https://conda.io/docs/) as shown [below](#conda-install).  
 
 ---
+**Quick start**
+
+```
+conda create -n bit -c astrobiomike -c conda-forge -c bioconda -c defaults bit
+conda activate bit
+```
+
+---
 
 ### Programs
 Some of the helper programs/scripts in _bit_ include:
