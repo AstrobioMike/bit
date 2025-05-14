@@ -20,7 +20,7 @@
 ## Overview 
 There are of course several great and widely used packages of bioinformatics helper programs out there. Some of these include the likes of [seqkit](https://github.com/shenwei356/seqkit), [seqtk](https://github.com/lh3/seqtk), [fastX-toolkit](http://hannonlab.cshl.edu/fastx_toolkit/), and [bbtools](https://jgi.doe.gov/data-and-tools/bbtools/) – all of which I use regularly and have helped me do things I was trying to get done. But there are always more tasks that crop up that may not yet have a helper program or script already written that we can find.  
 
-[*bit*](https://doi.org/10.12688/f1000research.79530.1) is a collection of one-liners, short scripts, [programs](#programs) and [workflows](#workflows) that I have been adding to over several years. Anytime I need to write something to perform a task that has more than a one-off, ad hoc use, I consider adding it here. 
+[*bit*](https://doi.org/10.12688/f1000research.79530.1) is a collection of one-liners, short scripts, [programs](#programs) and [workflows](#workflows) that I have been adding to over the years. Anytime I need to write something to perform a task that has more than a one-off, ad hoc use, I consider adding it here. 
 
 *bit* runs in a Unix-like environment and is recommended to be installed with [conda](https://conda.io/docs/) as shown [below](#conda-install).  
 
