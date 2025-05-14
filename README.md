@@ -89,7 +89,7 @@ For greater detail and usage information, see the pages linked above for each wo
 
 > If you are new to the wonderful world of [conda](https://conda.io/docs/) and want to learn more, one place you can start learning about it is [here](https://astrobiomike.github.io/unix/conda-intro) 🙂  
 
-Due to increasing program restrictions as *bit* has grown, it's easiest to install it in its own environment as shown below:  
+It's best to install *bit* in its own environment as shown below:  
 
 ```
 conda create -n bit -c astrobiomike -c conda-forge -c bioconda -c defaults bit
