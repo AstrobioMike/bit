@@ -1,0 +1,198 @@
+#!/usr/bin/env python
+
+import argparse
+import sys
+import os
+import subprocess
+from pathlib import Path
+import pysam # type: ignore
+import pandas as pd
+# import gzip
+# from dataclasses import dataclass, field
+from Bio import SeqIO # type: ignore
+
+desc = """
+       This script identifies and pulls out regions of relatively higher coverage when
+       given a reference fasta and a bam file. It utilizes mosdepth to rapidly calculate
+       fixed windows of average coverage from a bam file, then generates a sliding window
+       average across a larger window size. It outputs a table of coverage stats for all
+       sliding windows, and pulls out regions in fasta format above a specified threshold.
+       For version info, run `bit-version`.
+       """
+
+parser = argparse.ArgumentParser(
+    description=desc,
+    epilog="Ex. usage: bit-cov-analyzer -r reference.fasta -b regions.bed.gz",
+)
+required = parser.add_argument_group("REQUIRED PARAMETERS")
+optional = parser.add_argument_group("OPTIONAL PARAMETERS")
+
+required.add_argument(
+    "-r",
+    "--reference-fasta",
+    metavar="<FILE>",
+    help='reference fasta file',
+    required=True,
+)
+required.add_argument(
+    "-b",
+    "--bam-file",
+    metavar="<FILE>",
+    help="bam file",
+    required=True,
+)
+optional.add_argument(
+    "-o",
+    "--output-prefix",
+    metavar="<STR>",
+    help='prefix of the output files (default: "cov-analyzer")',
+    default="cov-analyzer",
+)
+optional.add_argument(
+    "-f",
+    "--fixed-window-size",
+    metavar="<INT>",
+    help='fixed window size passed to mosdepth (default: 100)',
+    type=int,
+    default=100,
+)
+optional.add_argument(
+    "-s",
+    "--sliding-window-size",
+    metavar="<INT>",
+    help='sliding window size for coverage analysis (default: 1000; must be > fixed window size)',
+    type=int,
+    default=1000,
+)
+
+
+def main(reference_fasta, bam_file, output_prefix, fixed_window_size, sliding_window_size):
+
+
+    preflight_checks(reference_fasta, bam_file, output_prefix)
+
+    mosdepth_regions_file = run_mosdepth(bam_file, fixed_window_size, output_prefix)
+
+    cov_df = read_mosdepth_regions_file(mosdepth_regions_file)
+
+    ref_contig_lengths = get_ref_contig_lengths(reference_fasta)
+
+    cov_df = build_and_merge_all_windows(cov_df, ref_contig_lengths, fixed_window_size)
+
+    generate_stats(cov_df, sliding_window_size)
+
+    # refs = parse_refs(reference_fastas)
+
+    # refs = parse_bed_file(refs, bed_file)
+
+    # generate_output(refs, outpath)
+
+
+def preflight_checks(reference_fasta, bam_file, output_prefix):
+
+    paths_list = [reference_fasta, bam_file]
+    check_files_are_found(paths_list)
+    check_bam_file_is_indexed(bam_file)
+    os.makedirs(output_prefix, exist_ok=True)
+
+
+def check_files_are_found(paths_list):
+    for path in paths_list:
+        if not Path(path).is_file():
+            print(f"\n    We were not able to find the input file: {path}")
+            notify_premature_exit()
+
+
+def notify_premature_exit():
+    print("\n    Exiting for now :(\n")
+    sys.exit(1)
+
+
+def check_bam_file_is_indexed(bam_file):
+    if not Path(bam_file + ".bai").is_file():
+        index_bam_file(bam_file)
+
+
+def index_bam_file(bam_file):
+    cmd = f"samtools index {bam_file}"
+    subprocess.run(cmd, shell=True)
+
+
+def run_mosdepth(bam_file, fixed_window_size, output_prefix):
+    mosdepth_out_prefix = f"{output_prefix}/{bam_file[:-4]}"
+    cmd = f"mosdepth --by {fixed_window_size} {mosdepth_out_prefix} {bam_file}"
+    subprocess.run(cmd, shell=True)
+    mosdepth_regions_file = f"{mosdepth_out_prefix}.regions.bed.gz"
+
+    return mosdepth_regions_file
+
+
+def read_mosdepth_regions_file(mosdepth_regions_file):
+    cov_df = pd.read_csv(
+        mosdepth_regions_file,
+        sep="\t",
+        header=None,
+        names=["contig", "start", "end", "cov"],
+        compression="gzip",
+    ).astype({"contig": str, "start": int, "end": int, "cov": float})
+
+    return cov_df
+
+
+def get_ref_contig_lengths(reference_fasta):
+    with pysam.FastaFile(reference_fasta) as fasta:
+        lengths = dict(zip(fasta.references, fasta.lengths))
+    return lengths
+
+
+def build_and_merge_all_windows(cov_df, ref_contig_lengths, fixed_window_size):
+    """"
+    This ensures that all windows are accounted for, even if they had no reads recruited and
+    therefore weren't in the initial bam file.
+    """
+    rows = []
+    for contig, length in ref_contig_lengths.items():
+        for start in range(0, length, fixed_window_size):
+            end = min(start + fixed_window_size, length)
+            rows.append([contig, start, end])
+
+    all_windows_df = pd.DataFrame(rows, columns=["contig", "start", "end"])
+
+    merged_df = (
+        all_windows_df.merge(cov_df, on=["contig", "start", "end"], how="left")
+        .assign(cov=lambda df: df["cov"].fillna(0))
+    )
+
+    return merged_df
+
+
+def generate_stats(cov_df, sliding_window_size):
+    # want to get average coverage of whole thing (well, based on fixed windows)
+        # might need to take into account the length of the windows on the ends of contigs
+    # then generate stats on this per sliding window across 1kb sections incrementing every
+        # 100bp window
+            # percentile, z-score ((x – μ) / σ), and fold-change (x / μ) for that window vs the whole thing
+    pass
+
+# def parse_refs(reference_fastas):
+#     refs = []
+#     for fasta in reference_fastas:
+#         ref = RefData(fasta)
+#         ref.load_fasta()
+#         refs.append(ref)
+
+#     return refs
+
+if __name__ == "__main__":
+    if len(sys.argv) == 1:  # pragma: no cover
+        parser.print_help(sys.stderr)
+        sys.exit(0)
+    args = parser.parse_args()
+
+    main(
+        args.reference_fasta,
+        args.bam_file,
+        args.output_prefix,
+        args.fixed_window_size,
+        args.sliding_window_size,
+    )
