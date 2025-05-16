@@ -1,24 +1,24 @@
 Window coverage stats:
 
-  Number of windows : 95992.00
+  Number of windows : 95982.00
   Mean coverage     :   20.44
-  Median coverage   :   19.82
-  Std. deviation    :   11.31
-  Minimum coverage  :    1.46
-  Maximum coverage  :  339.78
+  Median coverage   :   19.83
+  Std. deviation    :   11.19
+  Minimum coverage  :    2.32
+  Maximum coverage  :  336.37
 
          Percentile  Coverage
   -----------------  --------
-               0.01 :    2.73
-                0.1 :    8.56
-                  1 :   11.02
-                  5 :   13.39
-                 10 :   14.74
-                 25 :   17.08
-                 50 :   19.82
-                 75 :   22.74
-                 90 :   25.58
-                 95 :   27.34
-                 99 :   31.04
-               99.9 :  292.63
-              99.99 :  331.11
+               0.01 :    4.98
+                0.1 :    9.21
+                  1 :   11.53
+                  5 :   13.83
+                 10 :   15.09
+                 25 :   17.29
+                 50 :   19.83
+                 75 :   22.55
+                 90 :   25.23
+                 95 :   26.85
+                 99 :   30.24
+               99.9 :  294.38
+              99.99 :  331.95

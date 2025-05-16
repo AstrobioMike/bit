@@ -8,18 +8,22 @@ from pathlib import Path
 import pysam # type: ignore
 import pandas as pd
 import numpy as np
+import math
 from Bio import SeqIO # type: ignore
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 import matplotlib.pyplot as plt # type: ignore
+from colorama import Fore, Style, init
+init(autoreset=True)
 
 desc = """
        This script identifies and pulls out regions of relatively higher coverage when
        given a reference fasta and a bam file. It generates a bed file of the desired
        region windows and step size, utilizes mosdepth to get the coverage of those windows,
-       then generates stats for those windows and pulls out regions above a specified threshold.
-       It outputs a table of coverage stats for all windows, a table of merged windows, and
-       regions in fasta format. For version info, run `bit-version`.
+       then generates stats for those windows and pulls out regions with coverage above and
+       below specified thresholds. It outputs a table of coverage stats for all windows, a
+       table of merged windows, and regions in fasta format. For version info, run
+       `bit-version`.
        """
 
 parser = argparse.ArgumentParser(
@@ -51,6 +55,24 @@ optional.add_argument(
     default="cov-analyzer",
 )
 optional.add_argument(
+    "-H",
+    "--high-threshold",
+    metavar="<FLOAT>",
+    help='high threshold for regions of interest (default: 10; e.g., 10 would\
+          identify regions with 10-fold+ higher coverage than the mean of the whole ref)',
+    type=float,
+    default=10,
+)
+optional.add_argument(
+    "-L",
+    "--low-threshold",
+    metavar="<FLOAT>",
+    help='low threshold for regions of interest (default: 10; e.g., 10 would\
+          identify regions with coverage 10-fold+ lower than the mean of the whole ref)',
+    type=float,
+    default=10,
+)
+optional.add_argument(
     "-s",
     "--sliding-window-size",
     metavar="<INT>",
@@ -76,8 +98,11 @@ optional.add_argument(
 )
 
 
-def main(reference_fasta, bam_file, output_prefix, sliding_window_size, step_size, buffer):
+###############################################################################
 
+def main(reference_fasta, bam_file, output_prefix,
+         high_threshold, low_threshold, sliding_window_size,
+         step_size, buffer):
 
     preflight_checks(reference_fasta, bam_file, output_prefix)
 
@@ -92,9 +117,13 @@ def main(reference_fasta, bam_file, output_prefix, sliding_window_size, step_siz
 
     cov_stats = CoverageStats(cov_df)
 
-    merged_regions = cov_stats.merge_windows(threshold = 10)
+    high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold)
+    low_merged_regions = cov_stats.merge_windows(type="low", threshold = -get_log2_fold_change_value(low_threshold))
 
-    generate_outputs(reference_fasta, merged_regions, cov_df, cov_stats, buffer, output_prefix)
+    generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
+                     cov_df, cov_stats, buffer, output_prefix)
+
+###############################################################################
 
 
 def preflight_checks(reference_fasta, bam_file, output_prefix):
@@ -161,6 +190,11 @@ def read_mosdepth_regions_file(mosdepth_regions_file):
     ).astype({"contig": str, "start": int, "end": int, "cov": float})
 
     return cov_df
+
+
+def get_log2_fold_change_value(fold_change, pseudocount = 1e-6):
+
+    return math.log2(fold_change + pseudocount)
 
 
 class CoverageStats:
@@ -256,15 +290,19 @@ class CoverageStats:
         return (contig, start, end, region_mean, percentile, zscore, fold_change, log2_fold_change)
 
 
-def generate_outputs(reference_fasta, merged_regions, cov_df, cov_stats, buffer, output_prefix):
+def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
+                     cov_df, cov_stats, buffer, output_prefix):
 
     print()
     write_window_cov_stats(cov_stats, output_prefix)
     write_windows_table(cov_stats, output_prefix)
     write_window_plot_cov_histogram(cov_df, output_prefix)
     print()
-    write_regions_of_interest_table(merged_regions, output_prefix)
-    write_regions_fasta(reference_fasta, merged_regions, buffer, output_prefix)
+    write_regions_of_interest_table(high_merged_regions, output_prefix, "high")
+    write_regions_fasta(reference_fasta, high_merged_regions, buffer, output_prefix, "high")
+    print()
+    write_regions_of_interest_table(low_merged_regions, output_prefix, "low")
+    write_regions_fasta(reference_fasta, low_merged_regions, buffer, output_prefix, "low")
     print()
 
 
@@ -293,13 +331,13 @@ def write_window_cov_stats(cov_stats, output_prefix):
             cov = cov_stats.percentile(p)
             label = f"{p}"
             out.write(f"  {label:>{max_label}} : {cov:7.2f}\n")
-    print(f"  Window coverage stats overview written to: {out_path}")
+    print(f"  Window-coverage stats overview written to:\n      {Fore.YELLOW + out_path}")
 
 
 def write_windows_table(cov_stats, output_prefix):
-    out_path = f"{output_prefix}/window-coverage-stats.tsv"
-    cov_stats.df.to_csv(out_path, sep="\t", index=False, float_format="%.2f")
-    print(f"  Window coverage stats table written to: {out_path}")
+    out_path = f"{output_prefix}/window-coverage-stats.tsv.gz"
+    cov_stats.df.to_csv(out_path, sep="\t", index=False, float_format="%.2f", compression="gzip")
+    print(f"  Window-coverage stats table written to:\n      {Fore.YELLOW + out_path}")
 
 
 def write_window_plot_cov_histogram(cov_df, output_prefix):
@@ -311,17 +349,26 @@ def write_window_plot_cov_histogram(cov_df, output_prefix):
     out_path = f"{output_prefix}/window-coverage-histogram.png"
     plt.savefig(out_path, dpi=125, bbox_inches="tight")
     plt.close()
-    print(f"  Window coverage histogram written to: {output_prefix}/window-coverage-histogram.png")
+    print(f"  Window-coverage histogram written to:\n      {Fore.YELLOW + output_prefix}/window-coverage-histogram.png")
 
 
-def write_regions_of_interest_table(merged_regions, output_prefix):
-    out_path = f"{output_prefix}/regions-of-interest.tsv"
-    merged_regions.to_csv(out_path, sep="\t", index=False, float_format="%.2f")
-    print(f"  Regions of interest table written to: {out_path}")
+def write_regions_of_interest_table(merged_regions, output_prefix, type):
+    out_path = f"{output_prefix}/{type}-coverage-regions-of-interest.tsv"
+
+    if type == "high":
+        sorted_df = merged_regions.sort_values(by="cov", ascending=False)
+    elif type == "low":
+        sorted_df = merged_regions.sort_values(by="cov", ascending=True)
+    else:
+        raise ValueError(f"Nope nope nope: {type!r}")
+
+    sorted_df.to_csv(out_path, sep="\t", index=False, float_format="%.2f")
+
+    print(f"  {type.capitalize()}-coverage regions-of-interest table written to:\n      {Fore.YELLOW + out_path}")
 
 
-def write_regions_fasta(reference_fasta, regions_df, buffer, output_prefix):
-    output_fasta = f"{output_prefix}/regions-of-interest.fasta"
+def write_regions_fasta(reference_fasta, regions_df, buffer, output_prefix, type):
+    output_fasta = f"{output_prefix}/{type}-coverage-regions-of-interest.fasta"
     fasta = pysam.FastaFile(reference_fasta)
     records = []
     # prefetching contig lengths so i can add the buffer and not go out of bounds
@@ -354,7 +401,7 @@ def write_regions_fasta(reference_fasta, regions_df, buffer, output_prefix):
     with open(output_fasta, "w") as out:
         SeqIO.write(records, out, "fasta")
 
-    print(f"  Regions of interest fasta written to: {output_fasta}")
+    print(f"  {type.capitalize()}-coverage regions-of-interest fasta written to:\n      {Fore.YELLOW + output_fasta}")
 
 
 if __name__ == "__main__":
@@ -364,10 +411,12 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     main(
-        args.reference_fasta,
-        args.bam_file,
-        args.output_prefix,
-        args.sliding_window_size,
-        args.step_size,
-        args.buffer,
+        reference_fasta=args.reference_fasta,
+        bam_file=args.bam_file,
+        output_prefix=args.output_prefix,
+        high_threshold=args.high_threshold,
+        low_threshold=args.low_threshold,
+        sliding_window_size=args.sliding_window_size,
+        step_size=args.step_size,
+        buffer=args.buffer,
     )
