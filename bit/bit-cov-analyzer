@@ -1,0 +1,440 @@
+#!/usr/bin/env python
+
+import argparse
+import re
+import sys
+import os
+import subprocess
+from pathlib import Path
+import pysam # type: ignore
+import pandas as pd
+import numpy as np
+from Bio import SeqIO # type: ignore
+from Bio.Seq import Seq
+from Bio.SeqRecord import SeqRecord
+import matplotlib.pyplot as plt # type: ignore
+from colorama import Fore, Style, init
+init(autoreset=True)
+
+desc = """
+       This script identifies and pulls out regions of relatively higher coverage when
+       given a reference fasta and a bam file. It generates a bed file of the desired
+       region windows and step size, utilizes mosdepth to get the coverage of those windows,
+       then generates stats for those windows and pulls out regions with coverage above and
+       below specified thresholds. It outputs a table of coverage stats for all windows, a
+       table of merged windows, and regions in fasta format. For version info, run
+       `bit-version`.
+       """
+
+parser = argparse.ArgumentParser(
+    description=desc,
+    epilog="Ex. usage: bit-cov-analyzer -r reference.fasta -b mapping.bam",
+)
+required = parser.add_argument_group("REQUIRED PARAMETERS")
+optional = parser.add_argument_group("OPTIONAL PARAMETERS")
+
+required.add_argument(
+    "-r",
+    "--reference-fasta",
+    metavar="<FILE>",
+    help='reference fasta file',
+    required=True,
+)
+required.add_argument(
+    "-b",
+    "--bam-file",
+    metavar="<FILE>",
+    help="bam file",
+    required=True,
+)
+optional.add_argument(
+    "-o",
+    "--output-prefix",
+    metavar="<STR>",
+    help='prefix of the output files (default: "cov-analyzer")',
+    default="cov-analyzer",
+)
+optional.add_argument(
+    "-H",
+    "--high-threshold",
+    metavar="<FLOAT>",
+    help='high threshold for regions of interest (default: 10; e.g., 10 would\
+          identify regions with 10-fold+ higher coverage than the mean of the whole ref)',
+    type=float,
+    default=10,
+)
+optional.add_argument(
+    "-L",
+    "--low-threshold",
+    metavar="<FLOAT>",
+    help='low threshold for regions of interest (default: 10; e.g., 10 would\
+          identify regions with coverage 10-fold+ lower than the mean of the whole ref)',
+    type=float,
+    default=10,
+)
+optional.add_argument(
+    "-s",
+    "--sliding-window-size",
+    metavar="<INT>",
+    help='sliding window size (default: 50)',
+    type=int,
+    default=50,
+)
+optional.add_argument(
+    "-S",
+    "--step-size",
+    metavar="<INT>",
+    help='step size for sliding window (default: 10)',
+    type=int,
+    default=10,
+)
+optional.add_argument(
+    "-B",
+    "--buffer",
+    metavar="<INT>",
+    help='add this length to each side of a region of interest when pulled out as fasta (default: 100)',
+    type=int,
+    default=100,
+)
+
+
+###############################################################################
+
+def main(reference_fasta, bam_file, output_prefix,
+         high_threshold, low_threshold, sliding_window_size,
+         step_size, buffer):
+
+    preflight_checks(reference_fasta, bam_file, output_prefix)
+
+    window_bed_path = generate_sliding_bed_file(reference_fasta,
+                                                sliding_window_size,
+                                                step_size,
+                                                output_prefix)
+
+    mosdepth_regions_file = run_mosdepth(bam_file, window_bed_path, output_prefix)
+
+    cov_df = read_mosdepth_regions_file(mosdepth_regions_file)
+
+    cov_stats = CoverageStats(cov_df)
+
+    high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold)
+    low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold)
+
+    generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
+                     cov_df, cov_stats, buffer, output_prefix)
+
+###############################################################################
+
+
+def preflight_checks(reference_fasta, bam_file, output_prefix):
+
+    paths_list = [reference_fasta, bam_file]
+    check_files_are_found(paths_list)
+    check_bam_file_is_indexed(bam_file)
+    check_fasta_file_is_indexed(reference_fasta)
+    os.makedirs(f"{output_prefix}/mosdepth-files", exist_ok=True)
+
+    full_cmd = " ".join(arg for arg in sys.argv)
+    with open(f"{output_prefix}/runlog.txt", "w") as out:
+
+        out.write("Command executed:\n")
+        out.write(f"  {full_cmd}\n\n")
+
+
+def check_files_are_found(paths_list):
+    for path in paths_list:
+        if not Path(path).is_file():
+            print(f"\n    We were not able to find the input file: {path}")
+            notify_premature_exit()
+
+
+def notify_premature_exit():
+    print("\n    Exiting for now :(\n")
+    sys.exit(1)
+
+
+def check_bam_file_is_indexed(bam_file):
+    if not Path(bam_file + ".bai").is_file():
+        cmd = f"samtools index {bam_file}"
+        subprocess.run(cmd, shell=True)
+
+
+def check_fasta_file_is_indexed(reference_fasta):
+    if not Path(reference_fasta + ".fai").is_file():
+        cmd = f"samtools faidx {reference_fasta}"
+        subprocess.run(cmd, shell=True)
+
+
+def generate_sliding_bed_file(reference_fasta, sliding_window_size, step_size, output_prefix):
+    bed_outfile = f"{output_prefix}/mosdepth-files/sliding-windows.bed"
+    with pysam.FastaFile(reference_fasta) as fasta, open(bed_outfile, "w") as bed_out:
+        for contig, length in zip(fasta.references, fasta.lengths):
+            for start in range(0, length - sliding_window_size + 1, step_size):
+                end = start + sliding_window_size
+                bed_out.write(f"{contig}\t{start}\t{end}\n")
+
+    return bed_outfile
+
+
+def run_mosdepth(bam_file, window_bed_path, output_prefix):
+    mosdepth_out_prefix = f"{output_prefix}/mosdepth-files/{bam_file[:-4]}"
+    cmd = f"mosdepth --by {window_bed_path} {mosdepth_out_prefix} {bam_file}"
+    subprocess.run(cmd, shell=True)
+    mosdepth_regions_file = f"{mosdepth_out_prefix}.regions.bed.gz"
+
+    return mosdepth_regions_file
+
+
+def read_mosdepth_regions_file(mosdepth_regions_file):
+    cov_df = pd.read_csv(
+        mosdepth_regions_file,
+        sep="\t",
+        header=None,
+        names=["contig", "start", "end", "cov"],
+        compression="gzip",
+    ).astype({"contig": str, "start": int, "end": int, "cov": float})
+
+    return cov_df
+
+
+class CoverageStats:
+    def __init__(self, df):
+        self.df = df.copy()
+        self.num_windows = len(self.df)
+        self.mean = self.df["cov"].mean()
+        self.std  = self.df["cov"].std()
+        self.median = self.df["cov"].median()
+        self.min = self.df["cov"].min()
+        self.max = self.df["cov"].max()
+        self.gen_summary_stats()
+
+    def percentile(self, p):
+        return np.percentile(self.df["cov"], p)
+
+    def gen_summary_stats(self):
+        self.df["percentile"] = self.df["cov"].rank(pct=True) * 100
+        self.df["zscore"] = (self.df["cov"] - self.mean) / self.std
+        self.df["fold_diff"] = self.df["cov"] / self.mean
+        nobody_likes_zero = 1e-6
+        self.df["log2_fold_diff"] = np.log2((self.df["cov"] + nobody_likes_zero) / (self.mean + nobody_likes_zero))
+
+    def get_windows(self, type = "high", method = "fold", threshold = 10):
+        """
+        Filter for windows above or below a given threshold.
+
+        methods: "percentile", "zscore", "fold", or "log2fold"
+        """
+        if method == "percentile":
+            metric = self.df["percentile"]
+        elif method == "zscore":
+            metric = self.df["zscore"]
+        elif method == "fold":
+            metric = self.df["fold_diff"]
+        elif method == "log2fold":
+            metric = self.df["log2_fold_diff"]
+        else:
+            raise ValueError(f"Nope nope nope: {method!r}")
+
+        # filter and return a new dataframe
+        if type == "low":
+            mask = (metric <= threshold) | (self.df["cov"] == 0)
+        elif type == "high":
+            mask = (metric >= threshold)
+        else:
+            raise ValueError(f"Nope nope nope: {type!r}")
+
+        return self.df.loc[mask].reset_index(drop=True)
+
+    def merge_windows(self, type = "high", method = "fold", threshold = 10):
+
+        df = self.get_windows(type=type, method=method, threshold=threshold)
+        regions = []
+        for contig, group in df.sort_values(["contig", "start"]).groupby("contig", sort=False):
+            curr_start = curr_end = None
+            covs = []
+            # iterating through each window
+            for row in group.itertuples(index = False):
+                start, end, cov = row.start, row.end, row.cov
+                if curr_start is None:
+                    # starting a new region
+                    curr_start, curr_end = start, end
+                    covs = [cov]
+                elif start <= curr_end:
+                    # adjacent, so extending region
+                    curr_end = max(curr_end, end)
+                    covs.append(cov)
+                else:
+                    # not adjacent, so saving the region and starting a new one
+                    regions.append(self._summarize_region(contig, curr_start, curr_end, covs))
+                    curr_start, curr_end = start, end
+                    covs = [cov]
+
+            if curr_start is not None:
+                # saving the last region
+                regions.append(self._summarize_region(contig, curr_start, curr_end, covs))
+
+        return pd.DataFrame(regions,
+                            columns=["contig","start","end", "length",
+                                     "cov", "percentile", "zscore",
+                                     "fold_diff", "log2_fold_diff"])
+
+
+    def _summarize_region(self, contig, start, end, covs):
+        "helper to compute the summary metrics given a list of window coverages"
+        region_length = end - start
+        region_mean_cov = float(np.mean(covs))
+        percentile = float((self.df["cov"] <= region_mean_cov).mean() * 100)
+        fold_diff = region_mean_cov / self.mean
+        zscore = (region_mean_cov - self.mean) / self.std
+        nobody_likes_zero = 1e-6
+        log2_fold_diff = float(np.log2((region_mean_cov + nobody_likes_zero) / (self.mean + nobody_likes_zero)))
+
+        return (contig, start, end, region_length, region_mean_cov, percentile, zscore, fold_diff, log2_fold_diff)
+
+
+def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
+                     cov_df, cov_stats, buffer, output_prefix):
+
+    print()
+    write_window_cov_stats(cov_stats, output_prefix)
+    write_windows_table(cov_stats, output_prefix)
+    write_window_plot_cov_histogram(cov_df, output_prefix)
+
+    write_regions_of_interest_table(high_merged_regions, output_prefix, "high")
+    write_regions_fasta(reference_fasta, high_merged_regions, buffer, output_prefix, "high")
+
+    write_regions_of_interest_table(low_merged_regions, output_prefix, "low")
+    write_regions_fasta(reference_fasta, low_merged_regions, buffer, output_prefix, "low")
+    print()
+
+
+
+def write_window_cov_stats(cov_stats, output_prefix):
+    out_path = f"{output_prefix}/window-coverage-overview.txt"
+    stats = [
+        ("Number of windows", cov_stats.num_windows),
+        ("Mean coverage", cov_stats.mean),
+        ("Median coverage", cov_stats.median),
+        ("Std. deviation", cov_stats.std),
+        ("Minimum coverage", cov_stats.min),
+        ("Maximum coverage", cov_stats.max),
+    ]
+    percentiles = [0.01, 0.1, 1, 5, 10, 25, 50, 75, 90, 95, 99, 99.9, 99.99]
+
+    max_label = max(len(lbl) for lbl, _ in stats)
+    with open(out_path, "w") as out:
+        out.write("Window coverage stats:\n\n")
+        for lbl, val in stats:
+            out.write(f"  {lbl:{max_label}} : {val:7.2f}\n")
+
+        out.write("\n         Percentile  Coverage\n")
+        out.write(f"  {'-' * max_label}  {'-' * 8}\n")
+        for p in percentiles:
+            cov = cov_stats.percentile(p)
+            label = f"{p}"
+            out.write(f"  {label:>{max_label}} : {cov:7.2f}\n")
+
+    tee(f"  Window-coverage stats overview written to:\n      {Fore.YELLOW + out_path}", log_file)
+
+
+def tee(msg, log_path, end="\n"):
+    ANSI_ESCAPE = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
+    print(msg, end=end, file=sys.stdout)
+    clean = ANSI_ESCAPE.sub('', msg)
+    with open(log_path, "a") as f:
+        f.write(clean + end)
+
+
+def write_windows_table(cov_stats, output_prefix):
+    out_path = f"{output_prefix}/window-coverage-stats.tsv.gz"
+    cov_stats.df.to_csv(out_path, sep="\t", index=False, float_format="%.2f", compression="gzip")
+    tee(f"  Window-coverage stats table written to:\n      {Fore.YELLOW + out_path}", log_file)
+
+
+def write_window_plot_cov_histogram(cov_df, output_prefix):
+    plt.figure()
+    plt.hist(cov_df["cov"], bins=100, density=True)
+    plt.xlabel("Coverage")
+    plt.ylabel("Frequency")
+    plt.title("Distribution of Window Coverages")
+    out_path = f"{output_prefix}/window-coverage-histogram.png"
+    plt.savefig(out_path, dpi=125, bbox_inches="tight")
+    plt.close()
+    tee(f"  Window-coverage histogram written to:\n      {Fore.YELLOW + out_path}", log_file)
+
+
+def write_regions_of_interest_table(merged_regions, output_prefix, type):
+    out_path = f"{output_prefix}/{type}-coverage-regions-of-interest.tsv"
+
+    if type == "high":
+        sorted_df = merged_regions.sort_values(by="cov", ascending=False)
+    elif type == "low":
+        sorted_df = merged_regions.sort_values(by="cov", ascending=True)
+    else:
+        raise ValueError(f"Nope nope nope: {type!r}")
+
+    sorted_df.to_csv(out_path, sep="\t", index=False, float_format="%.2f")
+
+    if len(sorted_df) > 0:
+        tee(f"\n  Number of {type}-coverage regions identified: {Fore.YELLOW + str(len(sorted_df))}", log_file)
+        tee(f"    {type.capitalize()}-coverage regions-of-interest table written to:\n      {Fore.YELLOW + out_path}", log_file)
+    else:
+        tee(f"\n  No {type}-coverage regions-of-interest identified.", log_file)
+
+
+def write_regions_fasta(reference_fasta, regions_df, buffer, output_prefix, type):
+    output_fasta = f"{output_prefix}/{type}-coverage-regions-of-interest.fasta"
+    fasta = pysam.FastaFile(reference_fasta)
+    records = []
+    # prefetching contig lengths so i can add the buffer and not go out of bounds
+    lengths = dict(zip(fasta.references, fasta.lengths))
+
+    for _, row in regions_df.iterrows():
+        contig = row["contig"]
+        orig_start = row["start"]
+        orig_end = row["end"]
+        cov = row["cov"]
+
+        # adding the buffer to each side of the region
+        start_buf = max(0, orig_start - buffer)
+        end_buf = min(lengths[contig], orig_end + buffer)
+
+        # getting the seq
+        seq = fasta.fetch(contig, start_buf, end_buf)
+
+        # having header include original and buffered coordinates
+        header = (f"{contig}:{start_buf}-{end_buf}"
+            f"_orig_{orig_start}-{orig_end}"
+            f"_cov_{cov:.2f}")
+
+        rec = SeqRecord(Seq(seq),
+                        id=header,
+                        description="")
+        records.append(rec)
+    fasta.close()
+
+    if len(records) > 0:
+        with open(output_fasta, "w") as out:
+            SeqIO.write(records, out, "fasta")
+
+        print(f"    {type.capitalize()}-coverage regions-of-interest fasta written to:\n      {Fore.YELLOW + output_fasta}")
+
+
+if __name__ == "__main__":
+    if len(sys.argv) == 1:  # pragma: no cover
+        parser.print_help(sys.stderr)
+        sys.exit(0)
+    args = parser.parse_args()
+
+    log_file = f"{args.output_prefix}/runlog.txt"
+
+    main(
+        reference_fasta=args.reference_fasta,
+        bam_file=args.bam_file,
+        output_prefix=args.output_prefix,
+        high_threshold=args.high_threshold,
+        low_threshold=args.low_threshold,
+        sliding_window_size=args.sliding_window_size,
+        step_size=args.step_size,
+        buffer=args.buffer,
+    )
