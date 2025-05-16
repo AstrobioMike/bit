@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import argparse
+import re
 import sys
 import os
 import subprocess
@@ -134,6 +135,11 @@ def preflight_checks(reference_fasta, bam_file, output_prefix):
     check_fasta_file_is_indexed(reference_fasta)
     os.makedirs(f"{output_prefix}/mosdepth-files", exist_ok=True)
 
+    full_cmd = " ".join(arg for arg in sys.argv)
+    with open(f"{output_prefix}/runlog.txt", "w") as out:
+
+        out.write("Command executed:\n")
+        out.write(f"  {full_cmd}\n\n")
 
 
 def check_files_are_found(paths_list):
@@ -273,21 +279,22 @@ class CoverageStats:
                 regions.append(self._summarize_region(contig, curr_start, curr_end, covs))
 
         return pd.DataFrame(regions,
-                            columns=["contig","start","end",
+                            columns=["contig","start","end", "length",
                                      "cov", "percentile", "zscore",
                                      "fold_change", "log2_fold_change"])
 
 
     def _summarize_region(self, contig, start, end, covs):
         "helper to compute the summary metrics given a list of window coverages"
-        region_mean = float(np.mean(covs))
-        percentile = float((self.df["cov"] <= region_mean).mean() * 100)
-        fold_change = region_mean / self.mean
-        zscore = (region_mean - self.mean) / self.std
+        region_length = end - start
+        region_mean_cov = float(np.mean(covs))
+        percentile = float((self.df["cov"] <= region_mean_cov).mean() * 100)
+        fold_change = region_mean_cov / self.mean
+        zscore = (region_mean_cov - self.mean) / self.std
         nobody_likes_zero = 1e-6
-        log2_fold_change = float(np.log2((region_mean + nobody_likes_zero) / (self.mean + nobody_likes_zero)))
+        log2_fold_change = float(np.log2((region_mean_cov + nobody_likes_zero) / (self.mean + nobody_likes_zero)))
 
-        return (contig, start, end, region_mean, percentile, zscore, fold_change, log2_fold_change)
+        return (contig, start, end, region_length, region_mean_cov, percentile, zscore, fold_change, log2_fold_change)
 
 
 def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
@@ -297,10 +304,10 @@ def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
     write_window_cov_stats(cov_stats, output_prefix)
     write_windows_table(cov_stats, output_prefix)
     write_window_plot_cov_histogram(cov_df, output_prefix)
-    print()
+
     write_regions_of_interest_table(high_merged_regions, output_prefix, "high")
     write_regions_fasta(reference_fasta, high_merged_regions, buffer, output_prefix, "high")
-    print()
+
     write_regions_of_interest_table(low_merged_regions, output_prefix, "low")
     write_regions_fasta(reference_fasta, low_merged_regions, buffer, output_prefix, "low")
     print()
@@ -331,13 +338,22 @@ def write_window_cov_stats(cov_stats, output_prefix):
             cov = cov_stats.percentile(p)
             label = f"{p}"
             out.write(f"  {label:>{max_label}} : {cov:7.2f}\n")
-    print(f"  Window-coverage stats overview written to:\n      {Fore.YELLOW + out_path}")
+
+    tee(f"  Window-coverage stats overview written to:\n      {Fore.YELLOW + out_path}", log_file)
+
+
+def tee(msg, log_path, end="\n"):
+    ANSI_ESCAPE = re.compile(r'\x1B\[[0-?]*[ -/]*[@-~]')
+    print(msg, end=end, file=sys.stdout)
+    clean = ANSI_ESCAPE.sub('', msg)
+    with open(log_path, "a") as f:
+        f.write(clean + end)
 
 
 def write_windows_table(cov_stats, output_prefix):
     out_path = f"{output_prefix}/window-coverage-stats.tsv.gz"
     cov_stats.df.to_csv(out_path, sep="\t", index=False, float_format="%.2f", compression="gzip")
-    print(f"  Window-coverage stats table written to:\n      {Fore.YELLOW + out_path}")
+    tee(f"  Window-coverage stats table written to:\n      {Fore.YELLOW + out_path}", log_file)
 
 
 def write_window_plot_cov_histogram(cov_df, output_prefix):
@@ -349,7 +365,7 @@ def write_window_plot_cov_histogram(cov_df, output_prefix):
     out_path = f"{output_prefix}/window-coverage-histogram.png"
     plt.savefig(out_path, dpi=125, bbox_inches="tight")
     plt.close()
-    print(f"  Window-coverage histogram written to:\n      {Fore.YELLOW + output_prefix}/window-coverage-histogram.png")
+    tee(f"  Window-coverage histogram written to:\n      {Fore.YELLOW + out_path}", log_file)
 
 
 def write_regions_of_interest_table(merged_regions, output_prefix, type):
@@ -364,7 +380,11 @@ def write_regions_of_interest_table(merged_regions, output_prefix, type):
 
     sorted_df.to_csv(out_path, sep="\t", index=False, float_format="%.2f")
 
-    print(f"  {type.capitalize()}-coverage regions-of-interest table written to:\n      {Fore.YELLOW + out_path}")
+    if len(sorted_df) > 0:
+        tee(f"\n  Number of {type}-coverage regions identified: {Fore.YELLOW + str(len(sorted_df))}", log_file)
+        tee(f"    {type.capitalize()}-coverage regions-of-interest table written to:\n      {Fore.YELLOW + out_path}", log_file)
+    else:
+        tee(f"\n  No {type}-coverage regions-of-interest identified.", log_file)
 
 
 def write_regions_fasta(reference_fasta, regions_df, buffer, output_prefix, type):
@@ -398,10 +418,11 @@ def write_regions_fasta(reference_fasta, regions_df, buffer, output_prefix, type
         records.append(rec)
     fasta.close()
 
-    with open(output_fasta, "w") as out:
-        SeqIO.write(records, out, "fasta")
+    if len(records) > 0:
+        with open(output_fasta, "w") as out:
+            SeqIO.write(records, out, "fasta")
 
-    print(f"  {type.capitalize()}-coverage regions-of-interest fasta written to:\n      {Fore.YELLOW + output_fasta}")
+        print(f"    {type.capitalize()}-coverage regions-of-interest fasta written to:\n      {Fore.YELLOW + output_fasta}")
 
 
 if __name__ == "__main__":
@@ -409,6 +430,8 @@ if __name__ == "__main__":
         parser.print_help(sys.stderr)
         sys.exit(0)
     args = parser.parse_args()
+
+    log_file = f"{args.output_prefix}/runlog.txt"
 
     main(
         reference_fasta=args.reference_fasta,
