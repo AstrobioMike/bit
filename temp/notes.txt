@@ -1,31 +1,11 @@
 # bit-cov-analyzer
 
+## have the core framework done, need to add thresholds options
+    # i'm thinking one for high and one for low, and that using fold-change works best
+    # as it's intuitive to the user, but inside, when wanting to use it for lower values
+    # we'll convert it to log2fold change so we can filter on that
 
-# want to generate coverage stats for a given (sliding) window size across an assembly when given the
-    # assembly and the "*regions.bed.gz" mosdepth produces, though maybe running mosdepth
-    # will be the way to go, given a bam file, as i think i can specify the window size there instead
-    # of doing it myself
-
-
-# then generate coverage stats for the windows like: percentile, z-score ((x – μ) / σ), and fold-change (x / μ)
-
-# return regions (contigs and coordinates) and seqs for everything above some threshold (likely
-    # fold-change as it's probably the most intuitive)
-
-
-## more defined process ##
-# mosdepth can only do fixed windows, so doing smaller window than i want (50), and then averaging over 500bp sets of
-    # 10 to get a "rolling window" of 500bp pieces every 50bp step
-    # but will need to run mosdepth, so will need reference and input bam (and indexed bam)
-
-bit-cov-analyzer -r mock.fasta -b mock.bam
-    # if no mock.bam.bai, run samtools index mock.bam
-# mosdepth --by 100 mock mock.bam
-# take ref fasta and mock.regions.bed.gz file and combine them to make a full tiled-window bed that has 0s as needed
-# generate stats on this per sliding window across 1kb sections of the 100bp average coverages (percentile, z-score, fold-change)
-# summarize all that in a table, maybe all windows (labeled in first column) ordered by highest fold-change to lowest
-# decide what regions to pull out based on threshold, maybe fold-change or z-score, and parse out those regions from the fasta
-# bob's your uncle
+    # implement the thresholds, and then sent to GDNA to start trying it on "10 seeds"
 
 
 ## making small test data with 10X higher coverage in one area
