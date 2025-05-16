@@ -9,7 +9,6 @@ from pathlib import Path
 import pysam # type: ignore
 import pandas as pd
 import numpy as np
-import math
 from Bio import SeqIO # type: ignore
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
@@ -119,7 +118,7 @@ def main(reference_fasta, bam_file, output_prefix,
     cov_stats = CoverageStats(cov_df)
 
     high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold)
-    low_merged_regions = cov_stats.merge_windows(type="low", threshold = -get_log2_fold_change_value(low_threshold))
+    low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold)
 
     generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
                      cov_df, cov_stats, buffer, output_prefix)
@@ -198,11 +197,6 @@ def read_mosdepth_regions_file(mosdepth_regions_file):
     return cov_df
 
 
-def get_log2_fold_change_value(fold_change, pseudocount = 1e-6):
-
-    return math.log2(fold_change + pseudocount)
-
-
 class CoverageStats:
     def __init__(self, df):
         self.df = df.copy()
@@ -220,9 +214,9 @@ class CoverageStats:
     def gen_summary_stats(self):
         self.df["percentile"] = self.df["cov"].rank(pct=True) * 100
         self.df["zscore"] = (self.df["cov"] - self.mean) / self.std
-        self.df["fold_change"] = self.df["cov"] / self.mean
+        self.df["fold_diff"] = self.df["cov"] / self.mean
         nobody_likes_zero = 1e-6
-        self.df["log2_fold_change"] = np.log2((self.df["cov"] + nobody_likes_zero) / (self.mean + nobody_likes_zero))
+        self.df["log2_fold_diff"] = np.log2((self.df["cov"] + nobody_likes_zero) / (self.mean + nobody_likes_zero))
 
     def get_windows(self, type = "high", method = "fold", threshold = 10):
         """
@@ -235,20 +229,21 @@ class CoverageStats:
         elif method == "zscore":
             metric = self.df["zscore"]
         elif method == "fold":
-            metric = self.df["fold_change"]
+            metric = self.df["fold_diff"]
         elif method == "log2fold":
-            metric = self.df["log2_fold_change"]
+            metric = self.df["log2_fold_diff"]
         else:
             raise ValueError(f"Nope nope nope: {method!r}")
 
-        # filter and return a fresh DataFrame
-        if type == "high":
-            return self.df.loc[metric >= threshold].reset_index(drop=True)
-        elif type == "low":
-            return self.df.loc[metric <= threshold].reset_index(drop=True)
+        # filter and return a new dataframe
+        if type == "low":
+            mask = (metric <= threshold) | (self.df["cov"] == 0)
+        elif type == "high":
+            mask = (metric >= threshold)
         else:
             raise ValueError(f"Nope nope nope: {type!r}")
 
+        return self.df.loc[mask].reset_index(drop=True)
 
     def merge_windows(self, type = "high", method = "fold", threshold = 10):
 
@@ -281,7 +276,7 @@ class CoverageStats:
         return pd.DataFrame(regions,
                             columns=["contig","start","end", "length",
                                      "cov", "percentile", "zscore",
-                                     "fold_change", "log2_fold_change"])
+                                     "fold_diff", "log2_fold_diff"])
 
 
     def _summarize_region(self, contig, start, end, covs):
@@ -289,12 +284,12 @@ class CoverageStats:
         region_length = end - start
         region_mean_cov = float(np.mean(covs))
         percentile = float((self.df["cov"] <= region_mean_cov).mean() * 100)
-        fold_change = region_mean_cov / self.mean
+        fold_diff = region_mean_cov / self.mean
         zscore = (region_mean_cov - self.mean) / self.std
         nobody_likes_zero = 1e-6
-        log2_fold_change = float(np.log2((region_mean_cov + nobody_likes_zero) / (self.mean + nobody_likes_zero)))
+        log2_fold_diff = float(np.log2((region_mean_cov + nobody_likes_zero) / (self.mean + nobody_likes_zero)))
 
-        return (contig, start, end, region_length, region_mean_cov, percentile, zscore, fold_change, log2_fold_change)
+        return (contig, start, end, region_length, region_mean_cov, percentile, zscore, fold_diff, log2_fold_diff)
 
 
 def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
