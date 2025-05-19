@@ -125,6 +125,8 @@ def main(reference_fasta, bam_file, output_dir,
 
     preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs)
 
+    contig_lengths = get_contig_lengths(reference_fasta)
+
     window_bed_path = generate_sliding_bed_file(reference_fasta,
                                                 sliding_window_size,
                                                 step_size,
@@ -142,7 +144,7 @@ def main(reference_fasta, bam_file, output_dir,
     low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold)
 
     generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
-                     cov_df, cov_stats, buffer, output_dir)
+                     cov_df, cov_stats, buffer, output_dir, contig_lengths)
 
 ###############################################################################
 
@@ -189,15 +191,21 @@ def check_fasta_file_is_indexed(reference_fasta):
 
 
 def check_excluded_contigs(reference_fasta, exclude_contigs):
+    if exclude_contigs:
+        with pysam.FastaFile(reference_fasta) as fasta:
+            ref_contigs = set(fasta.references)
+        missing_contigs = [contig for contig in exclude_contigs if contig not in ref_contigs]
+        if missing_contigs:
+            print(f"\n    The following contigs were specified for exclusion but were not found in the reference fasta:\n")
+            for contig in missing_contigs:
+                print(f"        {contig}")
+            print("\n    Please check the contig names and try again.")
+            notify_premature_exit()
+
+
+def get_contig_lengths(reference_fasta):
     with pysam.FastaFile(reference_fasta) as fasta:
-        ref_contigs = set(fasta.references)
-    missing_contigs = [contig for contig in exclude_contigs if contig not in ref_contigs]
-    if missing_contigs:
-        print(f"\n    The following contigs were specified for exclusion but were not found in the reference fasta:\n")
-        for contig in missing_contigs:
-            print(f"        {contig}")
-        print("\n    Please check the contig names and try again.")
-        notify_premature_exit()
+        return dict(zip(fasta.references, fasta.lengths))
 
 def generate_sliding_bed_file(reference_fasta, sliding_window_size, step_size, output_dir):
     bed_outfile = f"{output_dir}/mosdepth-files/sliding-windows.bed"
@@ -361,57 +369,64 @@ class CoverageStats:
 
 
 def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
-                     cov_df, cov_stats, buffer, output_dir):
+                     cov_df, cov_stats, buffer, output_dir, contig_lengths):
 
     print()
-    write_window_cov_stats(cov_stats, output_dir)
+    write_window_cov_stats(cov_stats, output_dir, contig_lengths)
     write_windows_table(cov_stats, output_dir)
     write_window_plot_cov_histogram(cov_df, output_dir)
 
     write_regions_of_interest_table(high_merged_regions, output_dir, "high")
-    write_regions_fasta(reference_fasta, high_merged_regions, buffer, output_dir, "high")
+    write_regions_fasta(reference_fasta, high_merged_regions, buffer, output_dir, "high", contig_lengths)
 
     write_regions_of_interest_table(low_merged_regions, output_dir, "low")
-    write_regions_fasta(reference_fasta, low_merged_regions, buffer, output_dir, "low")
+    write_regions_fasta(reference_fasta, low_merged_regions, buffer, output_dir, "low", contig_lengths)
     print()
 
 
-
-# def write_window_cov_stats(cov_stats, output_dir):
-#     out_path = f"{output_dir}/window-coverage-overview.txt"
-#     stats = [
-#         ("Number of windows", cov_stats.num_windows),
-#         ("Mean coverage", cov_stats.mean),
-#         ("Median coverage", cov_stats.median),
-#         ("Std. deviation", cov_stats.std),
-#         ("Minimum coverage", cov_stats.min),
-#         ("Maximum coverage", cov_stats.max),
-#     ]
-#     percentiles = [0.01, 0.1, 1, 5, 10, 25, 50, 75, 90, 95, 99, 99.9, 99.99]
-
-#     max_label = max(len(lbl) for lbl, _ in stats)
-#     with open(out_path, "w") as out:
-#         out.write("Global window coverage stats:\n\n")
-#         for lbl, val in stats:
-#             out.write(f"  {lbl:{max_label}} : {val:7.2f}\n")
-
-#         out.write("\n         Percentile  Coverage\n")
-#         out.write(f"  {'-' * max_label}  {'-' * 8}\n")
-#         for p in percentiles:
-#             cov = cov_stats.global_percentile(p)
-#             label = f"{p}"
-#             out.write(f"  {label:>{max_label}} : {cov:7.2f}\n")
-
-#     tee(f"  Window-coverage stats overview written to:\n      {Fore.YELLOW + out_path}", log_file)
-
-def write_window_cov_stats(cov_stats: CoverageStats, output_dir: str):
-    out_path = f"{output_dir}/window-coverage-overview.txt"
+def write_window_cov_stats(cov_stats, output_dir, contig_lengths):
+    out_txt = f"{output_dir}/window-coverage-overview.txt"
+    out_tsv = f"{output_dir}/window-coverage-overview.tsv"
     percentiles = [0.01, 0.1, 1, 5, 10, 25, 50, 75, 90, 95, 99, 99.9, 99.99]
 
-    with open(out_path, "w") as out:
+    rows = []
+
+    # assembly‐level
+    assembly_length = sum(contig_lengths.values())
+    rows.append({
+        "name":        "full-assembly",
+        "length_bp":   assembly_length,
+        "num_windows": len(cov_stats.df),
+        "mean":        cov_stats.global_mean,
+        "median":      cov_stats.global_median,
+        "std":         cov_stats.global_std,
+        "min":         cov_stats.global_min,
+        "max":         cov_stats.global_max,
+        **{f"p{p}": cov_stats.df["cov"].quantile(p/100) for p in percentiles}
+    })
+
+    # per-contig
+    for contig, group in cov_stats.df.groupby("contig", sort=False):
+        contig_len = contig_lengths.get(contig, 0)
+        rows.append({
+            "name":        contig,
+            "length_bp":   contig_len,
+            "num_windows": len(group),
+            "mean":        group["cov"].mean(),
+            "median":      group["cov"].median(),
+            "std":         group["cov"].std(),
+            "min":         group["cov"].min(),
+            "max":         group["cov"].max(),
+            **{f"p{p}": group["cov"].quantile(p/100) for p in percentiles}
+        })
+
+    # writing assembly level
+    with open(out_txt, "w") as out:
         out.write("====================================\n")
         out.write("=== GLOBAL WINDOW COVERAGE STATS ===\n")
         out.write("====================================\n")
+        out.write(f"Assembly size: {assembly_length:,} bp\n")
+        out.write(f"Number of windows: {len(cov_stats.df)}\n")
         out.write(f"Mean:   {cov_stats.global_mean:.2f}\n")
         out.write(f"Median: {cov_stats.global_median:.2f}\n")
         out.write(f"Std:    {cov_stats.global_std:.2f}\n")
@@ -423,17 +438,20 @@ def write_window_cov_stats(cov_stats: CoverageStats, output_dir: str):
             val = cov_stats.df["cov"].quantile(p/100)
             out.write(f"  {p:>6.2f}% : {val:.2f}\n")
 
-        # now per-contig
+        # now writing per-contig
         out.write("\n========================================\n")
         out.write("=== PER-CONTIG WINDOW COVERAGE STATS ===\n")
         out.write("========================================\n")
         for contig, group in cov_stats.df.groupby("contig", sort=False):
             out.write(f"\n-- {contig} --\n")
+            contig_length = contig_lengths.get(contig, 0)
             gm = group["cov"].mean()
             md = group["cov"].median()
             sd = group["cov"].std()
             mn = group["cov"].min()
             mx = group["cov"].max()
+            out.write(f"Contig size: {contig_length:,} bp\n")
+            out.write(f"Number of windows: {len(group)}\n")
             out.write(f"Mean:   {gm:.2f}\n")
             out.write(f"Median: {md:.2f}\n")
             out.write(f"Std:    {sd:.2f}\n")
@@ -444,7 +462,16 @@ def write_window_cov_stats(cov_stats: CoverageStats, output_dir: str):
                 val = group["cov"].quantile(p/100)
                 out.write(f"  {p:>6.2f}% : {val:.2f}\n")
             out.write("\n")
-    tee(f"  Window-coverage stats written to:\n      {Fore.YELLOW}{out_path}", log_file)
+
+    tee(f"  Window-coverage summary written to:\n      {Fore.YELLOW}{out_txt}", log_file)
+
+    # writing out as tsv
+    df_summary = pd.DataFrame(rows)
+    cols = ["name","length_bp","num_windows","mean","median","std","min","max"] \
+           + [f"p{p}" for p in percentiles]
+    df_summary.to_csv(out_tsv, sep="\t", index=False, float_format="%.2f", columns=cols)
+
+    tee(f"  Window-coverage summary table written to:\n      {Fore.YELLOW}{out_tsv}", log_file)
 
 
 def tee(msg, log_path, end="\n"):
@@ -469,9 +496,10 @@ def write_window_plot_cov_histogram(cov_df, output_dir):
     plt.title("Distribution of Window Coverages (log₁₀)")
     mean_cov = cov_df["cov"].mean()
     median_cov = cov_df["cov"].median()
+    num_windows = len(cov_df)
     ax = plt.gca()
     ax.text(0.95, 0.95,
-            f"Mean: {mean_cov:.2f}\nMedian: {median_cov:.2f}",
+            f"N: {num_windows:,}\nMean: {mean_cov:.2f}\nMedian: {median_cov:.2f}",
             transform=ax.transAxes,
             fontsize=10,
             va="top",
@@ -502,12 +530,10 @@ def write_regions_of_interest_table(merged_regions, output_dir, type):
         tee(f"\n  No {type}-coverage regions-of-interest identified.", log_file)
 
 
-def write_regions_fasta(reference_fasta, regions_df, buffer, output_dir, type):
+def write_regions_fasta(reference_fasta, regions_df, buffer, output_dir, type, contig_lengths):
     output_fasta = f"{output_dir}/{type}-coverage-regions-of-interest.fasta"
     fasta = pysam.FastaFile(reference_fasta)
     records = []
-    # prefetching contig lengths so i can add the buffer and not go out of bounds
-    lengths = dict(zip(fasta.references, fasta.lengths))
 
     for _, row in regions_df.iterrows():
         contig = row["contig"]
@@ -517,7 +543,7 @@ def write_regions_fasta(reference_fasta, regions_df, buffer, output_dir, type):
 
         # adding the buffer to each side of the region
         start_buf = max(0, orig_start - buffer)
-        end_buf = min(lengths[contig], orig_end + buffer)
+        end_buf = min(contig_lengths[contig], orig_end + buffer)
 
         # getting the seq
         seq = fasta.fetch(contig, start_buf, end_buf)
