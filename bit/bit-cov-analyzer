@@ -63,7 +63,7 @@ optional.add_argument(
     "-H",
     "--high-threshold",
     metavar="<FLOAT>",
-    help='high threshold for regions of interest (default: 5; e.g., 5 would\
+    help='high threshold for regions-of-interest (default: 5; e.g., 5 would\
           identify regions with 5-fold+ higher coverage than the mean of the whole ref)',
     type=float,
     default=5,
@@ -72,8 +72,8 @@ optional.add_argument(
     "-L",
     "--low-threshold",
     metavar="<FLOAT>",
-    help='low threshold for regions of interest (default: 5; e.g., 5 would\
-          identify regions with coverage 5-fold+ lower than the mean of the whole ref)',
+    help='low threshold for regions-of-interest (default: 5; e.g., 5 would\
+          identify regions with 5-fold+ lower coverage than the mean of the whole ref)',
     type=float,
     default=5,
 )
@@ -251,7 +251,7 @@ class CoverageStats:
         self.global_median = self.df["cov"].median()
         self.global_min = self.df["cov"].min()
         self.global_max = self.df["cov"].max()
-        self.df['global_percentiles'] = self.df['cov'].rank(pct=True) * 100
+        self.df['percentile'] = self.df['cov'].rank(pct=True) * 100
 
         # per-contig stats
         group = self.df.groupby("contig")["cov"]
@@ -260,16 +260,16 @@ class CoverageStats:
         self.df["contig_median"] = group.transform("median")
         self.df["contig_min"] = group.transform("min")
         self.df["contig_max"] = group.transform("max")
-        self.df["contig_percentiles"] = group.transform(lambda x: x.rank(pct=True) * 100)
+        self.df["contig_percentile"] = group.transform(lambda x: x.rank(pct=True) * 100)
 
         if per_contig:
             self.df["baseline_mean"] = self.df["contig_mean"]
             self.df["baseline_std"] = self.df["contig_std"]
-            self.df["percentile"] = self.df["contig_percentiles"]
+            self.df["percentile"] = self.df["contig_percentile"]
         else:
             self.df["baseline_mean"] = self.global_mean
             self.df["baseline_std"] = self.global_std
-            self.df["percentile"] = self.df["global_percentiles"]
+            self.df["percentile"] = self.df["percentile"]
 
         # fold diff, zscore, log2-fold diff
         nobody_likes_zero = 1e-6
@@ -491,7 +491,10 @@ def tee(msg, log_path, end="\n"):
 
 def write_windows_table(cov_stats, output_dir):
     out_path = f"{output_dir}/window-coverage-stats.tsv.gz"
-    cov_stats.df.to_csv(out_path, sep="\t", index=False, float_format="%.2f", compression="gzip")
+    cov_stats.df.to_csv(out_path, sep="\t", index=False, float_format="%.2f", compression="gzip",
+                        columns=["contig", "start", "end",
+                                 "cov", "percentile", "zscore",
+                                 "fold_diff", "log2_fold_diff"])
     tee(f"  Window-coverage stats table written to:\n      {Fore.YELLOW + out_path}", log_file)
 
 
