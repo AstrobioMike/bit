@@ -9,6 +9,7 @@ from pathlib import Path
 import pysam # type: ignore
 import pandas as pd
 import numpy as np
+import math
 from Bio import SeqIO # type: ignore
 from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
@@ -353,10 +354,20 @@ def write_windows_table(cov_stats, output_prefix):
 
 def write_window_plot_cov_histogram(cov_df, output_prefix):
     plt.figure()
-    plt.hist(cov_df["cov"], bins=100, density=True)
-    plt.xlabel("Coverage")
+    plt.hist(np.log10(cov_df["cov"] + 1), bins=100, density=True)
+    plt.xlabel("log₁₀(Coverage + 1)")
     plt.ylabel("Frequency")
-    plt.title("Distribution of Window Coverages")
+    plt.title("Distribution of Window Coverages (log₁₀)")
+    mean_cov = cov_df["cov"].mean()
+    median_cov = cov_df["cov"].median()
+    ax = plt.gca()
+    ax.text(0.95, 0.95,
+            f"Mean: {mean_cov:.2f}\nMedian: {median_cov:.2f}",
+            transform=ax.transAxes,
+            fontsize=10,
+            va="top",
+            ha="right",
+            bbox=dict(boxstyle="round,pad=0.3", edgecolor="black", facecolor="white"))
     out_path = f"{output_prefix}/window-coverage-histogram.png"
     plt.savefig(out_path, dpi=125, bbox_inches="tight")
     plt.close()
