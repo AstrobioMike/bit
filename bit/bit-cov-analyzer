@@ -22,12 +22,13 @@ desc = """
        given a reference fasta and a bam file. It generates a bed file of the specified window-
        and step-size, utilizes mosdepth to get the coverage of those windows, then generates stats
        for those windows and pulls out regions with coverage above and below specified thresholds.
-       It outputs a table of coverage stats for all windows, a table of merged adjacent windows, and
-       regions in fasta format. By default it looks for coverage variations from the global mean coverage,
-       but you can tell it to use per-contig coverages by adding the `--per-contig` flag. Additionally,
-       it is recommended to exclude contigs holding mitochondrial genomes or chloroplasts due to their
-       generally very relative high coverage, unless you specifically want to investigate them too
-       (if so, probably use `--per-contig` mode). For version info, run `bit-version`.
+       It outputs a table of coverage stats for all windows, a table of merged adjacent windows
+       ("regions"), and identified regions in fasta format. By default it looks for coverage variations
+       from the global mean coverage, but you can tell it to use per-contig coverages by adding the
+       `--per-contig` flag. Additionally, it is recommended to exclude contigs holding mitochondrial
+       genomes or chloroplasts due to their generally very relative high coverage, unless you
+       specifically want to investigate them too (if so, probably use `--per-contig` mode). For
+       version info, run `bit-version`.
        """
 
 parser = argparse.ArgumentParser(
@@ -62,19 +63,19 @@ optional.add_argument(
     "-H",
     "--high-threshold",
     metavar="<FLOAT>",
-    help='high threshold for regions of interest (default: 10; e.g., 10 would\
-          identify regions with 10-fold+ higher coverage than the mean of the whole ref)',
+    help='high threshold for regions of interest (default: 5; e.g., 5 would\
+          identify regions with 5-fold+ higher coverage than the mean of the whole ref)',
     type=float,
-    default=10,
+    default=5,
 )
 optional.add_argument(
     "-L",
     "--low-threshold",
     metavar="<FLOAT>",
-    help='low threshold for regions of interest (default: 10; e.g., 10 would\
-          identify regions with coverage 10-fold+ lower than the mean of the whole ref)',
+    help='low threshold for regions of interest (default: 5; e.g., 5 would\
+          identify regions with coverage 5-fold+ lower than the mean of the whole ref)',
     type=float,
-    default=10,
+    default=5,
 )
 optional.add_argument(
     "-e",
@@ -140,8 +141,8 @@ def main(reference_fasta, bam_file, output_dir,
 
     cov_stats = CoverageStats(cov_df, per_contig)
 
-    high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold)
-    low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold)
+    high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold, contig_lengths = contig_lengths)
+    low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold, contig_lengths = contig_lengths)
 
     generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
                      cov_df, cov_stats, buffer, output_dir, contig_lengths)
@@ -309,9 +310,15 @@ class CoverageStats:
         return self.df.loc[mask].reset_index(drop=True)
 
 
-    def merge_windows(self, type = "high", method = "fold", threshold = 10):
+    def merge_windows(self, *, type = "high", method = "fold", threshold = 10, edge_pad = 200, contig_lengths = None):
 
         df = self.get_windows(type=type, method=method, threshold=threshold)
+
+        # here, if type == "low", we are filtering out windows that are within <edge_pad> bases of the start/end of a contig
+        if type =="low":
+            df["contig_length"] = df["contig"].map(contig_lengths)
+            df = df[(df.start >= edge_pad) & (df.end <= df.contig_length - edge_pad)].drop(columns="contig_length")
+
         regions = []
 
         for contig, group in df.sort_values(["contig", "start"]).groupby("contig", sort=False):
