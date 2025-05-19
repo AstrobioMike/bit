@@ -74,6 +74,15 @@ optional.add_argument(
     default=10,
 )
 optional.add_argument(
+    "-e",
+    "--exclude-contigs",
+    metavar="<STR>",
+    nargs="+",
+    help='space-delimited list of contigs to exclude from analysis (e.g., "-e NC_000932.1 NC_037304.1"; default: None)',
+    type=str,
+    default=[],
+)
+optional.add_argument(
     "-s",
     "--sliding-window-size",
     metavar="<INT>",
@@ -103,9 +112,9 @@ optional.add_argument(
 
 def main(reference_fasta, bam_file, output_prefix,
          high_threshold, low_threshold, sliding_window_size,
-         step_size, buffer):
+         step_size, buffer, exclude_contigs: list):
 
-    preflight_checks(reference_fasta, bam_file, output_prefix)
+    preflight_checks(reference_fasta, bam_file, output_prefix, exclude_contigs)
 
     window_bed_path = generate_sliding_bed_file(reference_fasta,
                                                 sliding_window_size,
@@ -115,6 +124,8 @@ def main(reference_fasta, bam_file, output_prefix,
     mosdepth_regions_file = run_mosdepth(bam_file, window_bed_path, output_prefix)
 
     cov_df = read_mosdepth_regions_file(mosdepth_regions_file)
+    if exclude_contigs:
+        cov_df = cov_df.loc[~cov_df["contig"].isin(exclude_contigs)].reset_index(drop=True)
 
     cov_stats = CoverageStats(cov_df)
 
@@ -127,13 +138,15 @@ def main(reference_fasta, bam_file, output_prefix,
 ###############################################################################
 
 
-def preflight_checks(reference_fasta, bam_file, output_prefix):
+def preflight_checks(reference_fasta, bam_file, output_prefix, exclude_contigs):
 
     paths_list = [reference_fasta, bam_file]
     check_files_are_found(paths_list)
     check_bam_file_is_indexed(bam_file)
     check_fasta_file_is_indexed(reference_fasta)
+    check_excluded_contigs(reference_fasta, exclude_contigs)
     os.makedirs(f"{output_prefix}/mosdepth-files", exist_ok=True)
+
 
     full_cmd = " ".join(arg for arg in sys.argv)
     with open(f"{output_prefix}/runlog.txt", "w") as out:
@@ -165,6 +178,17 @@ def check_fasta_file_is_indexed(reference_fasta):
         cmd = f"samtools faidx {reference_fasta}"
         subprocess.run(cmd, shell=True)
 
+
+def check_excluded_contigs(reference_fasta, exclude_contigs):
+    with pysam.FastaFile(reference_fasta) as fasta:
+        ref_contigs = set(fasta.references)
+    missing_contigs = [contig for contig in exclude_contigs if contig not in ref_contigs]
+    if missing_contigs:
+        print(f"\n    The following contigs were specified for exclusion but were not found in the reference fasta:\n")
+        for contig in missing_contigs:
+            print(f"        {contig}")
+        print("\n    Please check the contig names and try again.")
+        notify_premature_exit()
 
 def generate_sliding_bed_file(reference_fasta, sliding_window_size, step_size, output_prefix):
     bed_outfile = f"{output_prefix}/mosdepth-files/sliding-windows.bed"
@@ -448,4 +472,5 @@ if __name__ == "__main__":
         sliding_window_size=args.sliding_window_size,
         step_size=args.step_size,
         buffer=args.buffer,
+        exclude_contigs=args.exclude_contigs,
     )
