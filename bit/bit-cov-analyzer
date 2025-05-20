@@ -109,6 +109,14 @@ optional.add_argument(
     default=10,
 )
 optional.add_argument(
+    "-g",
+    "--allowed-gap",
+    metavar="<INT>",
+    help='number of bases allowed between qualifying windows (those with coverages above/below the specified thresholds) to still merge them into one contiguous region (default: 1000)',
+    type=int,
+    default=1000,
+)
+optional.add_argument(
     "-B",
     "--buffer",
     metavar="<INT>",
@@ -122,7 +130,7 @@ optional.add_argument(
 
 def main(reference_fasta, bam_file, output_dir,
          high_threshold, low_threshold, exclude_contigs: list,
-         per_contig, sliding_window_size, step_size, buffer):
+         per_contig, sliding_window_size, step_size, allowed_gap, buffer):
 
     preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs)
 
@@ -141,8 +149,8 @@ def main(reference_fasta, bam_file, output_dir,
 
     cov_stats = CoverageStats(cov_df, per_contig)
 
-    high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold, contig_lengths = contig_lengths)
-    low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold, contig_lengths = contig_lengths)
+    high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
+    low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
 
     generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
                      cov_df, cov_stats, buffer, output_dir, contig_lengths)
@@ -314,7 +322,7 @@ class CoverageStats:
         return self.df.loc[mask].reset_index(drop=True)
 
 
-    def merge_windows(self, *, type = "high", method = "fold", threshold = 10, edge_pad = 200, contig_lengths = None):
+    def merge_windows(self, *, type = "high", method = "fold", threshold = 10, edge_pad = 200, contig_lengths = None, allowed_gap = 0):
 
         df = self.get_windows(type=type, method=method, threshold=threshold)
 
@@ -335,8 +343,8 @@ class CoverageStats:
                     # starting a new region
                     curr_start, curr_end = start, end
                     covs = [cov]
-                elif start <= curr_end:
-                    # adjacent, so extending region
+                elif start <= curr_end + allowed_gap:
+                    # adjacent, or within allowed_gap range, so extending region
                     curr_end = max(curr_end, end)
                     covs.append(cov)
                 else:
@@ -599,5 +607,6 @@ if __name__ == "__main__":
         per_contig=args.per_contig,
         sliding_window_size=args.sliding_window_size,
         step_size=args.step_size,
+        allowed_gap=args.allowed_gap,
         buffer=args.buffer,
     )
