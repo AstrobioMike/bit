@@ -274,6 +274,10 @@ class CoverageStats:
         # fold diff, zscore, log2-fold diff
         nobody_likes_zero = 1e-6
         self.df["fold_diff"] = self.df["cov"] / self.df["baseline_mean"]
+        self.df["signed_fold_diff"] = self.df["fold_diff"].where(
+            self.df["fold_diff"] >= 1,
+            -1.0 / self.df["fold_diff"]
+        )
         self.df["zscore"] = (self.df["cov"] - self.df["baseline_mean"]) / self.df["baseline_std"]
         self.df["log2_fold_diff"] = np.log2((self.df["cov"] + nobody_likes_zero) / (self.df["baseline_mean"] + nobody_likes_zero))
 
@@ -347,7 +351,7 @@ class CoverageStats:
 
         return pd.DataFrame(regions,
                             columns=["contig","start","end", "length",
-                                     "cov", "percentile", "zscore",
+                                     "cov", "percentile", "zscore", "signed_fold_diff",
                                      "fold_diff", "log2_fold_diff"])
 
 
@@ -368,11 +372,12 @@ class CoverageStats:
 
         # computing metrics based on appropriate baseline
         fold_diff = region_mean_cov / baseline_mean
+        signed_fold_diff = fold_diff if fold_diff >= 1 else -1.0 / fold_diff
         zscore = (region_mean_cov - baseline_mean) / baseline_std
         nobody_likes_zero = 1e-6
         log2_fold_diff = float(np.log2((region_mean_cov + nobody_likes_zero) / (baseline_mean + nobody_likes_zero)))
 
-        return (contig, start, end, region_length, region_mean_cov, percentile, zscore, fold_diff, log2_fold_diff)
+        return (contig, start, end, region_length, region_mean_cov, percentile, zscore, signed_fold_diff, fold_diff, log2_fold_diff)
 
 
 def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
@@ -493,7 +498,7 @@ def write_windows_table(cov_stats, output_dir):
     out_path = f"{output_dir}/window-coverage-stats.tsv.gz"
     cov_stats.df.to_csv(out_path, sep="\t", index=False, float_format="%.2f", compression="gzip",
                         columns=["contig", "start", "end",
-                                 "cov", "percentile", "zscore",
+                                 "cov", "percentile", "zscore", "signed_fold_diff",
                                  "fold_diff", "log2_fold_diff"])
     tee(f"  Window-coverage stats table written to:\n      {Fore.YELLOW + out_path}", log_file)
 
