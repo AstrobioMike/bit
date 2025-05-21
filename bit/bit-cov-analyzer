@@ -537,12 +537,7 @@ def write_window_plot_cov_histogram(cov_df, output_dir):
 def write_regions_of_interest_table(merged_regions, output_dir, type):
     out_path = f"{output_dir}/{type}-coverage-regions-of-interest.tsv"
 
-    if type == "high":
-        sorted_df = merged_regions.sort_values(by="cov", ascending=False)
-    elif type == "low":
-        sorted_df = merged_regions.sort_values(by="cov", ascending=True)
-    else:
-        raise ValueError(f"Nope nope nope: {type!r}")
+    sorted_df = merged_regions.sort_values(by=["contig", "start"], ascending=[True, True])
 
     sorted_df.to_csv(out_path, sep="\t", index=False, float_format="%.2f")
 
