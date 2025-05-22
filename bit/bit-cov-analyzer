@@ -124,13 +124,19 @@ optional.add_argument(
     type=int,
     default=100,
 )
+optional.add_argument(
+    "--no-window-stats",
+    help='add this flag to skip writing out individual window stats (saves spacetime)',
+    action="store_true",
+)
 
 
 ###############################################################################
 
 def main(reference_fasta, bam_file, output_dir,
          high_threshold, low_threshold, exclude_contigs: list,
-         per_contig, sliding_window_size, step_size, allowed_gap, buffer):
+         per_contig, sliding_window_size, step_size, allowed_gap,
+         buffer, no_window_stats):
 
     preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs)
 
@@ -153,7 +159,7 @@ def main(reference_fasta, bam_file, output_dir,
     low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
 
     generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
-                     cov_df, cov_stats, buffer, output_dir, contig_lengths)
+                     cov_df, cov_stats, buffer, output_dir, contig_lengths, no_window_stats)
 
 ###############################################################################
 
@@ -389,11 +395,12 @@ class CoverageStats:
 
 
 def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
-                     cov_df, cov_stats, buffer, output_dir, contig_lengths):
+                     cov_df, cov_stats, buffer, output_dir, contig_lengths, no_window_stats):
 
     print()
     write_window_cov_stats(cov_stats, output_dir, contig_lengths)
-    write_windows_table(cov_stats, output_dir)
+    if not no_window_stats:
+        write_windows_table(cov_stats, output_dir)
     write_window_plot_cov_histogram(cov_df, output_dir)
 
     write_regions_of_interest_table(high_merged_regions, output_dir, "high")
@@ -604,4 +611,5 @@ if __name__ == "__main__":
         step_size=args.step_size,
         allowed_gap=args.allowed_gap,
         buffer=args.buffer,
+        no_window_stats=args.no_window_stats,
     )
