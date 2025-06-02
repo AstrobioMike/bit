@@ -11,20 +11,22 @@ if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "help" ] || [ $1 == "--help" ]; th
     printf "\n  This script uses taxonkit in a standard fashion to get lineage info from NCBI taxids.\n"
     printf "  It expects a single column file of taxids with no header, return table in the same order.\n"
     printf "  Thanks go to taxonkit, don't forget to cite that if using: https://bioinf.shenwei.me/taxonkit/.\n"
-    printf "  For version info, run \`bit-version\`.\n\n"
+    printf "  Add the '-s' flag to include strain info if available. For version info, run \`bit-version\`.\n\n"
     printf "    Usage:\n\t bit-get-lineage-from-taxids -i taxids.txt -o lineages.tsv\n\n"
     exit
 fi
 
-# setting default for output
+# setting defaults
 output_file="lineages.tsv"
+include_strain=false
 ## parsing arguments
-while getopts :i:o: args
+while getopts :i:o:s args
 do
     case "${args}"
     in
         i) taxids_file=${OPTARG};;
         o) output_file=${OPTARG};;
+        s) include_strain=true;;
         \?) printf "\n  ${RED}Invalid argument: -${OPTARG}${NC}\n\n    Run 'bit-get-lineage-from-taxids' with no arguments or '-h' only to see help menu.\n\n" >&2 && exit
     esac
 done
@@ -47,9 +49,16 @@ fi
 ### checking that ncbi tax data is present already, and downloading if it isn't
 helper-bit-get-ncbi-tax-data
 
-taxonkit_reformat_pattern='{domain|superkingdom}\t{phylum}\t{class}\t{order}\t{family}\t{genus}\t{species}'
+if [ "${include_strain}" = true ]; then
+    taxonkit_reformat_pattern='{domain|superkingdom}\t{phylum}\t{class}\t{order}\t{family}\t{genus}\t{species}\t{strain|subspecies|no rank}'
+    header="taxid\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies\tstrain\n"
+else
+    taxonkit_reformat_pattern='{domain|superkingdom}\t{phylum}\t{class}\t{order}\t{family}\t{genus}\t{species}'
+    header="taxid\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n"
+fi
+
 cat $taxids_file | taxonkit lineage | taxonkit reformat2 -r NA -f "${taxonkit_reformat_pattern}" | cut -f 1,3- | tr ";" "\t" > lineages.tmp
 
-cat <(printf "taxid\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n") lineages.tmp > $output_file
+cat <(printf "${header}") lineages.tmp > $output_file
 
 rm lineages.tmp
