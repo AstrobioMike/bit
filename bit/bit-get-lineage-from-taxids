@@ -16,6 +16,8 @@ if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "help" ] || [ $1 == "--help" ]; th
     exit
 fi
 
+# setting default for output
+output_file="lineages.tsv"
 ## parsing arguments
 while getopts :i:o: args
 do
@@ -41,16 +43,12 @@ if [ ! -f $taxids_file ]; then
     exit
 fi
 
-if [ -z $output_file ]; then
-    printf "\n  Please specify an output file to the '-o' argument.\n"
-    printf "\nExiting for now.\n\n"
-    exit
-fi
 
 ### checking that ncbi tax data is present already, and downloading if it isn't
 helper-bit-get-ncbi-tax-data
 
-cat $taxids_file | taxonkit lineage | taxonkit reformat -r NA | cut -f 1,3 | tr ";" "\t" > lineages.tmp
+taxonkit_reformat_pattern='{domain|superkingdom}\t{phylum}\t{class}\t{order}\t{family}\t{genus}\t{species}'
+cat $taxids_file | taxonkit lineage | taxonkit reformat2 -r NA -f "${taxonkit_reformat_pattern}" | cut -f 1,3- | tr ";" "\t" > lineages.tmp
 
 cat <(printf "taxid\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n") lineages.tmp > $output_file
 
