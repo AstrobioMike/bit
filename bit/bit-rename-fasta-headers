@@ -20,8 +20,8 @@ required.add_argument("-i", "--input-fasta", metavar = "<FILE>", help = "startin
 parser.add_argument("-w", "--wanted-text", metavar = "<STR>", help = 'base name to give seqs when renaming to "<wanted_text>_<n>" (default: "Seq")', action = "store", default = "Seq")
 parser.add_argument("-o", "--output-fasta", metavar = "<FILE>", help = 'output fasta file (default: "renamed.fasta").', default = "renamed.fasta")
 
-parser.add_argument("--prefix", metavar = "<STR>", help = "prepend this text to the original header", default = "")
-parser.add_argument("--suffix", metavar = "<STR>", help = "append this text to the original header", default = "")
+parser.add_argument("--prefix", metavar = "<STR>", help = "prepend this text to the original header (include separator if wanted)", default = "")
+parser.add_argument("--suffix", metavar = "<STR>", help = "append this text to the original header (include separator if wanted)", default = "")
 
 
 if len(sys.argv)==1:
