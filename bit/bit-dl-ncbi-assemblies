@@ -23,7 +23,7 @@ if [ "$#" == 0 ] || [ $1 == "-h" ] || [ $1 == "help" ]; then
 
     printf "        - [-f <str>] default: genbank\n"
     printf "                  Specify the desired format. Available options currently\n"
-    printf "                  include: genbank, fasta, protein, nt_cds, gff, feature_tab, report, stats.\n\n"
+    printf "                  include: genbank, fasta, protein, nt_cds, nt_rna, gff, feature_tab, report, stats.\n\n"
 
     printf "        - [-j <int> ] default: 1\n"
     printf "                  The number of downloads you'd like to run in parallel. NCBI can become\n"
@@ -74,7 +74,7 @@ fi
 ## making sure format specified is interpretable
 if [[ "$format" != "genbank" && $format != "fasta" && $format != "protein" && $format != "nt_cds" && $format != "gff" && $format != "feature_tab" && $format != "report" && $format != "stats" ]]; then
     printf "\n  ${RED}Invalid argument passed to \'-f' option: $format\n\n${NC}"
-    printf "  Valid options are genbank, fasta, protein, gff, nt_cds, feature_tab, report, or stats.\n"
+    printf "  Valid options are genbank, fasta, protein, gff, nt_cds, nt_rna, feature_tab, report, or stats.\n"
     printf "Exiting for now.\n\n"
     exit
 fi
