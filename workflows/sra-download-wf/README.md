@@ -76,11 +76,11 @@ Example usage:
 bash scripts/combine-sra-accessions.sh -i map.tsv -d fastq-files/
 ```
 
-Note that by default the original files will be removed after they are combined or renamed. If you want to keep them, provide the `-k` flag also. See `bash scripts/combine-sra-accessions.sh -h` for more info.
+Note that by default the original files will be removed after they are combined or renamed. If you want to keep them, provide the `-k` flag also. See `bash scripts/combine-sra-accessions.sh -h` for more info. This helper script is only suitable for paired-end data.
 
 ---
 
 ## Version info
-Note that the workflows are version independently of the _bit_ package. When you pull one with `bit-get-workflow`, the directory name will have the version, and it is also listed at the top of the Snakefile.
+Note that the workflows are versioned independently of the _bit_ package. When you pull one with `bit-get-workflow`, the directory name will have the version, and it is also listed at the top of the Snakefile.
 
 All versions of programs used can be found in their corresponding conda yaml file in the envs/ directory. 

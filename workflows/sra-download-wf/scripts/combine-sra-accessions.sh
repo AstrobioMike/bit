@@ -28,7 +28,7 @@ print_help() {
 
     printf "    Ex. Usage:\n\t bash scripts/combine-sra-accessions.sh -i map.tsv -d fastq-files/ \n\n"
 
-    printf "  Note that this is a simple bash script, it will work on one sample-set at a time,\n"
+    printf "  Note that this is a simple bash script, it is for paired-end sample-sets only,\n"
     printf "  and there is not much checked to catch human error on the input table.\n\n"
 
     printf "  By default it will remove the initial fastq files. Provide the '-k' flag if you want to\n"
