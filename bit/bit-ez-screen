@@ -44,7 +44,7 @@ optional.add_argument("-o", "--output-prefix", help = 'Output prefix (default: "
                       metavar = "<STR>", default = "ez-screen")
 
 optional.add_argument("-m", "--min-perc-id",
-                      help = 'Minimum percent ID for a hit to be counted as found in output summary table (default: 80)',
+                      help = 'Minimum percent ID for a target to be counted as found in output summary table (default: 80)',
                       metavar = "<INT>", action = "store", default = 80, type = float)
 
 optional.add_argument("-M", "--min-perc-cov",
