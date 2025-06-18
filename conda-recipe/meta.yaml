@@ -1,0 +1,55 @@
+{% set pkg = load_setup_py_data() %}
+
+package:
+  name: "{{ pkg.name|lower }}"
+  version: "{{ pkg.version }}"
+
+source:
+  url: https://github.com/AstrobioMike/bit/archive/v{{ version }}.tar.gz
+
+build:
+  number: 0
+  script: bash build.sh
+
+requirements:
+  host:
+    - python=3.10
+    - pip
+
+  run:
+    - python=3.10
+    - biopython
+    - matplotlib=3.9.1
+    - pybedtools
+    - pyfastx
+    - parallel
+    - scikit-bio
+    - pip
+    - entrez-direct
+    - taxonkit
+    - pandas
+    - goatools
+    - pigz
+    - snakemake=7.26.0
+    - mamba=1.5
+    - coreutils
+    - zip
+    - unzip
+    - pulp=2.7.0
+    - numpy=1.26.4
+    - blast=2
+    - tqdm>=4.66.5
+    - samtools
+    - mosdepth
+    - bwa>=0.7
+    - rich
+    - rich-argparse=1.7.1
+
+test:
+  commands:
+    bit-summarize-assembly -h
+
+about:
+  home: https://github.com/AstrobioMike/bit
+  license: GPL3
+  summary: A set of bioinformatics scripts and workflows I use regularly enough to want to have accessible from anywhere.
