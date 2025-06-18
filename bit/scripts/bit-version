@@ -1,0 +1,20 @@
+#!/usr/bin/env python
+
+from datetime import datetime
+from bit.utils import color_text, get_package_path
+from importlib.metadata import version
+
+version = f"v{version('bit')}"
+print()
+print(f"\t\tBioinformatics Tools (bit) {color_text(version, 'green')}")
+print("\t\tgithub.com/AstrobioMike/bit\n")
+
+print("    If you happen to find this toolset useful in your work, please be sure to")
+print("    cite it :)\n")
+
+print("  Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122")
+print("  https://doi.org/10.12688/f1000research.79530.1\n")
+
+today = datetime.today().strftime('%A')
+signoff = f"Happy {today} :)"
+print(f"                                                   {color_text(signoff,'green')}\n")
