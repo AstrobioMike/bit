@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/Users/michael.lee/miniconda3/envs/bit-dev/bin/python3.10
 
 from Bio import SeqIO
 import random
@@ -151,13 +151,13 @@ def simulate_paired_end_reads(input_fastas, proportions_file, read_length, fragm
                     quality_scores = "I" * read_length
 
                     # writing forward read
-                    fw.write(f"@{seq_id}/1_{start}\n")
+                    fw.write(f"@{seq_id}_{start}/1\n")
                     fw.write(f"{forward_read}\n")
                     fw.write(f"+\n")
                     fw.write(f"{quality_scores}\n")
 
                     # writing reverse read
-                    rw.write(f"@{seq_id}/2_{start}\n")
+                    rw.write(f"@{seq_id}_{start}/2\n")
                     rw.write(f"{reverse_read}\n")
                     rw.write(f"+\n")
                     rw.write(f"{quality_scores}\n")
