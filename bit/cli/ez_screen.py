@@ -95,11 +95,9 @@ def build_parser():
     reads_required = reads_parser.add_argument_group('REQUIRED PARAMETERS')
     reads_optional = reads_parser.add_argument_group('OPTIONAL PARAMETERS')
 
-    reads_required.add_argument("-s", "--sample-names", help = "These must be the prefix of the read files (e.g., 'sample-1' if the reads are named sample-1-R1.fastq.gz and sample-1-R2.fastq.gz)", metavar = "<STR>", required = True,
-                        nargs = '+')
     add_common_required_arguments(reads_required)
 
-    reads_optional.add_argument("-r", "--reads-dir", help = "Directory holding the input reads (default: current directory)",
+    reads_optional.add_argument("-r", "--reads-dir", help = "Directory holding the input gzipped reads (default: current directory)",
                         metavar = "<DIR>", action = "store", default = ".", type = str)
 
     add_common_optional_arguments(reads_optional)

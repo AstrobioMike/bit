@@ -37,7 +37,7 @@ def report_failure(message, color = "red"):
     sys.exit(1)
 
 
-def get_reads_dict(reads_dir, SE = False):
+def get_input_reads_dict(reads_dir, SE = False):
     """
     This scans the input directory for read files and returns a dictionary of prefix (hopefully sample names), and read paths
     Place-holder for if i want to implement single-end in the future
@@ -75,8 +75,11 @@ def get_reads_dict(reads_dir, SE = False):
     for s, pair in reads_dict.items():
         if "R1" not in pair or "R2" not in pair:
             missing = "R1" if "R1" not in pair else "R2"
-            bad.append(f"❌ sample {s!r} missing {missing}")
+            bad.append(f"  ❌ sample {s!r} didn't have an {missing} detected")
     if bad:
-        sys.exit("\n".join(bad))
+        print("")
+        print("\n".join(bad))
+        reads_dir = reads_dir if reads_dir.endswith("/") else reads_dir + "/"
+        report_failure(f"Check the input reads dir ('{reads_dir}') for the above issues.")
 
     return reads_dict

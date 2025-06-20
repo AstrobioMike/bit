@@ -6,7 +6,7 @@ from Bio import SeqIO
 from tqdm import tqdm
 from bit.utils import (report_message,
                        report_failure,
-                       get_reads_dict)
+                       get_input_reads_dict)
 
 
 def run_assembly(args):
@@ -17,9 +17,10 @@ def run_assembly(args):
 
 
 def run_reads(args):
-    report_failure("Read-based screening not yet implemented.")
-    reads_dict = get_reads_dict(args.reads_dir)
+    reads_dict = get_input_reads_dict(args.reads_dir)
     print(reads_dict)
+    print(reads_dict['perfect-reads']['R1'])
+
 
 def assembly_preflight(args, blast_results_dir):
 
@@ -75,14 +76,14 @@ def run_assembly_screen(args, assembly_path_dict, blast_results_dir):
                                                                             args.min_perc_cov)
 
         unique_assembly_name = assembly_path_dict[assembly]
-        summary_df = update_summary_table(filtered_blast_df,
+        summary_df = update_assembly_summary_table(filtered_blast_df,
                                           long_targets_results_dict,
                                           targets_dict,
                                           unique_assembly_name,
                                           summary_df)
 
     if args.filter_if_not_detected:
-        summary_df = filter_undetected_targets(summary_df)
+        summary_df = filter_undetected_assembly_targets(summary_df)
 
     if args.transpose_output_tsv:
         summary_df = summary_df.T
@@ -151,7 +152,10 @@ def filter_blast_results(blast_df, targets_dict, min_perc_id, min_perc_cov):
     if not long_targets_df.empty:
 
         filtered_long_blast_df = long_targets_df[(long_targets_df["pident"] >= min_perc_id)]
-        long_targets_results_dict = gen_long_targets_results_dict(filtered_long_blast_df, targets_dict, long_target_length_cutoff)
+        long_targets_results_dict = gen_long_targets_assembly_results_dict(filtered_long_blast_df,
+                                                                           targets_dict,
+                                                                           long_target_length_cutoff,
+                                                                           min_perc_cov)
 
     else:
         long_targets_results_dict = None
@@ -159,7 +163,7 @@ def filter_blast_results(blast_df, targets_dict, min_perc_id, min_perc_cov):
     return filtered_short_blast_df, long_targets_results_dict
 
 
-def update_summary_table(filtered_short_blast_df, long_targets_detected_dict, targets_dict, unique_assembly_name, summary_df):
+def update_assembly_summary_table(filtered_short_blast_df, long_targets_detected_dict, targets_dict, unique_assembly_name, summary_df):
     """ Update the summary table with results from the current assembly """
 
     target_counts = filtered_short_blast_df["sseqid"].value_counts()
@@ -178,7 +182,7 @@ def update_summary_table(filtered_short_blast_df, long_targets_detected_dict, ta
     return summary_df
 
 
-def filter_undetected_targets(summary_df):
+def filter_undetected_assembly_targets(summary_df):
     """ filters out targets that weren't detected in any input assemblies """
 
     cols_to_drop = summary_df.columns[
@@ -188,7 +192,7 @@ def filter_undetected_targets(summary_df):
     return summary_df.drop(columns=cols_to_drop)
 
 
-def gen_long_targets_results_dict(filtered_long_blast_df, targets_dict, long_target_length_cutoff):
+def gen_long_targets_assembly_results_dict(filtered_long_blast_df, targets_dict, long_target_length_cutoff, min_perc_cov):
     """ remove overlapping alignments and calculate total percent of subject covered by alignment """
 
     # the sstart and sstop positions aren't necessarily in order from lowest to highest,
@@ -227,7 +231,7 @@ def gen_long_targets_results_dict(filtered_long_blast_df, targets_dict, long_tar
 
         total_subject_bases_covered = sum(end - start + 1 for start, end in merged_regions)
 
-        if total_subject_bases_covered >= args.min_perc_cov * targets_dict[ID] / 100:
+        if total_subject_bases_covered >= min_perc_cov * targets_dict[ID] / 100:
             long_targets_detected_dict[ID] = "DETECTED"
         else:
             long_targets_detected_dict[ID] = "NOT-DETECTED"
