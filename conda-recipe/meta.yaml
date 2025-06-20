@@ -1,15 +1,14 @@
-{% set pkg = load_setup_py_data() %}
+{% set pkg = load_setup_py_data(setup_file="../setup.py", from_recipe_dir=True) %}
 
 package:
   name: "{{ pkg.name|lower }}"
   version: "{{ pkg.version }}"
 
 source:
-  url: https://github.com/AstrobioMike/bit/archive/v{{ version }}.tar.gz
+  url: https://github.com/AstrobioMike/bit/archive/v{{ pkg.version }}.tar.gz
 
 build:
   number: 0
-  script: bash build.sh
 
 requirements:
   host:
