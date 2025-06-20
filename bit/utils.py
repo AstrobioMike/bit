@@ -2,6 +2,7 @@ import os
 import sys
 import textwrap
 from importlib.resources import files
+from pathlib import Path
 
 def get_package_path(rel_path = ""):
     return os.path.join(files("bit") / rel_path)
@@ -34,3 +35,48 @@ def report_failure(message, color = "red"):
     wprint(color_text(message, color))
     print("\nExiting for now :(\n")
     sys.exit(1)
+
+
+def get_reads_dict(reads_dir, SE = False):
+    """
+    This scans the input directory for read files and returns a dictionary of prefix (hopefully sample names), and read paths
+    Place-holder for if i want to implement single-end in the future
+    """
+
+    accepted_R1_designations = ["_R1_", "_R1.", "-R1.", "-R1-", ".R1.", "_1."]
+    accepted_R2_designations = ["_R2_", "_R2.", "-R2.", "-R2-", ".R2.", "_2."]
+    accepted_read_extensions  = [".fq.gz", ".fastq.gz"]
+
+    p = Path(reads_dir)
+    fastqs = [f for f in p.iterdir() if f.is_file() and any(str(f).endswith(ext) for ext in accepted_read_extensions)]
+    reads_dict = {}
+
+    for fq in fastqs:
+        name = fq.name
+        # find which read (R1 or R2) it is
+        which = None
+        for tag in accepted_R1_designations:
+            if tag in name:
+                which = "R1"
+                samp = name.split(tag)[0]
+                break
+        for tag in accepted_R2_designations:
+            if tag in name:
+                which = "R2"
+                samp = name.split(tag)[0]
+                break
+        if which is None:
+            continue
+
+        # record it
+        reads_dict.setdefault(samp, {})[which] = str(fq)
+
+    bad = []
+    for s, pair in reads_dict.items():
+        if "R1" not in pair or "R2" not in pair:
+            missing = "R1" if "R1" not in pair else "R2"
+            bad.append(f"❌ sample {s!r} missing {missing}")
+    if bad:
+        sys.exit("\n".join(bad))
+
+    return reads_dict
