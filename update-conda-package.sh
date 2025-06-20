@@ -24,14 +24,14 @@ set -e
 recipe_dir="conda-recipe"
 
 ## making sure it is a directory here
-if [ ! -d "${recipe_dir" ]; then
+if [ ! -d "${recipe_dir}" ]; then
     printf "\n    'conda-recipe/' needs to be a directory here.\n"
     printf "    You know this, Mike...\n\n"
     exit 1
 fi
 
 ## making sure we are in the base conda environment
-if [ $CONDA_DEFAULT_ENV != "base" ]; then
+if [ "${CONDA_DEFAULT_ENV}" != "base" ]; then
     printf "\n    This should be run in the 'base' conda environment..\n"
     printf "    You know this, Mike...\n\n"
     exit 1
