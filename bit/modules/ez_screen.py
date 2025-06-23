@@ -4,9 +4,17 @@ import subprocess
 from io import StringIO
 from Bio import SeqIO
 from tqdm import tqdm
+from dataclasses import dataclass, field
+from pathlib import Path
+import json
+from subprocess import run
+import pysam
+from collections import defaultdict
+import numpy as np
 from bit.utils import (report_message,
                        report_failure,
-                       get_input_reads_dict)
+                       get_input_reads_dict,
+                       get_package_path)
 
 
 def run_assembly(args):
@@ -18,8 +26,9 @@ def run_assembly(args):
 
 def run_reads(args):
     reads_dict = get_input_reads_dict(args.reads_dir)
-    print(reads_dict)
-    print(reads_dict['perfect-reads']['R1'])
+    reads_config = ReadsRunConfiguration.from_args(args)
+    run_reads_snakemake(reads_config, reads_dict)
+    report_read_screen_finished(args)
 
 
 def assembly_preflight(args, blast_results_dir):
@@ -244,3 +253,165 @@ def report_assembly_screen_finished(args, blast_results_dir):
     report_message("Done!", color = "green")
     print(f"    Summary table written to: {args.output_prefix}-summary-table.tsv")
     print(f"    Full and filtered BLAST results written in subdirectory: {blast_results_dir}/\n")
+
+
+def report_read_screen_finished(args):
+    report_message("Done!", color = "green")
+    print(f"    Summary table written to: {args.output_prefix}-combined-summary.tsv")
+    print(f"    Mapping info and logs written in subdirectory: {args.output_prefix}-mapping/\n")
+
+
+@dataclass
+class ReadsRunConfiguration:
+    base_output_prefix: str = field(init=False)
+    base_output_dir: Path = field(init=False)
+    mapping_output_dir: Path = field(init=False)
+    log_files_dir: Path = field(init=False)
+    targets: str = field(init=False)
+    reads_dir: str = field(init=False)
+    min_perc_id: float = field(init=False)
+    min_perc_cov: float = field(init=False)
+    num_cores: int = field(init=False)
+    rerun_incomplete: bool = field(init=False)
+    dry_run: bool = field(init=False)
+
+    @classmethod
+    def from_args(cls, args):
+        reads_run_data = cls()
+        reads_run_data.populate_read_run_data(args)
+        return reads_run_data
+
+    def populate_read_run_data(self, args):
+        self.base_output_prefix = Path(args.output_prefix).resolve().name
+        self.base_output_dir = Path(args.output_prefix).resolve().parent
+        self.mapping_output_dir = self.base_output_dir / f"{args.output_prefix}-mapping"
+        self.log_files_dir = self.mapping_output_dir / f"log-files"
+        self.targets = Path(args.targets).absolute()
+        self.reads_dir = Path(args.reads_dir).absolute()
+        self.min_perc_id = args.min_perc_id
+        self.min_perc_cov = args.min_perc_cov
+        self.num_cores = args.jobs
+        self.rerun_incomplete = args.rerun_incomplete
+        self.dry_run = args.dry_run
+
+    @property
+    def key_value_pairs(self):
+        return [f"{key}={str(value)}" for key, value in vars(self).items()]
+
+
+def run_reads_snakemake(config, reads_dict):
+    reads_json = json.dumps(reads_dict)
+
+    cmd = [
+        "snakemake",
+        "--snakefile", str(get_package_path("smk/ez-screen-reads.smk")),
+        "--cores", str(config.num_cores),
+        "--printshellcmds",
+        "--directory", config.mapping_output_dir,
+        "--config", f'reads_json={reads_json}',
+        *config.key_value_pairs,
+    ]
+
+    if config.dry_run:
+        cmd.append("--dry-run")
+    if config.rerun_incomplete:
+        cmd.append("--rerun-incomplete")
+
+    process = run(cmd)
+    if process.returncode != 0:
+        message = "Snakemake failed. Hopefully its output above can help you spot why."
+        report_failure(message)
+
+
+def gen_reads_summary_table(input_bam, input_global_dist_tab, outpath):
+
+    ref_read_pids = gen_ref_read_pids(input_bam)
+
+    filtered_df = gen_filtered_reads_df(input_global_dist_tab)
+
+    # making dictionary of ref_name: mean-of-aligned-read-percent-IDs
+    mean_pid_dict = {
+        ref: np.mean(pids)
+        for ref, pids in ref_read_pids.items()
+    }
+    # making dictionary of ref_name: number-of-aligned-reads
+    read_counts_dict = {
+        ref: len(pids)
+        for ref, pids in ref_read_pids.items()
+    }
+
+    filtered_df = filtered_df.assign(mean_perc_id = filtered_df['target'].map(mean_pid_dict))
+    filtered_df['mean_perc_id'] = filtered_df['mean_perc_id'].map("{:.2f}".format)
+    filtered_df = filtered_df.assign(num_reads_recruited = filtered_df['target'].map(read_counts_dict))
+    filtered_df = filtered_df[
+        ['target', 'num_reads_recruited', 'detection', 'mean_perc_id']
+    ]
+    filtered_df.to_csv(outpath, sep='\t', index=False)
+
+
+def gen_ref_read_pids(input_bam):
+
+    with pysam.AlignmentFile(input_bam, "rb") as bam:
+
+        # store read % identity by reference
+        ref_read_pids = defaultdict(list)
+
+        for read in bam.fetch(until_eof=True):
+            if read.is_unmapped or read.is_secondary or read.is_supplementary:
+                continue
+            try:
+                nm = read.get_tag("NM")  # edit distance
+            except KeyError:
+                continue
+
+            matches = read.query_length - nm
+            pid = matches / read.query_length * 100
+            refname = bam.get_reference_name(read.reference_id)
+            ref_read_pids[refname].append(pid)
+
+        return ref_read_pids
+
+
+def gen_filtered_reads_df(input_global_dist_tab):
+
+    detection_df = pd.read_csv(input_global_dist_tab, sep='\t')
+    detection_df.columns = ['target', 'depth', 'detection']
+
+    mask = (detection_df['target'] != "total") & (detection_df['depth'] == 1) & (detection_df['detection'] >= 0.80)
+    filtered_df = detection_df[mask]
+    filtered_df = filtered_df.drop('depth', axis=1)
+
+    return filtered_df
+
+
+def combine_reads_summary_outputs(samples_output_summaries_dict, output_tsv):
+
+    expected_cols = {"target", "num_reads_recruited", "detection", "mean_perc_id"}
+    dfs = []
+
+    for sample, path in samples_output_summaries_dict.items():
+        try:
+            df = pd.read_csv(path, sep="\t")
+        except Exception:
+            # skipping files that don't parse
+            continue
+
+        # skipping empty tables
+        if df.empty:
+            continue
+
+        # skipping if columns aren't exactly the expected ones
+        if set(df.columns) != expected_cols:
+            continue
+
+        # inserting "sample" as first column
+        df.insert(0, "sample", sample)
+        dfs.append(df)
+
+    if dfs:
+        combined = pd.concat(dfs, ignore_index=True)
+        combined.to_csv(output_tsv, sep="\t", index=False)
+    else:
+        # no valid data
+        with open(output_tsv, 'w') as f:
+            f.write("No valid reads mapping to any targets above the set thresholds.\n")

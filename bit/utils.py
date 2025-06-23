@@ -48,7 +48,10 @@ def get_input_reads_dict(reads_dir, SE = False):
     accepted_read_extensions  = [".fq.gz", ".fastq.gz"]
 
     p = Path(reads_dir)
-    fastqs = [f for f in p.iterdir() if f.is_file() and any(str(f).endswith(ext) for ext in accepted_read_extensions)]
+    fastqs = sorted(
+        [f for f in p.iterdir() if f.is_file() and any(str(f).endswith(ext) for ext in accepted_read_extensions)],
+        key=lambda x: x.name
+    )
     reads_dict = {}
 
     for fq in fastqs:
