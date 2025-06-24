@@ -11,24 +11,28 @@ from subprocess import run
 import pysam
 from collections import defaultdict
 import numpy as np
+from bit.cli.common import log_command_run
 from bit.utils import (report_message,
                        report_failure,
                        get_input_reads_dict,
-                       get_package_path)
+                       get_package_path,
+                       color_text)
 
 
-def run_assembly(args):
+def run_assembly(args, full_cmd_executed):
     blast_results_dir = args.output_prefix + "-blast-results"
     assembly_path_dict = assembly_preflight(args, blast_results_dir)
     run_assembly_screen(args, assembly_path_dict, blast_results_dir)
     report_assembly_screen_finished(args, blast_results_dir)
+    log_command_run(full_cmd_executed, blast_results_dir)
 
 
-def run_reads(args):
+def run_reads(args, full_cmd_executed):
     reads_dict = get_input_reads_dict(args.reads_dir)
     reads_config = ReadsRunConfiguration.from_args(args)
     run_reads_snakemake(reads_config, reads_dict)
     report_read_screen_finished(args)
+    log_command_run(full_cmd_executed, reads_config.log_files_dir)
 
 
 def assembly_preflight(args, blast_results_dir):
@@ -94,11 +98,12 @@ def run_assembly_screen(args, assembly_path_dict, blast_results_dir):
     if args.filter_if_not_detected:
         summary_df = filter_undetected_assembly_targets(summary_df)
 
+    output_tsv = args.output_prefix + "-assembly-summary.tsv"
     if args.transpose_output_tsv:
         summary_df = summary_df.T
-        summary_df.to_csv(args.output_prefix + "-summary-table.tsv", sep = "\t", index_label = "target")
+        summary_df.to_csv(output_tsv, sep = "\t", index_label = "target")
     else:
-        summary_df.to_csv(args.output_prefix + "-summary-table.tsv", sep = "\t", index_label = "input-assembly")
+        summary_df.to_csv(output_tsv, sep = "\t", index_label = "input-assembly")
 
 
 def get_targets(targets):
@@ -248,17 +253,25 @@ def gen_long_targets_assembly_results_dict(filtered_long_blast_df, targets_dict,
     return long_targets_detected_dict
 
 
+border = "-" * 80
 def report_assembly_screen_finished(args, blast_results_dir):
-
-    report_message("Done!", color = "green")
-    print(f"    Summary table written to: {args.output_prefix}-summary-table.tsv")
-    print(f"    Full and filtered BLAST results written in subdirectory: {blast_results_dir}/\n")
+    print(f"\n{border}")
+    report_message("DONE!", color = "green")
+    out_file = f"{args.output_prefix}-assembly-summary.tsv"
+    out_dir = f"{blast_results_dir}/"
+    print(f"    Summary table written to: {color_text(out_file, 'green')}")
+    print(f"    Full and filtered BLAST results written in subdirectory: {color_text(out_dir, 'green')}\n")
+    print(f"{border}\n")
 
 
 def report_read_screen_finished(args):
-    report_message("Done!", color = "green")
-    print(f"    Summary table written to: {args.output_prefix}-combined-summary.tsv")
-    print(f"    Mapping info and logs written in subdirectory: {args.output_prefix}-mapping/\n")
+    print(f"\n{border}")
+    report_message("DONE!", color = "green")
+    out_file = f"{args.output_prefix}-reads-summary.tsv"
+    out_dir = f"{args.output_prefix}-mapping/"
+    print(f"    Summary table written to: {color_text(out_file, 'green')}")
+    print(f"    Mapping info and logs written in subdirectory: {color_text(out_dir, 'green')}\n")
+    print(f"{border}\n")
 
 
 @dataclass
@@ -323,11 +336,12 @@ def run_reads_snakemake(config, reads_dict):
         report_failure(message)
 
 
-def gen_reads_summary_table(input_bam, input_global_dist_tab, outpath):
+def gen_reads_summary_table(input_bam, input_global_dist_tab, outpath,
+                            min_perc_id, min_perc_cov):
 
     ref_read_pids = gen_ref_read_pids(input_bam)
 
-    filtered_df = gen_filtered_reads_df(input_global_dist_tab)
+    filtered_df = gen_coverage_filtered_reads_df(input_global_dist_tab, min_perc_cov)
 
     # making dictionary of ref_name: mean-of-aligned-read-percent-IDs
     mean_pid_dict = {
@@ -340,13 +354,27 @@ def gen_reads_summary_table(input_bam, input_global_dist_tab, outpath):
         for ref, pids in ref_read_pids.items()
     }
 
+    # adding mean percent identity column
     filtered_df = filtered_df.assign(mean_perc_id = filtered_df['target'].map(mean_pid_dict))
+
+    # filtering based on mean percent identity
+    filtered_df = filtered_df[filtered_df['mean_perc_id'] >= min_perc_id]
+
     filtered_df['mean_perc_id'] = filtered_df['mean_perc_id'].map("{:.2f}".format)
+
+    # adding number of reads recruited column
     filtered_df = filtered_df.assign(num_reads_recruited = filtered_df['target'].map(read_counts_dict))
+
+    # re-ordering columns
     filtered_df = filtered_df[
         ['target', 'num_reads_recruited', 'detection', 'mean_perc_id']
     ]
-    filtered_df.to_csv(outpath, sep='\t', index=False)
+
+    if filtered_df.empty:
+        with open(outpath, 'w') as f:
+            f.write("No reads successfully mapped to any targets above the set thresholds.\n")
+    else:
+        filtered_df.to_csv(outpath, sep='\t', index=False)
 
 
 def gen_ref_read_pids(input_bam):
@@ -372,12 +400,12 @@ def gen_ref_read_pids(input_bam):
         return ref_read_pids
 
 
-def gen_filtered_reads_df(input_global_dist_tab):
+def gen_coverage_filtered_reads_df(input_global_dist_tab, min_perc_cov):
 
     detection_df = pd.read_csv(input_global_dist_tab, sep='\t')
     detection_df.columns = ['target', 'depth', 'detection']
 
-    mask = (detection_df['target'] != "total") & (detection_df['depth'] == 1) & (detection_df['detection'] >= 0.80)
+    mask = (detection_df['target'] != "total") & (detection_df['depth'] == 1) & (detection_df['detection'] >= min_perc_cov / 100)
     filtered_df = detection_df[mask]
     filtered_df = filtered_df.drop('depth', axis=1)
 
@@ -414,4 +442,4 @@ def combine_reads_summary_outputs(samples_output_summaries_dict, output_tsv):
     else:
         # no valid data
         with open(output_tsv, 'w') as f:
-            f.write("No valid reads mapping to any targets above the set thresholds.\n")
+            f.write("No valid read-mappings were found to any targets.\n")

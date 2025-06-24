@@ -72,7 +72,7 @@ def get_input_reads_dict(reads_dir, SE = False):
             continue
 
         # record it
-        reads_dict.setdefault(samp, {})[which] = str(fq)
+        reads_dict.setdefault(samp, {})[which] = str(fq.resolve())
 
     bad = []
     for s, pair in reads_dict.items():

@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from bit.modules.ez_screen import gen_reads_summary_table, combine_reads_summary_outputs
 
@@ -12,15 +13,13 @@ mapping_index_prefix = f"{mapping_output_dir}/index/{targets_base_name}"
 reads_dir = config['reads_dir']
 min_perc_id = config['min_perc_id']
 min_perc_cov = config['min_perc_cov']
+final_output = f"{base_output_dir}/{base_output_prefix}-reads-summary.tsv"
 
 samples = list(reads_dict.keys())
 
 rule all:
     input:
-        f"{base_output_prefix}-combined-summary.tsv"
-        # expand(f"{mapping_output_dir}/{{sample}}/{{sample}}-ez-screen-summary.tsv", sample=samples)
-        # expand(f"{mapping_output_dir}/{{sample}}/{{sample}}.mosdepth.global.dist.txt", sample=samples)
-        # expand(f"{mapping_output_dir}/{{sample}}/{{sample}}.bam", sample=samples)
+        final_output
 
 rule make_bwa_index:
     input:
@@ -55,7 +54,7 @@ rule map_reads:
     shell:
         """
         ### need to check if the reads_dict has full paths or not when the reads are somewhere else
-        bwa mem -t 8 -a -T 0 {params.mapping_index_prefix} {reads_dir}/{params.R1} {reads_dir}/{params.R2} 2> {log_files_dir}/{wildcards.sample}-bwa-mem.log | \
+        bwa mem -t 8 -a -T 0 {params.mapping_index_prefix} {params.R1} {params.R2} 2> {log_files_dir}/{wildcards.sample}-bwa-mem.log | \
             samtools view -b | \
             samtools sort -@ 8 -o {output}
 
@@ -80,8 +79,20 @@ rule gen_reads_summary_table:
         global_dist_tab = mapping_output_dir + "/{sample}/{sample}.mosdepth.global.dist.txt"
     output:
         summary_tab = mapping_output_dir + "/{sample}/{sample}-ez-screen-summary.tsv"
+    params:
+        min_perc_id = min_perc_id,
+        min_perc_cov = min_perc_cov
     run:
-        gen_reads_summary_table(input.bam, input.global_dist_tab, output.summary_tab)
+        if os.path.getsize(input.global_dist_tab) > 0:
+            gen_reads_summary_table(input.bam,
+                                    input.global_dist_tab,
+                                    output.summary_tab,
+                                    params.min_perc_id,
+                                    params.min_perc_cov)
+        else:
+            with open(output.summary_tab, 'w') as f:
+                f.write("No valid read-mappings were found to any targets regardless of min-perc-cov or min-perc-id settings.\n")
+
 
 
 rule combine_outputs:
@@ -91,7 +102,7 @@ rule combine_outputs:
             sample=samples
         )
     output:
-        final_output = f"{base_output_prefix}-combined-summary.tsv"
+        final_output = final_output
     run:
         samples_output_summaries_dict = {
             sample: f"{mapping_output_dir}/{sample}/{sample}-ez-screen-summary.tsv"

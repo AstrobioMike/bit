@@ -1,6 +1,8 @@
 import sys
 import argparse
-from bit.cli.common import CustomRichHelpFormatter, add_common_snakemake_arguments
+from bit.cli.common import (CustomRichHelpFormatter,
+                            add_common_snakemake_arguments,
+                            reconstruct_invocation)
 from bit.modules.ez_screen import run_assembly, run_reads
 
 
@@ -130,7 +132,10 @@ def main():
         sys.exit(1)
 
     args = parser.parse_args()
-    args.func(args)
+
+    # reconstructing the full command-line invocation for logging
+    full_cmd_executed = reconstruct_invocation(parser, args)
+    args.func(args, full_cmd_executed)
 
 
 if __name__ == "__main__":
