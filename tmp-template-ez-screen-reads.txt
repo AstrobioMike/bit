@@ -1,0 +1,80 @@
+bit-mutate-seqs -i targets.fasta -m 0.05 -o mutated-targets.fasta
+
+bit-gen-reads -i mutated-targets.fasta -n 100 -o sample-1
+
+bwa index -p targets targets.fasta
+
+# adding the '-a' so it keeps multiple alignments per read (empirically tested, the help menu wasn't totally clear)
+# figure we want this so we get the answer for each target independently, would it qualify as being present
+# the average percent identity over each target may help determine if one is more suitable than another
+# also have -T 0 so multi-mapped reads are not filtered out due to score dropping (still requires at least the seed)
+
+bwa mem -t 8 -a -T 0 targets sample-1_R1.fastq.gz sample-1_R2.fastq.gz 2> bwa-mem.log | \
+    samtools view -b | \
+    samtools sort -@ 8 -o sample-1.bam
+
+samtools index sample-1.bam
+
+# this will be used for filtering by coverage later
+mosdepth --no-per-base -x sample-1 sample-1.bam
+
+
+### filtering/handling the output in python ###
+
+import pysam
+from collections import defaultdict
+import pandas as pd
+import numpy as np
+
+bam = pysam.AlignmentFile("sample-1.bam", "rb")
+
+# store read % identity by reference
+ref_read_pids = defaultdict(list)
+
+for read in bam.fetch(until_eof=True):
+    if read.is_unmapped or read.is_secondary or read.is_supplementary:
+        continue
+
+    try:
+        nm = read.get_tag("NM")  # edit distance
+    except KeyError:
+        continue
+
+    matches = read.query_length - nm
+    pid = matches / read.query_length * 100
+    refname = bam.get_reference_name(read.reference_id)
+    ref_read_pids[refname].append(pid)
+
+bam.close()
+
+print(ref_read_pids)
+
+detection_df = pd.read_csv('sample-1.mosdepth.global.dist.txt', sep='\t')
+detection_df.columns = ['target', 'depth', 'detection']
+
+mask = (detection_df['target'] != "total") & (detection_df['depth'] == 1) & (detection_df['detection'] >= 0.80)
+filtered_df = detection_df[mask]
+filtered_df.drop('depth', axis=1, inplace=True)
+
+# making dictionary of ref_name: mean-of-aligned-read-percent-IDs
+mean_pid_dict = {
+    ref: np.mean(pids)
+    for ref, pids in ref_read_pids.items()
+}
+
+read_counts_dict = {
+    ref: len(pids)
+    for ref, pids in ref_read_pids.items()
+}
+
+print(mean_pid_dict)
+filtered_df = filtered_df.assign(mean_perc_id = filtered_df['target'].map(mean_pid_dict))
+filtered_df['mean_perc_id'] = filtered_df['mean_perc_id'].map("{:.2f}".format)
+
+filtered_df = filtered_df.assign(num_reads_recruited = filtered_df['target'].map(read_counts_dict))
+
+filtered_df = filtered_df[
+    ['target', 'num_reads_recruited', 'detection', 'mean_perc_id']
+]
+print(filtered_df)
+
