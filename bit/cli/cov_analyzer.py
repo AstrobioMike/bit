@@ -73,6 +73,7 @@ def main():
         metavar="<INT>",
         type=int,
         help='Minimum region length (in bp) to be reported (default: 0; so reports all regions, even single windows)',
+        default=0
     )
     optional.add_argument(
         "-e",
