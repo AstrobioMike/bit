@@ -24,12 +24,16 @@ parser.add_argument("-r", "--read-length", metavar = "<INT>", help = "Length of 
 parser.add_argument("-f", "--fragment-size", metavar = "<INT>", help = "Size of the fragment from which paired reads are generated (default: 500)", action = "store", type = int, default = 500)
 parser.add_argument("-n", "--num-read-pairs", metavar = "<INT>", help = "Number of total read-pairs to generate (default: 1,000,000)", action = "store", type = int, default = 1000000)
 parser.add_argument("-o", "--output-prefix", metavar = "<STR>", help = "Prefix for output FASTQ files (default: perfect-reads)", action = "store", default = "perfect-reads")
+parser.add_argument("-s", "--seed", metavar = "<INT>", help = "Set the random seed if wanting control over the random number generator (default: None)", action = "store", type = int, default = None)
 
 if len(sys.argv) == 1:
     parser.print_help(sys.stderr)
     sys.exit(0)
 
 args = parser.parse_args()
+
+if args.seed is not None:
+    random.seed(args.seed)
 
 ################################################################################
 
