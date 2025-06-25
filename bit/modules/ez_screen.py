@@ -11,12 +11,12 @@ from subprocess import run
 import pysam
 from collections import defaultdict
 import numpy as np
-from bit.cli.common import log_command_run
 from bit.utils import (report_message,
                        report_failure,
                        get_input_reads_dict,
                        get_package_path,
-                       color_text)
+                       color_text,
+                       log_command_run)
 
 
 def run_assembly(args, full_cmd_executed):

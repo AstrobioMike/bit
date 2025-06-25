@@ -3,7 +3,6 @@ import shlex
 import argparse
 from pathlib import Path
 from rich_argparse import RichHelpFormatter
-from importlib.metadata import version
 
 class CustomRichHelpFormatter(RichHelpFormatter):
     def start_section(self, heading):
@@ -101,10 +100,3 @@ def reconstruct_invocation(parser, args):
                 cmd.append(str(val))
 
     return shlex.join(cmd)
-
-
-def log_command_run(full_cmd_executed, log_dir):
-    log_file = Path(log_dir) / "command-execution-info.txt"
-    with log_file.open("w") as f:
-        f.write(f"Rendered command:\n{full_cmd_executed}\n\n")
-        f.write(f"bit version: v{version('bit')}\n")
