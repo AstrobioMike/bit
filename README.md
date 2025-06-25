@@ -41,10 +41,14 @@ Some of the helper programs/scripts in _bit_ include:
 | ------- | ------- |
 | `bit-dl-ncbi-assemblies` | download NCBI assemblies in different formats by just providing accessions |  
 | `bit-get-accessions-from-GTDB` | search the (stellar) [Genome Taxonomy Database](https://gtdb.ecogenomic.org/) by taxonomy and get their NCBI accessions |  
-| `bit-summarize-assembly` | quickly summarize nucleotide assemblies |  
-| `bit-ez-screen` | quickly search for nucleotide targets in nucleotide input fastas, filtered based on tunable target-coverage and percent ID thresholds, and summarized in a simple table |  
-| `bit-summarize-column` | quickly summarize a numeric column |  
+| `bit-gen-reads` | quickly generate paired-end reads from fasta files in desired proportions |  
 | `bit-mutate-seqs` | introduce point mutations (substitutions/indels) in nucleotide or amino acid fasta files |  
+| `bit-cov-analyzer` | analyze coverage patterns by providing a bam file and reference fasta to identify regions of relatively higher or lower coverage |  
+| `bit-summarize-assembly` | quickly summarize nucleotide assemblies |  
+| `bit-ez-screen` | search for nucleotide targets in nucleotide input fastas based on blast or in reads based on mapping, filtered based on tunable target-coverage and percent-ID thresholds and summarized in a simple table |  
+| `bit-calc-variation-in-msa` | calculate [variation](http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |  
+| `bit-summarize-column` | summarize a numeric column in a table |  
+| `bit-filter-table` | filter a table based on wanted IDs |  
 | `bit-count-bases-per-seq` | count the number of bases per sequence in a fasta file |  
 | `bit-rename-fasta-headers` | rename sequences in a fasta |  
 | `bit-parse-fasta-by-headers` | split a fasta file based on headers |  
@@ -52,8 +56,6 @@ Some of the helper programs/scripts in _bit_ include:
 | `bit-extract-seqs-by-coords` | pull out sequences from a fasta by their coordinates |  
 | `bit-genbank-to-cds-table` | pull out general CDS info into a tsv from a GenBank file |  
 | `bit-genbank-to-AA-seqs`, `bit-genbank-to-fasta` | pull amino-acid or nucleotide sequences out of a GenBank file |  
-| `bit-calc-variation-in-msa` | calculate [variation](http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |  
-| `bit-filter-table` | filter a table based on wanted IDs |  
 | `bit-get-lineage-from-taxids` | get full lineage info from a list of taxon IDs (making use of the also stellar [TaxonKit](https://bioinf.shenwei.me/taxonkit/)) |  
 | `bit-filter-KOFamScan-results` | filter [KOFamScan](https://github.com/takaram/kofam_scan) results |  
 | `bit-get-go-term-info` | get information about a specific [GO](http://geneontology.org/) term |  
