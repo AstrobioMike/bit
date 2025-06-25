@@ -16,7 +16,7 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-i", "--input-fastas", metavar = "<FILES>", nargs = '+', help = "List of input FASTA files", action = "store", required = True)
 
-parser.add_argument("-p", "--proportions-file", metavar = "<FILE>", help = "Proportions file (tab-delimited) specifying read proportions \
+parser.add_argument("-p", "--proportions-file", metavar = "<FILE>", help = "Proportions file (tab-delimited) specifying read proportions per input fasta \
                                                                             (1st column should be path to input fasta; 2nd column should be \
                                                                             wanted proportion with the total summing to one). If not provided, \
                                                                             equal proportions are assumed.", action = "store")
