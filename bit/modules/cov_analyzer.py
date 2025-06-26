@@ -278,8 +278,8 @@ class CoverageStats:
 
 
 def filter_Ns_from_low_merged_regions(reference_fasta, low_merged_regions):
-    # filtering out regions comprised of more than 50% Ns
-    max_Ns_fraction = 0.5
+    # filtering out regions comprised of more than 10% Ns
+    max_Ns_fraction = 0.1
     regions_to_keep = []
     with pysam.FastaFile(reference_fasta) as fasta:
         for idx, row in low_merged_regions.iterrows():
