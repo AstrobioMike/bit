@@ -72,8 +72,8 @@ def main():
         "--min-region-length",
         metavar="<INT>",
         type=int,
-        help='Minimum region length (in bp) to be reported (default: 0; so reports all regions, even single windows)',
-        default=0
+        help='Minimum region length (in bp) to be reported (default: 500; set to 0 to report all regions, even single windows)',
+        default=500
     )
     optional.add_argument(
         "-e",

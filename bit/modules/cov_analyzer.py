@@ -54,11 +54,14 @@ def run_cov_analyzer(
 
     high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
     low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
-    low_merged_regions = filter_Ns_from_low_merged_regions(reference_fasta, low_merged_regions)
+    low_merged_regions = filter_nonATGCs_from_low_merged_regions(reference_fasta, low_merged_regions)
 
     if min_region_length > 0:
         high_merged_regions = high_merged_regions.loc[high_merged_regions["length"] >= min_region_length].reset_index(drop=True)
         low_merged_regions = low_merged_regions.loc[low_merged_regions["length"] >= min_region_length].reset_index(drop=True)
+
+    high_merged_regions = annotate_zero_cov_bases(high_merged_regions, bam_file)
+    low_merged_regions = annotate_zero_cov_bases(low_merged_regions, bam_file)
 
     generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
                      cov_df, cov_stats, buffer, output_dir, contig_lengths, no_window_stats,
@@ -211,7 +214,7 @@ class CoverageStats:
         return self.df.loc[mask].reset_index(drop=True)
 
 
-    def merge_windows(self, *, type = "high", method = "fold", threshold = 10, edge_pad = 200, contig_lengths = None, allowed_gap = 0):
+    def merge_windows(self, *, type = "high", method = "fold", threshold = 10, edge_pad = 500, contig_lengths = None, allowed_gap = 0):
 
         df = self.get_windows(type=type, method=method, threshold=threshold)
 
@@ -277,20 +280,62 @@ class CoverageStats:
         return (contig, start, end, region_length, region_mean_cov, percentile, zscore, signed_fold_diff, fold_diff, log2_fold_diff)
 
 
-def filter_Ns_from_low_merged_regions(reference_fasta, low_merged_regions):
-    # filtering out regions comprised of more than 10% Ns
-    max_Ns_fraction = 0.1
+def filter_nonATGCs_from_low_merged_regions(reference_fasta, low_merged_regions):
+    # filtering out regions comprised of >= 5% non-ATGCs
+        # originally was doing just Ns, but some seqs had odd characters
+            # e.g., NC_003070.9:15345880-15346580 in GCF_000001735.4
+    max_nonATGCs_fraction = 0.05
     regions_to_keep = []
     with pysam.FastaFile(reference_fasta) as fasta:
         for idx, row in low_merged_regions.iterrows():
             seq = fasta.fetch(row.contig, row.start, row.end).upper()
-            ns_frac = seq.count("N") / len(seq)
-            if ns_frac <= max_Ns_fraction:
+            total_len = len(seq)
+            non_atgc = total_len - (
+                seq.count("A") +
+                seq.count("T") +
+                seq.count("C") +
+                seq.count("G")
+            )
+            non_atgc_frac = non_atgc / total_len
+
+            if non_atgc_frac < max_nonATGCs_fraction:
                 regions_to_keep.append(idx)
 
     low_merged_regions = low_merged_regions.loc[regions_to_keep].reset_index(drop=True)
 
     return low_merged_regions
+
+
+def annotate_zero_cov_bases(merged_regions, bam_file):
+
+    zero_counts = []
+
+    with pysam.AlignmentFile(bam_file, "rb") as aln:
+        for _, row in merged_regions.iterrows():
+
+            # count_coverage returns 4 arrays (A,C,G,T) of per-base counts
+            cov_arrays = aln.count_coverage(
+                row.contig,
+                start = int(row.start),
+                stop = int(row.end),
+                quality_threshold = 0
+            )
+
+            # sum across nucleotides → total depth at each position
+            depth = np.zeros(len(cov_arrays[0]), dtype=int)
+
+            for arr in cov_arrays:
+                depth += np.array(arr, dtype=int)
+            zero_counts.append(int((depth == 0).sum()))
+
+    merged_regions = merged_regions.copy()
+    merged_regions['zero_cov_bases'] = zero_counts
+
+    # reordering columns
+    cols = merged_regions.columns.tolist()
+    cols.insert(4, cols.pop(cols.index('zero_cov_bases')))
+
+    return merged_regions[cols]
 
 
 def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
