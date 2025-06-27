@@ -1,2 +1,2 @@
 include README.md LICENSE
-recursive-include bit/test_data *
+recursive-include bit/tests/data *

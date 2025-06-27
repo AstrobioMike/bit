@@ -43,6 +43,8 @@ requirements:
     - bwa>=0.7
     - rich
     - rich-argparse=1.7.1
+    - pytest
+    - pytest-cov
 
 test:
   commands:

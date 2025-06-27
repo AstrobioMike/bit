@@ -11,7 +11,7 @@ from subprocess import run
 import pysam
 from collections import defaultdict
 import numpy as np
-from bit.utils import (report_message,
+from bit.modules.general import (report_message,
                        report_failure,
                        get_input_reads_dict,
                        get_package_path,

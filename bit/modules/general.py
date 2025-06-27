@@ -6,6 +6,7 @@ from importlib.resources import files
 from pathlib import Path
 from importlib.metadata import version
 
+
 def get_package_path(rel_path = ""):
     return os.path.join(files("bit") / rel_path)
 

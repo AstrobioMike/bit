@@ -9,12 +9,13 @@ from Bio.Seq import Seq
 from Bio.SeqRecord import SeqRecord
 import matplotlib.pyplot as plt
 from colorama import Fore, init
-from bit.utils import (check_files_are_found,
+from bit.modules.general import (check_files_are_found,
                        notify_premature_exit,
                        log_command_run,
                        tee)
 
 init(autoreset=True)
+
 
 def run_cov_analyzer(
     reference_fasta: str,
@@ -79,6 +80,7 @@ def preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs, log
 
     log_command_run(full_cmd_executed, output_dir, log_file)
 
+
 def check_bam_file_is_indexed(bam_file):
     if not Path(bam_file + ".bai").is_file():
         cmd = f"samtools index {bam_file}"
@@ -107,6 +109,7 @@ def check_excluded_contigs(reference_fasta, exclude_contigs):
 def get_contig_lengths(reference_fasta):
     with pysam.FastaFile(reference_fasta) as fasta:
         return dict(zip(fasta.references, fasta.lengths))
+
 
 def generate_sliding_bed_file(reference_fasta, sliding_window_size, step_size, output_dir):
     bed_outfile = f"{output_dir}/mosdepth-files/sliding-windows.bed"

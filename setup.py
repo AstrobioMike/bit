@@ -7,7 +7,7 @@ scripts = glob.glob("bit/scripts/*")
 
 setup(
     name="bit",
-    version="1.12.3",
+    version="1.12.4",
     description="A set of bioinformatics scripts and workflows",
     license="GPLv3",
     author="Mike Lee",
@@ -16,5 +16,5 @@ setup(
     packages=find_packages(),
     scripts=scripts,
     include_package_data=True,
-    package_data={"bit": ["test_data/*"]},
+    package_data={"bit": ["tests/data/*"]},
 )
