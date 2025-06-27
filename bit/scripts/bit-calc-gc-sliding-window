@@ -1,62 +1,6 @@
 #!/usr/bin/env python
 
-from Bio import SeqIO
-import sys
-import argparse
+from bit.cli.calc_gc_sliding_window import main
 
-parser = argparse.ArgumentParser(description = "This script is for nucleotide multifastas and will return \
-                                              a tab-delimited file with 4 columns: header, sequence length, \
-                                              gc of whole sequence, and gc of each window of the specified \
-                                              window size (-w) for each step of the specified step size (-s). \
-                                              For version info, run `bit-version`.")
-
-required = parser.add_argument_group('required arguments')
-
-required.add_argument("-i", "--input-fasta", metavar = "<FILE>", help = "fasta file", action = "store", required = True)
-required.add_argument("-o", "--output-file", metavar = "<FILE>", help = "Name of output tsv file", action = "store", required = True)
-parser.add_argument("-w", "--window-size", metavar = "<INT>", help = "Desired size of sliding window (default: 100)", action = "store", dest = "window", default = 100)
-parser.add_argument("-s", "--step-size", metavar = "<INT>", help = "Desired size of steps between each window (default: 1)", action = "store", dest = "step", default = 1)
-
-if len(sys.argv)==1:
-    parser.print_help(sys.stderr)
-    sys.exit(0)
-
-args = parser.parse_args()
-
-window = int(args.window)
-step = int(args.step)
-
-half_window = int(window / 2)
-
-with open(args.input_fasta, "r") as in_fasta:
-
-    with open(args.output_file, "w") as out_file:
-
-        out_file.write(f"header\tlength\tgc\tgc_per_window_of_size_{window}_with_step_of_size_{step}\n")
-
-        for cur_record in SeqIO.parse(in_fasta, "fasta"):
-            gene_name = cur_record.name
-            cur_record.seq = cur_record.seq.upper()
-            A_count = cur_record.seq.count('A')
-            C_count = cur_record.seq.count('C')
-            G_count = cur_record.seq.count('G')
-            T_count = cur_record.seq.count('T')
-            length = len(cur_record.seq)
-            gc_percentage = float(G_count + C_count) / length
-            gc_percentage = round(gc_percentage,2)
-
-            values = []
-
-            for i in range(0, len(cur_record.seq), step):
-
-                s = cur_record.seq[i - half_window : i + half_window]
-                s = s.upper()
-                g = s.count('G')
-                c = s.count('C')
-                try:
-                    window_gc_perc = float(g + c) / window
-                except ZeroDivisionError:
-                    window_gc_perc = 0.0
-                values.append(window_gc_perc)
-
-            out_file.write(f"{gene_name}\t{length}\t{gc_percentage}\t{values}\n")
+if __name__ == "__main__":
+    main()
