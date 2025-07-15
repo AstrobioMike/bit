@@ -20,31 +20,61 @@ def main():
         add_help=False
     )
 
+    inputs = parser.add_argument_group("INPUT READS")
     optional = parser.add_argument_group("OPTIONAL PARAMETERS")
 
-    optional.add_argument(
+    inputs.add_argument(
         "-1",
         "--read-1",
         metavar="<FILE>",
-        help="Input read 1 file (gzipped fastq format; mutually exclusive with --reads-dir)",
+        help="Input read 1 file (gzipped fastq format; incompatible with --reads-dir)",
         type=Path,
     )
-    optional.add_argument(
+    inputs.add_argument(
         "-2",
         "--read-2",
         metavar="<FILE>",
-        help="Input read 2 file (gzipped fastq format; mutally exclusive with --reads-dir)",
+        help="Input read 2 file (gzipped fastq format; incompatible with --reads-dir)",
         type=Path,
     )
-    optional.add_argument(
+    inputs.add_argument(
         "-r",
         "--reads-dir",
         metavar="<DIR>",
-        help="Directory containing gzipped read files (default: current directory)",
+        help="Directory containing gzipped read files (default: current directory; incompatible with -1 and -2)",
         type=Path,
         default=Path("."),
     )
-
+    optional.add_argument(
+        "-o",
+        "--output-dir",
+        metavar="<DIR>",
+        help="Directory for the output files (default: 'assembly/')",
+        type=Path,
+        default=Path("assembly"),
+    )
+    optional.add_argument(
+        "-a",
+        "--assembler",
+        choices=["megahit", "spades"],
+        help="Assembler to use (default: megahit)",
+        default="megahit",
+    )
+    optional.add_argument(
+        "--isolate",
+        action="store_true",
+        help="Run assembly in '--isolate' mode rather than '--meta' (only applies to spades assembler)",
+    )
+    optional.add_argument(
+        "--skip-fastp",
+        action="store_true",
+        help="Skip fastp quality trimming/filtering",
+    )
+    optional.add_argument(
+        "--skip-bbnorm",
+        action="store_true",
+        help="Skip bbnorm digital normalization",
+    )
     optional.add_argument(
         "-h",
         "--help",
@@ -57,5 +87,7 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+    full_cmd_executed = reconstruct_invocation(parser, args)
 
     print(args)
+    print(full_cmd_executed)
