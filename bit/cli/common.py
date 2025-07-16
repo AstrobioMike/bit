@@ -26,7 +26,7 @@ def add_common_snakemake_arguments(group):
     group.add_argument(
         "-j",
         "--jobs",
-        help = "Number of jobs to run in parallel (default: 10)",
+        help = "Max number of jobs to run in parallel (default: 10)",
         metavar = "<NUM>",
         action = "store",
         default = 10,

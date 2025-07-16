@@ -23,14 +23,18 @@ def color_text(text, color = 'green'):
         return text
 
 
-def wprint(text):
-    print(textwrap.fill(text, width = 80, initial_indent = "  ",
-          subsequent_indent = "  ", break_on_hyphens = False))
+def wprint(text, width = 80, initial_indent = "  ",
+           subsequent_indent = "  "):
+    print(textwrap.fill(text, width = width, initial_indent = initial_indent,
+          subsequent_indent = subsequent_indent, break_on_hyphens = False))
 
 
-def report_message(message, color = "yellow"):
+def report_message(message, color = "yellow", width = 80, initial_indent = "  ",
+                   subsequent_indent = "  "):
     print("")
-    wprint(color_text(message, color))
+    wprint(color_text(message, color), width = width,
+           initial_indent = initial_indent,
+           subsequent_indent = subsequent_indent)
 
 
 def report_failure(message, color = "red"):
