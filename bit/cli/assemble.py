@@ -6,7 +6,7 @@ from bit.cli.common import (CustomRichHelpFormatter,
                             add_common_snakemake_arguments,
                             reconstruct_invocation)
 from bit.modules.general import report_message, notify_premature_exit
-# from bit.modules.assemble import run_assembly
+from bit.modules.assemble import run_assembly
 
 
 def build_parser():
@@ -23,7 +23,7 @@ def build_parser():
         add_help=False
     )
 
-    required = parser.add_argument_group("REQUIRED PARAMETERS")
+    required = parser.add_argument_group("REQUIRED PARAMETERS (choose one input method)")
     optional = parser.add_argument_group("OPTIONAL PARAMETERS")
     megahit = parser.add_argument_group('MEGAHIT PARAMETERS')
     spades = parser.add_argument_group('SPADES PARAMETERS')
@@ -47,7 +47,7 @@ def build_parser():
         "-r",
         "--reads-dir",
         metavar="<DIR>",
-        help="Directory containing gzipped read files (helpful when you have multiple samples; incompatible with -1 and/or -2)",
+        help="Directory containing gzipped read files (helpful when you have multiple samples; incompatible with -1 and -2)",
         type=Path,
     )
     optional.add_argument(
@@ -70,6 +70,8 @@ def build_parser():
         "--threads",
         metavar="<INT>",
         help="Number of threads/cpus to pass to assembler (default: 2; may be multiplied by number of snakemake jobs)",
+        default=2,
+        type=int,
     )
     optional.add_argument(
         "--skip-fastp",
@@ -120,14 +122,11 @@ def main():
 
     args = parser.parse_args()
 
-    # doing checks on inputs
     check_required_inputs(args)
 
-    # reconstructing the full command-line invocation for logging
     full_cmd_executed = reconstruct_invocation(parser, args)
 
-    print(args)
-    print(full_cmd_executed)
+    run_assembly(args, full_cmd_executed)
 
 
 def check_required_inputs(args):
@@ -135,7 +134,7 @@ def check_required_inputs(args):
         report_message("We cannot accept a --reads-dir AND -1 and/or -2 inputs. "
                        "Please use one method or the other to specify inputs. -1 "
                        "and -2 are good when you have a single sample to do. The "
-                       "--reads-dir is for when you have many in a directory.",
+                       "--reads-dir is good for when you have many in a directory.",
                        initial_indent = "    ", subsequent_indent = "    ")
         notify_premature_exit()
 
