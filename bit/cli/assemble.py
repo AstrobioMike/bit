@@ -92,7 +92,7 @@ def build_parser():
         help="Max memory to use (default: '20e9'). Can be specified as \
             fraction of total memory (e.g., '0.5') or value in bytes (e.g., '20e9' \
             would be 20 GB)",
-        default="30e9",
+        default="20e9",
         type=str,
     )
     megahit.add_argument(

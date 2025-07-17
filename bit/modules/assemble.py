@@ -15,7 +15,6 @@ from bit.modules.general import (report_message,
 def run_assembly(args, full_cmd_executed):
     reads_dict = gen_reads_dict(args)
     config = RunConfig.from_args(args)
-    print(config)
     run_snakemake(reads_dict, config)
     # print(full_cmd_executed)
 
