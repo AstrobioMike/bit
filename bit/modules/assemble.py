@@ -16,7 +16,8 @@ def run_assembly(args, full_cmd_executed):
     reads_dict = gen_reads_dict(args)
     config = RunConfig.from_args(args)
     run_snakemake(reads_dict, config)
-    # print(full_cmd_executed)
+    log_command_run(full_cmd_executed, config.output_dir)
+    report_finished(args)
 
 def gen_reads_dict(args):
     if args.reads_dir:
@@ -55,7 +56,7 @@ class RunConfig:
         self.base_output_dir = self.output_dir.name
         self.log_files_dir = self.output_dir / "log-files"
         self.base_log_files_dir = f"{self.base_output_dir}/log-files"
-        self.reads_dir = Path(args.reads_dir).absolute()
+        self.reads_dir = Path(args.reads_dir).absolute() if args.reads_dir else None
         self.assembler = args.assembler
         self.threads = args.threads
         self.skip_fastp = args.skip_fastp
@@ -94,3 +95,16 @@ def run_snakemake(reads_dict, config):
     if process.returncode != 0:
         message = "Snakemake failed. Hopefully its output above can help you spot why."
         report_failure(message)
+
+
+def report_finished(args):
+    border = "-" * 80
+    print(f"\n{border}")
+    if not args.dry_run:
+        report_message("DONE!", color = "green")
+        out_file = Path(args.output_dir) / "assembly-summaries.tsv"
+        print(f"    Summary table written to: {color_text(out_file, 'green')}")
+    else:
+        report_message("DRY-RUN COMPLETE!", color = "green")
+        print("    No files were written, but you can see what would have been done above.")
+    print(f"\n{border}\n")

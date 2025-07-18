@@ -69,8 +69,8 @@ def build_parser():
         "-t",
         "--threads",
         metavar="<INT>",
-        help="Number of threads/cpus to pass to assembler (default: 2; may be multiplied by number of snakemake jobs)",
-        default=2,
+        help="Number of threads/cpus to pass as an assembler parameter (default: 1; may be multiplied by number of snakemake jobs)",
+        default=1,
         type=int,
     )
     optional.add_argument(

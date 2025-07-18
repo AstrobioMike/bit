@@ -19,9 +19,10 @@ isolate = config['isolate']
 
 samples = list(reads_dict.keys())
 
+
 rule all:
     input:
-        expand(output_dir + "/{sample}/{sample}-assembly.fasta", sample=samples)
+        output_dir + "/assembly-summaries.tsv"
 
 
 if not skip_fastp:
@@ -86,7 +87,9 @@ if not skip_bbnorm:
 else:
     post_bbnorm_reads_dict = post_fastp_reads_dict
 
+
 final_reads_dict = post_bbnorm_reads_dict
+
 
 if assembler == 'megahit':
     rule megahit_assembly:
@@ -136,3 +139,14 @@ else:
 
             cp {params.assembler_out_dir}/contigs.fasta {output}
             """
+
+
+rule summarize_assemblies:
+    input:
+        expand(output_dir + "/{sample}/{sample}-assembly.fasta", sample=samples)
+    output:
+        output_dir + "/assembly-summaries.tsv"
+    shell:
+        """
+        bit-summarize-assembly {input} -o {output}
+        """
