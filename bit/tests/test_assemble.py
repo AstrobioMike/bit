@@ -20,12 +20,12 @@ def test_end_to_end_assembly(tmp_path):
         "-o", str(out_dir),
         "--run-fastp",
         # "--run-bbnorm",
+        "-j", "1",
         "-t", "1",
         "-m", "1e8",
     ]
 
     res = subprocess.run(cmd, capture_output=True, text=True)
-    print(res)
 
     assert res.returncode == 0, (
         f"CLI failed with exit code {res.returncode}\n"
@@ -37,3 +37,5 @@ def test_end_to_end_assembly(tmp_path):
 
     summary_tsv = out_dir / "assembly-summaries.tsv"
     assert summary_tsv.exists(), f"Summary TSV not found at {summary_tsv}"
+    text = summary_tsv.read_text().splitlines()
+    assert text[0].startswith("Assembly\t")
