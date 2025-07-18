@@ -9,8 +9,8 @@ base_log_files_dir = config['base_log_files_dir']
 reads_dir = config['reads_dir']
 assembler = config['assembler']
 threads = config['threads']
-skip_fastp = config['skip_fastp']
-skip_bbnorm = config['skip_bbnorm']
+run_fastp = config['run_fastp']
+run_bbnorm = config['run_bbnorm']
 memory = config['memory']
 if memory.is_integer():
     memory = int(memory)
@@ -25,7 +25,7 @@ rule all:
         output_dir + "/assembly-summaries.tsv"
 
 
-if not skip_fastp:
+if run_fastp:
     post_fastp_reads_dict = {
         sample: {
             'R1': f"{output_dir}/{sample}/filtered-reads/{sample}-filtered-R1.fastq.gz",
@@ -58,7 +58,7 @@ else:
     post_fastp_reads_dict = reads_dict
 
 
-if not skip_bbnorm:
+if run_bbnorm:
     post_bbnorm_reads_dict = {
         sample: {
             'R1': f"{output_dir}/{sample}/bbnormd-reads/{sample}-bbnormd-R1.fastq.gz",
@@ -74,7 +74,8 @@ if not skip_bbnorm:
             R1=output_dir + "/{sample}/bbnormd-reads/{sample}-bbnormd-R1.fastq.gz",
             R2=output_dir + "/{sample}/bbnormd-reads/{sample}-bbnormd-R2.fastq.gz"
         params:
-            output_dir=output_dir + "/{sample}/bbnormd-reads"
+            output_dir=output_dir + "/{sample}/bbnormd-reads",
+            target="100"
         log:
             log_files_dir + "/{sample}-bbnorm.log"
         shell:
@@ -82,7 +83,7 @@ if not skip_bbnorm:
             mkdir -p {params.output_dir}
 
             bbnorm.sh in={input.R1} in2={input.R2} out={output.R1} out2={output.R2} \
-                     threads=8 > {log} 2>&1
+                     threads=8 target={params.target} > {log} 2>&1
             """
 else:
     post_bbnorm_reads_dict = post_fastp_reads_dict

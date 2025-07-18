@@ -74,14 +74,14 @@ def build_parser():
         type=int,
     )
     optional.add_argument(
-        "--skip-fastp",
+        "--run-fastp",
         action="store_true",
-        help="Skip fastp quality trimming/filtering",
+        help="Run fastp quality trimming/filtering",
     )
     optional.add_argument(
-        "--skip-bbnorm",
+        "--run-bbnorm",
         action="store_true",
-        help="Skip bbnorm digital normalization",
+        help="Run bbnorm digital normalization",
     )
     add_help(optional)
 

@@ -36,8 +36,8 @@ class RunConfig:
     reads_dir: Path = field(init=None)
     assembler: str = field(init=None)
     threads: int = field(init=None)
-    skip_fastp: bool = field(init=False)
-    skip_bbnorm: bool = field(init=False)
+    run_fastp: bool = field(init=False)
+    run_bbnorm: bool = field(init=False)
     memory: str = field(init=None)
     min_contig_len: int = field(init=None)
     isolate: bool = field(init=False)
@@ -59,8 +59,8 @@ class RunConfig:
         self.reads_dir = Path(args.reads_dir).absolute() if args.reads_dir else None
         self.assembler = args.assembler
         self.threads = args.threads
-        self.skip_fastp = args.skip_fastp
-        self.skip_bbnorm = args.skip_bbnorm
+        self.run_fastp = args.run_fastp
+        self.run_bbnorm = args.run_bbnorm
         self.memory = args.memory
         self.min_contig_len = args.min_contig_len
         self.isolate = args.isolate
@@ -78,7 +78,7 @@ def run_snakemake(reads_dict, config):
 
     cmd = [
         "snakemake",
-        "--snakefile", str(get_package_path("smk/assembly.smk")),
+        "--snakefile", str(get_package_path("smk/assemble.smk")),
         "--cores", str(config.num_cores),
         "--printshellcmds",
         "--directory", config.output_dir,
