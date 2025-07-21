@@ -30,28 +30,21 @@ jobs:
       if: ${{ matrix.os == 'macos-latest' }}
       run: echo "CONDA_SUBDIR=osx-64" >> $GITHUB_ENV
 
-    # the below will take care of running any test commands in the recipe
-    # meta.yaml as well as pytest
-    - name: Build and test
+    - name: Create conda env
       run: |
-        conda-build conda-recipe --test
+        conda create -n test-env \
+          python=3.10 conda-build -y
 
-    # - name: Create conda env
-    #   run: |
-    #     conda create -n test-env \
-    #       python=3.10 conda-build pytest pytest-cov -y
+    - name: Build conda package
+      run: |
+        conda run -n test-env \
+          conda build conda-recipe \
+                      --output-folder build_artifacts
 
-    # - name: Build conda package
-    #   run: |
-    #     conda run -n test-env \
-    #       conda build conda-recipe \
-    #                   --output-folder build_artifacts
+    - name: Install built package
+      run: |
+        PKG=$(ls build_artifacts/*/*.tar.bz2 | head -n 1)
+        conda run -n test-env conda install "$PKG" -y
 
-    # - name: Install built package
-    #   run: |
-    #     PKG=$(ls build_artifacts/*/*.tar.bz2 | head -n 1)
-    #     conda run -n test-env conda install "$PKG" -y
-
-
-    # - name: Run pytest
-    #   run: conda run -n test-env pytest -v
+    - name: Run pytest
+      run: conda run test-env pytest -v
