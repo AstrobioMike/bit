@@ -5,7 +5,7 @@ package:
   version: "{{ pkg.version }}"
 
 source:
-  url: https://github.com/AstrobioMike/bit/archive/v{{ pkg.version }}.tar.gz
+  path: ../
 
 build:
   number: 0
