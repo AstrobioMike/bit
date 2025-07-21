@@ -5,7 +5,7 @@ from bit.tests.utils import run_cli
 test_R1 = get_package_path("tests/data/mock-R1.fastq.gz")
 test_R2 = get_package_path("tests/data/mock-R2.fastq.gz")
 
-def test_end_to_end_assembly(tmp_path):
+def test_assemble(tmp_path):
     reads_dir = tmp_path / "reads"
     reads_dir.mkdir()
     shutil.copy(test_R1, reads_dir)

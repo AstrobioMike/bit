@@ -16,5 +16,10 @@ setup(
     packages=find_packages(),
     scripts=scripts,
     include_package_data=True,
-    package_data={"bit": ["tests/data/*"]},
+    package_data={
+        "bit": [
+            "tests/data/*",
+            "smk/*.smk",
+        ]
+    },
 )

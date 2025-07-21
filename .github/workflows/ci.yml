@@ -19,6 +19,7 @@ jobs:
     - name: Set up miniconda
       uses: conda-incubator/setup-miniconda@v3
       with:
+        python-version: 3.13
         architecture: "x86_64"
         auto-activate-base: true
         channels: conda-forge,bioconda
@@ -36,11 +37,11 @@ jobs:
 
     - name: Create conda env
       run: |
-        conda create -n test-env python=3.10 -y
+        conda create -n bit python=3.10 -y
 
     - name: Adding local area as channel
       run: |
-        conda run -n test-env conda config --add channels file://${PWD}/build_artifacts
+        conda run -n bit conda config --add channels file://${PWD}/build_artifacts
 
     # # indexing so the install actually includes all dependencies
     # - name: Index local channel
@@ -48,7 +49,7 @@ jobs:
 
     - name: Install built package
       run: |
-        conda run -n test-env conda install bit -y
+        conda run -n bit conda install bit -y
 
     - name: Run pytest
-      run: conda run -n test-env pytest -v
+      run: conda run -n bit pytest -v
