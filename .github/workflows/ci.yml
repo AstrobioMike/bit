@@ -43,6 +43,8 @@ jobs:
 
     - name: Install built package
       run: |
+        ls build_artifacts/
+        ls build_artifacts/*/
         PKG=$(ls build_artifacts/*/*.tar.bz2 | head -n 1)
         conda run -n test-env conda install "$PKG" -y
 
