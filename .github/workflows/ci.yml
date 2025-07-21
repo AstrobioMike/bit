@@ -1,4 +1,4 @@
-name: build‑and‑test
+name: build-and-test
 
 on:
   push:
@@ -20,6 +20,7 @@ jobs:
       uses: conda-incubator/setup-miniconda@v3
       with:
         python-version: "3.10"
+        auto-activate-base: true
         channels: conda-forge,bioconda
         channel-priority: strict
         auto-update-conda: true
