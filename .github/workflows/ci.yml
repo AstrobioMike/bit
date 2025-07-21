@@ -24,7 +24,8 @@ jobs:
         channels: conda-forge,bioconda
         channel-priority: strict
         auto-update-conda: true
-        install-packages: conda-build
+        run-post: |
+          conda install -n base conda-build -y
 
     - name: Force x86_64 on macOS
       if: ${{ matrix.os == 'macos-latest' }}
