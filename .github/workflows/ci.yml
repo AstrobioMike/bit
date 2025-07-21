@@ -24,7 +24,6 @@ jobs:
         channels: conda-forge,bioconda
         channel-priority: strict
         auto-update-conda: true
-        install-packages: conda-build
 
     - name: Force x86_64 on macOS
       if: ${{ matrix.os == 'macos-latest' }}
@@ -33,7 +32,7 @@ jobs:
     - name: Create conda env
       run: |
         conda create -n test-env \
-          python=3.10 conda-build -y
+          python=3.10 conda-build conda-index -y
 
     - name: Build conda package
       run: |
@@ -41,10 +40,14 @@ jobs:
           conda build conda-recipe \
                       --output-folder build_artifacts
 
+    # this is here so the install includes all dependencies
+    - name: Index local channel
+      run: |
+        conda run -n test-env conda index build_artifacts
+
     - name: Install built package
       run: |
-        PKG=$(ls build_artifacts/*/*.conda | head -n 1)
-        conda run -n test-env conda install "$PKG" -y
+        conda run -n test-env conda install -c file://build_artifacts bit -y
 
     - name: Run pytest
       run: conda run -n test-env pytest -v
