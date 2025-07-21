@@ -19,7 +19,6 @@ jobs:
     - name: Set up miniconda
       uses: conda-incubator/setup-miniconda@v3
       with:
-        python-version: "3.10"
         auto-activate-base: true
         channels: conda-forge,bioconda
         channel-priority: strict
@@ -31,7 +30,7 @@ jobs:
 
     - name: Build conda package
       run: |
-        conda install conda-build -y
+        conda install -n base conda-build -y
         conda build conda-recipe --output-folder build_artifacts
 
     - name: Create conda env
