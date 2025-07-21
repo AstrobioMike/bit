@@ -19,7 +19,7 @@ jobs:
     - name: Set up miniconda
       uses: conda-incubator/setup-miniconda@v3
       with:
-        python-version: 3.10
+        python-version: "3.10"
         auto-update-conda: true
 
     - name: Force x86_64 on macOS
