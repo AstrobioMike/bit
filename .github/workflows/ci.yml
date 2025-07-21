@@ -47,4 +47,4 @@ jobs:
         conda run -n test-env conda install "$PKG" -y
 
     - name: Run pytest
-      run: conda run test-env pytest -v
+      run: conda run -n test-env pytest -v
