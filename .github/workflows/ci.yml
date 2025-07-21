@@ -20,28 +20,37 @@ jobs:
       uses: conda-incubator/setup-miniconda@v3
       with:
         python-version: "3.10"
+        channels: conda-forge,bioconda
+        channel-priority: strict
         auto-update-conda: true
+        install-packages: conda-build
 
     - name: Force x86_64 on macOS
       if: ${{ matrix.os == 'macos-latest' }}
       run: echo "CONDA_SUBDIR=osx-64" >> $GITHUB_ENV
 
-    - name: Create conda env
+    # the below will take care of running any test commands in the recipe
+    # meta.yaml as well as pytest
+    - name: Build and test
       run: |
-        conda create -n test-env \
-          python=3.10 conda-build pytest pytest-cov -y
+        conda build conda-recipe --test
 
-    - name: Build conda package
-      run: |
-        conda run -n test-env \
-          conda build -c conda-forge -c bioconda conda-recipe \
-                      --output-folder build_artifacts
+    # - name: Create conda env
+    #   run: |
+    #     conda create -n test-env \
+    #       python=3.10 conda-build pytest pytest-cov -y
 
-    - name: Install built package
-      run: |
-        PKG=$(ls build_artifacts/*/*.tar.bz2 | head -n 1)
-        conda run -n test-env conda install "$PKG" -y
+    # - name: Build conda package
+    #   run: |
+    #     conda run -n test-env \
+    #       conda build conda-recipe \
+    #                   --output-folder build_artifacts
+
+    # - name: Install built package
+    #   run: |
+    #     PKG=$(ls build_artifacts/*/*.tar.bz2 | head -n 1)
+    #     conda run -n test-env conda install "$PKG" -y
 
 
-    - name: Run pytest
-      run: conda run -n test-env pytest -v
+    # - name: Run pytest
+    #   run: conda run -n test-env pytest -v
