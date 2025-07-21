@@ -31,8 +31,11 @@ jobs:
 
     - name: Create conda env
       run: |
+        conda --version
+        conda update -n base conda -y
+        conda --version
         conda create -n test-env \
-          python=3.10 conda-build conda-index -y
+          python=3.10 conda-build -y
 
     - name: Build conda package
       run: |
@@ -45,7 +48,7 @@ jobs:
       run: |
         source "$(conda info --base)/etc/profile.d/conda.sh"
         conda activate test-env
-        conda-index build_artifacts
+        conda index build_artifacts
 
     - name: Install built package
       run: |
