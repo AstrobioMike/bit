@@ -24,8 +24,6 @@ jobs:
         channels: conda-forge,bioconda
         channel-priority: strict
         auto-update-conda: true
-        run-post: |
-          conda install -n base conda-build -y
 
     - name: Force x86_64 on macOS
       if: ${{ matrix.os == 'macos-latest' }}
@@ -33,6 +31,7 @@ jobs:
 
     - name: Build conda package
       run: |
+        conda install conda-build -y
         conda build conda-recipe --output-folder build_artifacts
 
     - name: Create conda env
