@@ -19,6 +19,7 @@ jobs:
     - name: Set up miniconda
       uses: conda-incubator/setup-miniconda@v3
       with:
+        architecture: "x86_64"
         auto-activate-base: true
         channels: conda-forge,bioconda
         channel-priority: strict
