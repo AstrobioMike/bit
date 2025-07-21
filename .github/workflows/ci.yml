@@ -34,7 +34,7 @@ jobs:
     - name: Build conda package
       run: |
         conda run -n test-env \
-          conda build conda-recipe \
+          conda build -c conda-forge -c bioconda conda-recipe \
                       --output-folder build_artifacts
 
     - name: Install built package
