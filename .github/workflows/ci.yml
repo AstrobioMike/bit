@@ -33,7 +33,7 @@ jobs:
     # meta.yaml as well as pytest
     - name: Build and test
       run: |
-        conda build conda-recipe --test
+        conda-build conda-recipe --test
 
     # - name: Create conda env
     #   run: |
