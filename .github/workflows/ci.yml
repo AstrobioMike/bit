@@ -38,13 +38,17 @@ jobs:
       run: |
         conda build conda-recipe --output-folder build_artifacts
 
-    # indexing so the install actually includes all dependencies
-    - name: Index local channel
-      run: conda index build_artifacts
+    - name: Adding local area as channel
+      run: |
+        conda run -n test-env conda config --add channels file://${PWD}/build_artifacts
+
+    # # indexing so the install actually includes all dependencies
+    # - name: Index local channel
+    #   run: conda index build_artifacts
 
     - name: Install built package
       run: |
-        conda run -n test-env conda install -c file://${PWD}/build_artifacts bit -y
+        conda run -n test-env conda install bit -y
 
     - name: Run pytest
       run: conda run -n test-env pytest -v
