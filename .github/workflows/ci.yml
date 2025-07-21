@@ -32,7 +32,7 @@ jobs:
     - name: Create conda env
       run: |
         conda create -n test-env \
-          python=3.10 conda-build -y
+          python=3.10 conda-build conda-index -y
 
     - name: Build conda package
       run: |
@@ -43,9 +43,7 @@ jobs:
     # this is here so the install includes all dependencies
     - name: Index local channel
       run: |
-        source "$(conda info --base)/etc/profile.d/conda.sh"
-        conda activate test-env
-        conda index build_artifacts
+        conda run -n test-env conda index build_artifacts
 
     - name: Install built package
       run: |
