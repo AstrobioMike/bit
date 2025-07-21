@@ -42,8 +42,14 @@ jobs:
 
     # this is here so the install includes all dependencies
     - name: Index local channel
+      shell: bash -l {0}
       run: |
-        conda run -n test-env conda index build_artifacts
+        # load the 'conda' function
+        source "$(conda info --base)/etc/profile.d/conda.sh"
+        # activate the env where conda-build is installed
+        conda activate test-env
+        # now 'conda index' will be available
+        conda index build_artifacts
 
     - name: Install built package
       run: |
