@@ -24,6 +24,7 @@ jobs:
         channels: conda-forge,bioconda
         channel-priority: strict
         auto-update-conda: true
+        install-packages: "conda-build conda-index"
 
     - name: Force x86_64 on macOS
       if: ${{ matrix.os == 'macos-latest' }}
@@ -31,29 +32,19 @@ jobs:
 
     - name: Create conda env
       run: |
-        conda create -n test-env \
-          python=3.10 conda-build conda-index -y
+        conda create -n test-env python=3.10 -y
 
     - name: Build conda package
       run: |
-        conda run -n test-env \
-          conda build conda-recipe \
-                      --output-folder build_artifacts
+        conda build conda-recipe --output-folder build_artifacts
 
-    # this is here so the install includes all dependencies
+    # indexing so the install actually includes all dependencies
     - name: Index local channel
-      shell: bash -l {0}
-      run: |
-        # load the 'conda' function
-        source "$(conda info --base)/etc/profile.d/conda.sh"
-        # activate the env where conda-build is installed
-        conda activate test-env
-        # now 'conda index' will be available
-        conda index build_artifacts
+      run: conda index build_artifacts
 
     - name: Install built package
       run: |
-        conda run -n test-env conda install -c file://build_artifacts bit -y
+        conda run -n test-env conda install -c file://${PWD}/build_artifacts bit -y
 
     - name: Run pytest
       run: conda run -n test-env pytest -v
