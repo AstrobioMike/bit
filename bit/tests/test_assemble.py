@@ -1,7 +1,6 @@
-import sys
 import shutil
-import subprocess
 from bit.modules.general import get_package_path
+from bit.tests.utils import run_cli
 
 test_R1 = get_package_path("tests/data/mock-R1.fastq.gz")
 test_R2 = get_package_path("tests/data/mock-R2.fastq.gz")
@@ -25,12 +24,7 @@ def test_end_to_end_assembly(tmp_path):
         "-m", "1e8",
     ]
 
-    res = subprocess.run(cmd, capture_output=True, text=True)
-
-    assert res.returncode == 0, (
-        f"CLI failed with exit code {res.returncode}\n"
-        f"STDOUT:\n{res.stdout}\nSTDERR:\n{res.stderr}"
-    )
+    res = run_cli(cmd)
 
     assembly = out_dir / "mock" / "mock-assembly.fasta"
     assert assembly.exists(), f"Assembly file not found at {assembly}"

@@ -1,8 +1,5 @@
 [run]
 omit =
-    bit/cli/*
-    bit/tests/*
-    bit/smk/*
     bit/**/__init__.py
 [report]
 exclude_lines =
