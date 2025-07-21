@@ -25,9 +25,9 @@ jobs:
         channel-priority: strict
         auto-update-conda: true
 
-    - name: Force x86_64 on macOS
-      if: ${{ matrix.os == 'macos-latest' }}
-      run: echo "CONDA_SUBDIR=osx-64" >> $GITHUB_ENV
+    # - name: Force x86_64 on macOS
+    #   if: ${{ matrix.os == 'macos-latest' }}
+    #   run: echo "CONDA_SUBDIR=osx-64" >> $GITHUB_ENV
 
     - name: Build conda package
       run: |
