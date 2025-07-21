@@ -43,7 +43,7 @@ jobs:
     # this is here so the install includes all dependencies
     - name: Index local channel
       run: |
-        conda run -n test-env conda index build_artifacts
+        conda run -n test-env conda-index build_artifacts
 
     - name: Install built package
       run: |
