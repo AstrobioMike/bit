@@ -1,0 +1,47 @@
+name: build‑and‑test
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
+
+    strategy:
+      matrix:
+        os: ["ubuntu-latest", "macos-latest"]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up miniconda
+      uses: conda-incubator/setup-miniconda@v3
+      with:
+        python-version: 3.10
+        auto-update-conda: true
+
+    - name: Force x86_64 on macOS
+      if: ${{ matrix.os == 'macos-latest' }}
+      run: echo "CONDA_SUBDIR=osx-64" >> $GITHUB_ENV
+
+    - name: Create conda env
+      run: |
+        conda create -n test-env \
+          python=3.10 conda-build pytest -y
+
+    - name: Build conda package
+      run: |
+        conda run -n test-env \
+          conda build conda-recipe \
+                      --output-folder build_artifacts
+
+    - name: Install built package
+      run: |
+        PKG=$(ls build_artifacts/*/*.tar.bz2 | head -n 1)
+        conda run -n test-env conda install "$PKG" -y
+
+
+    - name: Run pytest
+      run: conda run -n test-env pytest -v

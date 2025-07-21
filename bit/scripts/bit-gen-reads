@@ -8,7 +8,7 @@ import argparse
 import subprocess
 from tqdm import tqdm
 
-parser = argparse.ArgumentParser(description = "This script generates perfect (no error model or anything) paired-end reads in \
+parser = argparse.ArgumentParser(description = "This script generates perfect (no error model) paired-end reads in \
                                                 FASTQ format from one or multiple input FASTA files. For version info, run `bit-version`.",
                                                 epilog = "Ex. usage: bit-gen-reads -i genome-1.fasta genome-2.fasta -p proportions.tsv -o perfect-reads")
 

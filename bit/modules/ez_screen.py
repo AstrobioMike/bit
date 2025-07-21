@@ -11,9 +11,9 @@ from subprocess import run
 import pysam
 from collections import defaultdict
 import numpy as np
+from bit.modules.input_parsing import get_input_reads_dict_from_dir
 from bit.modules.general import (report_message,
                        report_failure,
-                       get_input_reads_dict,
                        get_package_path,
                        color_text,
                        log_command_run)
@@ -28,7 +28,7 @@ def run_assembly(args, full_cmd_executed):
 
 
 def run_reads(args, full_cmd_executed):
-    reads_dict = get_input_reads_dict(args.reads_dir)
+    reads_dict = get_input_reads_dict_from_dir(args.reads_dir)
     reads_config = ReadsRunConfiguration.from_args(args)
     run_reads_snakemake(reads_config, reads_dict)
     report_read_screen_finished(args)

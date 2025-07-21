@@ -1,6 +1,7 @@
 import sys
 import argparse
 from bit.cli.common import (CustomRichHelpFormatter,
+                            add_help,
                             add_common_snakemake_arguments,
                             reconstruct_invocation)
 from bit.modules.ez_screen import run_assembly, run_reads
@@ -74,8 +75,7 @@ def build_parser():
                                 in any input assemblies. Add this flag if you'd like to filter them out of the final output table.",
                         action = "store_true")
 
-    assembly_optional.add_argument("-h", "--help", action = "help",
-                        help = "Show this help message and exit")
+    add_help(assembly_optional)
 
     assembly_parser.set_defaults(func=run_assembly)
 
@@ -105,8 +105,7 @@ def build_parser():
 
     add_common_optional_arguments(reads_optional)
 
-    reads_optional.add_argument("-h", "--help", action = "help",
-                        help = "Show this help message and exit")
+    add_help(reads_optional)
 
     add_common_snakemake_arguments(reads_snakemake)
 

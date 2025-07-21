@@ -41,6 +41,10 @@ requirements:
     - samtools
     - mosdepth
     - bwa>=0.7
+    - fastp=1
+    - bbmap
+    - megahit=1.2
+    - spades=4
     - rich
     - rich-argparse=1.7.1
     - pytest

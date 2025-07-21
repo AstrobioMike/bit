@@ -13,11 +13,20 @@ class CustomRichHelpFormatter(RichHelpFormatter):
         super().start_section(heading)
 
 
+def add_help(group):
+    group.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        help="Show this help message and exit"
+    )
+
+
 def add_common_snakemake_arguments(group):
     group.add_argument(
         "-j",
         "--jobs",
-        help = "Number of jobs to run in parallel (default: 10)",
+        help = "Max number of jobs to run in parallel (default: 10)",
         metavar = "<NUM>",
         action = "store",
         default = 10,

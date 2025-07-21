@@ -1,5 +1,3 @@
-import os
-import pytest
 from bit.modules.general import get_package_path
 import bit.modules.seqs as seqs
 
