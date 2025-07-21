@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 from datetime import datetime
-from bit.utils import color_text
+from bit.modules.general import color_text
 from importlib.metadata import version
 
 version = f"v{version('bit')}"
