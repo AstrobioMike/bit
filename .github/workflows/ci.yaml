@@ -19,7 +19,7 @@ jobs:
     - name: Set up miniconda
       uses: conda-incubator/setup-miniconda@v3
       with:
-        python-version: "3.10"
+        python-version: "3.11"
         architecture: "x86_64"
         auto-activate-base: true
         channels: conda-forge,bioconda
@@ -33,7 +33,7 @@ jobs:
 
     - name: Create conda env
       run: |
-        conda create -n bit python=3.10 -y
+        conda create -n bit python=3.11 -y
 
     - name: Adding local area as channel
       run: |
