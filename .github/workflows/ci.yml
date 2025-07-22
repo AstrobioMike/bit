@@ -26,10 +26,6 @@ jobs:
         channel-priority: strict
         auto-update-conda: true
 
-    # - name: Force x86_64 on macOS
-    #   if: ${{ matrix.os == 'macos-latest' }}
-    #   run: echo "CONDA_SUBDIR=osx-64" >> $GITHUB_ENV
-
     - name: Build conda package
       run: |
         conda install -n base conda-build -y
@@ -39,17 +35,10 @@ jobs:
       run: |
         conda create -n bit python=3.10 -y
 
-    - name: Adding local area as channel
-      run: |
-        conda run -n bit conda config --add channels file://${PWD}/build_artifacts
-
-    # # indexing so the install actually includes all dependencies
-    # - name: Index local channel
-    #   run: conda index build_artifacts
-
     - name: Install built package
       run: |
-        conda run -n bit conda install bit -y
+        PKG=$(ls build_artifacts/*/*.conda | head -n1)
+        conda run -n bit conda install "$PKG" -y
 
     - name: Run pytest
       run: conda run -n bit pytest -v
