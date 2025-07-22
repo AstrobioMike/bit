@@ -21,7 +21,7 @@ jobs:
       with:
         python-version: "3.10"
         architecture: "x86_64"
-        auto-activate-base: true
+        auto-activate: true
         channels: conda-forge,bioconda
         channel-priority: strict
         auto-update-conda: true
@@ -29,15 +29,19 @@ jobs:
     - name: Build conda package
       run: |
         conda install -n base conda-build -y
-        conda build conda-recipe
+        conda build conda-recipe --output-folder build_artifacts
 
     - name: Create conda env
       run: |
         conda create -n bit python=3.10 -y
 
+    - name: Adding local area as channel
+      run: |
+        conda run -n bit conda config --add channels file://${PWD}/build_artifacts
+
     - name: Install built package
       run: |
-        conda install --use-local -n bit bit -y
+        conda run -n bit conda install bit -y
 
     - name: Run pytest
       run: conda run -n bit pytest -v
