@@ -5,7 +5,7 @@ on:
   pull_request:
 
 jobs:
-  test:
+  build-and-test:
     if: ${{ !contains(github.event.head_commit.message, '[skip ci]') }}
 
     strategy:
@@ -29,7 +29,7 @@ jobs:
     - name: Build conda package
       run: |
         conda install -n base conda-build -y
-        conda build conda-recipe --output-folder build_artifacts
+        conda build conda-recipe
 
     - name: Create conda env
       run: |
@@ -37,8 +37,7 @@ jobs:
 
     - name: Install built package
       run: |
-        PKG=$(ls build_artifacts/*/*.conda | head -n1)
-        conda run -n bit conda install -c conda-forge -c bioconda "$PKG" -y
+        conda install --use-local -n bit bit -y
 
     - name: Run pytest
       run: conda run -n bit pytest -v
