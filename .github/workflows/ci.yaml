@@ -46,5 +46,5 @@ jobs:
     # the first part allows the package to be sourced from the local dir, which makes test coverages make sense
     - name: Run pytest
       run: |
-        conda run -n bit conda develop .
+        conda run -n bit pip install -e .
         conda run -n bit pytest -v
