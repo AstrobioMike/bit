@@ -20,6 +20,7 @@ setup(
         "bit": [
             "tests/data/*",
             "smk/*.smk",
+            "smk/envs/*"
         ]
     },
 )
