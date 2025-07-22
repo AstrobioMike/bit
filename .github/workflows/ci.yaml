@@ -33,7 +33,7 @@ jobs:
 
     - name: Create conda env
       run: |
-        conda create -n bit python=3.11 -y
+        conda create -n bit -y
 
     - name: Adding local area as channel
       run: |

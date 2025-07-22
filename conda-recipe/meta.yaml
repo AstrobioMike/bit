@@ -12,11 +12,11 @@ build:
 
 requirements:
   host:
-    - python=3.11
+    - python>=3.10,<3.12
     - pip
 
   run:
-    - python=3.11
+    - python>=3.10,<3.12
     - biopython
     - matplotlib=3.9
     - pybedtools
@@ -30,7 +30,7 @@ requirements:
     - goatools
     - pigz
     - snakemake=7.26.0
-    - mamba=1.5
+    - mamba=1
     - coreutils
     - zip
     - unzip
@@ -43,7 +43,7 @@ requirements:
     - bwa>=0.7
     - fastp=1
     - bbmap
-    - megahit=1.2
+    - megahit=1
     - spades=4
     - rich
     - rich-argparse=1.7.1
