@@ -1,3 +1,4 @@
+import os
 import json
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -15,6 +16,7 @@ from bit.modules.general import (report_message,
 def run_assembly(args, full_cmd_executed):
     reads_dict = gen_reads_dict(args)
     config = RunConfig.from_args(args)
+    config = check_conda_env(config)
     run_snakemake(reads_dict, config)
     log_command_run(full_cmd_executed, config.output_dir)
     report_finished(args)
@@ -44,6 +46,7 @@ class RunConfig:
     num_cores: int = field(init=None)
     rerun_incomplete: bool = field(init=False)
     dry_run: bool = field(init=False)
+    conda_env: str = field(init=False)
 
     @classmethod
     def from_args(cls, args):
@@ -73,14 +76,41 @@ class RunConfig:
         return [f"{key}={str(value)}" for key, value in vars(self).items()]
 
 
+def check_conda_env(config):
+
+    conda_env_area = os.path.expandvars("${CONDA_PREFIX}/envs")
+    conda_env = f"bit-assemble"
+    conda_env_path = f"{conda_env_area}/{conda_env}"
+    if not os.path.exists(conda_env_path):
+        try:
+            yaml_path = str(get_package_path("smk/envs/assemble.yaml"))
+            report_message(f"Creating conda environment for bit-assemble at {conda_env_path}...")
+            print("")
+            run(["conda", "env", "create", "--file", yaml_path2, "-p", conda_env_path])
+            report_message("Conda environment created successfully!\nMoving on :)\n", "green")
+            print("")
+        except Exception as e:
+            message = f"Failed to create conda environment for bit-assemble at {conda_env_path}."
+            report_message(message, "red")
+            report_message("Please check the error below:")
+            print("\n" + str(e) + "\n")
+            exit(1)
+
+    config.conda_env = conda_env
+    return config
+
+
 def run_snakemake(reads_dict, config):
     reads_json = json.dumps(reads_dict)
+    conda_env_area = os.path.expandvars("${CONDA_PREFIX}/envs")
 
     cmd = [
         "snakemake",
         "--snakefile", str(get_package_path("smk/assemble.smk")),
         "--cores", str(config.num_cores),
         "--printshellcmds",
+        "--use-conda",
+        "--conda-prefix", str(conda_env_area),
         "--directory", config.output_dir,
         "--config", f'reads_json={reads_json}',
         *config.key_value_pairs,

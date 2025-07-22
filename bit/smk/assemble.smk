@@ -16,6 +16,7 @@ if memory.is_integer():
     memory = int(memory)
 min_contig_len = config['min_contig_len']
 isolate = config['isolate']
+conda_env = config['conda_env']
 
 samples = list(reads_dict.keys())
 
@@ -34,6 +35,8 @@ if run_fastp:
     }
 
     rule fastp:
+        conda:
+            conda_env
         input:
             R1=lambda wildcards: reads_dict[wildcards.sample]['R1'],
             R2=lambda wildcards: reads_dict[wildcards.sample]['R2']
@@ -67,6 +70,8 @@ if run_bbnorm:
     }
 
     rule bbnorm:
+        conda:
+            conda_env
         input:
             R1=lambda wildcards: post_fastp_reads_dict[wildcards.sample]['R1'],
             R2=lambda wildcards: post_fastp_reads_dict[wildcards.sample]['R2']
@@ -94,6 +99,8 @@ final_reads_dict = post_bbnorm_reads_dict
 
 if assembler == 'megahit':
     rule megahit_assembly:
+        conda:
+            conda_env
         input:
             R1=lambda wildcards: final_reads_dict[wildcards.sample]['R1'],
             R2=lambda wildcards: final_reads_dict[wildcards.sample]['R2']
@@ -119,6 +126,8 @@ if assembler == 'megahit':
 
 else:
     rule spades_assembly:
+        conda:
+            conda_env
         input:
             R1=lambda wildcards: final_reads_dict[wildcards.sample]['R1'],
             R2=lambda wildcards: final_reads_dict[wildcards.sample]['R2']

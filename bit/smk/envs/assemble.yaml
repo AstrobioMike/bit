@@ -1,0 +1,9 @@
+name: bit-assemble
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - fastp=1
+    - bbmap
+    - megahit=1.2
+    - spades=4
