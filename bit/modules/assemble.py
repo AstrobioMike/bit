@@ -132,7 +132,9 @@ def report_finished(args):
     print(f"\n{border}")
     if not args.dry_run:
         report_message("DONE!", color = "green")
+        out_dir = str(args.output_dir) if str(args.output_dir).endswith("/") else f"{args.output_dir}/"
         out_file = Path(args.output_dir) / "assembly-summaries.tsv"
+        print(f"    All outputs are in: {color_text(out_dir, 'green')}")
         print(f"    Summary table written to: {color_text(out_file, 'green')}")
     else:
         report_message("DRY-RUN COMPLETE!", color = "green")

@@ -43,7 +43,7 @@ jobs:
       run: |
         conda run -n bit conda install bit -y
 
-    # the first part allows the package to be sourced from the local dir, which makes test coverages make sense
+    # the pip install is so the package is sourced from the local dir, which makes test coverages make sense
     - name: Run pytest
       run: |
         conda run -n bit pip install -e .
