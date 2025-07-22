@@ -12,11 +12,11 @@ build:
 
 requirements:
   host:
-    - python>=3.10,<3.12
+    - python=3.10
     - pip
 
   run:
-    - python>=3.10,<3.12
+    - python=3.10
     - biopython
     - matplotlib=3.9
     - pybedtools
@@ -41,10 +41,10 @@ requirements:
     - samtools
     - mosdepth
     - bwa>=0.7
-    - fastp=1
+#    - fastp=1
     - bbmap
-    - megahit=1
-    - spades=4
+#    - megahit=1
+#    - spades=4
     - rich
     - rich-argparse=1.7.1
     - pytest
@@ -52,7 +52,7 @@ requirements:
 
 test:
   commands:
-    bit-summarize-assembly -h
+    bit-version
 
 about:
   home: https://github.com/AstrobioMike/bit
