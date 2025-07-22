@@ -38,7 +38,7 @@ jobs:
     - name: Install built package
       run: |
         PKG=$(ls build_artifacts/*/*.conda | head -n1)
-        conda run -n bit conda install "$PKG" -y
+        conda run -n bit conda install -c conda-forge -c bioconda "$PKG" -y
 
     - name: Run pytest
       run: conda run -n bit pytest -v
