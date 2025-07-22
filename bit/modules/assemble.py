@@ -86,7 +86,7 @@ def check_conda_env(config):
             yaml_path = str(get_package_path("smk/envs/assemble.yaml"))
             report_message(f"Creating conda environment for bit-assemble at {conda_env_path}...")
             print("")
-            run(["conda", "env", "create", "--file", yaml_path2, "-p", conda_env_path])
+            run(["conda", "env", "create", "--file", yaml_path, "-p", conda_env_path])
             report_message("Conda environment created successfully!\nMoving on :)\n", "green")
             print("")
         except Exception as e:
