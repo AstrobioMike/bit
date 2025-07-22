@@ -19,7 +19,7 @@ jobs:
     - name: Set up miniconda
       uses: conda-incubator/setup-miniconda@v3
       with:
-        python-version: 3.13
+        python-version: "3.10"
         architecture: "x86_64"
         auto-activate-base: true
         channels: conda-forge,bioconda
