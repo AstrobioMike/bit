@@ -7,7 +7,7 @@ scripts = glob.glob("bit/scripts/*")
 
 setup(
     name="bit",
-    version="1.13.0",
+    version="1.13.1",
     description="A set of bioinformatics scripts and workflows",
     license="GPLv3",
     author="Mike Lee",

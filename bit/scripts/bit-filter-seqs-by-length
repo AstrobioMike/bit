@@ -1,0 +1,8 @@
+#!/usr/bin/env python
+
+# only retained for compatibility with the former script name
+
+from bit.cli.filter_fasta_by_length import main
+
+if __name__ == "__main__":
+    main()
