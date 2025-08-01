@@ -122,10 +122,15 @@ def main():
     # handling no args when using a subcommand so approriate help menu is printed
     if len(sys.argv) == 2:
         cmd = sys.argv[1]
+
+        if cmd in ("-h", "--help"):
+            parser.print_help(sys.stderr)
+            sys.exit(0)
+
         if cmd in parser.subparsers.choices:
             parser.subparsers.choices[cmd].print_help(sys.stderr)
             sys.exit(0)
-        # unknown command: fall back to global help and error
+
         print(f"\n  Invalid subcommand provided: '{cmd}'\n\n  See help below.\n", file=sys.stderr)
         parser.print_help(sys.stderr)
         sys.exit(1)
