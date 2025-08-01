@@ -54,7 +54,7 @@ def main():
         "--high-threshold",
         metavar="<FLOAT>",
         help='High threshold for regions-of-interest (default: 5; e.g., 5 would\
-            identify regions with 5-fold+ higher coverage than the mean of the whole ref)',
+            identify regions with 5-fold+ higher coverage than the mean of the ref)',
         type=float,
         default=5,
     )
@@ -63,7 +63,7 @@ def main():
         "--low-threshold",
         metavar="<FLOAT>",
         help='Low threshold for regions-of-interest (default: 5; e.g., 5 would\
-            identify regions with 5-fold+ lower coverage than the mean of the whole ref)',
+            identify regions with 5-fold+ lower coverage than the mean of the ref)',
         type=float,
         default=5,
     )
