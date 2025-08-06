@@ -99,7 +99,15 @@ def load_series(input_file, column, delimiter):
 def detect_header(input_file, column):
     sample = input_file.read(4096)
     input_file.seek(0)
-    header = csv.Sniffer().has_header(sample)
+    try:
+        header = csv.Sniffer().has_header(sample)
+    except csv.Error:
+        # single-column / ambiguous case: if column isn't an int, treat first row as header
+        try:
+            int(column)
+            header = False
+        except ValueError:
+            header = True
 
     if not header:
         try:
