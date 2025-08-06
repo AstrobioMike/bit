@@ -1,8 +1,6 @@
-import gzip
-import io
 import pytest
 from bit.tests.utils import run_cli
-
+import bit.cli.summarize_column
 
 @pytest.fixture
 def sample_table(tmp_path):

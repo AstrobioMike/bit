@@ -49,7 +49,7 @@ def build_parser():
         default="\t",
     )
 
-    add_help(parser)
+    add_help(optional)
 
     return parser
 
