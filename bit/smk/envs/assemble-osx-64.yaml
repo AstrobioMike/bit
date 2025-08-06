@@ -1,0 +1,9 @@
+name: bit-assemble
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - fastp=1
+    - bbmap
+    - megahit=1.2.9=h2ed8fcc_1 # this is likely only temporarily needed (https://github.com/bioconda/bioconda-recipes/pull/58191#issuecomment-3160962410)
+    - spades=4

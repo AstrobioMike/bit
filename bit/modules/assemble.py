@@ -11,6 +11,8 @@ from bit.modules.general import (report_message,
                        get_package_path,
                        color_text,
                        log_command_run)
+import sys
+import platform
 
 
 def run_assembly(args, full_cmd_executed):
@@ -81,9 +83,17 @@ def check_conda_env(config):
     conda_env_area = os.path.expandvars("${CONDA_PREFIX}/envs")
     conda_env = f"bit-assemble"
     conda_env_path = f"{conda_env_area}/{conda_env}"
+    if sys.platform.startswith("linux"):
+        yaml_path = str(get_package_path("smk/envs/assemble.yaml"))
+    elif sys.platform.startswith("darwin"):
+        yaml_path = str(get_package_path("smk/envs/assemble-osx-64.yaml"))
+    else:
+        message = f"Unsupported platform: {platform.system()}"
+        report_message(message, "red")
+        report_failure("Please use linux-64 or osx-64.", "yellow")
+
     if not os.path.exists(conda_env_path):
         try:
-            yaml_path = str(get_package_path("smk/envs/assemble.yaml"))
             report_message(f"Creating conda environment for bit-assemble at {conda_env_path}...")
             print("")
             run(["conda", "env", "create", "--file", yaml_path, "-p", conda_env_path])
