@@ -21,7 +21,7 @@ jobs:
       with:
         python-version: "3.10"
         architecture: "x86_64"
-        auto-activate-base: true
+        auto-activate: true
         channels: conda-forge,bioconda
         channel-priority: strict
         auto-update-conda: true
@@ -35,16 +35,15 @@ jobs:
       run: |
         conda create -n bit -y
 
-    - name: Adding local area as channel
+    - name: Add local area as channel
       run: |
         conda run -n bit conda config --add channels file://${PWD}/build_artifacts
 
     - name: Install built package
       run: |
         conda run -n bit conda install bit -y
+        conda run -n bit pip install -e . # the editable pip install is so test coverages make sense
 
-    # the pip install is so the package is sourced from the local dir, which makes test coverages make sense
     - name: Run pytest
       run: |
-        conda run -n bit pip install -e .
         conda run -n bit pytest -v
