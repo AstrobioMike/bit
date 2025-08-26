@@ -12,6 +12,18 @@
 
 -->
 
+## Not Yet Released
+
+### Added
+- more test coverage of `bit-ez-screen`
+
+### Changed
+- updates to `bit-gen-kraken2-tax-plots`
+  - modularized
+  - appropriately adds domain letter to plots from GTDB tax kraken2 reports now
+
+---
+
 ## v1.13.2 (22-Aug-2025)
 
 ### Changed
