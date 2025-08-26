@@ -6,7 +6,7 @@
 
 ### Changed
 
-### Fixed 
+### Fixed
 
 ---
 
