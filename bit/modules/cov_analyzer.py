@@ -275,7 +275,10 @@ class CoverageStats:
 
         # computing metrics based on appropriate baseline
         fold_diff = region_mean_cov / baseline_mean
-        signed_fold_diff = fold_diff if fold_diff >= 1 else -1.0 / fold_diff
+        if fold_diff == 0:
+            signed_fold_diff = 0.0
+        else:
+            signed_fold_diff = fold_diff if fold_diff >= 1 else -1.0 / fold_diff
         zscore = (region_mean_cov - baseline_mean) / baseline_std
         nobody_likes_zero = 1e-6
         log2_fold_diff = float(np.log2((region_mean_cov + nobody_likes_zero) / (baseline_mean + nobody_likes_zero)))

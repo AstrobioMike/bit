@@ -16,6 +16,7 @@
 
 ### Added
 - more test coverage of `bit-ez-screen`
+- integration test for `bit-cov-analyzer`
 
 ### Changed
 - updates to `bit-gen-kraken2-tax-plots`
