@@ -9,7 +9,8 @@ def main():
 
     desc = """
         This script generates perfect (no error model) paired-end reads in FASTQ format from one
-        or multiple input FASTA files. For version info, run `bit-version`.
+        or multiple input FASTA files. See `bit-mutate-seqs` if wanting to introduce variation to a fasta
+        prior to read-generation. For version info, run `bit-version`.
         """
 
     parser = argparse.ArgumentParser(
