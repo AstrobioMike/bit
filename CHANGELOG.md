@@ -12,14 +12,16 @@
 
 -->
 
-## Not Yet Released
+## v1.13.3 (29-Sep-2025)
 
 ### Added
 - more test coverage of `bit-ez-screen`
-- unit tests for `bit-gen-kraken2-tax-plots` and `bit-kraken2-to-taxon-summaries`
+- unit tests for `bit-gen-kraken2-tax-plots`, `bit-kraken2-to-taxon-summaries`, and `bit-calc-variation-in-msa`
 - integration test for `bit-cov-analyzer`
 
+
 ### Changed
+- modularized `bit-calc-variation-in-msa`
 - updates to `bit-gen-kraken2-tax-plots`
   - modularized
   - appropriately adds domain letter to plots from GTDB tax kraken2 reports now

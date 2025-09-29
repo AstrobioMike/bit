@@ -1,52 +1,6 @@
 #!/usr/bin/env python
 
-from skbio import TabularMSA, DNA, Protein
-import pandas as pd
-import argparse
-import sys
+from bit.cli.calc_variation_in_msa import main
 
-parser = argparse.ArgumentParser(description='This script takes an alignment in fasta format as input and returns the Shannon uncertainty values for each column \
-                                              using: http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html. In output "variation" column: 0 is \
-                                              same character in all sequences for that position (highest conservation); 1 is equal probability of any character \
-                                              (greatest variability). "Conservation" column is inverse. As written, any ambiguous bases or residues are converted to gap characters. \
-                                              For version info, run `bit-version`.')
-
-required = parser.add_argument_group('required arguments')
-
-required.add_argument("-i", "--input_alignment_fasta", metavar = "<FILE>", help = "Input alignment fasta file", action = "store", dest = "input_alignment_fasta", required = True)
-
-parser.add_argument("-g", "--gap_treatment", metavar = "<STR>", help = 'How to treat gaps, either "nan", "ignore", "error", "include" (default: "ignore")', choices = ["nan", "ignore", "error", "include"], action = "store", dest = "gap_treatment", default = "ignore")
-parser.add_argument("-t", "--type", metavar = "<STR>", help = 'Either "DNA" or "Protein" (default: "Protein")', choices = ["DNA", "Protein"], action = "store", dest = "type", default = "Protein")
-parser.add_argument("-o", "--output_file", metavar = "<FILE>", help = 'Name of output tab-separated file (default: "variation.tsv")', action = "store", dest = "output_tsv", default = "variation.tsv")
-
-if len(sys.argv)==1:
-    parser.print_help(sys.stderr)
-    sys.exit(0)
-
-args = parser.parse_args()
-
-# i'm not certain unequal alignments are all that would throw this error, so i'm leaving this out for now so skbio just spits out their problem if they have one reading in the alignment
-# try:
-    # msa = TabularMSA.read(args.input_alignment_fasta, constructor=DNA)
-# except ValueError:
-#     print('\n\tSorry, it seems not all sequences in the alignment are the same length... :(\n')
-#     sys.exit(1)
-
-msa = TabularMSA.read(args.input_alignment_fasta, constructor=eval(args.type), lowercase=True)
-
-list_of_cleaned_seqs = []
-
-# converting degenerate bases to gaps
-for seq in msa:
-
-    seq = seq.replace(seq.degenerates(), "-")
-    list_of_cleaned_seqs.append(seq)
-
-clean_msa = TabularMSA(list_of_cleaned_seqs)
-
-conserved = clean_msa.conservation(gap_mode=args.gap_treatment)
-indexes = list(range(1,clean_msa.shape[1] + 1))
-
-df = pd.DataFrame({"position": indexes, "variation":1 - conserved, "conservation": conserved})
-
-df.to_csv(args.output_tsv, sep="\t", index=False)
+if __name__ == "__main__":
+    main()

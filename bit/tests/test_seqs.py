@@ -1,7 +1,8 @@
 from bit.modules.general import get_package_path
 import bit.modules.seqs as seqs
 from Bio import SeqIO
-
+import pandas as pd
+from types import SimpleNamespace
 
 test_targets_fasta = get_package_path("tests/data/ez-screen-targets.fasta")
 
@@ -66,3 +67,33 @@ ATGCGTAA
     assert str(records[0].seq) == "ATGCGT"
     assert records[1].id == "seq3"
     assert str(records[1].seq) == "ATGCGTAA"
+
+
+def test_calc_variation_in_msa(tmp_path):
+    fasta_file = tmp_path / "test.fasta"
+    fasta_file.write_text(""">seq1
+ATGCATGC
+>seq2
+ATGCATGA
+""")
+
+    output_file = tmp_path / "variation.tsv"
+
+    # mocking args
+    args = SimpleNamespace(
+        input_alignment_fasta=str(fasta_file),
+        output_tsv=str(output_file),
+        type="DNA",
+        gap_treatment="ignore"
+    )
+
+    df = seqs.calc_variation_in_msa(args)
+
+    assert set(df.columns) == {"position", "variation", "conservation"}
+    assert len(df) == 8
+
+    for i, row in df.iterrows():
+        assert abs(row["variation"] + row["conservation"] - 1) < 1e-6
+
+    row_8 = df[df["position"] == 8].iloc[0]
+    assert abs(row_8["variation"] - 0.5) < 1e-6

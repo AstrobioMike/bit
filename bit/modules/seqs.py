@@ -1,4 +1,6 @@
 from Bio import SeqIO
+from skbio import TabularMSA, DNA, Protein
+import pandas as pd
 
 def calc_gc_per_seq(input_fasta):
     """
@@ -75,3 +77,26 @@ def filter_fasta_by_length(in_fasta, out_fasta, min_length, max_length):
                 out_file.write(">" + str(seq_record.description) + "\n" + str(seq_record.seq) + "\n")
 
     return (num_initial_seqs, num_seqs_retained, num_initial_bases, num_bases_retained)
+
+
+def calc_variation_in_msa(args):
+
+    msa = TabularMSA.read(args.input_alignment_fasta, constructor=eval(args.type), lowercase=True)
+
+    list_of_cleaned_seqs = []
+
+    # converting degenerate bases to gaps
+    for seq in msa:
+
+        seq = seq.replace(seq.degenerates(), "-")
+        list_of_cleaned_seqs.append(seq)
+
+    clean_msa = TabularMSA(list_of_cleaned_seqs)
+
+    conserved = clean_msa.conservation(gap_mode=args.gap_treatment)
+    indexes = list(range(1,clean_msa.shape[1] + 1))
+
+    df = pd.DataFrame({"position": indexes, "variation":1 - conserved, "conservation": conserved})
+
+    return df
+
