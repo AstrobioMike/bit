@@ -17,7 +17,7 @@ def color_text(text, color = 'green'):
         'yellow' : '\033[0;33m%s\033[0m',
         'red' : '\033[0;31m%s\033[0m'
     }
-    if sys.stdout.isatty():
+    if sys.stdout.isatty() and color != "none":
         return tty_colors[color] % text
     else:
         return text
@@ -72,3 +72,8 @@ def tee(msg, log_path, end="\n"):
     clean = ANSI_ESCAPE.sub('', msg)
     with open(log_path, "a") as f:
         f.write(clean + end)
+
+
+def is_gzipped(file_path):
+    with open(file_path, 'rb') as test_f:
+        return test_f.read(2) == b'\x1f\x8b'

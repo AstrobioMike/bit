@@ -1,7 +1,7 @@
 from bit.modules.general import get_package_path
 import bit.modules.seqs as seqs
 from Bio import SeqIO
-import pandas as pd
+import gzip
 from types import SimpleNamespace
 
 test_targets_fasta = get_package_path("tests/data/ez-screen-targets.fasta")
@@ -97,3 +97,34 @@ ATGCATGA
 
     row_8 = df[df["position"] == 8].iloc[0]
     assert abs(row_8["variation"] - 0.5) < 1e-6
+
+
+def test_check_for_fastq_dup_headers(tmp_path):
+    fastq_file = tmp_path / "test.fastq"
+    fastq_gz_file = tmp_path / "test.fastq.gz"
+    fastq_text = """@seq1
+ATGC
++
+IIII
+@seq1
+ATGC
++
+IIII
+"""
+
+    fastq_file.write_text(fastq_text)
+
+    dup_keys, seq_count = seqs.check_for_fastq_dup_headers(str(fastq_file))
+
+    assert seq_count == 2
+    assert dup_keys == ["seq1"]
+    assert len(dup_keys) == 1
+
+    # gzipped version
+    with gzip.open(fastq_gz_file, "wt") as f:
+        f.write(fastq_text)
+
+    dup_keys_gz, seq_count_gz = seqs.check_for_fastq_dup_headers(str(fastq_gz_file))
+    assert seq_count_gz == 2
+    assert dup_keys_gz == ["seq1"]
+    assert len(dup_keys_gz) == 1

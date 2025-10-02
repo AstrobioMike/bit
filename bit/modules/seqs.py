@@ -1,6 +1,8 @@
 from Bio import SeqIO
 from skbio import TabularMSA, DNA, Protein
 import pandas as pd
+import gzip
+from bit.modules.general import is_gzipped
 
 def calc_gc_per_seq(input_fasta):
     """
@@ -100,3 +102,26 @@ def calc_variation_in_msa(args):
 
     return df
 
+
+def check_for_fastq_dup_headers(input_fastq):
+
+    headers_dict = {}
+    seq_count = 0
+
+    if is_gzipped(input_fastq):
+        open_func = gzip.open
+    else:
+        open_func = open
+
+    with open_func(input_fastq, "rt") as fastq_in:
+
+        for seq_record in SeqIO.parse(fastq_in, "fastq"):
+            seq_count += 1
+            if seq_record.id in headers_dict:
+                headers_dict[seq_record.id] += 1
+            else:
+                headers_dict[seq_record.id] = 1
+
+    dup_keys = [k for k,v in headers_dict.items() if v > 1]
+
+    return dup_keys, seq_count
