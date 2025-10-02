@@ -12,13 +12,20 @@
 
 -->
 
+## Not released yet
+### Changed
+- updates to `bit-check-for-fastq-dup-headers`
+  - autodetect gzipped or not
+  - modularized, test added
+
+---
+
 ## v1.13.3 (29-Sep-2025)
 
 ### Added
 - more test coverage of `bit-ez-screen`
 - unit tests for `bit-gen-kraken2-tax-plots`, `bit-kraken2-to-taxon-summaries`, and `bit-calc-variation-in-msa`
 - integration test for `bit-cov-analyzer`
-
 
 ### Changed
 - modularized `bit-calc-variation-in-msa`
