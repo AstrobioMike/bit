@@ -10,9 +10,9 @@ from Bio.SeqRecord import SeqRecord
 import matplotlib.pyplot as plt
 from colorama import Fore, init
 from bit.modules.general import (check_files_are_found,
-                       notify_premature_exit,
-                       log_command_run,
-                       tee)
+                                 notify_premature_exit,
+                                 log_command_run,
+                                 tee)
 
 init(autoreset=True)
 

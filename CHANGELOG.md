@@ -14,6 +14,9 @@
 
 ## Not released yet
 ### Changed
+- updates to `bit-get-cov-stats`
+  - can start from bam file now in addition to mosdepth per-base.bed.gz (will generate the mosdepth output if starting from bam)
+  - modularized
 - updates to `bit-check-for-fastq-dup-headers`
   - autodetect gzipped or not
   - modularized, test added
