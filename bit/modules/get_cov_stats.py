@@ -16,9 +16,7 @@ init(autoreset=True)
 def get_cov_stats(args):
 
     preflight_checks(args)
-
     refs = parse_refs(args.reference_fastas)
-
 
     if args.bed:
         refs = parse_bed_file(refs, args.bed)
@@ -95,7 +93,7 @@ def parse_bed_file(refs, bed_file):
 def run_mosdepth(bam_file, output_prefix):
     check_bam_file_is_indexed(bam_file)
     mosdepth_output_dir = f"{output_prefix}-mosdepth-files"
-    mosdepth_prefix = f"{mosdepth_output_dir}/{bam_file[:-4]}"
+    mosdepth_prefix = str(Path(mosdepth_output_dir) / Path(bam_file).stem)
     os.makedirs(mosdepth_output_dir, exist_ok=True)
     cmd = f"mosdepth {mosdepth_prefix} {bam_file}"
     print(f"\n  {Fore.YELLOW}Running mosdepth to generate the required per-base coverage file...")
@@ -115,7 +113,7 @@ def check_bam_file_is_indexed(bam_file):
 def generate_output(refs, output_prefix):
     primary_out_path = f"{output_prefix}.tsv"
     with open(primary_out_path, "w") as f:
-        f.write("Ref\tDetection\tDetection_at_10x\tAverage_coverage\n")
+        f.write("ref\tdetection\tdetection_at_10x\taverage_coverage\n")
         for ref in refs:
             detection, detection_at_10x, average_coverage = ref.compute_metrics()
             f.write(f"{ref.path}\t{detection}\t{detection_at_10x}\t{average_coverage}\n")

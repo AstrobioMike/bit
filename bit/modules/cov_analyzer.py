@@ -123,7 +123,7 @@ def generate_sliding_bed_file(reference_fasta, sliding_window_size, step_size, o
 
 
 def run_mosdepth(bam_file, window_bed_path, output_dir):
-    mosdepth_out_prefix = f"{output_dir}/mosdepth-files/{bam_file[:-4]}"
+    mosdepth_out_prefix = str(Path(output_dir) / Path(bam_file).stem)
     cmd = f"mosdepth --by {window_bed_path} {mosdepth_out_prefix} {bam_file}"
     subprocess.run(cmd, shell=True)
     mosdepth_regions_file = f"{mosdepth_out_prefix}.regions.bed.gz"
