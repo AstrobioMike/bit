@@ -1,6 +1,10 @@
 #!/bin/bash
 set -e
 
+################################################################################################################
+### This is expected to be run after the version currently listed in setup.py is already released on github. ###
+################################################################################################################
+
 # this script as written expects the base conda directory to be located at ~/miniconda3/
 
 # auto-works on conda-recipe/ dir
