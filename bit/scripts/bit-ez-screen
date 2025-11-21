@@ -1,5 +1,10 @@
 #!/usr/bin/env python
 
+from bit.cli.ez_screen import main
+
+if __name__ == "__main__":
+    main()
+
 """
 coverage threshold in assembly mode is applied differently for short vs long targets (hardcoded as < 10,000 bases vs >= 10,000 bases)
 
@@ -10,8 +15,3 @@ coverage threshold in assembly mode is applied differently for short vs long tar
     "long" ones are based on total percent of subject covered by alignment based on
         the merged regions of all alignments that surpass the percent identity threshold
 """
-
-from bit.cli.ez_screen import main
-
-if __name__ == "__main__":
-    main()
