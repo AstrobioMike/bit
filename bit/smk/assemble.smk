@@ -132,7 +132,8 @@ else:
             R1=lambda wildcards: final_reads_dict[wildcards.sample]['R1'],
             R2=lambda wildcards: final_reads_dict[wildcards.sample]['R2']
         output:
-            output_dir + "/{sample}/{sample}-assembly.fasta"
+            output_dir + "/{sample}/spades-out/contigs.fasta"
+            # output_dir + "/{sample}/{sample}-assembly.fasta"
         params:
             sample=lambda wildcards: wildcards.sample,
             threads=threads,
@@ -147,7 +148,23 @@ else:
                     {params.mode} -o {params.assembler_out_dir} \
                     --phred-offset 33 > {log} 2>&1
 
-            cp {params.assembler_out_dir}/contigs.fasta {output}
+            # cp {params.assembler_out_dir}/contigs.fasta {output}
+            """
+
+    rule filter_spades_contigs:
+        input:
+            rules.spades_assembly.output
+        output:
+            output_dir + "/{sample}/{sample}-assembly.fasta"
+        params:
+            min_contig_len=min_contig_len
+        log:
+            log_files_dir + "/{sample}-bit-filter-contigs.log"
+        shell:
+            """
+            printf "\nFiltering spades contigs for minimum length {params.min_contig_len}\n\n" >> {log}
+
+            bit-filter-fasta-by-length -i {input} --min-length {params.min_contig_len} -o {output} >> {log}
             """
 
 

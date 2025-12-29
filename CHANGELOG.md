@@ -1,4 +1,5 @@
 # Change Log
+
 <!-- 
 ## v (dd-mmm-yyyy)
 
@@ -11,6 +12,20 @@
 ---
 
 -->
+
+
+## v1.13.5 (NOT RELEASED YET)
+
+### Added
+
+### Changed
+
+### Fixed
+- `bit-assemble` now properly filters spades-assembled contigs based on user-specific min-contig length
+
+---
+
+
 
 ## v1.13.4 (20-Nov-2025)
 
