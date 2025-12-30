@@ -49,7 +49,7 @@ Some of the helper programs/scripts in _bit_ include:
 | `bit-calc-variation-in-msa` | calculate [variation](http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |  
 | `bit-summarize-column` | summarize a numeric column in a table |  
 | `bit-filter-table` | filter a table based on wanted IDs |  
-| `bit-count-bases-per-seq` | count the number of bases per sequence in a fasta file |  
+| `bit-count-bases` | count and summarize the number of bases per sequence in a fasta file |  
 | `bit-rename-fasta-headers` | rename sequences in a fasta |  
 | `bit-parse-fasta-by-headers` | split a fasta file based on headers |  
 | `bit-reorder-fasta` | re-order a fasta file |  

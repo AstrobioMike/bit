@@ -22,6 +22,7 @@ def pytest_sessionstart(session):
     script_files = [p for p in scripts_dir.iterdir() if p.is_file()]
 
     bash_scripts = []
+    helper_scripts = []
     python_scripts = []
     modularized = []
     not_modularized = []
@@ -32,6 +33,11 @@ def pytest_sessionstart(session):
             python_scripts.append(file)
             modularized.append(file)
             continue
+
+        # checking if helper script
+        if file.name.startswith("helper-bit-"):
+            helper_scripts.append(file)
+            continue  # moving on if helper script
 
         # getting first line to check if bash script
         with file.open() as fh:
@@ -58,10 +64,12 @@ def pytest_sessionstart(session):
     print("  ====================================================================================================\n")
 
     print(f"    Total script files: {len(script_files)}\n")
+    print(f"    Total helper scripts: {len(helper_scripts)}")
     print(f"    Total bash scripts: {len(bash_scripts)}")
     print(f"    Total python scripts: {len(python_scripts)}")
     print(f"    Python scripts modularized: {len(modularized)}")
     print(f"    Python scripts not yet modularized: {len(not_modularized)}\n")
+    print(f"    Percent of the way done: {round(len(modularized) / len(python_scripts) * 100, 2)}%\n")
 
     if not_modularized:
         print("        Files not yet modularized:\n")

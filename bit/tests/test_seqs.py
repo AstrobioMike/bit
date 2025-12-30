@@ -3,6 +3,7 @@ import bit.modules.seqs as seqs
 from Bio import SeqIO
 import gzip
 from types import SimpleNamespace
+from io import StringIO
 
 test_targets_fasta = get_package_path("tests/data/ez-screen-targets.fasta")
 
@@ -128,3 +129,31 @@ IIII
     assert seq_count_gz == 2
     assert dup_keys_gz == ["seq1"]
     assert len(dup_keys_gz) == 1
+
+
+def test_parse_fasta_lengths():
+
+    fasta_content = """>seq1
+ATGCATGCATGC
+>seq2
+ATGCATGC
+>seq3
+ATGC
+"""
+
+    fasta_io = StringIO(fasta_content)
+
+    result = seqs.parse_fasta_lengths(fasta_io)
+
+    expected_lengths = {
+        "seq1": 12,
+        "seq2": 8,
+        "seq3": 4
+    }
+
+    assert result["lengths"] == expected_lengths
+    assert result["stats"]["n_seqs"] == 3
+    assert result["stats"]["min"] == 4
+    assert result["stats"]["max"] == 12
+    assert result["stats"]["mean"] == round((12 + 8 + 4) / 3, 2)
+    assert result["stats"]["median"] == 8

@@ -1,19 +1,6 @@
-#!/usr/bin/env bash
+#!/usr/bin/env python
 
-RED='\033[0;31m'
-NC='\033[0m'
+from bit.cli.count_bases import main
 
-if [ "$#" == 0 ] || [ $1 == "-h" ]; then
-    printf "\n  This script returns the total number of bases (or amino acids) in a fasta file.\n"
-    printf "  For version info, run \`bit-version\`.\n\n"
-    printf "    Usage:\n\t bit-count-bases input.fasta\n\n"
-    exit
-fi
-
-if [ -f $1 ]; then
-    echo $(grep -v ">" $1 | wc | awk '{print $3-$1}')
-
-else
-    echo -e "     ${RED}Input file not found :/${NC}" >&2
-    exit 1
-fi
+if __name__ == "__main__":
+    main()

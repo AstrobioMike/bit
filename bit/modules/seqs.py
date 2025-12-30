@@ -3,6 +3,7 @@ from skbio import TabularMSA, DNA, Protein
 import pandas as pd
 import gzip
 from bit.modules.general import is_gzipped
+from statistics import mean, median
 
 def calc_gc_per_seq(input_fasta):
     """
@@ -125,3 +126,26 @@ def check_for_fastq_dup_headers(input_fastq):
     dup_keys = [k for k,v in headers_dict.items() if v > 1]
 
     return dup_keys, seq_count
+
+
+def parse_fasta_lengths(input_fasta):
+    lengths_list = []
+    seq_lengths = {}
+
+    for seq_record in SeqIO.parse(input_fasta, "fasta"):
+        length = len(seq_record.seq)
+        seq_lengths[seq_record.id] = length
+        lengths_list.append(length)
+
+    stats = {
+        "n_seqs": len(lengths_list),
+        "min": min(lengths_list) if lengths_list else 0,
+        "max": max(lengths_list) if lengths_list else 0,
+        "mean": round(mean(lengths_list), 2) if lengths_list else 0,
+        "median": round(median(lengths_list)) if lengths_list else 0
+    }
+
+    return {
+        "lengths": seq_lengths,
+        "stats": stats
+    }

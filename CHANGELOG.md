@@ -19,6 +19,8 @@
 ### Added
 
 ### Changed
+- `bit-count-bases-per-seq` has been combined into `bit-count-bases`
+  - modularized, test added
 
 ### Fixed
 - `bit-assemble` now properly filters spades-assembled contigs based on user-specific min-contig length
