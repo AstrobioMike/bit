@@ -19,7 +19,8 @@
 ### Added
 
 ### Changed
-- `bit-count-bases-per-seq` has been combined into `bit-count-bases`
+- `bit-count-bases-per-seq` has been removed with its function combined into `bit-count-bases`
+  - if input fasta has one sequence, it prints the length to the terminal; if it has 2 or more, it will print out summary stats; in either of the two prior cases, if an output file is specified, the program will additionally write lengths of all sequences to that specified file
   - modularized, test added
 
 ### Fixed

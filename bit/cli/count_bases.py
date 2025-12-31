@@ -16,7 +16,7 @@ def build_parser():
 
     parser = argparse.ArgumentParser(
         description=desc,
-        epilog="Ex. usage: `bit-count-bases -i input.fasta`",
+        epilog="Ex. usage: `bit-count-bases input.fasta`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -25,21 +25,18 @@ def build_parser():
     optional = parser.add_argument_group("OPTIONAL PARAMETERS")
 
     required.add_argument(
-        "-i",
-        "--input-fasta",
+        "input_fasta",
         metavar="<FILE>",
         help="Input fasta file",
         action="store",
-        required=True,
     )
 
     optional.add_argument(
         "-o",
         "--output-tsv",
         metavar="<FILE>",
-        help='Name of output tab-delimited file (default: "num-chars.tsv")',
+        help='Name of output tab-delimited file if you want all sequence lengths written out',
         action="store",
-        default="num-chars.tsv",
     )
 
     add_help(optional)
@@ -59,14 +56,17 @@ def main():
     check_files_are_found([args.input_fasta])
 
     stats = parse_fasta_lengths(args.input_fasta)
+    total_length = stats["stats"]["total_length"]
 
     # if only one sequence, just printing out full length
     if stats["stats"]["n_seqs"] == 1:
-        length = next(iter(stats["lengths"].values()))
-        print(str(length))
-    else:
-        write_lengths_to_tsv(stats["lengths"], args.output_tsv)
+        print(f"\n    Total length:    {total_length}\n")
+    else: # if multiple, printout summary stats
         print_summary(stats["stats"], args.output_tsv)
+        print(f"\n    Total length:    {total_length}\n")
+
+    if args.output_tsv:
+        write_lengths_to_tsv(stats["lengths"], args.output_tsv)
 
 
 def write_lengths_to_tsv(seq_lengths, output_tsv):
@@ -75,12 +75,13 @@ def write_lengths_to_tsv(seq_lengths, output_tsv):
         for seq_id, length in seq_lengths.items():
             out_file.write(f"{seq_id}\t{length}\n")
 
+    print(f"  All seq lengths written to: '{output_tsv}'\n")
+
 
 def print_summary(stats, output_tsv):
     """Print summary statistics."""
     print("\n    Number of seqs:  " + str(stats["n_seqs"]))
-    print("    Min. length:     " + str(stats["min"]))
+    print("    Min length:      " + str(stats["min"]))
     print("    Max length:      " + str(stats["max"]))
     print("    Mean length:     " + str(stats["mean"]))
-    print("    Median length:   " + str(stats["median"]) + "\n")
-    print(f"  All seq lengths written to: '{output_tsv}'\n")
+    print("    Median length:   " + str(stats["median"]))

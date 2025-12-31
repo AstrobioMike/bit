@@ -157,3 +157,4 @@ ATGC
     assert result["stats"]["max"] == 12
     assert result["stats"]["mean"] == round((12 + 8 + 4) / 3, 2)
     assert result["stats"]["median"] == 8
+    assert result["stats"]["total_length"] == 24

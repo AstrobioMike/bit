@@ -142,7 +142,8 @@ def parse_fasta_lengths(input_fasta):
         "min": min(lengths_list) if lengths_list else 0,
         "max": max(lengths_list) if lengths_list else 0,
         "mean": round(mean(lengths_list), 2) if lengths_list else 0,
-        "median": round(median(lengths_list)) if lengths_list else 0
+        "median": round(median(lengths_list)) if lengths_list else 0,
+        "total_length": sum(lengths_list) if lengths_list else 0
     }
 
     return {
