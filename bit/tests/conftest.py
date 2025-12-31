@@ -67,9 +67,9 @@ def pytest_sessionstart(session):
     print(f"    Total helper scripts: {len(helper_scripts)}")
     print(f"    Total bash scripts: {len(bash_scripts)}")
     print(f"    Total python scripts: {len(python_scripts)}")
-    print(f"    Python scripts modularized: {len(modularized)}")
-    print(f"    Python scripts not yet modularized: {len(not_modularized)}\n")
-    print(f"    Percent of the way done: {round(len(modularized) / len(python_scripts) * 100, 2)}%\n")
+    print(f"        Python scripts modularized: {len(modularized)}")
+    print(f"        Python scripts not yet modularized: {len(not_modularized)}\n")
+    print(f"    Percent of python modularized: {round(len(modularized) / len(python_scripts) * 100, 2)}%\n")
 
     if not_modularized:
         print("        Files not yet modularized:\n")

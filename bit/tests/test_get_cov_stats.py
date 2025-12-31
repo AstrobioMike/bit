@@ -1,4 +1,3 @@
-
 from pathlib import Path
 import pytest
 from bit.modules.general import get_package_path

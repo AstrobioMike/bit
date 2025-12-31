@@ -4,6 +4,7 @@ from Bio import SeqIO
 import gzip
 from types import SimpleNamespace
 from io import StringIO
+import random
 
 test_targets_fasta = get_package_path("tests/data/ez-screen-targets.fasta")
 
@@ -158,3 +159,30 @@ ATGC
     assert result["stats"]["mean"] == round((12 + 8 + 4) / 3, 2)
     assert result["stats"]["median"] == 8
     assert result["stats"]["total_length"] == 24
+
+
+def test_mutate_seq():
+
+    random.seed(9)
+
+    seq = "AAAAAAAAAA"
+    available_substitutions = ["A", "T", "C", "G"]
+    mutation_rate = 0.8
+    indel_rate = 0.5
+
+    expected_mutated_seq = "ACATAGTA"
+    expected_total_changes = 8
+    expected_subtitutions = 4
+    expected_indels = 4
+    expected_insertions = 1
+    expected_deletions = 3
+
+    (mutated_seq, total_num_changes, num_subs, num_indels,
+     num_insertions, num_deletions) = seqs.mutate_seq(seq, available_substitutions, mutation_rate, indel_rate)
+
+    assert total_num_changes == expected_total_changes
+    assert num_subs == expected_subtitutions
+    assert num_indels == expected_indels
+    assert num_insertions == expected_insertions
+    assert num_deletions == expected_deletions
+    assert mutated_seq == expected_mutated_seq

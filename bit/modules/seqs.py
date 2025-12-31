@@ -4,6 +4,7 @@ import pandas as pd
 import gzip
 from bit.modules.general import is_gzipped
 from statistics import mean, median
+import random
 
 def calc_gc_per_seq(input_fasta):
     """
@@ -150,3 +151,57 @@ def parse_fasta_lengths(input_fasta):
         "lengths": seq_lengths,
         "stats": stats
     }
+
+
+def mutate_seq(seq, available_substitutions, mutation_rate, indel_rate):
+
+    # converting sequence to a list for mutability
+    seq_list = list(seq)
+    seq_length = len(seq_list)
+
+    # calculating mutation parameters
+    total_num_mutations = round(seq_length * mutation_rate)
+    num_indels = round(total_num_mutations * indel_rate)
+    num_substitutions = total_num_mutations - num_indels
+
+    # tracking counts of insertions and deletions (if any)
+    num_insertions = 0
+    num_deletions = 0
+
+    substitution_indices = random.sample(range(seq_length), k=num_substitutions)
+
+    for index_to_change in substitution_indices:
+        original_char = seq_list[index_to_change]
+        new_char = random.choice([char for char in available_substitutions if char != original_char])
+        seq_list[index_to_change] = new_char
+
+    # incorporating indels next, if any
+    # (note this will not keep track if the same spot happens to be added and then removed as currently written)
+
+    # limiting attempts in case of extreme edge cases
+    indel_attempts = 0
+    max_attempts = 1000
+
+    while (num_insertions + num_deletions) < num_indels and indel_attempts < max_attempts:
+        indel_attempts += 1
+
+        # safeguard in the (very) off chance that all characters were deleted already
+        if not seq_list:
+            break
+
+        process = random.choice(["insertion", "deletion"])
+        index_to_change = random.randint(0, len(seq_list) - 1)
+
+        if process == "insertion":
+            insertion_char = random.choice(available_substitutions)
+            seq_list.insert(index_to_change, insertion_char)
+            num_insertions += 1
+        elif process == "deletion" and len(seq_list) > 1:
+            del seq_list[index_to_change]
+            num_deletions += 1
+
+    # converting list back into string
+    mutated_seq = ''.join(seq_list)
+
+    return (mutated_seq, total_num_mutations, num_substitutions,
+            num_indels, num_insertions, num_deletions)

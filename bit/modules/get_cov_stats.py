@@ -5,9 +5,7 @@ from pathlib import Path
 from dataclasses import dataclass, field
 from Bio import SeqIO #type: ignore
 from colorama import Fore, init
-from bit.modules.general import (check_files_are_found,
-                                notify_premature_exit,
-                                report_message)
+from bit.modules.general import check_files_are_found
 
 
 init(autoreset=True)

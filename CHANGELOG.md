@@ -14,7 +14,7 @@
 -->
 
 
-## v1.13.5 (NOT RELEASED YET)
+## v1.13.5 (31-Dec-2025)
 
 ### Added
 
@@ -22,6 +22,10 @@
 - `bit-count-bases-per-seq` has been removed with its function combined into `bit-count-bases`
   - if input fasta has one sequence, it prints the length to the terminal; if it has 2 or more, it will print out summary stats; in either of the two prior cases, if an output file is specified, the program will additionally write lengths of all sequences to that specified file
   - modularized, test added
+- modularized and added unit tests for `bit-lineage-to-tsv`
+- `bit-mutate-seqs`
+  - `--seed-for-randomization` long-parameter shortened to just `--seed`
+  - modularized and test added
 
 ### Fixed
 - `bit-assemble` now properly filters spades-assembled contigs based on user-specific min-contig length
