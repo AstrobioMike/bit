@@ -70,7 +70,7 @@ def main():
 
 def summarize_assemblies(input_assemblies, output_tsv=False, transpose_output_tsv=False):
     df, use_paths_instead_of_basenames = setup_master_df(input_assemblies)
-    df = summarize(df, input_assemblies, transpose_output_tsv, use_paths_instead_of_basenames)
+    df = summarize(df, input_assemblies, use_paths_instead_of_basenames)
 
     if output_tsv:
         if transpose_output_tsv:
@@ -116,19 +116,15 @@ def setup_master_df(input_assemblies):
     return pd.DataFrame(columns=df_colnames, index=df_index), use_paths_instead_of_basenames
 
 
-def summarize(df, input_assemblies, transpose_output_tsv, use_paths_instead_of_basenames):
+def summarize(df, input_assemblies, use_paths_instead_of_basenames):
     for assembly in input_assemblies:
         if use_paths_instead_of_basenames:
             assembly_name = assembly.rsplit(".", 1)[0]
         else:
             assembly_base = os.path.basename(assembly)
             assembly_name = assembly_base.rsplit(".", 1)[0]
-        try:
-            df.at["Assembly", str(assembly_name)] = assembly_name
-        except AttributeError:
-            print("  An attribute exception was thrown by pandas. Maybe the inputs don't have unique names?")
-            print("  As written, this cuts off the extension based on last period to generate names.")
-            sys.exit(1)
+
+        df.at["Assembly", str(assembly_name)] = assembly_name
         # putting in a catch if file is empty (which can happen if an assembly produced no contigs)
         # this will leave it in the table, but with NAs (written out as "NA")
         if os.stat(assembly).st_size == 0:

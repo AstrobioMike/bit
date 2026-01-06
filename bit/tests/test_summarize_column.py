@@ -1,6 +1,10 @@
+import io
 import pytest
+import csv
+from unittest.mock import patch
 from bit.tests.utils import run_cli
-import bit.cli.summarize_column
+from bit.cli.summarize_column import detect_header
+
 
 @pytest.fixture
 def sample_table(tmp_path):
@@ -73,3 +77,32 @@ def test_summarize_second_column_by_name(sample_table):
         found = [L for L in lines if L.startswith(f"    {label}")]
         assert found, f"Did not find summary line for {label}"
         assert found[0].endswith(expect), f"{label!r} line was {found[0]!r}, expected to end with {expect!r}"
+
+
+def test_detect_header_sniffer_error_numeric_column():
+
+    fake_file = io.StringIO("1\n2\n3\n")
+
+    with patch("csv.Sniffer.has_header", side_effect=csv.Error):
+        header = detect_header(fake_file, column="1")
+
+    assert header is False
+
+
+def test_detect_header_sniffer_error_named_column():
+    fake_file = io.StringIO("value\n1\n2\n3\n")
+
+    with patch("csv.Sniffer.has_header", side_effect=csv.Error):
+        header = detect_header(fake_file, column="value")
+
+    assert header is True
+
+
+def test_detect_header_no_header_named_column_fails():
+    fake_file = io.StringIO("1\n2\n3\n")
+
+    with patch("csv.Sniffer.has_header", return_value=False):
+        with pytest.raises(SystemExit) as e:
+            detect_header(fake_file, column="col1")
+
+    assert e.value.code == 1

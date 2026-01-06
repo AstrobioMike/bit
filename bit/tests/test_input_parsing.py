@@ -62,6 +62,7 @@ def test_get_input_reads_dict_from_paths_happy_path(tmp_path):
     assert out["samp"]["R1"] == str(r1.resolve())
     assert out["samp"]["R2"] == str(r2.resolve())
 
+
 def test_get_input_reads_dict_from_paths_missing_designation_calls_exit(tmp_path):
     bad = tmp_path / "samp.fastq.gz"  # no R1/R2 tag
     bad.write_text("x")
@@ -90,6 +91,7 @@ def test_get_input_reads_dict_from_dir_pairs_samples_and_ignores_noise(tmp_path)
     assert list(out.keys()) == ["A"]
     assert set(out["A"].keys()) == {"R1", "R2"}
 
+
 def test_get_input_reads_dict_from_dir_detects_incomplete_pairs_and_exits(tmp_path, patch_failure_hooks):
     # Only R1 present for B → should trigger error
     (tmp_path / "B_R1_.fastq.gz").write_text("b1")
@@ -101,6 +103,7 @@ def test_get_input_reads_dict_from_dir_detects_incomplete_pairs_and_exits(tmp_pa
     assert reports, "expected report_message() to be called"
     # The message mentions the input directory
     assert str(tmp_path) in reports[-1][1]
+
 
 def test_get_input_reads_dict_from_dir_handles_multiple_samples(tmp_path):
     # C paired

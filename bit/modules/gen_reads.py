@@ -28,16 +28,7 @@ def preflight_checks(args):
 
 
 def parse_proportions_file(proportions_file, input_fastas):
-    """
-    Parses the proportions file to determine the proportion of reads for each input FASTA file.
 
-    Parameters:
-    proportions_file (str): Path to the proportions file.
-    input_fastas (list): List of input FASTA files.
-
-    Returns:
-    dict: A dictionary mapping input FASTA filenames to their respective proportions.
-    """
     if proportions_file:
         proportions = {}
         total_proportion = 0
@@ -119,12 +110,7 @@ def simulate_paired_end_reads(args):
 
 
 def compress_with_pigz(output_prefix):
-    """
-    Compresses the output FASTQ files using pigz.
 
-    Parameters:
-    output_prefix (str): Prefix for output FASTQ files.
-    """
     forward_reads_file = f"{output_prefix}_R1.fastq"
     reverse_reads_file = f"{output_prefix}_R2.fastq"
 

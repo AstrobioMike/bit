@@ -1,7 +1,11 @@
 from unittest import mock
-from bit.modules.general import tee
+import pytest
+import sys
+from bit.modules.general import tee, report_failure
+
 
 def test_tee_removes_ansi_and_logs(tmp_path):
+
     log_path = tmp_path / "test.log"
     msg_with_color = "\033[1mBold text\033[0m and normal"
 
@@ -19,3 +23,16 @@ def test_tee_removes_ansi_and_logs(tmp_path):
     log_path.unlink()
     tee("No newline", log_path, end="")
     assert log_path.read_text() == "No newline"
+
+
+def test_report_failure_output_and_exit(capsys):
+
+    with pytest.raises(SystemExit) as e:
+        report_failure("Test error message", color="red")
+
+    assert e.value.code == 1
+
+    captured = capsys.readouterr()
+
+    assert "Test error message" in captured.out
+    assert "Exiting for now :(" in captured.out

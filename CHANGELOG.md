@@ -15,12 +15,10 @@
 
 ## v1.13.6 (NOT YET RELEASED)
 
-### Added
-
 ### Changed
 - modularized and added tests for `bit-get-workflow` and `bit-get-test-data`
-
-### Fixed
+- added more tests to `bit-gen-reads`
+- improved coverage on some other modules with more unit tests
 
 ---
 
