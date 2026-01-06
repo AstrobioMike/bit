@@ -4,6 +4,7 @@ from bit.modules.get_cov_stats import get_cov_stats
 from bit.cli.common import CustomRichHelpFormatter, add_help
 from bit.modules.general import report_message, notify_premature_exit, is_gzipped
 
+
 def build_parser():
 
     desc = """

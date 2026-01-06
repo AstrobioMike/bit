@@ -30,11 +30,13 @@ def wprint(text, width = 80, initial_indent = "  ",
 
 
 def report_message(message, color = "yellow", width = 80, initial_indent = "  ",
-                   subsequent_indent = "  "):
+                   subsequent_indent = "  ", trailing_newline = False):
     print("")
     wprint(color_text(message, color), width = width,
            initial_indent = initial_indent,
            subsequent_indent = subsequent_indent)
+    if trailing_newline:
+        print("")
 
 
 def report_failure(message, color = "red"):

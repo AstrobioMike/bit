@@ -13,6 +13,17 @@
 
 -->
 
+## v1.13.6 (NOT YET RELEASED)
+
+### Added
+
+### Changed
+- modularized and added tests for `bit-get-workflow` and `bit-get-test-data`
+
+### Fixed
+
+---
+
 
 ## v1.13.5 (31-Dec-2025)
 

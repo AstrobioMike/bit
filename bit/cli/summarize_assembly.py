@@ -1,11 +1,11 @@
 import os
 import sys
 import argparse
-from bit.modules.general import report_failure, color_text
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help)
 import pandas as pd
 import pyfastx
+
 
 def build_parser():
 
