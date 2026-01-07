@@ -2,6 +2,11 @@
 parallel = True
 concurrency = multiprocessing
 
+source =
+    bit.modules
+    bit.cli.summarize_assembly
+    bit.cli.summarize_column
+
 omit =
     bit/**/__init__.py
 
