@@ -14,6 +14,7 @@ urls = { Repository = "https://github.com/AstrobioMike/bit" }
 
 [tool.setuptools]
 packages = { find = { where = ["."], include = ["bit*"] } }
+script-files = ["bit/scripts/*"]
 include-package-data = true
 
 [tool.setuptools.package-data]
