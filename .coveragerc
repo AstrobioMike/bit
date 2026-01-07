@@ -1,5 +1,6 @@
 [run]
 parallel = True
+concurrency = multiprocessing
 
 omit =
     bit/**/__init__.py
