@@ -1,6 +1,9 @@
 [run]
+parallel = True
+
 omit =
     bit/**/__init__.py
+
 [report]
 exclude_lines =
     # pragma: no cover
