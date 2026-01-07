@@ -13,7 +13,7 @@ urls = { Repository = "https://github.com/AstrobioMike/bit" }
 # dependencies handled by conda installation
 
 [tool.setuptools]
-packages = ["bit"]
+packages = { find = { where = ["."], include = ["bit*"] } }
 include-package-data = true
 
 [tool.setuptools.package-data]
