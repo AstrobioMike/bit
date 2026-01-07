@@ -1,8 +1,8 @@
-{% set data = load_file_data("../pyproject.toml") %}
+{% set pkg = load_setup_py_data(setup_file="../setup.py", from_recipe_dir=True) %}
 
 package:
-name: "{{ data.get('project', {}).get('name')|lower }}"
-  version: "{{ data.get('project', {}).get('version') }}"
+  name: "{{ pkg.name|lower }}"
+  version: "{{ pkg.version }}"
 
 source:
   path: ../
@@ -14,8 +14,6 @@ requirements:
   host:
     - python=3.10
     - pip
-    - setuptools >=61.0
-    - wheel
 
   run:
     - python=3.10
