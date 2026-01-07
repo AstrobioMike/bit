@@ -19,6 +19,7 @@
 - modularized and added tests for `bit-get-workflow` and `bit-get-test-data`
 - added more tests to `bit-gen-reads`
 - improved coverage on some other modules with more unit tests
+- more more setup info into pyproject.toml, but retained minimal setup.py to be able to glob because bit has a lot of separate scripts/entry points
 
 ---
 

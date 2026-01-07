@@ -1,7 +1,6 @@
-import shutil
 from bit.modules.general import get_package_path
+from bit.cli import summarize_assembly
 from bit.tests.utils import run_cli
-import bit.cli.summarize_assembly
 
 test_assembly = get_package_path("tests/data/ez-screen-targets.fasta")
 
