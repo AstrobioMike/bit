@@ -1,4 +1,4 @@
-{% set data = load_file_data("../pyproject.toml") %}
+{% set data = load_file_data("../pyproject.toml", from_recipe_dir=True) %}
 
 package:
 name: "{{ data.get('project', {}).get('name')|lower }}"
