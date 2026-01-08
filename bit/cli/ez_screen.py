@@ -89,7 +89,7 @@ def build_parser():
         "reads",
         help="Run mapping-based screening of reads against targets",
         description=reads_description,
-        epilog="Ex. usage: `bit-ez-screen reads -s sample-1 -t targets.fasta`",
+        epilog="Ex. usage: `bit-ez-screen reads -t targets.fasta`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

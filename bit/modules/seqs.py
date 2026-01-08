@@ -205,3 +205,23 @@ def mutate_seq(seq, available_substitutions, mutation_rate, indel_rate):
 
     return (mutated_seq, total_num_mutations, num_substitutions,
             num_indels, num_insertions, num_deletions)
+
+
+def dedupe_fasta_headers(input_fasta, output_fasta):
+
+    ids = {}
+
+    with open(input_fasta, "r") as in_fasta, open(output_fasta, "w") as out_fasta:
+
+        for seq_record in SeqIO.parse(in_fasta, "fasta"):
+
+            if seq_record.id not in ids:
+                ids[seq_record.id] = 1
+                out_fasta.write(">" + seq_record.id + "\n")
+                out_fasta.write(str(seq_record.seq) + "\n")
+
+            else:
+                count = ids[seq_record.id] + 1
+                ids[seq_record.id] = count
+                out_fasta.write(">" + seq_record.id + "_" + str(count - 1) + "\n")
+                out_fasta.write(str(seq_record.seq) + "\n")

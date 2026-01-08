@@ -29,7 +29,7 @@ def build_parser():
         "-i",
         "--input-lineage",
         metavar="<FILE>",
-        help="Input assembly file",
+        help="Input lineage file",
         required=True
     )
 

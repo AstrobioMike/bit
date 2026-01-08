@@ -1,5 +1,4 @@
 import sys
-import os
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help
 from bit.modules.get_workflow import dl_wf

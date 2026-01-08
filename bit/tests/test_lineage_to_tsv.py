@@ -19,8 +19,18 @@ def test_convert_lineage_to_tsv(tmp_path):
 
     input_file.write_text("seq1\troot;d__Bacteria;p__Campylobacterota;c__Campylobacteria;o__Campylobacterales;f__Sulfurovaceae;g__Sulfurovum;s__Sulfurovum lithotrophicum\n")
 
-    convert_lineage_to_tsv(str(input_file), str(output_file), make_taxid=False)
+    convert_lineage_to_tsv(str(input_file), str(output_file), make_taxid=True)
 
     lines = output_file.read_text().strip().split("\n")
-    assert lines[0] == "seq_ID\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies"
-    assert lines[1] == "seq1\tBacteria\tCampylobacterota\tCampylobacteria\tCampylobacterales\tSulfurovaceae\tSulfurovum\tSulfurovum lithotrophicum"
+    assert lines[0] == "seq_ID\ttaxid\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies"
+    assert lines[1] == "\t".join([
+    "seq1",
+    "Bacteria_Campylobacterota_Campylobacteria_Campylobacterales_Sulfurovaceae_Sulfurovum_Sulfurovum_lithotrophicum",
+    "Bacteria",
+    "Campylobacterota",
+    "Campylobacteria",
+    "Campylobacterales",
+    "Sulfurovaceae",
+    "Sulfurovum",
+    "Sulfurovum lithotrophicum"
+])

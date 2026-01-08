@@ -17,6 +17,7 @@ def test_ez_screen_assembly(tmp_path):
         "-a", str(test_assembly_fasta),
         "-t", str(test_targets_fasta),
         "-o", str(out_prefix),
+        "--filter-if-not-detected"
     ]
 
     run_cli(cmd)
@@ -25,8 +26,8 @@ def test_ez_screen_assembly(tmp_path):
 
     observed = summary_tsv.read_text().splitlines()
     expected = [
-        "input-assembly\tyopE\tyopK",
-        "ez-screen-assembly\t1\t0"
+        "input-assembly\tyopE",
+        "ez-screen-assembly\t1"
     ]
 
     assert observed == expected, f"Summary TSV content does not match expected:\n{observed}\nExpected:\n{expected}"

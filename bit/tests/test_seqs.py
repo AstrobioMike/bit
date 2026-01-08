@@ -43,6 +43,7 @@ def test_calc_gc_sliding_window():
 
 
 def test_filter_fasta_by_length(tmp_path):
+
     in_fasta = tmp_path / "input.fasta"
     in_fasta.write_text(""">seq1
 ATGC
@@ -72,6 +73,7 @@ ATGCGTAA
 
 
 def test_calc_variation_in_msa(tmp_path):
+
     fasta_file = tmp_path / "test.fasta"
     fasta_file.write_text(""">seq1
 ATGCATGC
@@ -102,6 +104,7 @@ ATGCATGA
 
 
 def test_check_for_fastq_dup_headers(tmp_path):
+
     fastq_file = tmp_path / "test.fastq"
     fastq_gz_file = tmp_path / "test.fastq.gz"
     fastq_text = """@seq1
@@ -186,3 +189,32 @@ def test_mutate_seq():
     assert num_insertions == expected_insertions
     assert num_deletions == expected_deletions
     assert mutated_seq == expected_mutated_seq
+
+
+def test_dedupe_fasta_headers(tmp_path):
+    input_fasta_content = """>seq
+ACTG
+>another_seq
+GGTT
+>seq
+ACTG
+"""
+
+    input_fasta = tmp_path / "input.fasta"
+    input_fasta.write_text(input_fasta_content)
+
+    output_fasta = tmp_path / "output.fasta"
+
+    seqs.dedupe_fasta_headers(input_fasta, output_fasta)
+
+    records = list(SeqIO.parse(output_fasta, "fasta"))
+
+    assert len(records) == 3
+
+    expected_ids = ["seq", "another_seq", "seq_1"]
+    actual_ids = [r.id for r in records]
+    assert actual_ids == expected_ids
+
+    expected_seqs = ["ACTG", "GGTT", "ACTG"]
+    actual_seqs = [str(r.seq) for r in records]
+    assert actual_seqs == expected_seqs

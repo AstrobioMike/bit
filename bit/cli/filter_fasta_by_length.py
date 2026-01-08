@@ -1,7 +1,6 @@
 import sys
 import argparse
-from bit.cli.common import (CustomRichHelpFormatter,
-                            add_help)
+from bit.cli.common import CustomRichHelpFormatter, add_help
 from bit.modules.seqs import filter_fasta_by_length
 from bit.modules.general import check_files_are_found
 
@@ -11,7 +10,7 @@ def build_parser():
     desc = """
         This script takes a multifasta as input and filters out sequences based on length.
         For version info, run `bit-version`.
-    """
+        """
 
     parser = argparse.ArgumentParser(
         description=desc,

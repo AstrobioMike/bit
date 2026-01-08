@@ -16,10 +16,10 @@
 ## v1.13.6 (NOT YET RELEASED)
 
 ### Changed
-- modularized and added tests for `bit-get-workflow` and `bit-get-test-data`
+- modularized and added tests for `bit-get-workflow`, `bit-get-test-data`, and `bit-dedupe-fasta-headers`
 - added more tests to `bit-gen-reads`
 - improved coverage on some other modules with more unit tests
-- more more setup info into pyproject.toml, but retained minimal setup.py to be able to glob because bit has a lot of separate scripts/entry points
+- moved more setup info into pyproject.toml, but retained minimal setup.py to be able to glob because bit has a lot of separate scripts/entry points
 
 ---
 
