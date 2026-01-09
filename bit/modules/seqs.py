@@ -225,3 +225,29 @@ def dedupe_fasta_headers(input_fasta, output_fasta):
                 ids[seq_record.id] = count
                 out_fasta.write(">" + seq_record.id + "_" + str(count - 1) + "\n")
                 out_fasta.write(str(seq_record.seq) + "\n")
+
+
+def fasta_to_bed(input_fasta):
+
+    bed_records = []
+
+    with open(input_fasta, "r") as in_fasta:
+
+        for record in SeqIO.parse(in_fasta, "fasta"):
+            name = record.name
+            end = len(record.seq) - 1
+            bed_records.append((name, 0, end))
+
+    return bed_records
+
+
+def fasta_to_genbank(input_fasta):
+
+    with open(input_fasta, "r") as in_fasta:
+
+        sequences = list(SeqIO.parse(in_fasta, "fasta"))
+
+        for seq in sequences:
+            seq.annotations["molecule_type"] = "DNA"
+
+    return sequences

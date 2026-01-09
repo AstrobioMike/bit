@@ -218,3 +218,32 @@ ACTG
     expected_seqs = ["ACTG", "GGTT", "ACTG"]
     actual_seqs = [str(r.seq) for r in records]
     assert actual_seqs == expected_seqs
+
+
+def test_fasta_to_bed():
+
+    bed_records = seqs.fasta_to_bed(test_targets_fasta)
+
+    expected_bed_records = [
+        ("yopE", 0, 659),
+        ("yopK", 0, 548)
+    ]
+
+    assert bed_records == expected_bed_records
+
+
+def test_fasta_to_genbank():
+
+    sequences = seqs.fasta_to_genbank(test_targets_fasta)
+
+    buffer = StringIO()
+    SeqIO.write(sequences, buffer, "genbank")
+    buffer.seek(0)
+
+    records = list(SeqIO.parse(buffer, "genbank"))
+
+    assert len(records) == 2
+    assert records[0].id == "yopE"
+    assert str(records[0].seq).startswith("ATGAAAATATCA")
+    assert records[1].id == "yopK"
+    assert str(records[1].seq).startswith("ATGTTTATTAAA")

@@ -1,31 +1,6 @@
 #!/usr/bin/env python
 
-from Bio import SeqIO
-import sys
-import argparse
-import os
+from bit.cli.fasta_to_bed import main
 
-parser = argparse.ArgumentParser(description="This script takes a nucleotide multifasta and returns a tab-delimited bed file (see: https://bedtools.readthedocs.io/en/latest/content/general-usage.html). For version info, run `bit-version`.")
-
-required = parser.add_argument_group('required arguments')
-
-required.add_argument("-i", "--input-fasta", metavar = "<FILE>", help = "input fasta file", action = "store", required = True)
-parser.add_argument("-o", "--output-bed-file", metavar = "<FILE>", help = 'Name of output bed file (default: "Output.bed")',
-                    action = "store", default = "Output.bed")
-
-if len(sys.argv)==1:
-    parser.print_help(sys.stderr)
-    sys.exit(0)
-
-args = parser.parse_args()
-
-# in_fasta = open(args.input_fasta, "r")
-# out_file = open(args.output_file, "w")
-
-with open(args.output_bed_file, "w") as out:
-    with open(args.input_fasta, "r") as in_fasta:
-
-        for record in SeqIO.parse(in_fasta, "fasta"):
-            name = record.name
-            length = len(record.seq) - 1
-            out.write(str(name) + "\t" "0" + "\t" + str(length) + "\n")
+if __name__ == "__main__":
+    main()
