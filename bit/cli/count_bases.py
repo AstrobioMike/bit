@@ -9,9 +9,9 @@ def build_parser():
 
     desc = """
         This script takes a fasta as input and returns the total number of characters if the input
-        holds a single sequence, otherwise it produces a tab-delimited file with two columns (header
-        and number of characters for each sequence) and prints out some summary stats.
-        For version info, run `bit-version`.
+        holds a single sequence, or some summary stats if it is a multifasta. If you specify an output
+        file, it also produces a tab-delimited file with two columns (header and number of characters for
+        each sequence). For version info, run `bit-version`.
         """
 
     parser = argparse.ArgumentParser(
