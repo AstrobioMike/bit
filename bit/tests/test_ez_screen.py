@@ -78,6 +78,7 @@ def test_long_targets_merge_and_detect():
 
 
 class _Read:
+
     def __init__(self, qlen, nm, ref_id, flags=0):
         self.query_length = qlen
         self._nm = nm
@@ -85,10 +86,14 @@ class _Read:
         self.is_unmapped = False
         self.is_secondary = False
         self.is_supplementary = False
-    def get_tag(self, _): return self._nm
+        self.cigartuples = [(0, qlen)]
+
+    def get_tag(self, _):
+        return self._nm
 
 
 class _Bam:
+
     def __init__(self, reads):
         self._reads = reads
     def __enter__(self):
