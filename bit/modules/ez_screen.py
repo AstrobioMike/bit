@@ -388,12 +388,18 @@ def gen_ref_read_pids(input_bam):
             if read.is_unmapped or read.is_secondary or read.is_supplementary:
                 continue
             try:
-                nm = read.get_tag("NM")  # edit distance
+                nm = read.get_tag("NM")
             except KeyError:
                 continue
 
-            matches = read.query_length - nm
-            pid = matches / read.query_length * 100
+
+            full_aligned_length = sum(
+                length for op, length in read.cigartuples
+                if op in {0, 1, 2, 7, 8}   # M, I, D, =, X
+            )
+
+            pid = (full_aligned_length - nm) / full_aligned_length * 100
+
             refname = bam.get_reference_name(read.reference_id)
             ref_read_pids[refname].append(pid)
 

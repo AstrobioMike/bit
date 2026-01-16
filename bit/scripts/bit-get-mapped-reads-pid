@@ -1,0 +1,6 @@
+#!/usr/bin/env python
+
+from bit.cli.get_mapped_reads_pid import main
+
+if __name__ == "__main__":
+    main()

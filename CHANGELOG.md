@@ -15,6 +15,13 @@
 
 ## v1.13.6 (NOT YET RELEASED)
 
+### Added
+- `bit-get-mapped-reads-pid` to pull out percent-identity information of mapped reads from an bam
+  - The calculation is alignment-centric:
+    - PID = (full_aligned_length - NM) / full_aligned_length * 100
+      - where full_aligned_length = Matches + Mismatches + Insertions + Deletions
+
+
 ### Changed
 - modularized and added tests for `bit-get-workflow`, `bit-get-test-data`, `bit-dedupe-fasta-headers`, `bit-fasta-to-genbank`, and `bit-fasta-to-bed`
 - added more tests to `bit-gen-reads`
