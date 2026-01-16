@@ -59,5 +59,4 @@ def get_summary_stats(all_pids):
         ("StDev of pids:",  np.std(pid_array)),
     ]
 
-    print(mean, summary_stats)
     return mean, summary_stats

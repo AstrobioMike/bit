@@ -13,7 +13,7 @@
 
 -->
 
-## v1.13.6 (NOT YET RELEASED)
+## v1.13.6 (16-Jan-2026)
 
 ### Added
 - `bit-get-mapped-reads-pid` to pull out percent-identity information of mapped reads from an bam
@@ -21,7 +21,6 @@
     - PID = (full_aligned_length - NM) / full_aligned_length * 100
       - where full_aligned_length = Matches + Mismatches + Insertions + Deletions
 - added a 'genome' option to `bit-get-test-data` that pulls an E. coli
-
 
 ### Changed
 - modularized and added tests for `bit-get-workflow`, `bit-get-test-data`, `bit-dedupe-fasta-headers`, `bit-fasta-to-genbank`, and `bit-fasta-to-bed`
