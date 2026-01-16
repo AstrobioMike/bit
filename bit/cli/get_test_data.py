@@ -13,7 +13,7 @@ def build_parser():
 
     parser = argparse.ArgumentParser(
         description=desc,
-        epilog="Ex. usage: bit-get-test-data metagenomics",
+        epilog="Ex. usage: bit-get-test-data metagenome",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -23,7 +23,7 @@ def build_parser():
 
     required.add_argument(
         "datatype",
-        choices=["metagenomics"],
+        choices=["genome", "metagenome"],
         help="The first positional argument should be what type of test data you'd like to download",
     )
 

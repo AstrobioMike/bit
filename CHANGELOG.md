@@ -20,6 +20,7 @@
   - The calculation is alignment-centric:
     - PID = (full_aligned_length - NM) / full_aligned_length * 100
       - where full_aligned_length = Matches + Mismatches + Insertions + Deletions
+- added a 'genome' option to `bit-get-test-data` that pulls an E. coli
 
 
 ### Changed
