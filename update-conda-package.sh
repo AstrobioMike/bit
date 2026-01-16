@@ -43,8 +43,9 @@ fi
 
 ### getting started ###
 
-## getting current version from setup.py
-version=$(grep "version" setup.py | cut -f 2 -d '=' | tr -d '",')
+## getting current version from setup.py (now pyproject.toml)
+# version=$(grep "version" setup.py | cut -f 2 -d '=' | tr -d '",')
+version=$(grep "version" pyproject.toml | cut -f 2 -d '=' | tr -d '" ')
 ## getting current build from meta.yaml
 build=$(grep -A 1 ^build ${recipe_dir}/meta.yaml | grep number | cut -f 2 -d ":" | tr -s " " "\t" | cut -f 2)
 
