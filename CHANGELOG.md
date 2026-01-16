@@ -16,11 +16,11 @@
 ## v1.13.6 (16-Jan-2026)
 
 ### Added
-- `bit-get-mapped-reads-pid` to pull out percent-identity information of mapped reads from an bam
-  - The calculation is alignment-centric:
-    - PID = (full_aligned_length - NM) / full_aligned_length * 100
+- `bit-get-mapped-reads-pid` to pull out percent-identity information of mapped reads from an input bam
+  - for each mapped read:
+    - calculated percent ID = (full_aligned_length - NM) / full_aligned_length * 100
       - where full_aligned_length = Matches + Mismatches + Insertions + Deletions
-- added a 'genome' option to `bit-get-test-data` that pulls an E. coli
+- added a 'genome' option to `bit-get-test-data` that pulls an E. coli genome
 
 ### Changed
 - modularized and added tests for `bit-get-workflow`, `bit-get-test-data`, `bit-dedupe-fasta-headers`, `bit-fasta-to-genbank`, and `bit-fasta-to-bed`

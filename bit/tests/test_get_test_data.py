@@ -7,7 +7,7 @@ from bit.modules import get_test_data as gtd
 
 @pytest.fixture
 def mock_args():
-    return Namespace(datatype="metagenomics")
+    return Namespace(datatype="metagenome")
 
 @patch('bit.modules.get_test_data.subprocess.run')
 @patch('bit.modules.get_test_data.os.remove')
@@ -70,3 +70,20 @@ def test_dl_test_data_unzip_fail(mock_remove, mock_run, mock_args):
         gtd.dl_test_data(mock_args)
 
     assert e.value.code == 1
+
+
+@patch('bit.modules.get_test_data.subprocess.run')
+@patch('bit.modules.get_test_data.time.sleep')
+def test_dl_test_data_genome_success(mock_sleep, mock_run):
+
+    mock_run.side_effect = [
+        MagicMock(returncode=0),  # curl
+        MagicMock(returncode=0),  # gunzip
+    ]
+
+    args = Namespace(datatype="genome")
+
+    gtd.dl_test_data(args)
+
+    assert mock_run.call_args_list[0][0][0][:3] == ["curl", "-L", "--connect-timeout"]
+    assert "gunzip" in mock_run.call_args_list[1][0][0]
