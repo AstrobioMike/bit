@@ -18,6 +18,7 @@
 ### Changed
 - `bit-get-cov-stats` now also reports mean percent ID of mapped reads for each input reference when the input is a bam file (leveraging `bit-get-mapped-reads-pid`)
 
+---
 
 ## v1.13.6 (16-Jan-2026)
 
