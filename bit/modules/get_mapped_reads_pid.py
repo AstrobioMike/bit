@@ -52,11 +52,11 @@ def get_summary_stats(all_pids):
     mean = np.mean(pid_array)
 
     summary_stats = [
-        ("Num mapped reads:",      len(pid_array)),
-        ("Min pid:",    np.min(pid_array)),
-        ("Max pid:",    np.max(pid_array)),
+        ("Num mapped reads:", f"{len(pid_array):,}"),
+        ("Min pid:", np.min(pid_array)),
+        ("Max pid:", np.max(pid_array)),
         ("Median pid:", np.median(pid_array)),
-        ("StDev of pids:",  np.std(pid_array)),
+        ("StDev of pids:", np.std(pid_array)),
     ]
 
     return mean, summary_stats

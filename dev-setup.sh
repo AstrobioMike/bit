@@ -12,7 +12,7 @@ pip install -e .
 
 BIN_DIR=$(dirname $(which python))
 
-printf "\n\n  Linking scripts to ${BIN_DIR}/ for dev...\n\n"
+printf "\n\n  Linking scripts to ${BIN_DIR}/ for dev...\n\n\n"
 
 for script in bit/scripts/*; do
     ln -sf "$(realpath "${script}")" "${BIN_DIR}/$(basename "${script}")"

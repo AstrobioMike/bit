@@ -11,7 +11,8 @@ def build_parser():
         This script takes an input bam file and generates percent-identity information for mapped reads
         based on edit distance (using the NM field) and total alignment length. By default,
         it just prints out some summary stats. Specify an output file if you also want it to write out the
-        percent identities for each mapped read. For version info, run `bit-version`.
+        percent identities for each mapped read. [bold]TO ALSO GET[/bold] coverage and detection information, use
+        `bit-get-cov-stats` instead. For version info, run `bit-version`.
         """
 
     parser = argparse.ArgumentParser(
@@ -70,7 +71,9 @@ def print_summary_stats(all_pids):
     print(f"\n    Mean percent identity of mapped reads: {fmt(mean)}%\n")
 
     for name, val in summary_stats:
-        value = str(val) if isinstance(val, int) else fmt(val)
+        # value = str(val) if isinstance(val, int) else fmt(val)
+        value = val if isinstance(val, str) else fmt(val)
+
         print(f"        {name:<{20}}{value}")
 
     print()

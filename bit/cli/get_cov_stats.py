@@ -9,14 +9,15 @@ def build_parser():
 
     desc = """
         This script generates whole-reference detection and coverage info
-        for specified references given the reference fasta(s) and either a bam file OR
+        for specified references given the input reference fasta(s) and either a bam file OR
         a mosdepth-produced per-base.bed.gz file. If provided a bam file, it will generate
-        the mosdepth-required files. For version info, run `bit-version`.
+        the required mosdepth files as well as also adding mean percent ID of mapped reads
+        to each input reference in the output table. For version info, run `bit-version`.
         """
 
     parser = argparse.ArgumentParser(
         description=desc,
-        epilog="Ex. usage: `bit-get-cov-stats -r reference.fasta -b mapping.bam` or `bit-get-cov-stats -r reference.fasta --bed-file per-base.bed.gz`",
+        epilog="Ex. usage: `bit-get-cov-stats -r reference.fasta -b mapping.bam` or `bit-get-cov-stats -r reference.fasta --bed per-base.bed.gz`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -36,7 +37,7 @@ def build_parser():
         "-b",
         "--bam",
         metavar="<PATH>",
-        help="Path to bam file OR",
+        help="Path to bam file (which will allow reporting of mean percent ID per input reference) OR",
     )
 
     required.add_argument(

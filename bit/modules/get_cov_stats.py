@@ -4,8 +4,10 @@ import gzip
 from pathlib import Path
 from dataclasses import dataclass, field
 from Bio import SeqIO #type: ignore
+import numpy as np
 from colorama import Fore, init
 from bit.modules.general import check_files_are_found
+from bit.modules.get_mapped_reads_pid import get_mapped_reads_pids
 
 
 init(autoreset=True)
@@ -16,16 +18,19 @@ def get_cov_stats(args):
     preflight_checks(args)
     refs = parse_refs(args.reference_fastas)
 
+    ref_mean_pids, ref_mapped_counts = compute_ref_pid_stats(args.bam, refs)
+
     if args.bed:
         refs = parse_bed_file(refs, args.bed)
     else:
         bed = run_mosdepth(args.bam, args.output_prefix)
         refs = parse_bed_file(refs, bed)
 
-    generate_output(refs, args.output_prefix)
+    generate_output(refs, args.output_prefix, ref_mean_pids, ref_mapped_counts)
 
 
 def preflight_checks(args):
+
     paths_list = list(args.reference_fastas)
     if args.bed:
         paths_list.append(args.bed)
@@ -42,6 +47,34 @@ def parse_refs(reference_fastas):
         refs.append(ref)
 
     return refs
+
+
+def compute_ref_pid_stats(bam_path, refs):
+
+    if not bam_path:
+        return None, None
+
+    try:
+        ref_read_pids, _all_pids = get_mapped_reads_pids(bam_path)
+    except Exception:
+        return None, None
+
+    ref_mean_pids = {}
+    ref_mapped_counts = {}
+
+    for ref in refs:
+        pids = []
+        mapped_count = 0
+        for header in ref.headers:
+            if header in ref_read_pids:
+                header_list = ref_read_pids[header]
+                mapped_count += len(header_list)
+                pids.extend(pid for (_rid, pid) in header_list)
+
+        ref_mapped_counts[ref.path] = mapped_count
+        ref_mean_pids[ref.path] = round(float(np.mean(pids)), 2) if pids else None
+
+    return ref_mean_pids, ref_mapped_counts
 
 
 @dataclass
@@ -71,8 +104,8 @@ class RefData:
     def compute_metrics(self):
         detection = round(self.total_bases_detected_at_all / self.total_length, 4)
         detection_at_10x = round(self.total_bases_detected_at_10x / self.total_length, 4)
-        average_coverage = round(self.total_coverage_count / self.total_length, 4)
-        return detection, detection_at_10x, average_coverage
+        mean_coverage = round(self.total_coverage_count / self.total_length, 4)
+        return detection, detection_at_10x, mean_coverage
 
 
 def parse_bed_file(refs, bed_file):
@@ -108,11 +141,27 @@ def check_bam_file_is_indexed(bam_file):
         subprocess.run(cmd, shell=True)
 
 
-def generate_output(refs, output_prefix):
+def generate_output(refs, output_prefix, ref_mean_pids=None, ref_mapped_counts=None):
+
     primary_out_path = f"{output_prefix}.tsv"
+
     with open(primary_out_path, "w") as f:
-        f.write("ref\tdetection\tdetection_at_10x\taverage_coverage\n")
+
+        if ref_mean_pids is not None:
+            f.write("ref\tdetection\tdetection_at_10x\tmean_coverage\tmean_pid\tnum_mapped_reads\n")
+        else:
+            f.write("ref\tdetection\tdetection_at_10x\tmean_coverage\n")
+
         for ref in refs:
-            detection, detection_at_10x, average_coverage = ref.compute_metrics()
-            f.write(f"{ref.path}\t{detection}\t{detection_at_10x}\t{average_coverage}\n")
+            detection, detection_at_10x, mean_coverage = ref.compute_metrics()
+
+            if ref_mean_pids is not None:
+                mean_pid = ref_mean_pids.get(ref.path)
+                mapped_reads = ref_mapped_counts.get(ref.path, 0) if ref_mapped_counts is not None else 0
+                mapped_reads_str = f"{mapped_reads:,}"
+                mean_pid_str = "NA" if mean_pid is None else f"{mean_pid}"
+                f.write(f"{ref.path}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{mean_pid_str}\t{mapped_reads_str}\n")
+            else:
+                f.write(f"{ref.path}\t{detection}\t{detection_at_10x}\t{mean_coverage}\n")
+
     print(f"\n    Coverage stats written to: {Fore.YELLOW}{primary_out_path}\n")
