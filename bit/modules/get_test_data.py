@@ -24,7 +24,7 @@ def dl_test_data(args):
         data_url = "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/GCF_000005845.2_ASM584v2_genomic.fna.gz"
         dest = "GCF_000005845.2.fasta.gz"
         start_message=("Downloading an E. coli genome (GCF_000005845.2) from here: ")
-        end_message=("Successfully pulled in the genome (GCF_000005845.2.fasta).")
+        end_message=("Successfully pulled in the E. coli genome (GCF_000005845.2.fasta).")
 
 
     report_message(start_message, trailing_newline=True)
