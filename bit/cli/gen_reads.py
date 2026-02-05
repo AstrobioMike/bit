@@ -73,20 +73,20 @@ def main():
               equal proportions are assumed.",
     )
     optional.add_argument(
-        "-s",
-        "--seed",
-        metavar="<INT>",
-        help="Set the random seed if wanting control over the random number generator (default: None)",
-        type=int,
-        default=None,
-    )
-    optional.add_argument(
         "--circularize",
         help="Treat input contigs as circular and allow fragments that span the end-to-start \
               boundary to be generated. (You probably don't want this if your inputs include \
               linear genomes or if they're split across multiple contigs.)",
         action="store_true",
         default=False,
+    )
+    optional.add_argument(
+        "-s",
+        "--seed",
+        metavar="<INT>",
+        help="Set the random seed if wanting control over the random number generator (default: None)",
+        type=int,
+        default=None,
     )
     add_help(optional)
 
