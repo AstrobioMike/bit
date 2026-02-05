@@ -58,7 +58,8 @@ def main():
         "-f",
         "--fragment-size",
         metavar="<INT>",
-        help="Size of the fragment from which paired reads are generated (default: 500)",
+        help="Size of the fragment from which paired reads are generated (these may be shorter \
+              than the specified size when shorter contigs are present; default: 500)",
         type=int,
         default=500,
     )
@@ -67,8 +68,8 @@ def main():
         "--proportions-file",
         metavar="<FILE>",
         help="Proportions file (tab-delimited) specifying read proportions per input fasta \
-              (1st column should be path to input fasta; 2nd column should be \
-              wanted proportion with the total summing to one). If not provided, \
+              (1st column should be path to input fasta; 2nd column should be wanted \
+              proportion for each input with the total summing to one). If not provided, \
               equal proportions are assumed.",
     )
     optional.add_argument(
@@ -78,6 +79,14 @@ def main():
         help="Set the random seed if wanting control over the random number generator (default: None)",
         type=int,
         default=None,
+    )
+    optional.add_argument(
+        "--circularize",
+        help="Treat input contigs as circular and allow fragments that span the end-to-start \
+              boundary to be generated. (You probably don't want this if your inputs include \
+              linear genomes or if they're split across multiple contigs.)",
+        action="store_true",
+        default=False,
     )
     add_help(optional)
 

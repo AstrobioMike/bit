@@ -84,25 +84,34 @@ def simulate_paired_end_reads(args):
 
                 # generate paired-end reads
                 for _ in range(entry_reads):
-                    start = random.randint(0, max(0, seq_length - args.fragment_size))
-                    fragment = sequence[start:start + args.fragment_size]
 
-                    if len(fragment) < args.fragment_size:
-                        continue
+                    if args.circularize:
+                        frag_len = min(args.fragment_size, seq_length)
+                        start = random.randint(0, seq_length - 1)
+                        end = start + frag_len
+                        if end <= seq_length:
+                            fragment = sequence[start:end]
+                        else:
+                            # wrap-around
+                            part1 = sequence[start:]
+                            part2 = sequence[: end - seq_length]
+                            fragment = part1 + part2
+                    else:
+
+                        frag_len = min(args.fragment_size, seq_length)
+                        start = random.randint(0, seq_length - frag_len)
+                        fragment = sequence[start:start + frag_len]
 
                     forward_read = fragment[:args.read_length]
                     reverse_read = fragment[-args.read_length:][::-1].translate(str.maketrans("ACGT", "TGCA"))
 
-                    # generating FASTQ quality scores
                     quality_scores = "I" * args.read_length
 
-                    # writing forward read
                     fw.write(f"@{seq_id}_{start}/1\n")
                     fw.write(f"{forward_read}\n")
                     fw.write(f"+\n")
                     fw.write(f"{quality_scores}\n")
 
-                    # writing reverse read
                     rw.write(f"@{seq_id}_{start}/2\n")
                     rw.write(f"{reverse_read}\n")
                     rw.write(f"+\n")
