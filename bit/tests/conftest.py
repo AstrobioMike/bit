@@ -1,5 +1,4 @@
 from pathlib import Path
-from itertools import zip_longest
 
 
 def print_two_columns(items, indent="            "):

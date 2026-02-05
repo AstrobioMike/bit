@@ -8,7 +8,7 @@ source =
     bit.cli.summarize_column
 
 omit =
-    bit/**/__init__.py
+    */__init__.py
 
 [report]
 exclude_lines =
