@@ -73,6 +73,7 @@ def main():
               equal proportions are assumed.",
     )
     optional.add_argument(
+        "-c",
         "--circularize",
         help="Treat input contigs as circular and allow fragments that span the end-to-start \
               boundary to be generated. (You probably don't want this if your inputs include \
