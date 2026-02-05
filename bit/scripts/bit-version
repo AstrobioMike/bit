@@ -6,8 +6,8 @@ from importlib.metadata import version
 
 version = f"v{version('bit')}"
 print()
-print(f"\t\tBioinformatics Tools (bit) {color_text(version, 'green')}")
-print("\t\tgithub.com/AstrobioMike/bit\n")
+print(f"{' ' * 22} Bioinformatics Tools (bit) {color_text(version, 'green')}")
+print(f"{' ' * 25} github.com/AstrobioMike/bit\n")
 
 print("    If you happen to find this toolset useful in your work, please be sure to")
 print("    cite it :)\n")
