@@ -13,7 +13,7 @@
 
 -->
 
-## v1.13.7 (05-Feb-2026)
+## v1.13.8 (05-Feb-2026)
 
 ### Added
 - `--circularize` option added to `bit-gen-reads`
