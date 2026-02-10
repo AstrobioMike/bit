@@ -22,15 +22,23 @@ def build_parser():
         add_help=False
     )
 
-    required = parser.add_argument_group("REQUIRED PARAMETERS (choose one of bam or bed input in addition to refs)")
+    required = parser.add_argument_group("REQUIRED PARAMETERS (choose one of `--reference-fastas` or `--reference-list` and bam or bed)")
     optional = parser.add_argument_group("OPTIONAL PARAMETERS")
 
     required.add_argument(
         "-r",
         "--reference-fastas",
         metavar="<STR>",
-        help='Path to reference fasta file(s)',
+        help='Path to reference fasta file(s) (takes precendence over -R/--reference-list if both provided) OR',
         nargs="+",
+    )
+
+    required.add_argument(
+        "-R",
+        "--reference-list",
+        metavar="<FILE>",
+        help="Path to a file containing reference fasta paths, one per line.\n"
+             "This is an alternative to -r/--reference-fastas.",
     )
 
     required.add_argument(
@@ -68,6 +76,17 @@ def main():
 
         args = parser.parse_args()
 
+        if getattr(args, "reference_list", None):
+            ref_file = args.reference_list
+            try:
+                with open(ref_file, "r") as fh:
+                    lines = [l.strip() for l in fh if l.strip() and not l.lstrip().startswith("#")]
+                # Replace/override any provided reference_fastas
+                args.reference_fastas = lines
+            except Exception:
+                report_message(f"Unable to read reference list file: {ref_file}")
+                notify_premature_exit()
+
         check_required_inputs(args)
 
         get_cov_stats(args)
@@ -75,7 +94,7 @@ def main():
 
 def check_required_inputs(args):
     if not args.reference_fastas:
-        report_message("You must provide at least one reference fasta file via the -r/--reference-fastas parameter.",
+        report_message("You must provide at least one reference fasta file via the -r/--reference-fastas or -R/--reference-list parameters.",
                        initial_indent = "    ", subsequent_indent = "    ")
         notify_premature_exit()
     if not args.bam and not args.bed:
