@@ -8,11 +8,11 @@ from bit.modules.general import report_message, notify_premature_exit, is_gzippe
 def build_parser():
 
     desc = """
-        This script generates whole-reference detection and coverage info
-        for specified references given the input reference fasta(s) and either a bam file OR
-        a mosdepth-produced per-base.bed.gz file. If provided a bam file, it will generate
-        the required mosdepth files as well as also adding mean percent ID of mapped reads
-        to each input reference in the output table. For version info, run `bit-version`.
+        This script generates whole-reference (and contig-level) detection and coverage info
+        for specified references given the input reference fasta(s) and either a bam file AND/OR
+        a mosdepth-produced per-base.bed.gz file. If provided a bam file, it will also generate
+        and add mean percent ID of mapped reads to each input reference and contig in the output tables.
+        For version info, run `bit-version`.
         """
 
     parser = argparse.ArgumentParser(
@@ -45,7 +45,7 @@ def build_parser():
         "-b",
         "--bam",
         metavar="<PATH>",
-        help="Path to bam file (which will allow reporting of mean percent ID per input reference) OR",
+        help="Path to bam file (which will allow reporting of mean percent ID per input reference) AND/OR",
     )
 
     required.add_argument(
@@ -62,6 +62,18 @@ def build_parser():
         default="coverage-stats",
     )
 
+    optional.add_argument(
+        "--skip-per-contig",
+        action="store_true",
+        help="Specify this to skip reporting stats on a per-contig basis (which might save a lot of spacetime depending on the inputs)",
+    )
+
+    optional.add_argument(
+    "--include-non-primary",
+    action="store_true",
+    help="Also calculate percent identities for secondary and supplementary (non-primary) alignments",
+    )
+
     add_help(optional)
 
     return parser
@@ -76,25 +88,33 @@ def main():
 
         args = parser.parse_args()
 
-        if getattr(args, "reference_list", None):
-            ref_file = args.reference_list
-            try:
-                with open(ref_file, "r") as fh:
-                    lines = [l.strip() for l in fh if l.strip() and not l.lstrip().startswith("#")]
-                # Replace/override any provided reference_fastas
-                args.reference_fastas = lines
-            except Exception:
-                report_message(f"Unable to read reference list file: {ref_file}")
-                notify_premature_exit()
-
         check_required_inputs(args)
+
+        args = set_ref_input(args)
 
         get_cov_stats(args)
 
 
+def set_ref_input(args):
+    if args.reference_fastas and args.reference_list:
+        report_message("You have provided both -r/--reference-fastas and -R/--reference-list parameters, please only provide one.",
+                       initial_indent = "    ", subsequent_indent = "    ")
+        notify_premature_exit()
+    if getattr(args, "reference_list", None):
+        ref_file = args.reference_list
+        try:
+            with open(ref_file, "r") as fh:
+                lines = [l.strip() for l in fh if l.strip()]
+            args.reference_fastas = lines
+        except Exception:
+            report_message(f"We were unable to read the speficied file: {ref_file}")
+            notify_premature_exit()
+    return args
+
+
 def check_required_inputs(args):
-    if not args.reference_fastas:
-        report_message("You must provide at least one reference fasta file via the -r/--reference-fastas or -R/--reference-list parameters.",
+    if not args.reference_fastas and not args.reference_list:
+        report_message("You must provide at least one input reference fasta file via the -r/--reference-fastas or -R/--reference-list parameters.",
                        initial_indent = "    ", subsequent_indent = "    ")
         notify_premature_exit()
     if not args.bam and not args.bed:
@@ -102,14 +122,10 @@ def check_required_inputs(args):
                        "a mosdepth-produced per-base.bed.gz file via the --bed parameter.",
                        initial_indent = "    ", subsequent_indent = "    ")
         notify_premature_exit()
-    if args.bam and args.bed:
-        report_message("You have provided both a bam file and a bed file. Please provide "
-                       "solely the bed file IF it is a mosdepth-produced per-base.bed.gz file. "
-                       "If you don't have that, then provide solely the bam file.",
-                       initial_indent = "    ", subsequent_indent = "    ")
-        notify_premature_exit()
     if args.bed and not is_gzipped(args.bed):
         report_message("The provided bed file does not appear to be gzipped. Please provide "
                        "a mosdepth-produced per-base.bed.gz file that is gzipped.",
                        initial_indent = "    ", subsequent_indent = "    ")
         notify_premature_exit()
+
+

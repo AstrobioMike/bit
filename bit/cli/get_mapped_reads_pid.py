@@ -38,6 +38,13 @@ def build_parser():
         help='Name of output tsv if wanting per-read percent identities written out',
     )
 
+    optional.add_argument(
+        "--include-non-primary",
+        action="store_true",
+        help="Also calculate percent identities for secondary and supplementary (non-primary) alignments",
+    )
+
+
     add_help(optional)
 
     return parser
@@ -52,7 +59,7 @@ def main():
 
     args = parser.parse_args()
 
-    ref_read_pids, all_pids = get_mapped_reads_pids(args.input_bam)
+    ref_read_pids, all_pids = get_mapped_reads_pids(args.input_bam, include_non_primary=args.include_non_primary)
 
     print_summary_stats(all_pids)
 

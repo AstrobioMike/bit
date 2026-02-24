@@ -5,7 +5,7 @@ from collections import defaultdict
 import numpy as np
 
 
-def get_mapped_reads_pids(input_bam):
+def get_mapped_reads_pids(input_bam, include_non_primary=False):
     """
     The calculation is alignment-centric:
         PID = (full_aligned_length - NM) / full_aligned_length * 100
@@ -17,7 +17,9 @@ def get_mapped_reads_pids(input_bam):
         all_pids = []
 
         for read in bam.fetch(until_eof=True):
-            if read.is_unmapped or read.is_secondary or read.is_supplementary:
+            if read.is_unmapped:
+                continue
+            if not include_non_primary and (read.is_secondary or read.is_supplementary):
                 continue
             try:
                 nm = read.get_tag("NM")
