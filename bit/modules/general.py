@@ -5,6 +5,8 @@ import textwrap
 from importlib.resources import files
 from pathlib import Path
 from importlib.metadata import version
+import urllib.request
+from tqdm import tqdm
 
 
 def get_package_path(rel_path = ""):
@@ -95,3 +97,18 @@ def tee(msg, log_path, end="\n"):
 def is_gzipped(file_path):
     with open(file_path, 'rb') as test_f:
         return test_f.read(2) == b'\x1f\x8b'
+
+
+def download_with_tqdm(url, target, filename=None, urlopen=False):
+    with tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1, desc=target, ncols = 90) as t:
+        def reporthook(block_num, block_size, total_size):
+            if total_size > 0:
+                t.total = total_size
+            t.update(block_size)
+        if not urlopen:
+            urllib.request.urlretrieve(url, filename, reporthook=reporthook)
+            sys.stdout.write("")
+        else:
+            dl = urllib.request.urlopen(url, reporthook=reporthook)
+            sys.stdout.write("")
+            return dl

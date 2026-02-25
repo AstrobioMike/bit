@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 """
-This is a helper program of bit taken from my GToTree package (https://github.com/AstrobioMike/GToTree/wiki)
+This is a helper module of bit taken from my GToTree package (https://github.com/AstrobioMike/GToTree/wiki)
 to download the NCBI assembly summary tables if they are not present, or to update them.
 """
 
@@ -10,6 +10,7 @@ import os
 import argparse
 import shutil
 from datetime import date
+from bit.cli.common import CustomRichHelpFormatter
 from bit.modules.general import (wprint, color_text,
                                  report_message, notify_premature_exit,
                                  download_with_tqdm)
@@ -22,7 +23,8 @@ def main():
 
     parser = argparse.ArgumentParser(description="This is a helper program to download and setup the NCBI assembly summary tables if they are \
                                               not present, or to update them.", \
-                                 epilog="Ex. usage: helper-bit-get-ncbi-assembly-tables\n")
+                                 epilog="Ex. usage: `get-ncbi-assembly-tables`",
+                                 formatter_class=CustomRichHelpFormatter)
 
     parser.add_argument("-f", "--force-update", help='Update the stored NCBI assembly tables', action = "store_true")
 
@@ -77,11 +79,12 @@ def get_NCBI_assembly_summary_data(location):
     table_path = os.path.join(str(location), "ncbi-assembly-info.tsv")
     refseq_temp_path = os.path.join(str(location), "refseq-assembly-info.tmp")
 
-    print(color_text("    Downloading NCBI assembly summaries (only done once, or updated after 4 weeks)...\n", "yellow"))
+    print(color_text("\n    Downloading NCBI assembly summaries (only done once)...\n", "yellow"))
 
     try:
         download_with_tqdm(genbank_link, "        Genbank assemblies summary", table_path)
         download_with_tqdm(refseq_link, "        RefSeq assemblies summary", refseq_temp_path)
+        print("")
     except Exception as e:
         report_message(f"Downloading the NCBI assembly summary tables failed with the following error:\n{e}", "red")
         notify_premature_exit()

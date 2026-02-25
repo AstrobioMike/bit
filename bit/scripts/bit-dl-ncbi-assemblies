@@ -101,12 +101,8 @@ if [ -f "$NCBI_acc_file" ]; then
 fi
 
 
-## checking if ncbi metadata exists and is less than 4 weeks old, or downloading it ##
-if [ $http_flag == "true" ]; then
-    helper-bit-get-ncbi-assembly-tables --use-http
-else
-    helper-bit-get-ncbi-assembly-tables
-fi
+## checking if ncbi metadata exists ##
+get-ncbi-assembly-tables
 
 printf "    Targeting $NCBI_input_genomes_total genome(s) in $format format...\n\n"
 
