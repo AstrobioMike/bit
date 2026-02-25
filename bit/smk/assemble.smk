@@ -12,8 +12,9 @@ threads = config['threads']
 run_fastp = config['run_fastp']
 run_bbnorm = config['run_bbnorm']
 memory = config['memory']
-if memory.is_integer():
-    memory = int(memory)
+if assembler == 'megahit':
+    if isinstance(memory, float) and memory.is_integer():
+        memory = int(memory)
 min_contig_len = config['min_contig_len']
 isolate = config['isolate']
 conda_env = config['conda_env']
@@ -133,11 +134,11 @@ else:
             R2=lambda wildcards: final_reads_dict[wildcards.sample]['R2']
         output:
             output_dir + "/{sample}/spades-out/contigs.fasta"
-            # output_dir + "/{sample}/{sample}-assembly.fasta"
         params:
             sample=lambda wildcards: wildcards.sample,
             threads=threads,
             mode="--isolate" if isolate else "--meta",
+            memory=memory,
             assembler_out_dir=output_dir + "/{sample}/spades-out"
         log:
             log_files_dir + "/{sample}-assembly.log"
@@ -146,9 +147,7 @@ else:
             rm -rf {params.assembler_out_dir}
             spades.py -1 {input.R1} -2 {input.R2} -t {params.threads} \
                     {params.mode} -o {params.assembler_out_dir} \
-                    --phred-offset 33 > {log} 2>&1
-
-            # cp {params.assembler_out_dir}/contigs.fasta {output}
+                    -m {params.memory} --phred-offset 33 > {log} 2>&1
             """
 
     rule filter_spades_contigs:

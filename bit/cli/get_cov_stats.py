@@ -4,7 +4,6 @@ from bit.modules.get_cov_stats import get_cov_stats
 from bit.cli.common import CustomRichHelpFormatter, add_help
 from bit.modules.general import report_message, notify_premature_exit, is_gzipped
 
-
 def build_parser():
 
     desc = """
@@ -22,8 +21,8 @@ def build_parser():
         add_help=False
     )
 
-    required = parser.add_argument_group("REQUIRED PARAMETERS (choose one of `--reference-fastas` or `--reference-list` and bam or bed)")
-    optional = parser.add_argument_group("OPTIONAL PARAMETERS")
+    required = parser.add_argument_group("Required Parameters (choose one of `--reference-fastas` or `--reference-list` then `--bam` and/or `--bed`)")
+    optional = parser.add_argument_group("Optional Parameters")
 
     required.add_argument(
         "-r",

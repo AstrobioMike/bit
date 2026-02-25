@@ -10,8 +10,8 @@ parser = argparse.ArgumentParser(description = "This script takes a genbank-form
                                  It then writes those out to a tab-delimited file. For version info, run `bit-version`.",
                                  epilog="Ex. usage: bit-genbank-to-cds-table -i input.gb -o output.tsv")
 
-required = parser.add_argument_group('REQUIRED PARAMETERS')
-optional = parser.add_argument_group('OPTIONAL PARAMETERS')
+required = parser.add_argument_group('Required Parameters')
+optional = parser.add_argument_group('Optional Parameters')
 
 required.add_argument("-i", "--input-gb", help = "input genbank file",
                       metavar = "<FILE>", required = True)

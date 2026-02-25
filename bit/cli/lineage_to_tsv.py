@@ -22,8 +22,8 @@ def build_parser():
         add_help=False
     )
 
-    required = parser.add_argument_group("REQUIRED PARAMETERS")
-    optional = parser.add_argument_group("OPTIONAL PARAMETERS")
+    required = parser.add_argument_group("Required Parameters")
+    optional = parser.add_argument_group("Optional Parameters")
 
     required.add_argument(
         "-i",

@@ -21,12 +21,12 @@ def main():
 
     parser = argparse.ArgumentParser(
         description=desc,
-        epilog="Ex. usage: bit-cov-analyzer -r reference.fasta -b mapping.bam",
+        epilog="Ex. usage: `bit-cov-analyzer -r reference.fasta -b mapping.bam`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
-    required = parser.add_argument_group("REQUIRED PARAMETERS")
-    optional = parser.add_argument_group("OPTIONAL PARAMETERS")
+    required = parser.add_argument_group("Required Parameters")
+    optional = parser.add_argument_group("Optional Parameters")
 
     required.add_argument(
         "-r",

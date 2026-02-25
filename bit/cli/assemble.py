@@ -1,112 +1,116 @@
 import sys
 import argparse
 from pathlib import Path
-from bit.cli.common import (CustomRichHelpFormatter,
+from rich_argparse import RawTextRichHelpFormatter
+from bit.cli.common import (wrap_help,
+                            wrap_multiline_help,
                             add_help,
                             add_common_snakemake_arguments,
                             reconstruct_invocation)
 from bit.modules.general import report_message, notify_premature_exit
 from bit.modules.assemble import run_assembly
 
+RawTextRichHelpFormatter.group_name_formatter = lambda name: "Usage" if name.lower() == "usage" else name
 
 def build_parser():
 
-    desc = """
-        This program runs an assembly workflow with optional QC and digital normalization
-        (short-read and paired-end only currently). For version info, run `bit-version`.
-        """
+    raw_desc = (
+        "This program runs an assembly workflow with optional QC and digital normalization "
+        "(short-read and paired-end only currently). For version info, run `bit-version`."
+    )
+
+    desc = wrap_help(raw_desc, 4)
 
     parser = argparse.ArgumentParser(
         description=desc,
         epilog="Ex. usage: `bit-assemble -1 R1.fastq.gz -2 R2.fastq.gz` or `bit-assemble -r reads-dir/`",
-        formatter_class=CustomRichHelpFormatter,
+        formatter_class=RawTextRichHelpFormatter,
         add_help=False
     )
 
-    required = parser.add_argument_group("REQUIRED PARAMETERS (choose one input method)")
-    optional = parser.add_argument_group("OPTIONAL PARAMETERS")
-    megahit = parser.add_argument_group('MEGAHIT PARAMETERS')
-    spades = parser.add_argument_group('SPADES PARAMETERS')
-    snakemake = parser.add_argument_group('SNAKEMAKE PARAMETERS')
+    required = parser.add_argument_group("Required Parameters (choose one input method)")
+    general = parser.add_argument_group("General Parameters")
+    assembly = parser.add_argument_group('Assembly Parameters')
+    snakemake = parser.add_argument_group('Snakemake Parameters')
 
     required.add_argument(
         "-1",
         "--read-1",
         metavar="<FILE>",
-        help="Input read 1 file (gzipped fastq format; good for when you have one sample; incompatible with --reads-dir)",
+        help=wrap_help("Input read 1 file (gzipped fastq format; good for when you have one sample; incompatible with --reads-dir)"),
         type=Path,
     )
     required.add_argument(
         "-2",
         "--read-2",
         metavar="<FILE>",
-        help="Input read 2 file (gzipped fastq format; good for when you have one sample; incompatible with --reads-dir)",
+        help=wrap_help("Input read 2 file (gzipped fastq format; good for when you have one sample; incompatible with --reads-dir)"),
         type=Path,
     )
     required.add_argument(
         "-r",
         "--reads-dir",
         metavar="<DIR>",
-        help="Directory containing gzipped read files (helpful when you have multiple samples; incompatible with -1 and -2)",
+        help=wrap_help("Directory containing gzipped read files (helpful when you have multiple samples; incompatible with -1 and -2)"),
         type=Path,
     )
-    optional.add_argument(
+    general.add_argument(
         "-o",
         "--output-dir",
         metavar="<DIR>",
-        help="Directory for the output files (default: 'assembly/')",
+        help=wrap_help("Directory for the output files (default: 'assembly/')"),
         type=Path,
         default=Path("assembly"),
     )
-    optional.add_argument(
+    general.add_argument(
+        "--run-fastp",
+        action="store_true",
+        help=wrap_help("Run fastp quality trimming/filtering"),
+    )
+    general.add_argument(
+        "--run-bbnorm",
+        action="store_true",
+        help=wrap_help("Run bbnorm digital normalization"),
+    )
+
+    add_help(general)
+
+    assembly.add_argument(
         "-a",
         "--assembler",
         choices=["megahit", "spades"],
-        help="Assembler to use (default: megahit)",
+        help=wrap_help("Assembler to use (default: megahit)"),
         default="megahit",
     )
-    optional.add_argument(
+    assembly.add_argument(
         "-t",
         "--threads",
         metavar="<INT>",
-        help="Number of threads/cpus to pass as an assembler parameter (default: 1; may be multiplied by number of snakemake jobs)",
+        help=wrap_help("Number of threads/cpus to pass as an assembler parameter (default: 1; may be multiplied by number of snakemake jobs)"),
         default=1,
         type=int,
     )
-    optional.add_argument(
-        "--run-fastp",
-        action="store_true",
-        help="Run fastp quality trimming/filtering",
-    )
-    optional.add_argument(
-        "--run-bbnorm",
-        action="store_true",
-        help="Run bbnorm digital normalization",
-    )
-    add_help(optional)
-
-    megahit.add_argument(
-        "-m",
-        "--memory",
-        metavar="<STR>",
-        help="Max memory to use (default: '20e9'). Can be specified as \
-            fraction of total memory (e.g., '0.5') or value in bytes (e.g., '20e9' \
-            would be 20 GB)",
-        default="20e9",
-        type=str,
-    )
-    megahit.add_argument(
+    assembly.add_argument(
         "--min-contig-len",
         metavar="<INT>",
-        help="Minimum contig length to report (default: 500)",
+        help=wrap_help("Minimum contig length to report (default: 500)"),
         default=500,
         type=int,
     )
-
-    spades.add_argument(
+    assembly.add_argument(
         "--isolate",
         action="store_true",
-        help="Run assembly in '--isolate' mode rather than '--meta'",
+        help=wrap_help("Run assembly in '--isolate' mode rather than '--meta' (spades assembler only)"),
+    )
+    assembly.add_argument(
+        "-m",
+        "--memory",
+        metavar="<MEM>",
+        help=wrap_multiline_help(
+            "Memory setting (may be multiplied by number of snakemake jobs)\n"
+            "    For megahit: max memory to use (default: '20e9'); may be a fraction (e.g., '0.5') or bytes (e.g., '20e9' would be 20 GB)\n"
+            "    For spades:  max memory in Gb (terminates if exceeded; default: '250')"
+        ),
     )
 
     add_common_snakemake_arguments(snakemake)
@@ -123,6 +127,8 @@ def main():
     args = parser.parse_args()
 
     check_required_inputs(args)
+
+    args = check_other_settings(args)
 
     full_cmd_executed = reconstruct_invocation(parser, args)
 
@@ -150,3 +156,28 @@ def check_required_inputs(args):
         if not reads_dir.is_dir():
             print(f"Error: The specified reads directory '{reads_dir}' does not exist.")
             sys.exit(1)
+
+
+def check_other_settings(args):
+
+        if args.assembler != "spades" and args.isolate:
+            report_message("The --isolate option is only compatible with the spades assembler. Please remove the --isolate option or switch to the spades assembler.",
+                            initial_indent="    ", subsequent_indent="    ")
+            notify_premature_exit()
+
+        args = normalize_memory(args)
+
+        return args
+
+def normalize_memory(args):
+    if args.assembler == "megahit":
+        args.memory = args.memory or "20e9"
+    elif args.assembler == "spades":
+        val = args.memory or 250
+        try:
+            args.memory = int(val)
+        except ValueError:
+            report_message(f"Memory value '{val}' is not a valid integer for SPAdes. Please provide an integer value in Gb (e.g., '250').",
+                           initial_indent="    ", subsequent_indent="    ")
+            notify_premature_exit()
+    return args

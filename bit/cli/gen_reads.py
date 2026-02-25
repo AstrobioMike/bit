@@ -8,19 +8,19 @@ from bit.cli.common import (CustomRichHelpFormatter,
 def main():
 
     desc = """
-        This script generates perfect (no error model) paired-end reads in FASTQ format from one
-        or multiple input FASTA files. See `bit-mutate-seqs` if wanting to introduce variation to a fasta
+        This script generates perfect (no error model) paired-end reads in FASTQ format from one or
+        multiple input FASTA files. See `bit-mutate-seqs` if wanting to introduce variation to a fasta
         prior to read-generation. For version info, run `bit-version`.
         """
 
     parser = argparse.ArgumentParser(
         description=desc,
-        epilog="Ex. usage: bit-gen-reads -i genome-1.fasta genome-2.fasta -p proportions.tsv -o perfect-reads",
+        epilog="Ex. usage: `bit-gen-reads -i genome-1.fasta genome-2.fasta -p proportions.tsv -o perfect-reads`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
-    required = parser.add_argument_group("REQUIRED PARAMETERS")
-    optional = parser.add_argument_group("OPTIONAL PARAMETERS")
+    required = parser.add_argument_group("Required Parameters")
+    optional = parser.add_argument_group("Optional Parameters")
 
     required.add_argument(
         "-i",
@@ -58,8 +58,8 @@ def main():
         "-f",
         "--fragment-size",
         metavar="<INT>",
-        help="Size of the fragment from which paired reads are generated (these may be shorter \
-              than the specified size when shorter contigs are present; default: 500)",
+        help="Size of the fragment from which paired reads are generated (these may be shorter "
+            "than the specified size when shorter contigs are present; default: 500)",
         type=int,
         default=500,
     )

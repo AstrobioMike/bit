@@ -22,8 +22,11 @@
   - outputs include median coverage in addition to mean
   - for speed (and consistency with expectations of known most-frequent users), when `bit-get-cov-stats` runs mosdepth, it uses the `-x | --fast-mode` flag now
   - added progress bar when parsing coverage info
+- `bit-assemble`
+  - re-arranging of help menu, memory setting now passable to spades too
 - `report_message` function from modules.general slightly altered
   - this is more a note to myself for if/when i see weird things in terminal-printing format show up later
+- general help menu formatting
 
 ---
 

@@ -1,24 +1,31 @@
 import sys
 import shlex
+import re
+import shutil
+import textwrap
 import argparse
 from pathlib import Path
 from rich_argparse import RichHelpFormatter
 
+
+# cli/assemble.py has as example of partial RawTextRichHelpFormatter usage
+# and using the helper functions wrap_help and wrap_multiline_help from below
+
 class CustomRichHelpFormatter(RichHelpFormatter):
     def start_section(self, heading):
         if heading == "positional arguments":
-            heading = "AVAILABLE SUBCOMMANDS"
+            heading = "Available Subcommands"
         elif heading == "options":
-            heading = "OPTIONAL PARAMETERS"
+            heading = "Optional Parameters"
         super().start_section(heading)
-
+    group_name_formatter = lambda name: "Usage" if name.lower() == "usage" else name
 
 def add_help(group):
     group.add_argument(
         "-h",
         "--help",
-        action="help",
-        help="Show this help message and exit"
+        action = "help",
+        help = wrap_help("Show this help message and exit")
     )
 
 
@@ -26,7 +33,7 @@ def add_common_snakemake_arguments(group):
     group.add_argument(
         "-j",
         "--jobs",
-        help = "Max number of jobs to run in parallel (default: 10)",
+        help = wrap_help("Max number of jobs to run in parallel (default: 10)"),
         metavar = "<NUM>",
         action = "store",
         default = 10,
@@ -35,13 +42,13 @@ def add_common_snakemake_arguments(group):
 
     group.add_argument(
         "--rerun-incomplete",
-        help = "Re-run all jobs the output of which is recognized as incomplete",
+        help = wrap_help("Re-run jobs whose outputs are marked as incomplete (e.g., from a crashed run)"),
         action = "store_true",
     )
 
     group.add_argument(
         "--dry-run",
-        help = "Do not execute anything, only show what would be done",
+        help = wrap_help("Do not execute anything, only show what would be done"),
         action = "store_true",
     )
 
@@ -109,3 +116,41 @@ def reconstruct_invocation(parser, args):
                 cmd.append(str(val))
 
     return shlex.join(cmd)
+
+
+def wrap_help(text, margin=30):
+    term_width = shutil.get_terminal_size((80, 24)).columns
+    help_width = max(10, term_width - margin)
+    cleaned_text = " ".join(text.split())
+
+    return textwrap.fill(cleaned_text, width=help_width)
+
+
+def wrap_multiline_help(text, margin=30):
+    term_width = shutil.get_terminal_size((80, 24)).columns
+    help_width = max(10, term_width - margin)
+
+    wrapped_lines = []
+
+    for line in text.splitlines():
+        # Separate the leading spaces from the actual text using regex
+        match = re.match(r"^(\s*)(.*)$", line)
+        lead = match.group(1)
+        body = match.group(2)
+
+        # If the line is empty, just keep the whitespace and move on
+        if not body:
+            wrapped_lines.append(lead)
+            continue
+
+        # Wrap the text, applying the extracted leading spaces to every new line it creates
+        wrapped = textwrap.fill(
+            body,
+            width=help_width,
+            initial_indent=lead,
+            subsequent_indent=lead,
+            break_on_hyphens=False
+        )
+        wrapped_lines.append(wrapped)
+
+    return "\n".join(wrapped_lines)

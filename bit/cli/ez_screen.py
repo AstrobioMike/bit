@@ -58,8 +58,8 @@ def build_parser():
         add_help=False
     )
 
-    assembly_required = assembly_parser.add_argument_group('REQUIRED PARAMETERS')
-    assembly_optional = assembly_parser.add_argument_group('OPTIONAL PARAMETERS')
+    assembly_required = assembly_parser.add_argument_group('Required Parameters')
+    assembly_optional = assembly_parser.add_argument_group('Optional Parameters')
 
     assembly_required.add_argument("-a", "--assemblies", help = "Assembly files in fasta format", metavar = "<FILE>", required = True,
                         nargs = '+')
@@ -94,9 +94,9 @@ def build_parser():
         add_help=False
     )
 
-    reads_required = reads_parser.add_argument_group('REQUIRED PARAMETERS')
-    reads_optional = reads_parser.add_argument_group('OPTIONAL PARAMETERS')
-    reads_snakemake = reads_parser.add_argument_group('SNAKEMAKE PARAMETERS')
+    reads_required = reads_parser.add_argument_group('Required Parameters')
+    reads_optional = reads_parser.add_argument_group('Optional Parameters')
+    reads_snakemake = reads_parser.add_argument_group('Snakemake Parameters')
 
     add_common_required_arguments(reads_required)
 
