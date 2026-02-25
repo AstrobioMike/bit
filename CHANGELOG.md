@@ -13,7 +13,7 @@
 
 -->
 
-## v1.13.9 (25-Feb-2026)
+## v1.13.9 (NOT YET RELEASED)
 
 ### Changed
 - `bit-get-cov-stats`
