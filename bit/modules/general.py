@@ -14,9 +14,12 @@ def get_package_path(rel_path = ""):
 def color_text(text, color = 'green'):
     tty_colors = {
         'green' : '\033[0;32m%s\033[0m',
-        'yellow' : '\033[0;33m%s\033[0m',
-        'red' : '\033[0;31m%s\033[0m'
+        'orange': '\033[38;5;208m%s\033[0m',
+        'red' : '\033[0;31m%s\033[0m',
+        'teal' : '\033[0;36m%s\033[0m',
+        'yellow' : '\033[0;33m%s\033[0m'
     }
+
     if sys.stdout.isatty() and color != "none":
         return tty_colors[color] % text
     else:
@@ -29,12 +32,25 @@ def wprint(text, width = 80, initial_indent = "  ",
           subsequent_indent = subsequent_indent, break_on_hyphens = False))
 
 
-def report_message(message, color = "yellow", width = 80, initial_indent = "  ",
-                   subsequent_indent = "  ", trailing_newline = False):
+def report_message(message, color = "yellow", width = 80,
+                   initial_indent = "  ", subsequent_indent = "  ",
+                   join = True, trailing_newline = False):
+
     print("")
-    wprint(color_text(message, color), width = width,
-           initial_indent = initial_indent,
-           subsequent_indent = subsequent_indent)
+
+    if join:
+        message = " ".join(message.split())
+
+    wrapped = textwrap.fill(
+        message,
+        width = width,
+        initial_indent = initial_indent,
+        subsequent_indent = subsequent_indent,
+        break_on_hyphens = False,
+    )
+
+    print(color_text(wrapped, color))
+
     if trailing_newline:
         print("")
 

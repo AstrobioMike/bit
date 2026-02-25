@@ -10,9 +10,9 @@ def build_parser():
     desc = """
         This script generates whole-reference (and contig-level) detection and coverage info
         for specified references given the input reference fasta(s) and either a bam file AND/OR
-        a mosdepth-produced per-base.bed.gz file. If provided a bam file, it will also generate
-        and add mean percent ID of mapped reads to each input reference and contig in the output tables.
-        For version info, run `bit-version`.
+        a mosdepth-produced per-base.bed.gz file. When provided a bam file, it will also generate
+        mean percent ID values of mapped reads to each input reference and contig. For version
+        info, run `bit-version`.
         """
 
     parser = argparse.ArgumentParser(
@@ -82,7 +82,7 @@ def build_parser():
 def main():
         parser = build_parser()
 
-        if len(sys.argv) == 1:  # pragma: no cover
+        if len(sys.argv) == 1:
             parser.print_help(sys.stderr)
             sys.exit(0)
 
@@ -127,5 +127,3 @@ def check_required_inputs(args):
                        "a mosdepth-produced per-base.bed.gz file that is gzipped.",
                        initial_indent = "    ", subsequent_indent = "    ")
         notify_premature_exit()
-
-

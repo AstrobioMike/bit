@@ -13,6 +13,20 @@
 
 -->
 
+## v1.13.9 (25-Feb-2026)
+
+### Changed
+- `bit-get-cov-stats`
+  - by default now produces per-contig level info also (can be shut off with `--skip-per-contig`)
+  - the original ref-based output file is now called \<output-prefix\>-per-ref.tsv (changed from \<output-prefix\>.tsv)
+  - outputs include median coverage in addition to mean
+  - for speed (and consistency with expectations of known most-frequent users), when `bit-get-cov-stats` runs mosdepth, it uses the `-x | --fast-mode` flag now
+  - added progress bar when parsing coverage info
+- `report_message` function from modules.general slightly altered
+  - this is more a note to myself for if/when i see weird things in terminal-printing format show up later
+
+---
+
 ## v1.13.8 (05-Feb-2026)
 
 ### Added
