@@ -8,7 +8,6 @@ to download the NCBI assembly summary tables if they are not present, or to upda
 import sys
 import os
 import argparse
-import shutil
 from datetime import date
 from bit.cli.common import CustomRichHelpFormatter
 from bit.modules.general import (wprint, color_text,
@@ -21,10 +20,11 @@ from bit.modules.general import (wprint, color_text,
 
 def main():
 
-    parser = argparse.ArgumentParser(description="This is a helper program to download and setup the NCBI assembly summary tables if they are \
-                                              not present, or to update them.", \
-                                 epilog="Ex. usage: `get-ncbi-assembly-tables`",
-                                 formatter_class=CustomRichHelpFormatter)
+    parser = argparse.ArgumentParser(
+        description="This is a bit helper program to download NCBI assembly-summary tables.",
+        epilog="Ex. usage: `get-ncbi-assembly-tables`",
+        formatter_class=CustomRichHelpFormatter
+    )
 
     parser.add_argument("-f", "--force-update", help='Update the stored NCBI assembly tables', action = "store_true")
 
@@ -39,36 +39,35 @@ def check_ncbi_assembly_info_location_var_is_set():
 
     # making sure there is a NCBI_assembly_data_dir env variable
     try:
-        NCBI_data_dir = os.environ['NCBI_assembly_data_dir']
+        ncbi_assembly_data_dir = os.environ['NCBI_assembly_data_dir']
     except:
         wprint(color_text("The environment variable 'NCBI_assembly_data_dir' does not seem to be set :(", "yellow"))
         wprint("This shouldn't happen, check on things with `bit-data-locations check`.")
         print("")
         sys.exit(0)
 
-    return(NCBI_data_dir)
+    return ncbi_assembly_data_dir
 
 
 def check_if_data_present(location):
 
-    # seeing if present already
     table_path = os.path.join(str(location), "ncbi-assembly-info.tsv")
     date_retrieved_path = os.path.join(str(location), "date-retrieved.txt")
 
-    # if either file is missing, we are going to download, we also package the date-retrieved file empty with conda to retain directory, so checking it's not empty as well
-    if not os.path.isfile(table_path) or not os.path.isfile(date_retrieved_path) or not os.path.getsize(date_retrieved_path) > 0:
+    def is_nonempty_file(p):
+        return os.path.isfile(p) and os.path.getsize(p) > 0
 
-        if os.path.exists(table_path):
-            os.remove(table_path)
-        if os.path.isdir(date_retrieved_path):
-            shutil.rmtree(date_retrieved_path)
+    if not is_nonempty_file(table_path) or not is_nonempty_file(date_retrieved_path):
 
-        return(False)
+        for p in (table_path, date_retrieved_path):
+            if os.path.exists(p):
+                if os.path.isfile(p):
+                    os.remove(p)
+        return False
+    return True
 
-    return(True)
 
-
-def get_NCBI_assembly_summary_data(location):
+def download_ncbi_assembly_summary_data(location):
 
     """ downloads the needed ncbi assembly summary tables and combines them """
 
@@ -79,7 +78,7 @@ def get_NCBI_assembly_summary_data(location):
     table_path = os.path.join(str(location), "ncbi-assembly-info.tsv")
     refseq_temp_path = os.path.join(str(location), "refseq-assembly-info.tmp")
 
-    print(color_text("\n    Downloading NCBI assembly summaries (only done once)...\n", "yellow"))
+    print(color_text("\n    Downloading NCBI assembly summaries (only needs to be done once)...\n", "yellow"))
 
     try:
         download_with_tqdm(genbank_link, "        Genbank assemblies summary", table_path)
@@ -108,13 +107,14 @@ def get_NCBI_assembly_summary_data(location):
         outfile.write(date_retrieved + "\n")
 
 def get_ncbi_assembly_data(force_update=False):
+
     ncbi_dir = check_ncbi_assembly_info_location_var_is_set()
     data_present = check_if_data_present(ncbi_dir)
 
     if data_present and not force_update:
         return
     else:
-        get_NCBI_assembly_summary_data(ncbi_dir)
+        download_ncbi_assembly_summary_data(ncbi_dir)
 
 
 ################################################################################

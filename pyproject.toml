@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bit"
-version = "1.13.9"
+version = "1.13.10"
 description = "A set of bioinformatics scripts and workflows"
 readme = "README.md"
 license = { text = "GPLv3" }
@@ -21,3 +21,4 @@ bit = ["tests/data/*", "smk/*.smk", "smk/envs/*"]
 
 [project.scripts]
 get-ncbi-assembly-tables = "bit.modules.ncbi.get_ncbi_assembly_tables:main"
+get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"

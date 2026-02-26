@@ -112,3 +112,10 @@ def download_with_tqdm(url, target, filename=None, urlopen=False):
             dl = urllib.request.urlopen(url, reporthook=reporthook)
             sys.stdout.write("")
             return dl
+
+
+def attempt_to_make_dir(dir_path):
+    try:
+        os.makedirs(dir_path, exist_ok=True)
+    except Exception as e:
+        report_failure(f"Failed to create directory '{dir_path}' with the following error:\n{e}")

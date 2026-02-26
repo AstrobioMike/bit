@@ -13,6 +13,20 @@
 
 -->
 
+## v1.13.10 (NOT RELEASED YET)
+
+
+### Changed
+- `bit-dl-ncbi-assemblies` 
+  - in python now instead of bash (i hope this doesn't hinder performance too much...)
+  - default concurrent downloads is 10 now instead of 1
+  - default format is fasta now instead of gbk
+  - downloads only happen in http now, no more ftp, so the -P flag to specify http has been removed
+  - added optional output dir
+
+
+---
+
 ## v1.13.9 (25-Feb-2026)
 
 ### Added

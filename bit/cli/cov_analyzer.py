@@ -1,7 +1,7 @@
 import sys
 import argparse
 from bit.modules.cov_analyzer import run_cov_analyzer
-from bit.cli.common import CustomRichHelpFormatter, reconstruct_invocation
+from bit.cli.common import CustomRichHelpFormatter, reconstruct_invocation, add_help
 
 def main():
 
@@ -42,6 +42,7 @@ def main():
         help="Bam file",
         required=True,
     )
+
     optional.add_argument(
         "-o",
         "--output-dir",
@@ -127,12 +128,8 @@ def main():
         help='Add this flag to skip writing out individual window stats (saves spacetime)',
         action="store_true",
     )
-    optional.add_argument(
-        "-h",
-        "--help",
-        action="help",
-        help="Show this help message and exit",
-    )
+
+    add_help(optional)
 
     if len(sys.argv) == 1:  # pragma: no cover
         parser.print_help(sys.stderr)
