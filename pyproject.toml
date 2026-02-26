@@ -20,5 +20,16 @@ include-package-data = true
 bit = ["tests/data/*", "smk/*.smk", "smk/envs/*"]
 
 [project.scripts]
+## ncbi-related ##
+bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
 get-ncbi-assembly-tables = "bit.modules.ncbi.get_ncbi_assembly_tables:main"
 get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"
+
+
+## gtdb-related ##
+
+
+## coverage / mapping ##
+
+
+## sequence utilities ##

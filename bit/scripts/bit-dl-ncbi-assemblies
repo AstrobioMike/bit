@@ -1,6 +1,0 @@
-#!/usr/bin/env python
-
-from bit.cli.dl_ncbi_assemblies import main
-
-if __name__ == "__main__":
-    main()

@@ -8,7 +8,9 @@ if [ "${CONDA_DEFAULT_ENV}" != "bit-dev" ]; then
     exit 1
 fi
 
-pip install -e .
+rm -rf build/ bit.egg-info/
+
+pip install --no-build-isolation -e .
 
 BIN_DIR=$(dirname $(which python))
 

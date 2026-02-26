@@ -13,7 +13,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         description=desc,
-        epilog="Ex. usage: `bit-dl-ncbi-assemblies -w wanted-accessions.txt -f fasta -j 4`",
+        epilog="Ex. usage: `bit-dl-ncbi-assemblies -w wanted-accessions.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -25,7 +25,7 @@ def main():
         "-w",
         "--wanted-accessions",
         metavar="<FILE>",
-        help='Input file with wanted accessions',
+        help='Input file with wanted accessions, one per line',
         required=True,
     )
 
