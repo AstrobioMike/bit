@@ -18,6 +18,8 @@
 
 ### Changed
 - `bit-update-ncbi-taxonomy` replaced with `get-ncbi-tax-data` (prior still retained for now)
+- dropped `bit-calc`
+  - if you are the one other person that ever used this and you want it back, you can add this to your ~/.bashrc: `bit-calc () { awk "BEGIN { print $1 }"; }` :)
 
 
 ## v1.13.10 (27-Feb-2026)
