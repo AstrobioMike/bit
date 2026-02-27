@@ -97,6 +97,9 @@ bit-kraken2-to-taxon-summaries = "bit.cli.kraken2_to_taxon_summaries:main"
 # bit-gen-iToL-colorstrip
 # bit-gen-iToL-map
 # bit-gen-iToL-text-dataset
+    # probably make a sub-command setup for these if i'm keeping them here
+    # (they are probably better suited solely in gtotree)
+
 
 ## genbank manipulations ##
 # bit-genbank-locus-clean-slate
@@ -104,4 +107,26 @@ bit-kraken2-to-taxon-summaries = "bit.cli.kraken2_to_taxon_summaries:main"
 # bit-genbank-to-cds-table
 # bit-genbank-to-fasta
 # bit-gff-to-anvio
+    # can probably drop gff-to-anvio (since that's better maintained in anvio now)
+    # then subcommand situation for all that take in a genbank file
+    # bit-genbank
+        # to-AA-seqs
+        # to-cds-table
+        # to-fasta
+        # clean-slate
 
+
+## Database related ##
+# get-ncbi-assembly-data = "bit.modules.ncbi.get_ncbi_assembly_data:main"
+# get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"
+# get-go-dbs
+# get-gtdb-metadata
+    # maybe do a subcommand situation for these
+    # bit-data
+        # locations
+            # check/set
+        # get
+            # ncbi-assembly-data
+            # ncbi-tax-data
+            # go-dbs
+            # gtdb-metadata

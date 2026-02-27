@@ -68,7 +68,7 @@ def pytest_sessionstart(session):
     #     print("        Files not yet modularized:\n")
     #     print_two_columns(not_modularized)
 
-    print("\n        Remainig legacy scripts:\n")
+    print("\n        Remaining legacy scripts:\n")
     print_two_columns(script_files)
 
     print("\n  ====================================================================================================\n")
