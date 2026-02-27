@@ -13,7 +13,7 @@
 
 -->
 
-## v1.13.10 (NOT RELEASED YET)
+## v1.13.10 (27-Feb-2026)
 
 
 ### Changed

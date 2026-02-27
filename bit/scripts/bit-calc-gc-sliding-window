@@ -1,6 +1,0 @@
-#!/usr/bin/env python
-
-from bit.cli.calc_gc_sliding_window import main
-
-if __name__ == "__main__":
-    main()

@@ -105,7 +105,7 @@ def calc_variation_in_msa(args):
     return df
 
 
-def check_for_fastq_dup_headers(input_fastq):
+def check_fastq_for_dup_headers(input_fastq):
 
     headers_dict = {}
     seq_count = 0

@@ -30,6 +30,16 @@ get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"
 
 
 ## coverage / mapping ##
+bit-cov-analyzer = "bit.cli.cov_analyzer:main"
 
 
 ## sequence utilities ##
+bit-calc-gc-per-seq = "bit.cli.calc_gc_per_seq:main"
+bit-calc-gc-sliding-window = "bit.cli.calc_gc_sliding_window:main"
+bit-calc-variation-in-msa = "bit.cli.calc_variation_in_msa:main"
+bit-check-fastq-for-dup-headers = "bit.cli.check_fastq_for_dup_headers:main"
+bit-count-bases = "bit.cli.count_bases:main"
+bit-dedupe-fasta-headers = "bit.cli.dedupe_fasta_headers:main"
+
+## miscellaneous ##
+bit-assemble = "bit.cli.assemble:main"

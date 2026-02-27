@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 import sys
 import argparse
-from bit.modules.seqs import check_for_fastq_dup_headers
+from bit.modules.seqs import check_fastq_for_dup_headers
 from bit.modules.general import report_message
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help)
