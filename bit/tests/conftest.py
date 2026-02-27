@@ -55,6 +55,7 @@ def pytest_sessionstart(session):
 
         if 'if __name__ == "__main__"' in first_ten:
             modularized.append(file)
+            print(file)
         else:
             not_modularized.append(file)
 

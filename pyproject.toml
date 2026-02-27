@@ -45,6 +45,7 @@ bit-gen-reads = "bit.cli.gen_reads:main"
 bit-fasta-to-bed = "bit.cli.fasta_to_bed:main"
 bit-fasta-to-genbank = "bit.cli.fasta_to_genbank:main"
 bit-filter-fasta-by-length = "bit.cli.filter_fasta_by_length:main"
+bit-filter-seqs-by-length = "bit.cli.filter_fasta_by_length:main"
 bit-mutate-seqs = "bit.cli.mutate_seqs:main"
 bit-summarize-assembly = "bit.cli.summarize_assembly:main"
 
