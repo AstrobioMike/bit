@@ -27,11 +27,6 @@ def pytest_sessionstart(session):
     not_modularized = []
 
     for file in script_files:
-        # pseudo-ignoring bit-version for this purpose
-        if file.name == "bit-version":
-            python_scripts.append(file)
-            modularized.append(file)
-            continue
 
         # checking if helper script
         if file.name.startswith("helper-bit-"):
@@ -55,7 +50,6 @@ def pytest_sessionstart(session):
 
         if 'if __name__ == "__main__"' in first_ten:
             modularized.append(file)
-            print(file)
         else:
             not_modularized.append(file)
 
@@ -63,15 +57,18 @@ def pytest_sessionstart(session):
     print("  ================================= Progress on modularizing scripts =================================")
     print("  ====================================================================================================\n")
 
-    print(f"    Legacy script files remaining: {len(script_files)}\n")
+    print(f"    Legacy-script files remaining: {len(script_files)}\n")
     print(f"    Total helper scripts: {len(helper_scripts)}")
     print(f"    Total bash scripts: {len(bash_scripts)}")
     print(f"    Total python scripts: {len(python_scripts)}")
-    print(f"        Python scripts modularized: {len(modularized)}")
-    print(f"        Python scripts not yet modularized: {len(not_modularized)}\n")
+    # print(f"        Python scripts modularized: {len(modularized)}")
+    # print(f"        Python scripts not yet modularized: {len(not_modularized)}\n")
 
-    if not_modularized:
-        print("        Files not yet modularized:\n")
-        print_two_columns(not_modularized)
+    # if not_modularized:
+    #     print("        Files not yet modularized:\n")
+    #     print_two_columns(not_modularized)
+
+    print("\n        Remainig legacy scripts:\n")
+    print_two_columns(script_files)
 
     print("\n  ====================================================================================================\n")

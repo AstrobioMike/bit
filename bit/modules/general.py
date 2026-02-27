@@ -119,3 +119,24 @@ def attempt_to_make_dir(dir_path):
         os.makedirs(dir_path, exist_ok=True)
     except Exception as e:
         report_failure(f"Failed to create directory '{dir_path}' with the following error:\n{e}")
+
+
+def report_version():
+
+    from datetime import datetime
+    from importlib.metadata import version
+
+    ver = f"v{version('bit')}"
+    print()
+    print(f"{' ' * 22} Bioinformatics Tools (bit) {color_text(ver, 'green')}")
+    print(f"{' ' * 25} github.com/AstrobioMike/bit\n")
+
+    print("    If you happen to find this toolset useful in your work, please be sure to")
+    print("    cite it :)\n")
+
+    print("  Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122")
+    print("  https://doi.org/10.12688/f1000research.79530.1\n")
+
+    today = datetime.today().strftime('%A')
+    signoff = f"Happy {today} :)"
+    print(f"                                                   {color_text(signoff,'green')}\n")

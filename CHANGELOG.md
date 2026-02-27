@@ -26,6 +26,7 @@
   - downloads only happen in http now, no more ftp, so the -P flag to specify http has been removed
   - added optional output dir
 - no longer keeping stubs in scripts/, instead keeping a ton of entry points in pyproject.toml
+- `bit-filter-seqs-by-length` renamed to `bit-filter-fasta-by-length` to be more specific (prior retained for now)
 
 
 
