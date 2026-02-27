@@ -26,7 +26,7 @@
 
 ### Changed
 - `bit-get-cov-stats`
-  - the `--include-non-primary` flag now in addition to calculation percent ID including supplemental and secondary alignments also runs mosdepth with `--flag 1540`
+  - the `--include-non-primary` flag now in addition to calculating percent ID including supplemental and secondary alignments also runs mosdepth with `--flag 1540`
 - `bit-dl-ncbi-assemblies` 
   - in python now instead of bash (i hope this doesn't hinder performance too much...)
   - default concurrent downloads is 10 now instead of 1
