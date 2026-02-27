@@ -7,7 +7,7 @@ from tqdm import tqdm
 from bit.modules.general import (color_text, check_files_are_found,
                                  attempt_to_make_dir, report_message)
 from bit.modules.ncbi.parse_assembly_summary import parse_assembly_summary
-from bit.modules.ncbi.get_ncbi_assembly_tables import get_ncbi_assembly_data
+from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data
 
 
 def dl_ncbi_assemblies(args):
@@ -32,7 +32,7 @@ def preflight_checks(args):
     if args.output_dir and not os.path.exists(args.output_dir):
         attempt_to_make_dir(args.output_dir)
 
-    get_ncbi_assembly_data()
+    get_ncbi_assembly_data(quiet=True)
 
 
 def setup(args):

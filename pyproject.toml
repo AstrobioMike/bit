@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bit"
-version = "1.13.10"
+version = "1.13.11"
 description = "A set of bioinformatics scripts and workflows"
 readme = "README.md"
 license = { text = "GPLv3" }
@@ -24,8 +24,9 @@ bit-version = "bit.modules.general:report_version"
 
 ## ncbi-related ##
 bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
-get-ncbi-assembly-tables = "bit.modules.ncbi.get_ncbi_assembly_tables:main"
+get-ncbi-assembly-data = "bit.modules.ncbi.get_ncbi_assembly_data:main"
 get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"
+bit-update-ncbi-taxonomy = "bit.modules.ncbi.get_ncbi_tax_data:main"
 
 
 ## gtdb-related ##

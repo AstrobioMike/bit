@@ -9,7 +9,7 @@ import sys
 import os
 import argparse
 from datetime import date
-from bit.cli.common import CustomRichHelpFormatter
+from bit.cli.common import CustomRichHelpFormatter, add_help
 from bit.modules.general import (wprint, color_text,
                                  report_message, notify_premature_exit,
                                  download_with_tqdm)
@@ -23,14 +23,18 @@ def main():
     parser = argparse.ArgumentParser(
         description="This is a bit helper program to download NCBI assembly-summary tables.",
         epilog="Ex. usage: `get-ncbi-assembly-tables`",
-        formatter_class=CustomRichHelpFormatter
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
     )
 
+    parser.add_argument("-q", "--quiet", help="Exit silently if assembly data already present", action = "store_true")
     parser.add_argument("-f", "--force-update", help='Update the stored NCBI assembly tables', action = "store_true")
+
+    add_help(parser)
 
     args = parser.parse_args()
 
-    get_ncbi_assembly_data(force_update = args.force_update)
+    get_ncbi_assembly_data(force_update=args.force_update, quiet=args.quiet)
 
 ################################################################################
 
@@ -106,12 +110,17 @@ def download_ncbi_assembly_summary_data(location):
     with open(date_retrieved_path, "w") as outfile:
         outfile.write(date_retrieved + "\n")
 
-def get_ncbi_assembly_data(force_update=False):
+def get_ncbi_assembly_data(force_update=False, quiet=False):
 
     ncbi_dir = check_ncbi_assembly_info_location_var_is_set()
     data_present = check_if_data_present(ncbi_dir)
 
     if data_present and not force_update:
+        if not quiet:
+            report_message(f"Assembly data already present.")
+            report_message(f"Check it with `bit-data-locations`, or add `-f` to this program-call to force updating it.")
+            print()
+            return
         return
     else:
         download_ncbi_assembly_summary_data(ncbi_dir)

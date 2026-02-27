@@ -9,7 +9,7 @@ import sys
 import os
 import argparse
 import tarfile
-from bit.cli.common import CustomRichHelpFormatter
+from bit.cli.common import CustomRichHelpFormatter, add_help
 from bit.modules.general import (wprint, color_text, report_message,
                                  notify_premature_exit, download_with_tqdm)
 
@@ -19,15 +19,19 @@ def main():
 
     parser = argparse.ArgumentParser(
         description="This is a bit helper program to download NCBI taxonomy data.",
-        epilog="Example usage: get-ncbi-tax-data",
-        formatter_class=CustomRichHelpFormatter
+        epilog="Example usage: `get-ncbi-tax-data`",
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
     )
 
+    parser.add_argument("-q", "--quiet", help="Exit silently if tax data already present", action = "store_true")
     parser.add_argument("-f", "--force-update", help='Update the stored NCBI taxonomy data', action = "store_true")
+
+    add_help(parser)
 
     args = parser.parse_args()
 
-    get_ncbi_tax_data(force_update=args.force_update)
+    get_ncbi_tax_data(force_update=args.force_update, quiet=args.quiet)
 
 ################################################################################
 
@@ -82,12 +86,17 @@ def download_ncbi_tax_data(location):
     os.remove(taxdump_path)
 
 
-def get_ncbi_tax_data(force_update=False):
+def get_ncbi_tax_data(force_update=False, quiet = False):
 
     ncbi_data_dir = check_tax_location_var_is_set()
     data_present = check_if_data_present(ncbi_data_dir)
 
     if data_present and not force_update:
+        if not quiet:
+            report_message(f"Tax data already present.")
+            report_message(f"Check it with `bit-data-locations`, or add `-f` to this program-call to force updating it.")
+            print()
+            return
         return
     else:
         download_ncbi_tax_data(ncbi_data_dir)

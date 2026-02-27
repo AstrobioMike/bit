@@ -13,8 +13,14 @@
 
 -->
 
-## v1.13.10 (27-Feb-2026)
 
+## v1.13.11 (NOT RELEASED YET)
+
+### Changed
+- `bit-update-ncbi-taxonomy` replaced with `get-ncbi-tax-data` (prior still retained for now)
+
+
+## v1.13.10 (27-Feb-2026)
 
 ### Changed
 - `bit-get-cov-stats`
@@ -27,7 +33,6 @@
   - added optional output dir
 - no longer keeping stubs in scripts/, instead keeping a ton of entry points in pyproject.toml
 - `bit-filter-seqs-by-length` renamed to `bit-filter-fasta-by-length` to be more specific (prior retained for now)
-
 
 
 ---

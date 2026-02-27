@@ -47,7 +47,7 @@ fi
 
 
 ### checking that ncbi tax data is present already, and downloading if it isn't
-helper-bit-get-ncbi-tax-data
+get-ncbi-tax-data --quiet
 
 if [ "${include_strain}" = true ]; then
     taxonkit_reformat_pattern='{domain|superkingdom}\t{phylum}\t{class}\t{order}\t{family}\t{genus}\t{species}\t{strain|subspecies|no rank}'
