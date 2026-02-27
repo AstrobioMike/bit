@@ -10,12 +10,26 @@ fi
 
 rm -rf build/ bit.egg-info/
 
-pip install --no-build-isolation -e .
-
 BIN_DIR=$(dirname $(which python))
 
-printf "\n\n  Linking scripts to ${BIN_DIR}/ for dev...\n\n\n"
+# removing stale symlinks that point into bit/scripts/
+# (these conflict with pyproject.toml entry points)
+for f in ${BIN_DIR}/*; do
+    target=$(readlink "$f" 2>/dev/null)
+    if [[ "$target" == *"bit/scripts"* ]]; then
+        rm -f "$f"
+    fi
+done
+
+pip install --no-build-isolation -e .
+
+printf "\n\n  Linking unported scripts to ${BIN_DIR}/ for dev...\n\n\n"
 
 for script in bit/scripts/*; do
-    ln -sf "$(realpath "${script}")" "${BIN_DIR}/$(basename "${script}")"
+    name=$(basename "${script}")
+    # skip if pip already created an entry point for this name
+    if [ -f "${BIN_DIR}/${name}" ]; then
+        continue
+    fi
+    ln -sf "$(realpath "${script}")" "${BIN_DIR}/${name}"
 done

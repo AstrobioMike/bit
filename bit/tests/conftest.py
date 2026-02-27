@@ -62,7 +62,7 @@ def pytest_sessionstart(session):
     print("  ================================= Progress on modularizing scripts =================================")
     print("  ====================================================================================================\n")
 
-    print(f"    Base script files remaining: {len(script_files)}\n")
+    print(f"    Legacy script files remaining: {len(script_files)}\n")
     print(f"    Total helper scripts: {len(helper_scripts)}")
     print(f"    Total bash scripts: {len(bash_scripts)}")
     print(f"    Total python scripts: {len(python_scripts)}")

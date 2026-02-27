@@ -103,7 +103,7 @@ ATGCATGA
     assert abs(row_8["variation"] - 0.5) < 1e-6
 
 
-def test_check_for_fastq_dup_headers(tmp_path):
+def test_check_fastq_for_dup_headers(tmp_path):
 
     fastq_file = tmp_path / "test.fastq"
     fastq_gz_file = tmp_path / "test.fastq.gz"
@@ -119,7 +119,7 @@ IIII
 
     fastq_file.write_text(fastq_text)
 
-    dup_keys, seq_count = seqs.check_for_fastq_dup_headers(str(fastq_file))
+    dup_keys, seq_count = seqs.check_fastq_for_dup_headers(str(fastq_file))
 
     assert seq_count == 2
     assert dup_keys == ["seq1"]
@@ -129,7 +129,7 @@ IIII
     with gzip.open(fastq_gz_file, "wt") as f:
         f.write(fastq_text)
 
-    dup_keys_gz, seq_count_gz = seqs.check_for_fastq_dup_headers(str(fastq_gz_file))
+    dup_keys_gz, seq_count_gz = seqs.check_fastq_for_dup_headers(str(fastq_gz_file))
     assert seq_count_gz == 2
     assert dup_keys_gz == ["seq1"]
     assert len(dup_keys_gz) == 1

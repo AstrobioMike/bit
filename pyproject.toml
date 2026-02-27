@@ -31,7 +31,8 @@ get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"
 
 ## coverage / mapping ##
 bit-cov-analyzer = "bit.cli.cov_analyzer:main"
-
+bit-get-cov-stats = "bit.cli.get_cov_stats:main"
+bit-get-mapped-reads-pid = "bit.cli.get_mapped_reads_pid:main"
 
 ## sequence utilities ##
 bit-calc-gc-per-seq = "bit.cli.calc_gc_per_seq:main"
@@ -40,6 +41,24 @@ bit-calc-variation-in-msa = "bit.cli.calc_variation_in_msa:main"
 bit-check-fastq-for-dup-headers = "bit.cli.check_fastq_for_dup_headers:main"
 bit-count-bases = "bit.cli.count_bases:main"
 bit-dedupe-fasta-headers = "bit.cli.dedupe_fasta_headers:main"
+bit-gen-reads = "bit.cli.gen_reads:main"
+bit-fasta-to-bed = "bit.cli.fasta_to_bed:main"
+bit-fasta-to-genbank = "bit.cli.fasta_to_genbank:main"
+bit-filter-fasta-by-length = "bit.cli.filter_fasta_by_length:main"
+bit-mutate-seqs = "bit.cli.mutate_seqs:main"
+bit-summarize-assembly = "bit.cli.summarize_assembly:main"
+
 
 ## miscellaneous ##
 bit-assemble = "bit.cli.assemble:main"
+bit-ez-screen = "bit.cli.ez_screen:main"
+bit-get-test-data = "bit.cli.get_test_data:main"
+bit-get-workflow = "bit.cli.get_workflow:main"
+bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
+bit-summarize-column = "bit.cli.summarize_column:main"
+
+
+## kraken2 helpers ##
+bit-gen-kraken2-tax-plots = "bit.cli.gen_kraken2_tax_plots:main"
+bit-kraken2-to-taxon-summaries = "bit.cli.kraken2_to_taxon_summaries:main"
+
