@@ -2,6 +2,7 @@ import os
 import re
 import sys
 import textwrap
+import csv
 from importlib.resources import files
 from pathlib import Path
 from importlib.metadata import version
@@ -119,6 +120,40 @@ def attempt_to_make_dir(dir_path):
         os.makedirs(dir_path, exist_ok=True)
     except Exception as e:
         report_failure(f"Failed to create directory '{dir_path}' with the following error:\n{e}")
+
+
+def sniff_delimiter(line):
+
+    try:
+        dialect = csv.Sniffer().sniff(line, delimiters='\t,|; ')
+        return dialect.delimiter
+    except csv.Error:
+        return None
+
+
+def colnames(args):
+
+    with open(args.input_file) as f:
+        header_line = f.readline().rstrip('\n\r')
+
+    if not header_line:
+        print("  File appears to be empty.", file=sys.stderr)
+        sys.exit(1)
+
+    delimiter = sniff_delimiter(header_line)
+    if delimiter is None:
+        print(f"\n  {color_text('Could not detect a delimiter :(', 'yellow')}")
+        print("\n  But here's the first line:")
+        print(f"    {header_line}")
+        print()
+        exit()
+
+    columns = header_line.split(delimiter)
+
+    width = len(str(len(columns)))
+
+    for i, name in enumerate(columns, 1):
+        print(f"  {i:>{width}}  {name}")
 
 
 def report_version():

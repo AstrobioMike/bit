@@ -53,13 +53,18 @@ bit-mutate-seqs = "bit.cli.mutate_seqs:main"
 bit-summarize-assembly = "bit.cli.summarize_assembly:main"
 
 
+## table utilities ##
+bit-colnames = "bit.cli.colnames:main"
+bit-summarize-column = "bit.cli.summarize_column:main"
+# bit-filter-table
+
+
 ## miscellaneous ##
 bit-assemble = "bit.cli.assemble:main"
 bit-ez-screen = "bit.cli.ez_screen:main"
 bit-get-test-data = "bit.cli.get_test_data:main"
 bit-get-workflow = "bit.cli.get_workflow:main"
 bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
-bit-summarize-column = "bit.cli.summarize_column:main"
 
 
 ## kraken2 helpers ##
