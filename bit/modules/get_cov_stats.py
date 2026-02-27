@@ -25,7 +25,7 @@ def get_cov_stats(args):
                                                                  args.include_non_primary,
                                                                  args.skip_per_contig)
 
-    bed = args.bed if args.bed else run_mosdepth(args.bam, args.output_prefix)
+    bed = args.bed if args.bed else run_mosdepth(args.bam, args.output_prefix, args.include_non_primary)
 
     refs = parse_bed_file(refs, bed, contigs, header_to_ref_dict)
 
@@ -208,12 +208,15 @@ def parse_bed_file(refs, bed_file, contigs, header_to_ref_dict):
     return refs
 
 
-def run_mosdepth(bam_file, output_prefix):
+def run_mosdepth(bam_file, output_prefix, include_non_primary):
     check_bam_file_is_indexed(bam_file)
     mosdepth_output_dir = f"{output_prefix}-mosdepth-files"
     mosdepth_prefix = str(Path(mosdepth_output_dir) / Path(bam_file).stem)
     os.makedirs(mosdepth_output_dir, exist_ok=True)
-    cmd = f"mosdepth -x {mosdepth_prefix} {bam_file}"
+    if include_non_primary:
+        cmd = f"mosdepth -x --flag 1540 {mosdepth_prefix} {bam_file}"
+    else:
+        cmd = f"mosdepth -x {mosdepth_prefix} {bam_file}"
     print(f"\n  {Fore.YELLOW}Running mosdepth to generate the required per-base coverage file...")
     subprocess.run(cmd, shell=True)
     bed_file = f"{mosdepth_prefix}.per-base.bed.gz"

@@ -17,12 +17,15 @@
 
 
 ### Changed
+- `bit-get-cov-stats`
+  - the `--include-non-primary` flag now in addition to calculation percent ID including supplemental and secondary alignments also runs mosdepth with `--flag 1540`
 - `bit-dl-ncbi-assemblies` 
   - in python now instead of bash (i hope this doesn't hinder performance too much...)
   - default concurrent downloads is 10 now instead of 1
   - default format is fasta now instead of gbk
   - downloads only happen in http now, no more ftp, so the -P flag to specify http has been removed
   - added optional output dir
+- no longer keeping stubs in scripts/, instead keeping a ton of entry points in pyproject.toml
 
 
 ---

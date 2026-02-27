@@ -70,7 +70,7 @@ def build_parser():
     optional.add_argument(
     "--include-non-primary",
     action="store_true",
-    help="Also calculate percent identities for secondary and supplementary (non-primary) alignments",
+    help="Include secondary and supplementary alignments in the percent ID calculations, and run mosdepth with '--flag 1540' set",
     )
 
     add_help(optional)
