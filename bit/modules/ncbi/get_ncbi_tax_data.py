@@ -93,8 +93,9 @@ def get_ncbi_tax_data(force_update=False, quiet = False):
 
     if data_present and not force_update:
         if not quiet:
-            report_message(f"Tax data already present.")
-            report_message(f"Check it with `bit-data-locations`, or add `-f` to this program-call to force updating it.")
+            report_message(f"Tax data already present at:")
+            print(f"        {ncbi_data_dir}")
+            report_message(f"Run `get-ncbi-tax-data -f` if you want to re-download/update it.")
             print()
             return
         return
