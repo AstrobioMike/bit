@@ -14,7 +14,7 @@
 -->
 
 
-## v1.13.11 (NOT RELEASED YET)
+## v1.13.11 (03-Mar-2026)
 
 ### Changed
 - `bit-update-ncbi-taxonomy` replaced with `get-ncbi-tax-data` (prior still retained for now)
