@@ -20,6 +20,10 @@
 - `bit-update-ncbi-taxonomy` replaced with `get-ncbi-tax-data` (prior still retained for now)
 - dropped `bit-calc`
   - if you are the one other person that ever used this and you want it back, you can add this to your ~/.bashrc: `bit-calc () { awk "BEGIN { print $1 }"; }` :)
+- modified `bit-colnames` to try to autodetect delimeter
+
+### Fixed
+- added back in setup.py glob portion needed for scripts not fully integrated into python-packaging yet
 
 
 ## v1.13.10 (27-Feb-2026)
