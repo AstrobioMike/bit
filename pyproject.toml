@@ -41,6 +41,7 @@ bit-get-cov-stats = "bit.cli.get_cov_stats:main"
 bit-get-mapped-reads-pid = "bit.cli.get_mapped_reads_pid:main"
 
 ## sequence utilities ##
+bit-add-insertion = "bit.cli.add_insertion:main"
 bit-calc-gc-per-seq = "bit.cli.calc_gc_per_seq:main"
 bit-calc-gc-sliding-window = "bit.cli.calc_gc_sliding_window:main"
 bit-calc-variation-in-msa = "bit.cli.calc_variation_in_msa:main"

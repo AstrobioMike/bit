@@ -28,6 +28,15 @@ def add_help(group):
         help = wrap_help("Show this help message and exit")
     )
 
+def add_seed(group):
+    group.add_argument(
+        "-s",
+        "--seed",
+        metavar="<INT>",
+        help="Set the random seed if wanting control over the random number generator (default: None)",
+        type=int,
+        default=None,
+    )
 
 def add_common_snakemake_arguments(group):
     group.add_argument(

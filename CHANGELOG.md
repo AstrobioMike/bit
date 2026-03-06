@@ -13,6 +13,13 @@
 
 -->
 
+## v1.13.12 (06-Mar-2026)
+
+### Added
+- `bit-add-insertion`
+
+---
+
 
 ## v1.13.11 (03-Mar-2026)
 
@@ -25,6 +32,7 @@
 ### Fixed
 - added back in setup.py glob portion needed for scripts not fully integrated into python-packaging yet
 
+---
 
 ## v1.13.10 (27-Feb-2026)
 

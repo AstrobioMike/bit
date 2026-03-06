@@ -1,7 +1,7 @@
 import sys
 import argparse
 from bit.modules.seqs import calc_gc_sliding_window
-from bit.cli.common import CustomRichHelpFormatter
+from bit.cli.common import CustomRichHelpFormatter, add_help
 
 def main():
 
@@ -53,12 +53,8 @@ def main():
         default=10,
         type=int,
     )
-    optional.add_argument(
-        "-h",
-        "--help",
-        action="help",
-        help="Show this help message and exit",
-    )
+
+    add_help(optional)
 
     if len(sys.argv) == 1:  # pragma: no cover
         parser.print_help(sys.stderr)

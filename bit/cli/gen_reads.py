@@ -2,7 +2,8 @@ import sys
 import argparse
 from bit.modules.gen_reads import generate_reads
 from bit.cli.common import (CustomRichHelpFormatter,
-                            add_help)
+                            add_help,
+                            add_seed)
 
 
 def main():
@@ -81,14 +82,9 @@ def main():
         action="store_true",
         default=False,
     )
-    optional.add_argument(
-        "-s",
-        "--seed",
-        metavar="<INT>",
-        help="Set the random seed if wanting control over the random number generator (default: None)",
-        type=int,
-        default=None,
-    )
+
+    add_seed(optional)
+
     add_help(optional)
 
 
