@@ -13,6 +13,20 @@
 
 -->
 
+## v1.13.13 (NOT YET RELEASED)
+
+### Added
+- to `bit-gen-reads`
+  - added single-end and long-read capabilities (through `--type` argument now, see *Changed* below)
+  - single can be used up to any size, but if specifying `--long`, it will also generate reads with lengths spanning a range around the specified read size (50% by default)
+
+### Changed
+- `bit-gen-reads`
+  - now has `--type` flag for paired-end, single-end, or long (paired-end still by default)
+  - did more work than it's worth to ensure the *exact* number of requested reads are always returned
+
+---
+
 ## v1.13.12 (06-Mar-2026)
 
 ### Added

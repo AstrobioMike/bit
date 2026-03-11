@@ -9,8 +9,9 @@ from bit.cli.common import (CustomRichHelpFormatter,
 def main():
 
     desc = """
-        This script generates perfect (no error model) paired-end reads in FASTQ format from one or
-        multiple input FASTA files. See `bit-mutate-seqs` if wanting to introduce variation to a fasta
+        This script generates perfect (no error model) reads in FASTQ format from one or
+        multiple input FASTA files. Use --type to select paired-end (default), single-end,
+        or long reads. See `bit-mutate-seqs` if wanting to introduce variation to a fasta
         prior to read-generation. For version info, run `bit-version`.
         """
 
@@ -31,7 +32,6 @@ def main():
         help="List of input FASTA files",
         required=True,
     )
-
     optional.add_argument(
         "-o",
         "--output-prefix",
@@ -40,10 +40,17 @@ def main():
         default="perfect-reads",
     )
     optional.add_argument(
+         "-t",
+         "--type",
+         help="Type of reads to generate (default: 'paired-end')",
+         choices=["paired-end", "single-end", "long"],
+         default="paired-end",
+    )
+    optional.add_argument(
         "-n",
-        "--num-read-pairs",
+        "--num-reads",
         metavar="<INT>",
-        help="Number of total read-pairs to generate (default: 1,000,000)",
+        help="Number of total reads to generate ([bold]NOT[/bold] read-pairs; default: 1000000)",
         type=int,
         default=1000000,
     )
@@ -51,16 +58,16 @@ def main():
         "-r",
         "--read-length",
         metavar="<INT>",
-        help="Length of each read (default: 150)",
+        help="Length of each read (default: 150 for paired-end and single-end; 5000 for long reads)",
         type=int,
-        default=150,
+        default=None,
     )
     optional.add_argument(
         "-f",
         "--fragment-size",
         metavar="<INT>",
-        help="Size of the fragment from which paired reads are generated (these may be shorter "
-            "than the specified size when shorter contigs are present; default: 500)",
+        help="Size of the fragment from which paired-reads are generated (default: 500; "
+            "these may be shorter than the specified size when shorter contigs are present)",
         type=int,
         default=500,
     )
@@ -82,6 +89,15 @@ def main():
         action="store_true",
         default=False,
     )
+    optional.add_argument(
+        "-L",
+        "--long-read-length-range",
+        metavar="<INT>",
+        help="Percent range (+/-) around --read-length when using long-read mode. E.g., 50 with "
+             "--read-length 5000 generates reads from 2500 to 7500 (default: 50)",
+        type=int,
+        default=50,
+    )
 
     add_seed(optional)
 
@@ -93,5 +109,12 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    if args.type == "long" and not args.read_length:
+        args.read_length = 5000
+    elif not args.read_length:
+        args.read_length = 150
+
+    print(args)
 
     generate_reads(args)

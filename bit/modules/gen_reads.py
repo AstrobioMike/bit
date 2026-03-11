@@ -9,9 +9,11 @@ def generate_reads(args):
 
     preflight_checks(args)
 
-    simulate_paired_end_reads(args)
+    proportions = get_proportions(args)
 
-    compress_with_pigz(args.output_prefix)
+    gen_reads(args, proportions)
+
+    compress_with_pigz(args.output_prefix, read_type=args.type)
 
 
 def preflight_checks(args):
@@ -26,6 +28,16 @@ def preflight_checks(args):
         print("\n    Exiting for now :(\n")
         sys.exit(1)
 
+def get_proportions(args):
+
+    proportions = parse_proportions_file(args.proportions_file, args.input_fastas)
+
+    for fasta_file in args.input_fastas:
+        if fasta_file not in proportions:
+            raise ValueError(f"{fasta_file} is not specified in the proportions file.")
+
+    return proportions
+
 
 def parse_proportions_file(proportions_file, input_fastas):
 
@@ -39,29 +51,50 @@ def parse_proportions_file(proportions_file, input_fastas):
                 proportions[fasta_file] = proportion
                 total_proportion += proportion
 
-        # Normalize proportions to ensure they sum to 1
+        # normalizing proportions to ensure they sum to 1
         for key in proportions:
-            proportions[key] /= total_proportion
-
+            proportions[key] = proportions[key] / total_proportion
         return proportions
 
     else:
-        # Assign equal proportions if no proportions file is provided
+
+        # assigning equal proportions if no proportions file is provided
         num_fastas = len(input_fastas)
         return {fasta_file: 1 / num_fastas for fasta_file in input_fastas}
 
 
-def simulate_paired_end_reads(args):
+def extract_subsequence(sequence, seq_length, subseq_len, circularize):
 
-    proportions = parse_proportions_file(args.proportions_file, args.input_fastas)
+    if circularize:
+        start = random.randint(0, seq_length - 1)
+        end = start + subseq_len
+        if end <= seq_length:
+            subseq = sequence[start:end]
+        else:
+            subseq = sequence[start:] + sequence[: end - seq_length]
+    else:
+        start = random.randint(0, seq_length - subseq_len)
+        subseq = sequence[start:start + subseq_len]
+
+    return subseq, start
+
+
+def gen_reads(args, proportions):
 
     if args.seed is not None:
         random.seed(args.seed)
 
-    # ensure all input FASTA files are accounted for in the proportions file
-    for fasta_file in args.input_fastas:
-        if fasta_file not in proportions:
-            raise ValueError(f"{fasta_file} is not specified in the proportions file.")
+    if args.type in ("single-end", "long"):
+        gen_single_reads(args, proportions)
+    else:
+        gen_paired_reads(args, proportions)
+
+
+def gen_paired_reads(args, proportions):
+
+    if args.num_reads % 2 != 0:
+        args.num_reads += 1
+        print(f"\n    Note: Paired-end mode requires an even number of reads. Rounding up to {args.num_reads}.")
 
     forward_reads_file = f"{args.output_prefix}_R1.fastq"
     reverse_reads_file = f"{args.output_prefix}_R2.fastq"
@@ -69,6 +102,10 @@ def simulate_paired_end_reads(args):
     with open(forward_reads_file, 'w') as fw, open(reverse_reads_file, 'w') as rw:
 
         print("")
+
+        num_fragments = args.num_reads // 2
+        reads_remaining = num_fragments
+        remainder = 0.0
 
         for fasta_file in tqdm(args.input_fastas, desc = "    Generating reads from each input FASTA file"):
 
@@ -79,28 +116,15 @@ def simulate_paired_end_reads(args):
                 sequence = str(record.seq)
                 seq_length = len(sequence)
 
-                # proportional reads for this sequence entry
-                entry_reads = int((seq_length / total_length) * args.num_read_pairs * proportions[fasta_file])
+                exact = (seq_length / total_length) * num_fragments * proportions[fasta_file] + remainder
+                entry_reads = min(round(exact), reads_remaining)
+                remainder = exact - round(exact)
 
                 # generate paired-end reads
+                frag_len = min(args.fragment_size, seq_length)
                 for _ in range(entry_reads):
 
-                    if args.circularize:
-                        frag_len = min(args.fragment_size, seq_length)
-                        start = random.randint(0, seq_length - 1)
-                        end = start + frag_len
-                        if end <= seq_length:
-                            fragment = sequence[start:end]
-                        else:
-                            # wrap-around
-                            part1 = sequence[start:]
-                            part2 = sequence[: end - seq_length]
-                            fragment = part1 + part2
-                    else:
-
-                        frag_len = min(args.fragment_size, seq_length)
-                        start = random.randint(0, seq_length - frag_len)
-                        fragment = sequence[start:start + frag_len]
+                    fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize)
 
                     forward_read = fragment[:args.read_length]
                     reverse_read = fragment[-args.read_length:][::-1].translate(str.maketrans("ACGT", "TGCA"))
@@ -117,19 +141,128 @@ def simulate_paired_end_reads(args):
                     rw.write(f"+\n")
                     rw.write(f"{quality_scores}\n")
 
+                reads_remaining = reads_remaining - entry_reads
+                if reads_remaining <= 0:
+                    break
 
-def compress_with_pigz(output_prefix):
+            if reads_remaining <= 0:
+                break
 
-    forward_reads_file = f"{output_prefix}_R1.fastq"
-    reverse_reads_file = f"{output_prefix}_R2.fastq"
+        # if any reads remain due to rounding, adding them from the last contig
+        if reads_remaining > 0 and sequence:
+            frag_len = min(args.fragment_size, seq_length)
 
-    print("\n    Compressing output FASTQ files...")
+            for _ in range(reads_remaining):
+                fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize)
 
-    try:
-        subprocess.run(["pigz", "-f", forward_reads_file], check = True)
-        subprocess.run(["pigz", "-f", reverse_reads_file], check = True)
-        print(f"\n    Compressed files written: {forward_reads_file}.gz, {reverse_reads_file}.gz\n")
-    except FileNotFoundError:
-        print("pigz not found. Please install pigz or compress files manually.")
-    except subprocess.CalledProcessError as e:
-        print(f"Error during compression: {e}")
+                forward_read = fragment[:args.read_length]
+                reverse_read = fragment[-args.read_length:][::-1].translate(str.maketrans("ACGT", "TGCA"))
+                quality_scores = "I" * args.read_length
+
+                fw.write(f"@{seq_id}_{start}/1\n")
+                fw.write(f"{forward_read}\n")
+                fw.write(f"+\n")
+                fw.write(f"{quality_scores}\n")
+
+                rw.write(f"@{seq_id}_{start}/2\n")
+                rw.write(f"{reverse_read}\n")
+                rw.write(f"+\n")
+                rw.write(f"{quality_scores}\n")
+
+
+def gen_single_reads(args, proportions):
+
+    reads_file = f"{args.output_prefix}.fastq"
+
+    with open(reads_file, 'w') as fw:
+
+        print("")
+
+        if args.type == "long":
+            pct = args.long_read_length_range / 100
+            min_len = max(1, int(args.read_length * (1 - pct)))
+            max_len = int(args.read_length * (1 + pct))
+
+        reads_remaining = args.num_reads
+        remainder = 0.0
+
+        for fasta_file in tqdm(args.input_fastas, desc = "    Generating reads from each input FASTA file"):
+
+            total_length = sum(len(record.seq) for record in SeqIO.parse(fasta_file, "fasta"))
+
+            for record in SeqIO.parse(fasta_file, "fasta"):
+                seq_id = record.id
+                sequence = str(record.seq)
+                seq_length = len(sequence)
+
+                exact = (seq_length / total_length) * args.num_reads * proportions[fasta_file] + remainder
+                entry_reads = min(round(exact), reads_remaining)
+                remainder = exact - round(exact)
+
+                for _ in range(entry_reads):
+
+                    if args.type == "long":
+                        read_len = min(random.randint(min_len, max_len), seq_length)
+                    else:
+                        read_len = min(args.read_length, seq_length)
+
+                    read, start = extract_subsequence(sequence, seq_length, read_len, args.circularize)
+
+                    quality_scores = "I" * len(read)
+
+                    fw.write(f"@{seq_id}_{start}\n")
+                    fw.write(f"{read}\n")
+                    fw.write(f"+\n")
+                    fw.write(f"{quality_scores}\n")
+
+                reads_remaining = reads_remaining - entry_reads
+                if reads_remaining <= 0:
+                    break
+
+            if reads_remaining <= 0:
+                break
+
+        # if any reads remain due to rounding, adding them from the last contig
+        if reads_remaining > 0 and sequence:
+
+            for _ in range(reads_remaining):
+                if args.type == "long":
+                    read_len = min(random.randint(min_len, max_len), seq_length)
+                else:
+                    read_len = min(args.read_length, seq_length)
+
+                read, start = extract_subsequence(sequence, seq_length, read_len, args.circularize)
+
+                quality_scores = "I" * len(read)
+                fw.write(f"@{seq_id}_{start}\n")
+                fw.write(f"{read}\n")
+                fw.write(f"+\n")
+                fw.write(f"{quality_scores}\n")
+
+
+def compress_with_pigz(output_prefix, read_type="paired-end"):
+
+    if read_type in ("single-end", "long"):
+        reads_file = f"{output_prefix}.fastq"
+        print("\n    Compressing output FASTQ file...")
+        try:
+            subprocess.run(["pigz", "-f", reads_file], check = True)
+            print(f"\n    Compressed file written: {reads_file}.gz\n")
+        except FileNotFoundError:
+            print("pigz not found. You're on your own for compression!")
+        except subprocess.CalledProcessError as e:
+            print(f"Error during compression: {e}")
+    else:
+        forward_reads_file = f"{output_prefix}_R1.fastq"
+        reverse_reads_file = f"{output_prefix}_R2.fastq"
+
+        print("\n    Compressing output FASTQ files...")
+
+        try:
+            subprocess.run(["pigz", "-f", forward_reads_file], check = True)
+            subprocess.run(["pigz", "-f", reverse_reads_file], check = True)
+            print(f"\n    Compressed files written: {forward_reads_file}.gz, {reverse_reads_file}.gz\n")
+        except FileNotFoundError:
+            print("pigz not found. You're on your own for compression!")
+        except subprocess.CalledProcessError as e:
+            print(f"Error during compression: {e}")
