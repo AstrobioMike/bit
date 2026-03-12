@@ -103,6 +103,43 @@ ATGCATGA
     assert abs(row_8["variation"] - 0.5) < 1e-6
 
 
+def test_calc_variation_in_msa_3di(tmp_path):
+
+    fasta_file = tmp_path / "test_3di.fasta"
+    fasta_file.write_text(""">s1
+acdef
+>s2
+acgef
+>s3
+acdew
+""")
+
+    args = SimpleNamespace(
+        input_alignment_fasta=str(fasta_file),
+        output_tsv=str(tmp_path / "variation.tsv"),
+        type="3Di",
+        gap_treatment="ignore"
+    )
+
+    df = seqs.calc_variation_in_msa(args)
+
+    assert set(df.columns) == {"position", "variation", "conservation"}
+    assert len(df) == 5
+
+    for i, row in df.iterrows():
+        assert abs(row["variation"] + row["conservation"] - 1) < 1e-6
+
+    # positions 1, 2, 4 are identical across all 3 seqs -> conservation = 1.0
+    for pos in [1, 2, 4]:
+        row = df[df["position"] == pos].iloc[0]
+        assert abs(row["conservation"] - 1.0) < 1e-6
+
+    # positions 3 and 5 differ -> conservation < 1.0
+    for pos in [3, 5]:
+        row = df[df["position"] == pos].iloc[0]
+        assert row["conservation"] < 1.0
+
+
 def test_check_fastq_for_dup_headers(tmp_path):
 
     fastq_file = tmp_path / "test.fastq"

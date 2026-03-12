@@ -9,7 +9,7 @@ def main():
 
     desc = """
         This script takes an alignment in fasta format as input and returns the Shannon uncertainty values for each column
-        (using: https://scikit.bio/docs/dev/generated/skbio.alignment.TabularMSA.html). In output, a "variation" value of 0 would
+        (using: https://scikit.bio/docs/dev/generated/skbio.alignment.TabularMSA.conservation.html). In output, a "variation" value of 0 would
         mean the same character in all sequences for that position (highest conservation); 1 would mean equal probability of any character
         (greatest variability). "Conservation" column is inverse. As written, any ambiguous bases or residues are converted to gap characters.
         For version info, run `bit-version`.
@@ -45,9 +45,8 @@ def main():
     optional.add_argument(
         "-t",
         "--type",
-        metavar="<STR>",
-        help='Either "DNA" or "Protein" (default: "Protein")',
-        choices=["DNA", "Protein"],
+        help='Molecule type (default: "Protein")',
+        choices=["Protein", "DNA", "3Di"],
         action="store",
         default="Protein"
     )
@@ -55,11 +54,10 @@ def main():
     optional.add_argument(
         "-g",
         "--gap-treatment",
-        metavar="<STR>",
-        help='How to treat gaps, either "nan", "ignore", "error", "include" (default: "ignore")',
-        choices=["nan", "ignore", "error", "include"],
+        help='How to treat gaps (default: "include")',
+        choices=["include", "nan", "ignore", "error"],
         action="store",
-        default="ignore"
+        default="include"
     )
 
     add_help(optional)

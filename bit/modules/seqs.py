@@ -1,5 +1,7 @@
 from Bio import SeqIO
 from skbio import TabularMSA, DNA, Protein
+from skbio.sequence import GrammaredSequence
+from skbio.util import classproperty
 import pandas as pd
 import gzip
 from bit.modules.general import is_gzipped
@@ -85,7 +87,29 @@ def filter_fasta_by_length(in_fasta, out_fasta, min_length, max_length):
 
 def calc_variation_in_msa(args):
 
-    msa = TabularMSA.read(args.input_alignment_fasta, constructor=eval(args.type), lowercase=True)
+    THREEDI_CHARS = set('ACDEFGHIKLMNPQRSTVWY')
+
+    class ThreeDi(GrammaredSequence):
+
+        @classproperty
+        def definite_chars(cls):
+            return THREEDI_CHARS
+
+        @classproperty
+        def degenerate_map(cls):
+            return {'X': THREEDI_CHARS}
+
+        @classproperty
+        def default_gap_char(cls):
+            return '-'
+
+        @classproperty
+        def gap_chars(cls):
+            return set('-.')
+
+    SEQUENCE_TYPES = {"DNA": DNA, "Protein": Protein, "3Di": ThreeDi}
+
+    msa = TabularMSA.read(args.input_alignment_fasta, constructor=SEQUENCE_TYPES[args.type], lowercase=True)
 
     list_of_cleaned_seqs = []
 
