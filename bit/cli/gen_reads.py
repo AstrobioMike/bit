@@ -115,6 +115,4 @@ def main():
     elif not args.read_length:
         args.read_length = 150
 
-    print(args)
-
     generate_reads(args)

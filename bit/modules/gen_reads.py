@@ -106,6 +106,7 @@ def gen_paired_reads(args, proportions):
         num_fragments = args.num_reads // 2
         reads_remaining = num_fragments
         remainder = 0.0
+        read_count = 0
 
         for fasta_file in tqdm(args.input_fastas, desc = "    Generating reads from each input FASTA file"):
 
@@ -131,12 +132,13 @@ def gen_paired_reads(args, proportions):
 
                     quality_scores = "I" * args.read_length
 
-                    fw.write(f"@{seq_id}_{start}/1\n")
+                    read_count += 1
+                    fw.write(f"@{seq_id}_{read_count}_{start}/1\n")
                     fw.write(f"{forward_read}\n")
                     fw.write(f"+\n")
                     fw.write(f"{quality_scores}\n")
 
-                    rw.write(f"@{seq_id}_{start}/2\n")
+                    rw.write(f"@{seq_id}_{read_count}_{start}/2\n")
                     rw.write(f"{reverse_read}\n")
                     rw.write(f"+\n")
                     rw.write(f"{quality_scores}\n")
@@ -159,12 +161,13 @@ def gen_paired_reads(args, proportions):
                 reverse_read = fragment[-args.read_length:][::-1].translate(str.maketrans("ACGT", "TGCA"))
                 quality_scores = "I" * args.read_length
 
-                fw.write(f"@{seq_id}_{start}/1\n")
+                read_count += 1
+                fw.write(f"@{seq_id}_{read_count}_{start}/1\n")
                 fw.write(f"{forward_read}\n")
                 fw.write(f"+\n")
                 fw.write(f"{quality_scores}\n")
 
-                rw.write(f"@{seq_id}_{start}/2\n")
+                rw.write(f"@{seq_id}_{read_count}_{start}/2\n")
                 rw.write(f"{reverse_read}\n")
                 rw.write(f"+\n")
                 rw.write(f"{quality_scores}\n")
@@ -185,6 +188,7 @@ def gen_single_reads(args, proportions):
 
         reads_remaining = args.num_reads
         remainder = 0.0
+        read_count = 0
 
         for fasta_file in tqdm(args.input_fastas, desc = "    Generating reads from each input FASTA file"):
 
@@ -210,7 +214,8 @@ def gen_single_reads(args, proportions):
 
                     quality_scores = "I" * len(read)
 
-                    fw.write(f"@{seq_id}_{start}\n")
+                    read_count += 1
+                    fw.write(f"@{seq_id}_{read_count}_{start}\n")
                     fw.write(f"{read}\n")
                     fw.write(f"+\n")
                     fw.write(f"{quality_scores}\n")
@@ -234,7 +239,8 @@ def gen_single_reads(args, proportions):
                 read, start = extract_subsequence(sequence, seq_length, read_len, args.circularize)
 
                 quality_scores = "I" * len(read)
-                fw.write(f"@{seq_id}_{start}\n")
+                read_count += 1
+                fw.write(f"@{seq_id}_{read_count}_{start}\n")
                 fw.write(f"{read}\n")
                 fw.write(f"+\n")
                 fw.write(f"{quality_scores}\n")

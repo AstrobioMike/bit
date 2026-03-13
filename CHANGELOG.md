@@ -13,6 +13,13 @@
 
 -->
 
+## v1.13.14 (13-Mar-2026)
+
+### Fixed
+- `bit-gen-reads` previously may have by chance created reads with identical headers (since only coordinates were being added), now there is also a counter to prevent this
+
+---
+
 ## v1.13.13 (12-Mar-2026)
 
 ### Added
