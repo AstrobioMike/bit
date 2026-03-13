@@ -13,6 +13,18 @@
 
 -->
 
+## v1.13.15 (13-Mar-2026)
+
+### Changed
+- `bit-assemble`
+  - the threads parameter is now passed to bbnorm and fastp (if run) in addition to the assemblers
+- `bit-gen-reads`
+  - `--type long` will no longer preferentially start reads at position 0 if the requested read size is larger than the contig; now it will start randomly and just produce a read that ends where the contig ends (unless `--circularize` is added)
+- `bit-cov-analyzer`
+  - no longer writes out individual window stats by default (to save spacetime), it needs to be turned on with the `--write-window-stats` now if wanted
+
+---
+
 ## v1.13.14 (13-Mar-2026)
 
 ### Fixed

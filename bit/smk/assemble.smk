@@ -47,7 +47,8 @@ if run_fastp:
         params:
             output_dir=output_dir + "/{sample}/filtered-reads",
             html=output_dir + "/{sample}/filtered-reads/{sample}-fastp.html",
-            json=output_dir + "/{sample}/filtered-reads/{sample}-fastp.json"
+            json=output_dir + "/{sample}/filtered-reads/{sample}-fastp.json",
+            threads=threads
         log:
             log_files_dir + "/{sample}-fastp.log"
         shell:
@@ -56,7 +57,7 @@ if run_fastp:
 
             fastp -i {input.R1} -I {input.R2} -o {output.R1} -O {output.R2} \
                   --html {params.html} --json {params.json} \
-                  --thread 8 --detect_adapter_for_pe > {log} 2>&1
+                  --thread {params.threads} --detect_adapter_for_pe > {log} 2>&1
             """
 else:
     post_fastp_reads_dict = reads_dict
@@ -81,7 +82,8 @@ if run_bbnorm:
             R2=output_dir + "/{sample}/bbnormd-reads/{sample}-bbnormd-R2.fastq.gz"
         params:
             output_dir=output_dir + "/{sample}/bbnormd-reads",
-            target="100"
+            target="100",
+            threads=threads,
         log:
             log_files_dir + "/{sample}-bbnorm.log"
         shell:
@@ -89,7 +91,7 @@ if run_bbnorm:
             mkdir -p {params.output_dir}
 
             bbnorm.sh in={input.R1} in2={input.R2} out={output.R1} out2={output.R2} \
-                     threads=8 target={params.target} > {log} 2>&1
+                     threads={params.threads} target={params.target} > {log} 2>&1
             """
 else:
     post_bbnorm_reads_dict = post_fastp_reads_dict

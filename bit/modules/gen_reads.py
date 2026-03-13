@@ -72,6 +72,11 @@ def extract_subsequence(sequence, seq_length, subseq_len, circularize):
             subseq = sequence[start:end]
         else:
             subseq = sequence[start:] + sequence[: end - seq_length]
+    elif subseq_len >= seq_length:
+        # when the requested length meets or exceeds the contig length,
+        # pick any start position and truncate at the contig end
+        start = random.randint(0, seq_length - 1)
+        subseq = sequence[start:]
     else:
         start = random.randint(0, seq_length - subseq_len)
         subseq = sequence[start:start + subseq_len]

@@ -124,8 +124,8 @@ def main():
         default=100,
     )
     optional.add_argument(
-        "--no-window-stats",
-        help='Add this flag to skip writing out individual window stats (saves spacetime)',
+        "--write-window-stats",
+        help='Add this flag to also write out individual window stats (saves spacetime by not doing so)',
         action="store_true",
     )
 
@@ -153,7 +153,7 @@ def main():
         step_size = args.step_size,
         allowed_gap = args.allowed_gap,
         buffer = args.buffer,
-        no_window_stats = args.no_window_stats,
+        write_window_stats = args.write_window_stats,
         log_file = f"{args.output_dir}/runlog.txt",
         full_cmd_executed = full_cmd_executed
     )

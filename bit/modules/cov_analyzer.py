@@ -30,7 +30,7 @@ def run_cov_analyzer(
     step_size: int,
     allowed_gap: int,
     buffer: int,
-    no_window_stats: bool,
+    write_window_stats: bool,
     log_file = str,
     full_cmd_executed: str = None
 ):
@@ -65,7 +65,7 @@ def run_cov_analyzer(
     low_merged_regions = annotate_zero_cov_bases(low_merged_regions, bam_file)
 
     generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
-                     cov_df, cov_stats, buffer, output_dir, contig_lengths, no_window_stats,
+                     cov_df, cov_stats, buffer, output_dir, contig_lengths, write_window_stats,
                      log_file)
 
 
@@ -345,12 +345,12 @@ def annotate_zero_cov_bases(merged_regions, bam_file):
 
 
 def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
-                     cov_df, cov_stats, buffer, output_dir, contig_lengths, no_window_stats,
+                     cov_df, cov_stats, buffer, output_dir, contig_lengths, write_window_stats,
                      log_file):
 
     print()
     write_window_cov_stats(cov_stats, output_dir, contig_lengths, log_file)
-    if not no_window_stats:
+    if write_window_stats:
         write_windows_table(cov_stats, output_dir, log_file)
     write_window_plot_cov_histogram(cov_df, output_dir, log_file)
 

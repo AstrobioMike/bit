@@ -63,6 +63,14 @@ def build_parser():
         default=Path("assembly"),
     )
     general.add_argument(
+        "-t",
+        "--threads",
+        metavar="<INT>",
+        help=wrap_help("Number of threads/cpus to pass to QC and assembly commands (default: 1; may be multiplied by number of snakemake jobs)"),
+        default=1,
+        type=int,
+    )
+    general.add_argument(
         "--run-fastp",
         action="store_true",
         help=wrap_help("Run fastp quality trimming/filtering"),
@@ -81,14 +89,6 @@ def build_parser():
         choices=["megahit", "spades"],
         help=wrap_help("Assembler to use (default: megahit)"),
         default="megahit",
-    )
-    assembly.add_argument(
-        "-t",
-        "--threads",
-        metavar="<INT>",
-        help=wrap_help("Number of threads/cpus to pass as an assembler parameter (default: 1; may be multiplied by number of snakemake jobs)"),
-        default=1,
-        type=int,
     )
     assembly.add_argument(
         "--min-contig-len",
