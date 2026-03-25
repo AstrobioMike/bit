@@ -24,32 +24,33 @@ def test_get_cov_stats(tmp_path):
     assert ref_summary_tsv.exists(), f"Coverage stats TSV not found at {ref_summary_tsv}"
 
     observed = ref_summary_tsv.read_text().splitlines()
-    expected_header = "ref\tdetection\tdetection_at_10x\tmean_coverage\tmedian_coverage\tmean_pid\tnum_mapped_reads"
+    expected_header = "ref\tdetection\tdetection_at_10x\tmean_coverage\tmedian_coverage\tmean_pid\tmedian_pid\tnum_mapped_reads"
     assert observed[0] == expected_header, f"Header does not match expected:\n{observed[0]}\nExpected:\n{expected_header}"
 
     fields = observed[1].split("\t")
-    assert len(fields) == 7, f"Unexpected number of columns:\n{fields}"
+    assert len(fields) == 8, f"Unexpected number of columns:\n{fields}"
 
-    ref, detection, detection10x, mean_cov, median_cov, mean_pid, num_mapped_reads = fields
+    ref, detection, detection10x, mean_cov, median_cov, mean_pid, median_pid, num_mapped_reads = fields
     assert ref.endswith("ez-screen-assembly.fasta"), f"Unexpected ref path: {ref}"
     assert float(detection) == pytest.approx(0.87, rel=1e-3)
     assert float(detection10x) == pytest.approx(0.0, rel=1e-1)
     assert float(mean_cov) == pytest.approx(1.99, rel=1e-1)
     assert float(median_cov) == pytest.approx(2, rel=1e-1)
     assert float(mean_pid) == pytest.approx(100.0, rel=1e-2)
+    assert float(median_pid) == pytest.approx(100.0, rel=1e-2)
     assert int(num_mapped_reads.replace(",", "")) == 40
 
     contig_summary_tsv = Path(f"{out_prefix}-per-contig.tsv")
     assert contig_summary_tsv.exists(), f"Contig-level coverage stats TSV not found at {contig_summary_tsv}"
 
     observed = contig_summary_tsv.read_text().splitlines()
-    expected_header = "ref\tcontig\tlength\tdetection\tdetection_at_10x\tmean_coverage\tmedian_coverage\tmean_pid\tnum_mapped_reads"
+    expected_header = "ref\tcontig\tlength\tdetection\tdetection_at_10x\tmean_coverage\tmedian_coverage\tmean_pid\tmedian_pid\tnum_mapped_reads"
     assert observed[0] == expected_header, f"Contig-level TSV header does not match expected:\n{observed[0]}\nExpected:\n{expected_header}"
 
     fields = observed[1].split("\t")
-    assert len(fields) == 9, f"Unexpected number of columns in contig-level tsv:\n{fields}"
+    assert len(fields) == 10, f"Unexpected number of columns in contig-level tsv:\n{fields}"
 
-    ref, contig, length, detection, detection10x, mean_cov, median_cov, mean_pid, num_mapped_reads = fields
+    ref, contig, length, detection, detection10x, mean_cov, median_cov, mean_pid, median_pid, num_mapped_reads = fields
     assert ref.endswith("ez-screen-assembly.fasta"), f"Unexpected ref path: {ref}"
     assert contig == "partial-NC_003131.1"
     assert int(length) == 3010
@@ -58,6 +59,7 @@ def test_get_cov_stats(tmp_path):
     assert float(mean_cov) == pytest.approx(1.99, rel=1e-1)
     assert float(median_cov) == pytest.approx(2, rel=1e-1)
     assert float(mean_pid) == pytest.approx(100.0, rel=1e-2)
+    assert float(median_pid) == pytest.approx(100.0, rel=1e-2)
     assert int(num_mapped_reads.replace(",", "")) == 40
 
 

@@ -59,17 +59,18 @@ def main():
 
     args = parser.parse_args()
 
-    ref_read_pids, all_pids = get_mapped_reads_pids(args.input_bam, include_non_primary=args.include_non_primary)
+    store_reads = bool(args.output_tsv)
+    ref_read_pids, pid_stats = get_mapped_reads_pids(args.input_bam, include_non_primary=args.include_non_primary, store_read_pids=store_reads)
 
-    print_summary_stats(all_pids)
+    print_summary_stats(pid_stats)
 
     if args.output_tsv:
         write_out_read_pids(args.output_tsv, ref_read_pids)
 
 
-def print_summary_stats(all_pids):
+def print_summary_stats(pid_stats):
 
-    mean, summary_stats = get_summary_stats(all_pids)
+    mean, summary_stats = get_summary_stats(pid_stats)
 
     def fmt(val):
         s = f"{val:.2f}"
@@ -78,7 +79,6 @@ def print_summary_stats(all_pids):
     print(f"\n    Mean percent identity of mapped reads: {fmt(mean)}%\n")
 
     for name, val in summary_stats:
-        # value = str(val) if isinstance(val, int) else fmt(val)
         value = val if isinstance(val, str) else fmt(val)
 
         print(f"        {name:<{20}}{value}")

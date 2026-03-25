@@ -1,7 +1,7 @@
 import pysam
-import numpy as np
 from bit.modules.get_mapped_reads_pid import (get_mapped_reads_pids,
-                                              get_summary_stats)
+                                              get_summary_stats,
+                                              PidStats)
 
 
 def create_test_bam(tmp_path):
@@ -53,21 +53,28 @@ def create_test_bam(tmp_path):
 def test_get_mapped_reads_pids(tmp_path):
 
     bam = create_test_bam(tmp_path)
-    ref_read_pids, all_pids = get_mapped_reads_pids(bam)
+    ref_read_pids, pid_stats = get_mapped_reads_pids(bam)
 
     assert isinstance(ref_read_pids, dict)
     assert "ref" in ref_read_pids
     assert len(ref_read_pids["ref"]) == 2
-    assert sorted(all_pids) == [96.0, 100.0]
+
+    assert isinstance(pid_stats, PidStats)
+    assert pid_stats.count == 2
+    assert pid_stats.min_val == 96.0
+    assert pid_stats.max_val == 100.0
 
     read_ids = [read_id for read_id, pid in ref_read_pids["ref"]]
     assert set(read_ids) == {"read1/1", "read1/2"}
 
 
 def test_get_summary_stats():
-    all_pids = [96.0, 100.0]
-    mean, summary = get_summary_stats(all_pids)
+    pid_stats = PidStats()
+    pid_stats.add(96.0)
+    pid_stats.add(100.0)
 
-    assert np.isclose(mean, 98.0)
+    mean, summary = get_summary_stats(pid_stats)
+
+    assert abs(mean - 98.0) < 1e-9
     assert any("Median pid:" in str(row) for row in summary)
     assert any("StDev of pids:" in str(row) for row in summary)

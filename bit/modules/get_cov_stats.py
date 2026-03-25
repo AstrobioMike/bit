@@ -8,7 +8,7 @@ from collections import defaultdict
 from colorama import Fore, init #type: ignore
 from tqdm import tqdm #type: ignore
 from bit.modules.general import check_files_are_found, report_message
-from bit.modules.get_mapped_reads_pid import get_mapped_reads_pids
+from bit.modules.get_mapped_reads_pid import get_mapped_reads_pids, PidStats
 
 
 init(autoreset=True)
@@ -20,8 +20,8 @@ def get_cov_stats(args):
 
     refs, contigs, header_to_ref_dict = parse_refs(args.reference_fastas, args.skip_per_contig)
 
-    (ref_mean_pids, ref_mapped_counts,
-     contig_mean_pids, contig_mapped_counts) = compute_pid_stats(args.bam, refs, contigs,
+    (ref_mean_pids, ref_median_pids, ref_mapped_counts,
+     contig_mean_pids, contig_median_pids, contig_mapped_counts) = compute_pid_stats(args.bam, refs, contigs,
                                                                  args.include_non_primary,
                                                                  args.skip_per_contig)
 
@@ -29,8 +29,8 @@ def get_cov_stats(args):
 
     refs = parse_bed_file(refs, bed, contigs, header_to_ref_dict)
 
-    generate_output(refs, args.output_prefix, ref_mean_pids, ref_mapped_counts,
-                    contigs, contig_mean_pids, contig_mapped_counts, args.skip_per_contig)
+    generate_output(refs, args.output_prefix, ref_mean_pids, ref_median_pids, ref_mapped_counts,
+                    contigs, contig_mean_pids, contig_median_pids, contig_mapped_counts, args.skip_per_contig)
 
 
 def preflight_checks(args):
@@ -148,45 +148,55 @@ def parse_refs(reference_fastas, skip_per_contig=False):
 def compute_pid_stats(bam_path, refs, contigs_dict, include_non_primary=False, skip_per_contig=False):
 
     if not bam_path:
-        return None, None, None, None
+        return None, None, None, None, None, None
 
     try:
-        ref_read_pids, _all_pids = get_mapped_reads_pids(bam_path, include_non_primary)
+        ref_read_pids, _pid_stats = get_mapped_reads_pids(bam_path, include_non_primary)
     except Exception:
-        return None, None, None, None
+        return None, None, None, None, None, None
 
     contig_mean_pids = {}
+    contig_median_pids = {}
     contig_mapped_counts = {}
+
+    # build per-contig PidStats for median calculation
+    contig_pid_stats = {}
 
     if not skip_per_contig:
         for contig_name in contigs_dict.keys():
             if contig_name in ref_read_pids:
                 read_data = ref_read_pids[contig_name]
-                contig_sum = sum(pid for (_, pid) in read_data)
-                contig_count = len(read_data)
+                contig_stats = PidStats.from_values(pid for (_, pid) in read_data)
+                contig_pid_stats[contig_name] = contig_stats
 
-                contig_mapped_counts[contig_name] = contig_count
-                contig_mean_pids[contig_name] = round(contig_sum / contig_count, 2) if contig_count > 0 else None
+                contig_mapped_counts[contig_name] = contig_stats.count
+                contig_mean_pids[contig_name] = round(contig_stats.mean, 2) if contig_stats.count > 0 else None
+                contig_median_pids[contig_name] = round(contig_stats.median, 2) if contig_stats.count > 0 else None
             else:
                 contig_mapped_counts[contig_name] = 0
                 contig_mean_pids[contig_name] = None
+                contig_median_pids[contig_name] = None
 
     ref_mean_pids = {}
+    ref_median_pids = {}
     ref_mapped_counts = {}
 
     for ref in refs:
-        ref_sum = 0.0
-        ref_count = 0
+        ref_pid_stats = PidStats()
         for contig_name in ref.headers:
             if contig_name in ref_read_pids:
-                read_data = ref_read_pids[contig_name]
-                ref_sum += sum(pid for (_, pid) in read_data)
-                ref_count += len(read_data)
 
-        ref_mapped_counts[ref.path] = ref_count
-        ref_mean_pids[ref.path] = round(ref_sum / ref_count, 2) if ref_count > 0 else None
+                if contig_name in contig_pid_stats:
+                    ref_pid_stats.merge(contig_pid_stats[contig_name])
+                else:
+                    contig_stats = PidStats.from_values(pid for (_, pid) in ref_read_pids[contig_name])
+                    ref_pid_stats.merge(contig_stats)
 
-    return ref_mean_pids, ref_mapped_counts, contig_mean_pids, contig_mapped_counts
+        ref_mapped_counts[ref.path] = ref_pid_stats.count
+        ref_mean_pids[ref.path] = round(ref_pid_stats.mean, 2) if ref_pid_stats.count > 0 else None
+        ref_median_pids[ref.path] = round(ref_pid_stats.median, 2) if ref_pid_stats.count > 0 else None
+
+    return ref_mean_pids, ref_median_pids, ref_mapped_counts, contig_mean_pids, contig_median_pids, contig_mapped_counts
 
 
 def parse_bed_file(refs, bed_file, contigs, header_to_ref_dict):
@@ -236,8 +246,8 @@ def check_bam_file_is_indexed(bam_file):
         report_message(message, color="orange", initial_indent="    ", subsequent_indent="    ")
 
 
-def generate_output(refs, output_prefix, ref_mean_pids=None, ref_mapped_counts=None,
-                    contigs=None, contig_mean_pids=None, contig_mapped_counts=None,
+def generate_output(refs, output_prefix, ref_mean_pids=None, ref_median_pids=None, ref_mapped_counts=None,
+                    contigs=None, contig_mean_pids=None, contig_median_pids=None, contig_mapped_counts=None,
                     skip_per_contig=False):
 
     primary_out_path = f"{output_prefix}-per-ref.tsv"
@@ -246,7 +256,7 @@ def generate_output(refs, output_prefix, ref_mean_pids=None, ref_mapped_counts=N
 
         cols = ["ref", "detection", "detection_at_10x", "mean_coverage", "median_coverage"]
         if ref_mean_pids is not None:
-            cols.extend(["mean_pid", "num_mapped_reads"])
+            cols.extend(["mean_pid", "median_pid", "num_mapped_reads"])
         f.write("\t".join(cols) + "\n")
 
         for ref in refs:
@@ -254,9 +264,11 @@ def generate_output(refs, output_prefix, ref_mean_pids=None, ref_mapped_counts=N
 
             if ref_mean_pids is not None:
                 mean_pid = ref_mean_pids.get(ref.path)
+                median_pid = ref_median_pids.get(ref.path)
                 mapped_reads = ref_mapped_counts.get(ref.path, 0)
                 mean_pid_str = "NA" if mean_pid is None else f"{mean_pid}"
-                f.write(f"{ref.path}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\t{mean_pid_str}\t{mapped_reads:,}\n")
+                median_pid_str = "NA" if median_pid is None else f"{median_pid}"
+                f.write(f"{ref.path}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\t{mean_pid_str}\t{median_pid_str}\t{mapped_reads:,}\n")
             else:
                 f.write(f"{ref.path}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\n")
 
@@ -271,7 +283,7 @@ def generate_output(refs, output_prefix, ref_mean_pids=None, ref_mapped_counts=N
             cols = ["ref", "contig", "length", "detection", "detection_at_10x", "mean_coverage", "median_coverage"]
 
             if contig_mean_pids is not None:
-                cols.extend(["mean_pid", "num_mapped_reads"])
+                cols.extend(["mean_pid", "median_pid", "num_mapped_reads"])
             cf.write("\t".join(cols) + "\n")
 
             written_contigs = set()
@@ -284,9 +296,11 @@ def generate_output(refs, output_prefix, ref_mean_pids=None, ref_mapped_counts=N
 
                     if contig_mean_pids is not None:
                         mean_pid = contig_mean_pids.get(contig_name)
+                        median_pid = contig_median_pids.get(contig_name)
                         mapped_reads = contig_mapped_counts.get(contig_name, 0)
                         mean_pid_str = "NA" if mean_pid is None else f"{mean_pid}"
-                        cf.write(f"{contig_data.path}\t{contig_name}\t{contig_data.stats.length}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\t{mean_pid_str}\t{mapped_reads:,}\n")
+                        median_pid_str = "NA" if median_pid is None else f"{median_pid}"
+                        cf.write(f"{contig_data.path}\t{contig_name}\t{contig_data.stats.length}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\t{mean_pid_str}\t{median_pid_str}\t{mapped_reads:,}\n")
                     else:
                         cf.write(f"{contig_data.path}\t{contig_name}\t{contig_data.stats.length}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\n")
                     written_contigs.add(contig_name)

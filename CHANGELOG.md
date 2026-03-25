@@ -13,6 +13,16 @@
 
 -->
 
+## v1.13.16 (NOT RELEASED YET)
+
+### Changed
+- `bit-get-mapped-reads-pid`
+  - minor improvements to efficiency
+- `bit-get-cov-stats`
+  - now also reports median percent id of mapped reads per ref and per contig (when provided an input bam file)
+
+---
+
 ## v1.13.15 (13-Mar-2026)
 
 ### Changed
