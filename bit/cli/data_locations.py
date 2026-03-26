@@ -8,25 +8,38 @@ to check and set required environmental variables.
 import sys
 import os
 import argparse
-import textwrap
 import shutil
+from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.modules.general import color_text, wprint
 
-parser = argparse.ArgumentParser(description = "This is a helper program to check and set required environmental variables.", \
-                                 epilog="Ex. usage: bit-data-locations check\n")
+def build_parser():
 
-parser.add_argument('task', choices = ['check', 'set'], help = 'check or set required environmental variables')
+    parser = argparse.ArgumentParser(
+        description = "This is a helper program to check and set required environmental variables.",
+        epilog="Ex. usage: `bit-data-locations check`",
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
+    )
 
-if len(sys.argv)==1:
-    parser.print_help(sys.stderr)
-    sys.exit(0)
+    parser.add_argument('task', choices = ['check', 'set'], help = 'check or set required environmental variables')
 
-args = parser.parse_args()
+    add_help(parser)
+
+    return parser
 
 
 ################################################################################
 
+
 def main():
 
+    parser = build_parser()
+
+    if len(sys.argv)==1:
+        parser.print_help(sys.stderr)
+        sys.exit(0)
+
+    args = parser.parse_args()
 
     if args.task == 'check':
 
@@ -44,15 +57,6 @@ def main():
 ################################################################################
 
 
-# setting some colors
-tty_colors = {
-    'green' : '\033[0;32m%s\033[0m',
-    'yellow' : '\033[0;33m%s\033[0m',
-    'red' : '\033[0;31m%s\033[0m'
-}
-
-
-### classes for errors
 class PathDoesNotExist(Exception):
     pass
 
@@ -61,18 +65,6 @@ class PathNotWritable(Exception):
 
 class PathNotAbsolute(Exception):
     pass
-
-### functions ###
-def color_text(text, color='green'):
-    if sys.stdout.isatty():
-        return tty_colors[color] % text
-    else:
-        return text
-
-
-def wprint(text):
-    print(textwrap.fill(text, width=80, initial_indent="  ",
-          subsequent_indent="  ", break_on_hyphens=False))
 
 
 def check_and_report_env_variables():

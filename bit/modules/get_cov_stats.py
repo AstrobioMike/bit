@@ -158,7 +158,7 @@ def compute_pid_stats(bam_path, refs, contigs_dict, include_non_primary=False, s
         return None, None, None, None, None, None
 
     try:
-        # single-pass BAM scan that builds per-contig PidStats directly,
+        # single-pass BAM scan that builds per-contig PidStats directly
         contig_pid_stats = get_per_contig_pid_stats(bam_path, include_non_primary)
     except Exception:
         return None, None, None, None, None, None

@@ -74,7 +74,7 @@ bit-summarize-column = "bit.cli.summarize_column:main"
 ## miscellaneous ##
 bit-assemble = "bit.cli.assemble:main"
 bit-ez-screen = "bit.cli.ez_screen:main"
-# bit-data-locations
+bit-data-locations = "bit.cli.data_locations:main"
 # bit-figshare-upload
 bit-get-test-data = "bit.cli.get_test_data:main"
 bit-get-workflow = "bit.cli.get_workflow:main"
