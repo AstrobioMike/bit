@@ -1,14 +1,15 @@
 import os
+import shutil
 import subprocess
 import gzip
 from pathlib import Path
 from dataclasses import dataclass, field
-from Bio import SeqIO #type: ignore
+import pyfastx #type: ignore
 from collections import defaultdict
 from colorama import Fore, init #type: ignore
 from tqdm import tqdm #type: ignore
 from bit.modules.general import check_files_are_found, report_message
-from bit.modules.get_mapped_reads_pid import get_mapped_reads_pids, PidStats
+from bit.modules.get_mapped_reads_pid import get_mapped_reads_pids, get_per_contig_pid_stats, PidStats
 
 
 init(autoreset=True)
@@ -131,16 +132,22 @@ def parse_refs(reference_fastas, skip_per_contig=False):
 
     for fasta in reference_fastas:
         ref = RefData(fasta)
-        with open(fasta, "r") as f:
-            for record in SeqIO.parse(f, "fasta"):
-                ref.headers.add(record.id)
-                ref.contig_order.append(record.id)
-                rec_len = len(record.seq)
-                ref.stats.length += rec_len
-                if not skip_per_contig:
-                    contigs_dict[record.id] = ContigData(path=fasta, header=record.id, stats=CoverageStats(length=rec_len))
-                header_to_ref_dict[record.id] = ref
+        fxi_path = fasta + ".fxi"
+        fxi_existed = os.path.exists(fxi_path)
+        fa = pyfastx.Fasta(fasta)
+        for seq in fa:
+            name = seq.name
+            seq_len = len(seq)
+            ref.headers.add(name)
+            ref.contig_order.append(name)
+            ref.stats.length += seq_len
+            if not skip_per_contig:
+                contigs_dict[name] = ContigData(path=fasta, header=name, stats=CoverageStats(length=seq_len))
+            header_to_ref_dict[name] = ref
         refs.append(ref)
+        # clean up pyfastx index file if we created it
+        if not fxi_existed and os.path.exists(fxi_path):
+            os.remove(fxi_path)
 
     return refs, contigs_dict, header_to_ref_dict
 
@@ -151,7 +158,8 @@ def compute_pid_stats(bam_path, refs, contigs_dict, include_non_primary=False, s
         return None, None, None, None, None, None
 
     try:
-        ref_read_pids, _pid_stats = get_mapped_reads_pids(bam_path, include_non_primary)
+        # single-pass BAM scan that builds per-contig PidStats directly,
+        contig_pid_stats = get_per_contig_pid_stats(bam_path, include_non_primary)
     except Exception:
         return None, None, None, None, None, None
 
@@ -159,19 +167,13 @@ def compute_pid_stats(bam_path, refs, contigs_dict, include_non_primary=False, s
     contig_median_pids = {}
     contig_mapped_counts = {}
 
-    # build per-contig PidStats for median calculation
-    contig_pid_stats = {}
-
     if not skip_per_contig:
         for contig_name in contigs_dict.keys():
-            if contig_name in ref_read_pids:
-                read_data = ref_read_pids[contig_name]
-                contig_stats = PidStats.from_values(pid for (_, pid) in read_data)
-                contig_pid_stats[contig_name] = contig_stats
-
-                contig_mapped_counts[contig_name] = contig_stats.count
-                contig_mean_pids[contig_name] = round(contig_stats.mean, 2) if contig_stats.count > 0 else None
-                contig_median_pids[contig_name] = round(contig_stats.median, 2) if contig_stats.count > 0 else None
+            if contig_name in contig_pid_stats:
+                stats = contig_pid_stats[contig_name]
+                contig_mapped_counts[contig_name] = stats.count
+                contig_mean_pids[contig_name] = round(stats.mean, 2) if stats.count > 0 else None
+                contig_median_pids[contig_name] = round(stats.median, 2) if stats.count > 0 else None
             else:
                 contig_mapped_counts[contig_name] = 0
                 contig_mean_pids[contig_name] = None
@@ -184,13 +186,8 @@ def compute_pid_stats(bam_path, refs, contigs_dict, include_non_primary=False, s
     for ref in refs:
         ref_pid_stats = PidStats()
         for contig_name in ref.headers:
-            if contig_name in ref_read_pids:
-
-                if contig_name in contig_pid_stats:
-                    ref_pid_stats.merge(contig_pid_stats[contig_name])
-                else:
-                    contig_stats = PidStats.from_values(pid for (_, pid) in ref_read_pids[contig_name])
-                    ref_pid_stats.merge(contig_stats)
+            if contig_name in contig_pid_stats:
+                ref_pid_stats.merge(contig_pid_stats[contig_name])
 
         ref_mapped_counts[ref.path] = ref_pid_stats.count
         ref_mean_pids[ref.path] = round(ref_pid_stats.mean, 2) if ref_pid_stats.count > 0 else None
@@ -203,17 +200,39 @@ def parse_bed_file(refs, bed_file, contigs, header_to_ref_dict):
 
     print(f"\n  {Fore.YELLOW}Parsing coverage info...")
 
-    with gzip.open(bed_file, "rt") as f:
-        for line in tqdm(f, unit=" lines", desc="    Processing bed file", leave=False):
-            header, start, end, num_reads = line.strip().split("\t")
-            span = int(end) - int(start)
-            n_reads = int(num_reads)
+    # using pigz for parallel decompression on larger files (>200 MB)
+    use_pigz = os.path.getsize(bed_file) > 200 * 1024 * 1024
+
+    if use_pigz:
+        proc = subprocess.Popen(
+            ["pigz", "-dc", bed_file],
+            stdout=subprocess.PIPE,
+            text=True,
+            bufsize=1024 * 1024,
+        )
+        line_iter = proc.stdout
+    else:
+        proc = None
+        line_iter = gzip.open(bed_file, "rt")
+
+    try:
+        for line in tqdm(line_iter, unit=" lines", desc="    Processing bed file", leave=False):
+            fields = line.split("\t")
+            header = fields[0]
+            span = int(fields[2]) - int(fields[1])
+            n_reads = int(fields[3])
 
             if header in contigs:
                 contigs[header].stats.update_from_bed_line(span, n_reads)
 
             if header in header_to_ref_dict:
                 header_to_ref_dict[header].stats.update_from_bed_line(span, n_reads)
+    finally:
+        if proc is not None:
+            proc.stdout.close()
+            proc.wait()
+        else:
+            line_iter.close()
 
     return refs
 

@@ -131,6 +131,39 @@ def get_mapped_reads_pids(input_bam, include_non_primary=False, store_read_pids=
         return ref_read_pids, pid_stats
 
 
+def get_per_contig_pid_stats(input_bam, include_non_primary=False):
+    """
+    Single-pass BAM scan that builds a PidStats object per contig (reference name).
+    Returns a dict of {contig_name: PidStats}. No per-read data is stored.
+    Used by get_cov_stats where read IDs are not needed.
+    """
+    decompression_threads = min(4, os.cpu_count() or 1)
+
+    with pysam.AlignmentFile(input_bam, "rb", threads=decompression_threads) as bam:
+
+        ref_name_map = {i: bam.get_reference_name(i) for i in range(bam.nreferences)}
+        contig_pid_stats = defaultdict(PidStats)
+
+        for read in bam.fetch(until_eof=True):
+            if read.is_unmapped:
+                continue
+            if not include_non_primary and (read.is_secondary or read.is_supplementary):
+                continue
+            if not read.has_tag("NM"):
+                continue
+            nm = read.get_tag("NM")
+
+            full_aligned_length = sum(
+                length for op, length in read.cigartuples
+                if op in {0, 1, 2, 7, 8}
+            )
+
+            pid = (full_aligned_length - nm) / full_aligned_length * 100
+            contig_pid_stats[ref_name_map[read.reference_id]].add(pid)
+
+        return dict(contig_pid_stats)
+
+
 def get_summary_stats(pid_stats):
 
     summary_stats = [

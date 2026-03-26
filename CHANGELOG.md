@@ -19,6 +19,7 @@
 - `bit-get-mapped-reads-pid`
   - minor improvements to efficiency
 - `bit-get-cov-stats`
+  - improvements to efficiency
   - now also reports median percent id of mapped reads per ref and per contig (when provided an input bam file)
 - `bit-summarize-assembly`
   - adds commas when printing stats to terminal for readability
