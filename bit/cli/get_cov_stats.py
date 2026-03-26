@@ -8,9 +8,9 @@ def build_parser():
 
     desc = """
         This script generates whole-reference (and contig-level) detection and coverage info
-        for specified references given the input reference fasta(s) and either a bam file AND/OR
-        a mosdepth-produced per-base.bed.gz file. When provided a bam file, it will also generate
-        mean percent ID values of mapped reads to each input reference and contig. For version
+        for specified references given the input reference fasta(s) and a bam file AND/OR
+        a mosdepth-produced per-base.bed.gz file. When provided a bam file, it will also report
+        mean and median percent ID values of mapped reads to each input reference and contig. For version
         info, run `bit-version`.
         """
 
@@ -28,7 +28,7 @@ def build_parser():
         "-r",
         "--reference-fastas",
         metavar="<STR>",
-        help='Path to reference fasta file(s) (takes precendence over -R/--reference-list if both provided) OR',
+        help='Path to reference fasta file(s) (takes precendence over -R/[cyan]--reference-list[/] if both provided) OR',
         nargs="+",
     )
 
@@ -37,7 +37,7 @@ def build_parser():
         "--reference-list",
         metavar="<FILE>",
         help="Path to a file containing reference fasta paths, one per line.\n"
-             "This is an alternative to -r/--reference-fastas.",
+             "This is an alternative to -r/[cyan]--reference-fastas[/].",
     )
 
     required.add_argument(
