@@ -80,8 +80,17 @@ def summarize_assemblies(input_assemblies, output_tsv=False, transpose_output_ts
             df.to_csv(output_tsv, sep="\t", header=False, na_rep = "NA")
 
     else:
+        display_df = df.copy()
+        for idx in display_df.index:
+            if idx in ("Assembly", "GC content"):
+                continue
+            for col in display_df.columns:
+                val = display_df.at[idx, col]
+                if pd.notna(val):
+                    display_df.at[idx, col] = f"{int(val):,}"
+
         print("")
-        print(df.to_string(header=False))
+        print(display_df.to_string(header=False))
         print("")
 
 
