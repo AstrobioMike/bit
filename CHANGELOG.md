@@ -15,6 +15,9 @@
 
 ## v1.13.16 (NOT RELEASED YET)
 
+### Added
+- fragment-size-range option added to `bit-gen-reads`
+
 ### Changed
 - `bit-get-mapped-reads-pid`
   - minor improvements to efficiency

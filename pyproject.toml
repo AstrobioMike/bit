@@ -22,18 +22,15 @@ bit = ["tests/data/*", "smk/*.smk", "smk/envs/*"]
 [project.scripts]
 bit-version = "bit.modules.general:report_version"
 
-## ncbi-related ##
+## ncbi/GTDB-related ##
+# bit-get-accessions-from-GTDB
+# get-gtdb-metadata
 bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
 get-ncbi-assembly-data = "bit.modules.ncbi.get_ncbi_assembly_data:main"
 get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"
 bit-update-ncbi-taxonomy = "bit.modules.ncbi.get_ncbi_tax_data:main"
 # bit-get-lineage-from-taxids
 # bit-prot-acc-to-taxid
-
-
-## gtdb-related ##
-# bit-get-accessions-from-GTDB
-# get-gtdb-metadata
 
 ## coverage / mapping ##
 bit-cov-analyzer = "bit.cli.cov_analyzer:main"
