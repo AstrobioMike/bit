@@ -23,7 +23,7 @@ def test_gen_reads(tmp_path):
         "-o", str(tmp_path / "perfect-reads"),
         "-n", "2",
         "-r", "10",
-        "-s", "1"
+        "-s", "9"
     ]
 
     run_cli(cmd)
@@ -37,11 +37,12 @@ def test_gen_reads(tmp_path):
         expected = f.read().splitlines()
 
     observed = [
-        "@partial-NC_003131.1_1_550/1",
-        "GTGGACGACT",
+        "@partial-NC_003131.1_1_1529/1",
+        "TTTTTGTTTT",
         "+",
         "IIIIIIIIII"
     ]
+
     assert expected == observed, f"R1 content does not match expected:\n{observed}\nExpected:\n{expected}"
 
 
@@ -101,6 +102,7 @@ def test_wrapped_fragments_generated_with_circularize(tmp_path):
         seed=9,
         num_reads=20,
         fragment_size=6,
+        fragment_size_range=10,
         read_length=4,
         output_prefix=str(out_prefix),
         circularize=True,

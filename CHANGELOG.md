@@ -16,6 +16,8 @@
 ## v1.13.16 (NOT RELEASED YET)
 
 ### Added
+- `bit-extract-seqs`
+  - enables pulling out target seqs from a fasta by bed file or specified primers via subcommands
 - fragment-size-range option added to `bit-gen-reads`
 
 ### Changed
@@ -26,6 +28,7 @@
   - now also reports median percent id of mapped reads per ref and per contig (when provided an input bam file)
 - `bit-summarize-assembly`
   - adds commas when printing stats to terminal for readability
+- `bit-extract-seqs-by-coords` is now combined into `bit-extract-seqs`
 
 ---
 

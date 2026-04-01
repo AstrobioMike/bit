@@ -45,7 +45,7 @@ bit-calc-variation-in-msa = "bit.cli.calc_variation_in_msa:main"
 bit-check-fastq-for-dup-headers = "bit.cli.check_fastq_for_dup_headers:main"
 bit-count-bases = "bit.cli.count_bases:main"
 bit-dedupe-fasta-headers = "bit.cli.dedupe_fasta_headers:main"
-# bit-extract-seqs-by-coords
+bit-extract-seqs = "bit.cli.extract_seqs:main"
 bit-gen-reads = "bit.cli.gen_reads:main"
 bit-fasta-to-bed = "bit.cli.fasta_to_bed:main"
 bit-fasta-to-genbank = "bit.cli.fasta_to_genbank:main"

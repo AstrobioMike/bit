@@ -1,16 +1,16 @@
 import os
-import pandas as pd
+import pandas as pd # type: ignore
 import subprocess
 from io import StringIO
-from Bio import SeqIO
-from tqdm import tqdm
+from Bio import SeqIO # type: ignore
+from tqdm import tqdm # type: ignore
 from dataclasses import dataclass, field
 from pathlib import Path
 import json
 from subprocess import run
-import pysam
+import pysam # type: ignore
 from collections import defaultdict
-import numpy as np
+import numpy as np # type: ignore
 from bit.modules.input_parsing import get_input_reads_dict_from_dir
 from bit.modules.general import (report_message,
                        report_failure,
@@ -67,7 +67,7 @@ def check_assembly_inputs(assemblies, targets):
     if not os.path.exists(targets):
         report_failure(f"Specified input targets file not found: {targets}")
     if os.path.isdir(targets):
-        report_failure(f"Specified input targets is a directory, but needs to be a file: {assembly}")
+        report_failure(f"Specified input targets is a directory, but needs to be a file: {targets}")
 
 
 

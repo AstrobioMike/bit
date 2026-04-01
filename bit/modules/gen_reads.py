@@ -104,6 +104,10 @@ def gen_paired_reads(args, proportions):
     forward_reads_file = f"{args.output_prefix}_R1.fastq"
     reverse_reads_file = f"{args.output_prefix}_R2.fastq"
 
+    pct = args.fragment_size_range / 100
+    min_frag = max(1, int(args.fragment_size * (1 - pct)))
+    max_frag = int(args.fragment_size * (1 + pct))
+
     with open(forward_reads_file, 'w') as fw, open(reverse_reads_file, 'w') as rw:
 
         print("")
@@ -127,8 +131,8 @@ def gen_paired_reads(args, proportions):
                 remainder = exact - round(exact)
 
                 # generate paired-end reads
-                frag_len = min(args.fragment_size, seq_length)
                 for _ in range(entry_reads):
+                    frag_len = min(random.randint(min_frag, max_frag), seq_length)
 
                     fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize)
 
@@ -157,9 +161,9 @@ def gen_paired_reads(args, proportions):
 
         # if any reads remain due to rounding, adding them from the last contig
         if reads_remaining > 0 and sequence:
-            frag_len = min(args.fragment_size, seq_length)
 
             for _ in range(reads_remaining):
+                frag_len = min(random.randint(min_frag, max_frag), seq_length)
                 fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize)
 
                 forward_read = fragment[:args.read_length]

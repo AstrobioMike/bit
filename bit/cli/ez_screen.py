@@ -8,8 +8,14 @@ from bit.modules.ez_screen import run_assembly, run_reads
 
 
 def build_parser():
+
+    desc = """
+        This program helps detect target-genes/regions present in assemblies or reads. For version
+        info, run `bit-version`.
+        """
+
     parser = argparse.ArgumentParser(
-        description="This program helps detect target genes/regions present in assemblies or reads",
+        description=desc,
         epilog="Use `bit-ez-screen assembly -h` or `bit-ez-screen reads -h` to see subcommand-specific help.",
         formatter_class=CustomRichHelpFormatter
     )
@@ -20,26 +26,36 @@ def build_parser():
     ### shared args ###
     def add_common_required_arguments(group):
         group.add_argument(
-            "-t", "--targets",
+            "-t",
+            "--targets",
             help = "Targets you want to search for, e.g. genes/regions (as nucleotide fasta)",
-            metavar = "<FILE>", required = True
+            metavar = "<FILE>",
+            required = True
         )
 
     def add_common_optional_arguments(group):
         group.add_argument(
-            "-o", "--output-prefix",
+            "-o",
+            "--output-prefix",
             help = 'Output prefix (default: "ez-screen")',
-            metavar = "<STR>", default = "ez-screen", type = str
+            metavar = "<STR>",
+            default = "ez-screen", type = str
         )
         group.add_argument(
-            "-m", "--min-perc-id",
+            "-m",
+            "--min-perc-id",
             help = 'Minimum percent ID for a hit to be counted (default: 80)',
-            metavar = "<INT>", default = 80, type = float
+            metavar = "<INT>",
+            default = 80,
+            type = float
         )
         group.add_argument(
-            "-M", "--min-perc-cov",
+            "-M",
+            "--min-perc-cov",
             help = 'Minimum percent coverage of a target to be counted (default: 80)',
-            metavar = "<INT>", default = 80, type = float
+            metavar = "<INT>",
+            default = 80,
+            type = float
         )
 
     ### subcommand cli for assembly screening ###
@@ -100,8 +116,15 @@ def build_parser():
 
     add_common_required_arguments(reads_required)
 
-    reads_optional.add_argument("-r", "--reads-dir", help = "Directory holding the input gzipped reads (default: current directory)",
-                        metavar = "<DIR>", action = "store", default = ".", type = str)
+    reads_optional.add_argument(
+        "-r",
+        "--reads-dir",
+        help = "Directory holding the input gzipped reads (default: current directory)",
+        metavar = "<DIR>",
+        action = "store",
+        default = ".",
+        type = str
+    )
 
     add_common_optional_arguments(reads_optional)
 
@@ -114,6 +137,7 @@ def build_parser():
     return parser
 
 def main():
+
     parser = build_parser()
     if len(sys.argv)==1:
         parser.print_help(sys.stderr)

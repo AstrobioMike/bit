@@ -2,7 +2,7 @@
 
 import os
 import math
-import pysam
+import pysam # type: ignore
 from collections import defaultdict
 
 

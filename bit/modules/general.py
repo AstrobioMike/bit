@@ -37,9 +37,10 @@ def wprint(text, width = 80, initial_indent = "  ",
 
 def report_message(message, color = "yellow", width = 80,
                    initial_indent = "  ", subsequent_indent = "  ",
-                   join = True, trailing_newline = False):
+                   join = True, leading_newline = True, trailing_newline = False):
 
-    print("")
+    if leading_newline:
+        print("")
 
     if join:
         message = " ".join(message.split())

@@ -17,12 +17,14 @@ def main():
 
     parser = argparse.ArgumentParser(
         description=desc,
-        epilog="Ex. usage: `bit-gen-reads -i genome-1.fasta genome-2.fasta -p proportions.tsv -o perfect-reads`",
+        epilog="Ex. usage: `bit-gen-reads -i genome.fasta`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
     required = parser.add_argument_group("Required Parameters")
-    optional = parser.add_argument_group("Optional Parameters")
+    general = parser.add_argument_group("General Parameters")
+    paired = parser.add_argument_group("Paired-end Parameters")
+    long = parser.add_argument_group("Long-read Parameters")
 
     required.add_argument(
         "-i",
@@ -32,21 +34,21 @@ def main():
         help="List of input FASTA files",
         required=True,
     )
-    optional.add_argument(
+    general.add_argument(
         "-o",
         "--output-prefix",
         metavar="<STR>",
         help="Prefix for output FASTQ files (default: perfect-reads)",
         default="perfect-reads",
     )
-    optional.add_argument(
+    general.add_argument(
          "-t",
          "--type",
          help="Type of reads to generate (default: 'paired-end')",
          choices=["paired-end", "single-end", "long"],
          default="paired-end",
     )
-    optional.add_argument(
+    general.add_argument(
         "-n",
         "--num-reads",
         metavar="<INT>",
@@ -54,7 +56,7 @@ def main():
         type=int,
         default=1000000,
     )
-    optional.add_argument(
+    general.add_argument(
         "-r",
         "--read-length",
         metavar="<INT>",
@@ -62,16 +64,7 @@ def main():
         type=int,
         default=None,
     )
-    optional.add_argument(
-        "-f",
-        "--fragment-size",
-        metavar="<INT>",
-        help="Size of the fragment from which paired-reads are generated (default: 500; "
-            "these may be shorter than the specified size when shorter contigs are present)",
-        type=int,
-        default=500,
-    )
-    optional.add_argument(
+    general.add_argument(
         "-p",
         "--proportions-file",
         metavar="<FILE>",
@@ -80,7 +73,7 @@ def main():
               proportion for each input with the total summing to one). If not provided, \
               equal proportions are assumed.",
     )
-    optional.add_argument(
+    general.add_argument(
         "-c",
         "--circularize",
         help="Treat input contigs as circular and allow fragments that span the end-to-start \
@@ -89,20 +82,39 @@ def main():
         action="store_true",
         default=False,
     )
-    optional.add_argument(
+
+    add_seed(general)
+
+    add_help(general)
+
+    paired.add_argument(
+        "-f",
+        "--fragment-size",
+        metavar="<INT>",
+        help="Size of the fragment from which paired-end reads are generated (default: 500; "
+            "these may be shorter than the specified size when shorter contigs are present)",
+        type=int,
+        default=500,
+    )
+    paired.add_argument(
+        "-F",
+        "--fragment-size-range",
+        metavar="<INT>",
+        help="Percent range (+/-) around --fragment-size when using paired-end mode (default: 10). E.g., 10 with "
+             "--fragment-size 500 generates fragments from 450 to 550",
+        type=int,
+        default=10,
+    )
+
+    long.add_argument(
         "-L",
         "--long-read-length-range",
         metavar="<INT>",
-        help="Percent range (+/-) around --read-length when using long-read mode. E.g., 50 with "
-             "--read-length 5000 generates reads from 2500 to 7500 (default: 50)",
+        help="Percent range (+/-) around --read-length when using long-read mode (default: 50). E.g., 50 with "
+             "--read-length 5000 generates reads from 2500 to 7500",
         type=int,
         default=50,
     )
-
-    add_seed(optional)
-
-    add_help(optional)
-
 
     if len(sys.argv) == 1:  # pragma: no cover
         parser.print_help(sys.stderr)

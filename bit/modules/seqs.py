@@ -275,3 +275,29 @@ def fasta_to_genbank(input_fasta):
             seq.annotations["molecule_type"] = "DNA"
 
     return sequences
+
+
+def revcomp(seq):
+    comp = str.maketrans("ACGTacgt", "TGCAtgca")
+    return seq.translate(comp)[::-1]
+
+def read_fasta(path):
+
+    with open(path) as f:
+
+        header = None
+        seq_parts = []
+
+        for line in f:
+            line = line.strip()
+
+            if line.startswith(">"):
+                if header:
+                    yield header, "".join(seq_parts)
+                header = line[1:]
+                seq_parts = []
+            else:
+                seq_parts.append(line)
+
+        if header:
+            yield header, "".join(seq_parts)
