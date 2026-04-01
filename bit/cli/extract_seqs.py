@@ -74,7 +74,8 @@ def build_parser():
     ### subcommand cli for extracting sequences by primers ###
     by_primers_desc = """
         This subcommand takes a fasta file and forward and reverse primer sequences, and it
-        returns a multifasta of the sequences including the specified primers.
+        returns a multifasta of the sequences including the specified primers. It currently doesn't
+        allow for degenerate bases in the primers, but it does allow for up to 2 mismatches.
         """
 
     by_primers_parser = subparsers.add_parser(
@@ -104,6 +105,17 @@ def build_parser():
     )
 
     add_common_optional_arguments(by_primers_optional)
+
+    by_primers_optional.add_argument(
+        "-m",
+        "--max-mismatches",
+        help="Maximum number of mismatches allowed between the primer and the target sequence (default: 0)",
+        # metavar="<INT>",
+        type=int,
+        choices=[0, 1, 2],
+        default=0
+    )
+
     add_help(by_primers_optional)
 
     by_primers_parser.set_defaults(func=extract_seqs_by_primers)

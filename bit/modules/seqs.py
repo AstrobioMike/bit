@@ -281,6 +281,7 @@ def revcomp(seq):
     comp = str.maketrans("ACGTacgt", "TGCAtgca")
     return seq.translate(comp)[::-1]
 
+
 def read_fasta(path):
 
     with open(path) as f:

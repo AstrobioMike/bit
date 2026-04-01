@@ -1,9 +1,25 @@
 import os
+import edlib # type: ignore
+from pybedtools import BedTool # type: ignore
 from bit.modules.general import report_message
 from bit.modules.seqs import revcomp, read_fasta
 
-def extract_seqs_by_coords():
-    pass
+def extract_seqs_by_coords(args):
+    coordinates_file = BedTool(args.bed_file)
+    fasta = BedTool(args.input_fasta)
+    seq = coordinates_file.sequence(fi = fasta)
+
+    content = open(seq.seqfn).read()
+
+    if not content.strip():
+        report_message("No sequences were extracted based on the provided coordinates.", trailing_newline=True)
+        return
+
+    with open(args.output_fasta, "w") as out_fasta:
+        out_fasta.write(content)
+    report_message(f"Extracted sequences based on the provided coordinates were written to:")
+    report_message(args.output_fasta, color="green", initial_indent="    ", leading_newline=False, trailing_newline=True)
+
 
 def extract_seqs_by_primers(args):
     in_fasta = args.input_fasta
@@ -16,7 +32,7 @@ def extract_seqs_by_primers(args):
 
         for header, seq in read_fasta(in_fasta):
             seq = seq.upper()
-            amplicons = find_amplicons(seq, fwd, rev)
+            amplicons = find_amplicons(seq, fwd, rev, args.max_mismatches)
 
             for _, (left_label, right_label, left_start, right_end, amplicon, length) in enumerate(amplicons):
 
@@ -35,8 +51,8 @@ def extract_seqs_by_primers(args):
         report_message(args.output_fasta, color="green", initial_indent="    ", leading_newline=False, trailing_newline=True)
 
 
+def find_all_primer_hits(seq, fwd, rev, max_mismatches = 0):
 
-def find_all_primer_hits(seq, fwd, rev):
     primers = [
         ("fwd", fwd),
         ("rev", rev),
@@ -47,17 +63,43 @@ def find_all_primer_hits(seq, fwd, rev):
     hits = []
 
     for label, primer in primers:
-        start = 0
-        while True:
-            pos = seq.find(primer, start)
-            if pos == -1:
-                break
 
-            hits.append((label, pos, pos + len(primer), primer))
-            start = pos + 1
+        result = edlib.align(
+            primer,
+            seq,
+            mode = "HW",            # search within sequence
+            task = "locations",     # return match positions
+            k = max_mismatches,
+        )
+
+        if result["editDistance"] == -1:
+            continue
+
+        for start, end_inclusive in result["locations"]:
+            end = end_inclusive + 1
+
+            hits.append(
+                (
+                    label,
+                    start,
+                    end,
+                    seq[start:end]
+                )
+            )
 
     hits.sort(key = lambda x: x[1])
-    return hits
+
+    # remove potential duplicates
+    seen = set()
+    unique_hits = []
+
+    for hit in hits:
+        key = (hit[1], hit[2])  # using start and end positions as the key
+        if key not in seen:
+            seen.add(key)
+            unique_hits.append(hit)
+
+    return unique_hits
 
 
 def is_forward_label(label):
@@ -68,8 +110,8 @@ def is_reverse_label(label):
     return label in {"rev", "rev_rc"}
 
 
-def find_amplicons(seq, fwd, rev):
-    hits = find_all_primer_hits(seq, fwd, rev)
+def find_amplicons(seq, fwd, rev, max_mismatches = 0):
+    hits = find_all_primer_hits(seq, fwd, rev, max_mismatches)
     results = []
 
     for i, left in enumerate(hits):
