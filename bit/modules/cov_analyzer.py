@@ -1,14 +1,14 @@
 import os
 import subprocess
 from pathlib import Path
-import pysam
-import pandas as pd
-import numpy as np
-from Bio import SeqIO
-from Bio.Seq import Seq
-from Bio.SeqRecord import SeqRecord
-import matplotlib.pyplot as plt
-from colorama import Fore, init
+import pysam # type: ignore
+import pandas as pd # type: ignore
+import numpy as np # type: ignore
+from Bio import SeqIO # type: ignore
+from Bio.Seq import Seq # type: ignore
+from Bio.SeqRecord import SeqRecord # type: ignore
+import matplotlib.pyplot as plt # type: ignore
+from colorama import Fore, init # type: ignore
 from bit.modules.general import (check_files_are_found,
                                  notify_premature_exit,
                                  log_command_run,
@@ -184,6 +184,16 @@ class CoverageStats:
         self.df["zscore"] = (self.df["cov"] - self.df["baseline_mean"]) / self.df["baseline_std"]
         self.df["log2_fold_diff"] = np.log2((self.df["cov"] + nobody_likes_zero) / (self.df["baseline_mean"] + nobody_likes_zero))
 
+        # pre-sorted arrays + per-contig stats for fast percentile / lookup in _summarize_region
+        self._global_cov_sorted = np.sort(self.df["cov"].values)
+        self._contig_stats = {}
+        for contig, grp in self.df.groupby("contig"):
+            self._contig_stats[contig] = {
+                "mean": float(grp["cov"].mean()),
+                "std":  float(grp["cov"].std()),
+                "cov_sorted": np.sort(grp["cov"].values),
+            }
+
 
     def global_percentile(self, p):
         return np.percentile(self.df["cov"], p)
@@ -264,12 +274,13 @@ class CoverageStats:
         region_mean_cov = float(np.mean(covs))
 
         if self.per_contig:
-            subset = self.df.loc[self.df["contig"] == contig, "cov"]
-            percentile = float((subset <= region_mean_cov).mean() * 100)
-            baseline_mean = float(self.df.loc[self.df["contig"] == contig, "contig_mean"].iloc[0])
-            baseline_std = float(self.df.loc[self.df["contig"] == contig, "contig_std"].iloc[0])
+            stats = self._contig_stats[contig]
+            sorted_cov = stats["cov_sorted"]
+            percentile = float(np.searchsorted(sorted_cov, region_mean_cov, side="right") / len(sorted_cov) * 100)
+            baseline_mean = stats["mean"]
+            baseline_std = stats["std"]
         else:
-            percentile = float((self.df["cov"] <= region_mean_cov).mean() * 100)
+            percentile = float(np.searchsorted(self._global_cov_sorted, region_mean_cov, side="right") / len(self._global_cov_sorted) * 100)
             baseline_mean = self.global_mean
             baseline_std = self.global_std
 
