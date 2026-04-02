@@ -125,7 +125,7 @@ def main():
     )
     optional.add_argument(
         "--write-window-stats",
-        help='Add this flag to also write out individual window stats (saves spacetime by not doing so)',
+        help='Add this flag to also write out individual window stats and histogram of coverages (saves spacetime by not doing so)',
         action="store_true",
     )
 

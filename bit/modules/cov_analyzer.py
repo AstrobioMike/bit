@@ -113,11 +113,23 @@ def get_contig_lengths(reference_fasta):
 
 def generate_sliding_bed_file(reference_fasta, sliding_window_size, step_size, output_dir):
     bed_outfile = f"{output_dir}/mosdepth-files/sliding-windows.bed"
+    flush_size = 100000
     with pysam.FastaFile(reference_fasta) as fasta, open(bed_outfile, "w") as bed_out:
         for contig, length in zip(fasta.references, fasta.lengths):
+            if length < sliding_window_size:
+                continue
+
+            buffered_lines = []
             for start in range(0, length - sliding_window_size + 1, step_size):
                 end = start + sliding_window_size
-                bed_out.write(f"{contig}\t{start}\t{end}\n")
+                buffered_lines.append(f"{contig}\t{start}\t{end}\n")
+
+                if len(buffered_lines) >= flush_size:
+                    bed_out.write("".join(buffered_lines))
+                    buffered_lines.clear()
+
+            if buffered_lines:
+                bed_out.write("".join(buffered_lines))
 
     return bed_outfile
 
@@ -163,26 +175,25 @@ class CoverageStats:
         self.df["contig_median"] = group.transform("median")
         self.df["contig_min"] = group.transform("min")
         self.df["contig_max"] = group.transform("max")
-        self.df["contig_percentile"] = group.transform(lambda x: x.rank(pct=True) * 100)
+        self.df["contig_percentile"] = group.rank(pct=True) * 100
 
         if per_contig:
-            self.df["baseline_mean"] = self.df["contig_mean"]
-            self.df["baseline_std"] = self.df["contig_std"]
+            baseline_mean = self.df["contig_mean"]
+            baseline_std = self.df["contig_std"]
             self.df["percentile"] = self.df["contig_percentile"]
         else:
-            self.df["baseline_mean"] = self.global_mean
-            self.df["baseline_std"] = self.global_std
-            self.df["percentile"] = self.df["percentile"]
+            baseline_mean = self.global_mean
+            baseline_std = self.global_std
 
         # fold diff, zscore, log2-fold diff
         nobody_likes_zero = 1e-6
-        self.df["fold_diff"] = self.df["cov"] / self.df["baseline_mean"]
+        self.df["fold_diff"] = self.df["cov"] / baseline_mean
         self.df["signed_fold_diff"] = self.df["fold_diff"].where(
             self.df["fold_diff"] >= 1,
             -1.0 / self.df["fold_diff"]
         )
-        self.df["zscore"] = (self.df["cov"] - self.df["baseline_mean"]) / self.df["baseline_std"]
-        self.df["log2_fold_diff"] = np.log2((self.df["cov"] + nobody_likes_zero) / (self.df["baseline_mean"] + nobody_likes_zero))
+        self.df["zscore"] = (self.df["cov"] - baseline_mean) / baseline_std
+        self.df["log2_fold_diff"] = np.log2((self.df["cov"] + nobody_likes_zero) / (baseline_mean + nobody_likes_zero))
 
         # pre-sorted arrays + per-contig stats for fast percentile / lookup in _summarize_region
         self._global_cov_sorted = np.sort(self.df["cov"].values)
@@ -363,7 +374,7 @@ def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
     write_window_cov_stats(cov_stats, output_dir, contig_lengths, log_file)
     if write_window_stats:
         write_windows_table(cov_stats, output_dir, log_file)
-    write_window_plot_cov_histogram(cov_df, output_dir, log_file)
+        write_window_plot_cov_histogram(cov_df, output_dir, log_file)
 
     write_regions_of_interest_table(high_merged_regions, output_dir, "high", log_file)
     write_regions_fasta(reference_fasta, high_merged_regions, buffer, output_dir, "high", contig_lengths)
