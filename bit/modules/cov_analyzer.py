@@ -8,9 +8,11 @@ from Bio import SeqIO # type: ignore
 from Bio.Seq import Seq # type: ignore
 from Bio.SeqRecord import SeqRecord # type: ignore
 import matplotlib.pyplot as plt # type: ignore
+from tqdm import tqdm # type: ignore
 from colorama import Fore, init # type: ignore
 from bit.modules.general import (check_files_are_found,
                                  notify_premature_exit,
+                                 report_message,
                                  log_command_run,
                                  tee)
 
@@ -40,19 +42,24 @@ def run_cov_analyzer(
 
     contig_lengths = get_contig_lengths(reference_fasta)
 
-    window_bed_path = generate_sliding_bed_file(reference_fasta,
-                                                sliding_window_size,
-                                                step_size,
-                                                output_dir)
+    report_message("Generating windows for input fasta(s)...")
+    window_bed_path, total_windows = generate_sliding_bed_file(reference_fasta,
+                                                               sliding_window_size,
+                                                               step_size,
+                                                               output_dir)
 
+    report_message("Running mosdepth to generate window-coverage data...")
     mosdepth_regions_file = run_mosdepth(bam_file, window_bed_path, output_dir)
 
-    cov_df = read_mosdepth_regions_file(mosdepth_regions_file)
+    report_message("Reading in coverage data...")
+    cov_df = read_mosdepth_regions_file(mosdepth_regions_file, total_windows)
     if exclude_contigs:
         cov_df = cov_df.loc[~cov_df["contig"].isin(exclude_contigs)].reset_index(drop=True)
 
+    report_message("Computing per-window coverage stats...")
     cov_stats = CoverageStats(cov_df, per_contig)
 
+    report_message("Identifying regions of interest...")
     high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
     low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
     low_merged_regions = filter_nonATGCs_from_low_merged_regions(reference_fasta, low_merged_regions)
@@ -64,6 +71,7 @@ def run_cov_analyzer(
     high_merged_regions = annotate_zero_cov_bases(high_merged_regions, bam_file)
     low_merged_regions = annotate_zero_cov_bases(low_merged_regions, bam_file)
 
+    report_message("Generating outputs...", trailing_newline=True)
     generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
                      cov_df, cov_stats, buffer, output_dir, contig_lengths, write_window_stats,
                      log_file)
@@ -115,23 +123,25 @@ def generate_sliding_bed_file(reference_fasta, sliding_window_size, step_size, o
     bed_outfile = f"{output_dir}/mosdepth-files/sliding-windows.bed"
     flush_size = 100000
     with pysam.FastaFile(reference_fasta) as fasta, open(bed_outfile, "w") as bed_out:
-        for contig, length in zip(fasta.references, fasta.lengths):
-            if length < sliding_window_size:
-                continue
+        contigs = [(c, l) for c, l in zip(fasta.references, fasta.lengths) if l >= sliding_window_size]
+        total_windows = sum((l - sliding_window_size) // step_size + 1 for _, l in contigs)
+        with tqdm(total=total_windows, ncols=80, unit=" windows", leave=True, bar_format="    {l_bar}{bar}| of {total:,} total{unit} [{elapsed}, {rate_fmt}]") as pbar:
+            for contig, length in contigs:
+                buffered_lines = []
+                for start in range(0, length - sliding_window_size + 1, step_size):
+                    end = start + sliding_window_size
+                    buffered_lines.append(f"{contig}\t{start}\t{end}\n")
 
-            buffered_lines = []
-            for start in range(0, length - sliding_window_size + 1, step_size):
-                end = start + sliding_window_size
-                buffered_lines.append(f"{contig}\t{start}\t{end}\n")
+                    if len(buffered_lines) >= flush_size:
+                        bed_out.write("".join(buffered_lines))
+                        pbar.update(len(buffered_lines))
+                        buffered_lines.clear()
 
-                if len(buffered_lines) >= flush_size:
+                if buffered_lines:
                     bed_out.write("".join(buffered_lines))
-                    buffered_lines.clear()
+                    pbar.update(len(buffered_lines))
 
-            if buffered_lines:
-                bed_out.write("".join(buffered_lines))
-
-    return bed_outfile
+    return bed_outfile, total_windows
 
 
 def run_mosdepth(bam_file, window_bed_path, output_dir):
@@ -143,15 +153,23 @@ def run_mosdepth(bam_file, window_bed_path, output_dir):
     return mosdepth_regions_file
 
 
-def read_mosdepth_regions_file(mosdepth_regions_file):
-    cov_df = pd.read_csv(
+def read_mosdepth_regions_file(mosdepth_regions_file, total_rows=None):
+    chunks = []
+    reader = pd.read_csv(
         mosdepth_regions_file,
         sep="\t",
         header=None,
         names=["contig", "start", "end", "cov"],
         compression="gzip",
         dtype={"contig": str, "start": np.int64, "end": np.int64, "cov": np.float64},
+        chunksize=500_000,
     )
+    with tqdm(total=total_rows, ncols=74, unit=" rows", leave=True, bar_format="    {l_bar}{bar}| of {total:,} total{unit} [{elapsed}, {rate_fmt}]") as pbar:
+        for chunk in reader:
+            chunks.append(chunk)
+            pbar.update(len(chunk))
+
+    cov_df = pd.concat(chunks, ignore_index=True)
 
     return cov_df
 
@@ -386,7 +404,6 @@ def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
                      cov_df, cov_stats, buffer, output_dir, contig_lengths, write_window_stats,
                      log_file):
 
-    print()
     write_window_cov_stats(cov_stats, output_dir, contig_lengths, log_file)
     if write_window_stats:
         write_windows_table(cov_stats, output_dir, log_file)
@@ -479,7 +496,7 @@ def write_window_cov_stats(cov_stats, output_dir, contig_lengths, log_file):
                 out.write(f"  {p:>6.2f}% : {val:.2f}\n")
             out.write("\n")
 
-    tee(f"  Window-coverage summary written to:\n      {Fore.YELLOW}{out_txt}", log_file)
+    tee(f"\n  Window-coverage summary written to:\n      {Fore.YELLOW}{out_txt}", log_file)
 
     # writing out as tsv
     df_summary = pd.DataFrame(rows)

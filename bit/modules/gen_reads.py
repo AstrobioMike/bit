@@ -1,9 +1,9 @@
-from Bio import SeqIO
+from Bio import SeqIO # type: ignore
 import random
 import os
 import sys
 import subprocess
-from tqdm import tqdm
+from tqdm import tqdm # type: ignore
 
 def generate_reads(args):
 
@@ -117,7 +117,8 @@ def gen_paired_reads(args, proportions):
         remainder = 0.0
         read_count = 0
 
-        for fasta_file in tqdm(args.input_fastas, desc = "    Generating reads from each input FASTA file"):
+        pbar = tqdm(total=len(args.input_fastas), desc = "    Generating reads from fasta file(s)", ncols=90)
+        for fasta_file in args.input_fastas:
 
             total_length = sum(len(record.seq) for record in SeqIO.parse(fasta_file, "fasta"))
 
@@ -156,8 +157,11 @@ def gen_paired_reads(args, proportions):
                 if reads_remaining <= 0:
                     break
 
+            pbar.update(1)
             if reads_remaining <= 0:
                 break
+        pbar.update(pbar.total - pbar.n)
+        pbar.close()
 
         # if any reads remain due to rounding, adding them from the last contig
         if reads_remaining > 0 and sequence:
@@ -199,7 +203,8 @@ def gen_single_reads(args, proportions):
         remainder = 0.0
         read_count = 0
 
-        for fasta_file in tqdm(args.input_fastas, desc = "    Generating reads from each input FASTA file"):
+        pbar = tqdm(total=len(args.input_fastas), desc = "    Generating reads from fasta file(s)", ncols=90)
+        for fasta_file in args.input_fastas:
 
             total_length = sum(len(record.seq) for record in SeqIO.parse(fasta_file, "fasta"))
 
@@ -233,8 +238,11 @@ def gen_single_reads(args, proportions):
                 if reads_remaining <= 0:
                     break
 
+            pbar.update(1)
             if reads_remaining <= 0:
                 break
+        pbar.update(pbar.total - pbar.n)
+        pbar.close()
 
         # if any reads remain due to rounding, adding them from the last contig
         if reads_remaining > 0 and sequence:
@@ -271,7 +279,7 @@ def compress_with_pigz(output_prefix, read_type="paired-end"):
         forward_reads_file = f"{output_prefix}_R1.fastq"
         reverse_reads_file = f"{output_prefix}_R2.fastq"
 
-        print("\n    Compressing output FASTQ files...")
+        print("\n    Compressing output fastq files...")
 
         try:
             subprocess.run(["pigz", "-f", forward_reads_file], check = True)

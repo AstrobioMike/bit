@@ -80,8 +80,8 @@ def run_assembly_screen(args, assembly_path_dict, blast_results_dir):
     print("")
 
     for i, assembly in enumerate(tqdm(args.assemblies, total = total_assemblies,
-                                      desc = "Processing assemblies", unit = "assembly",
-                                      bar_format="{l_bar}{bar} | {n_fmt}/{total_fmt} processed, {remaining} remaining")):
+                                      desc = "Processing assemblies", unit = "assembly", ncols=76,
+                                      bar_format="    {l_bar}{bar} | {n_fmt}/{total_fmt} processed, {remaining} remaining")):
 
         blast_df = run_blast(assembly, args.targets, blast_results_dir)
         filtered_blast_df, long_targets_results_dict = filter_blast_results(blast_df, targets_dict,

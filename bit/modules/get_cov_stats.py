@@ -126,6 +126,8 @@ class RefData:
 
 def parse_refs(reference_fastas, skip_per_contig=False):
 
+    print(f"\n  {Fore.YELLOW}Parsing input reference(s)...")
+
     refs = []
     contigs_dict = {}
     header_to_ref_dict = {}
@@ -216,7 +218,7 @@ def parse_bed_file(refs, bed_file, contigs, header_to_ref_dict):
         line_iter = gzip.open(bed_file, "rt")
 
     try:
-        for line in tqdm(line_iter, unit=" lines", desc="    Processing bed file", leave=False):
+        for line in tqdm(line_iter, unit=" lines", desc="    Processing bed file", leave=True, bar_format="    Processing bed file: {n:,} lines [{elapsed}, {rate_fmt}]"):
             fields = line.split("\t")
             header = fields[0]
             span = int(fields[2]) - int(fields[1])
@@ -249,7 +251,7 @@ def run_mosdepth(bam_file, output_prefix, include_non_primary):
     print(f"\n  {Fore.YELLOW}Running mosdepth to generate the required per-base coverage file...")
     subprocess.run(cmd, shell=True)
     bed_file = f"{mosdepth_prefix}.per-base.bed.gz"
-    print(f"\n    Mosdepth outputs can be found in: {Fore.YELLOW}{mosdepth_output_dir}/\n")
+    print(f"    Mosdepth outputs can be found in: {Fore.YELLOW}{mosdepth_output_dir}/")
 
     return bed_file
 
@@ -291,7 +293,7 @@ def generate_output(refs, output_prefix, ref_mean_pids=None, ref_median_pids=Non
             else:
                 f.write(f"{ref.path}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\n")
 
-    print(f"\n    Ref-level coverage stats written to: {Fore.YELLOW}{primary_out_path}\n")
+    print(f"\n\n  Ref-level coverage stats written to: {Fore.YELLOW}{primary_out_path}")
 
     if not skip_per_contig:
 
@@ -324,4 +326,6 @@ def generate_output(refs, output_prefix, ref_mean_pids=None, ref_median_pids=Non
                         cf.write(f"{contig_data.path}\t{contig_name}\t{contig_data.stats.length}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\n")
                     written_contigs.add(contig_name)
 
-        print(f"    Contig-level coverage stats written to: {Fore.YELLOW}{contig_out_path}\n")
+        print(f"  Contig-level coverage stats written to: {Fore.YELLOW}{contig_out_path}")
+
+        print()
