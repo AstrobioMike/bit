@@ -18,9 +18,12 @@
 ### Added
 - `bit-extract-seqs`
   - enables pulling out target seqs from a fasta by bed file or specified primers via subcommands
-- fragment-size-range option added to `bit-gen-reads`
+- `--fragment-size-range` option added to `bit-gen-reads`, defaults to 10% of fragment size
 
 ### Changed
+- `bit-cov-analyzer`
+  - drastic improvements to efficiency when working with large genomes (e.g., 3GB)
+  - histogram of coverages no longer plotted by default, only done now when adding the `--write-window-stats` flag
 - `bit-get-mapped-reads-pid`
   - minor improvements to efficiency
 - `bit-get-cov-stats`
@@ -29,6 +32,7 @@
 - `bit-summarize-assembly`
   - adds commas when printing stats to terminal for readability
 - `bit-extract-seqs-by-coords` is now combined into `bit-extract-seqs`
+- `bit-gen-reads` now has a `--fragment-size-range` that defaults to 10% of fragment size
 
 ---
 

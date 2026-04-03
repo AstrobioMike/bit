@@ -150,59 +150,56 @@ def read_mosdepth_regions_file(mosdepth_regions_file):
         header=None,
         names=["contig", "start", "end", "cov"],
         compression="gzip",
-    ).astype({"contig": str, "start": int, "end": int, "cov": float})
+        dtype={"contig": str, "start": np.int64, "end": np.int64, "cov": np.float64},
+    )
 
     return cov_df
 
 
 class CoverageStats:
     def __init__(self, df, per_contig = False):
-        self.df = df.copy()
+        self.df = df
         self.per_contig = per_contig
 
+        cov = self.df["cov"]
+
         # global stats
-        self.global_mean = self.df["cov"].mean()
-        self.global_std  = self.df["cov"].std()
-        self.global_median = self.df["cov"].median()
-        self.global_min = self.df["cov"].min()
-        self.global_max = self.df["cov"].max()
-        self.df['percentile'] = self.df['cov'].rank(pct=True) * 100
+        self.global_mean   = float(cov.mean())
+        self.global_std    = float(cov.std())
+        self.global_median = float(cov.median())
+        self.global_min    = float(cov.min())
+        self.global_max    = float(cov.max())
 
-        # per-contig stats
-        group = self.df.groupby("contig")["cov"]
-        self.df["contig_mean"] = group.transform("mean")
-        self.df["contig_std"] = group.transform("std")
-        self.df["contig_median"] = group.transform("median")
-        self.df["contig_min"] = group.transform("min")
-        self.df["contig_max"] = group.transform("max")
-        self.df["contig_percentile"] = group.rank(pct=True) * 100
-
+        # percentile + per-contig / global baseline for derived columns
         if per_contig:
-            baseline_mean = self.df["contig_mean"]
-            baseline_std = self.df["contig_std"]
-            self.df["percentile"] = self.df["contig_percentile"]
+            group = self.df.groupby("contig")["cov"]
+            baseline_mean = group.transform("mean")
+            baseline_std  = group.transform("std")
+            self.df["percentile"] = group.rank(pct=True) * 100
         else:
             baseline_mean = self.global_mean
-            baseline_std = self.global_std
+            baseline_std  = self.global_std
+            self.df["percentile"] = cov.rank(pct=True) * 100
 
-        # fold diff, zscore, log2-fold diff
+        # derived columns
         nobody_likes_zero = 1e-6
-        self.df["fold_diff"] = self.df["cov"] / baseline_mean
-        self.df["signed_fold_diff"] = self.df["fold_diff"].where(
-            self.df["fold_diff"] >= 1,
-            -1.0 / self.df["fold_diff"]
+        fold = cov / baseline_mean
+        self.df["fold_diff"] = fold
+        self.df["signed_fold_diff"] = fold.where(fold >= 1, -1.0 / fold)
+        self.df["zscore"] = (cov - baseline_mean) / baseline_std
+        self.df["log2_fold_diff"] = np.log2(
+            (cov + nobody_likes_zero) / (baseline_mean + nobody_likes_zero)
         )
-        self.df["zscore"] = (self.df["cov"] - baseline_mean) / baseline_std
-        self.df["log2_fold_diff"] = np.log2((self.df["cov"] + nobody_likes_zero) / (baseline_mean + nobody_likes_zero))
 
-        # pre-sorted arrays + per-contig stats for fast percentile / lookup in _summarize_region
+        # pre-sorted arrays for fast percentile lookup in _summarize_region
         self._global_cov_sorted = np.sort(self.df["cov"].values)
         self._contig_stats = {}
         for contig, grp in self.df.groupby("contig"):
+            vals = grp["cov"].values
             self._contig_stats[contig] = {
-                "mean": float(grp["cov"].mean()),
-                "std":  float(grp["cov"].std()),
-                "cov_sorted": np.sort(grp["cov"].values),
+                "mean": float(np.mean(vals)),
+                "std":  float(np.std(vals, ddof=1)),
+                "cov_sorted": np.sort(vals),
             }
 
 
@@ -240,12 +237,31 @@ class CoverageStats:
 
     def merge_windows(self, *, type = "high", method = "fold", threshold = 10, edge_pad = 500, contig_lengths = None, allowed_gap = 0):
 
-        df = self.get_windows(type=type, method=method, threshold=threshold)
+        # inline filtering (same logic as get_windows) selecting only needed columns
+        if method == "percentile":
+            metric = self.df["percentile"]
+        elif method == "zscore":
+            metric = self.df["zscore"]
+        elif method == "fold":
+            metric = self.df["fold_diff"]
+        elif method == "log2fold":
+            metric = self.df["log2_fold_diff"]
+        else:
+            raise ValueError(f"Nope nope nope: {method!r}")
+
+        if type == "low":
+            mask = (metric <= threshold) | (self.df["cov"] == 0)
+        elif type == "high":
+            mask = (metric >= threshold)
+        else:
+            raise ValueError(f"Nope nope nope: {type!r}")
+
+        df = self.df.loc[mask, ["contig", "start", "end", "cov"]]
 
         # here, if type == "low", we are filtering out windows that are within <edge_pad> bases of the start/end of a contig
-        if type =="low":
-            df["contig_length"] = df["contig"].map(contig_lengths)
-            df = df[(df.start >= edge_pad) & (df.end <= df.contig_length - edge_pad)].drop(columns="contig_length")
+        if type == "low":
+            contig_len = df["contig"].map(contig_lengths)
+            df = df[(df["start"] >= edge_pad) & (df["end"] <= contig_len - edge_pad)]
 
         regions = []
 
