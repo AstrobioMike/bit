@@ -1,5 +1,9 @@
 import os
+import sys
 import subprocess
+import itertools
+import threading
+import time
 from pathlib import Path
 import pysam # type: ignore
 import pandas as pd # type: ignore
@@ -42,7 +46,7 @@ def run_cov_analyzer(
 
     contig_lengths = get_contig_lengths(reference_fasta)
 
-    report_message("Generating windows for input fasta(s)...")
+    report_message("Generating windows for the input fasta(s)...")
     window_bed_path, total_windows = generate_sliding_bed_file(reference_fasta,
                                                                sliding_window_size,
                                                                step_size,
@@ -147,7 +151,24 @@ def generate_sliding_bed_file(reference_fasta, sliding_window_size, step_size, o
 def run_mosdepth(bam_file, window_bed_path, output_dir):
     mosdepth_out_prefix = str(Path(output_dir) / Path(bam_file).stem)
     cmd = f"mosdepth --by {window_bed_path} {mosdepth_out_prefix} {bam_file}"
+
+    done = threading.Event()
+    def spin():
+        for char in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
+            if done.is_set():
+                break
+            sys.stderr.write(f"\r    {char} mosdepth running...")
+            sys.stderr.flush()
+            time.sleep(0.1)
+        sys.stderr.write("\r    ✔ mosdepthinitely complete      \n")
+        sys.stderr.flush()
+
+    t = threading.Thread(target=spin)
+    t.start()
     subprocess.run(cmd, shell=True)
+    done.set()
+    t.join()
+
     mosdepth_regions_file = f"{mosdepth_out_prefix}.regions.bed.gz"
 
     return mosdepth_regions_file
