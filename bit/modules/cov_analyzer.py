@@ -1,9 +1,11 @@
+import io
 import os
 import sys
 import subprocess
 import itertools
 import threading
 import time
+from contextlib import contextmanager
 from pathlib import Path
 import pysam # type: ignore
 import pandas as pd # type: ignore
@@ -23,6 +25,39 @@ from bit.modules.general import (check_files_are_found,
 init(autoreset=True)
 
 
+@contextmanager
+def _spinner(in_progress_msg, complete_msg):
+    """Show a spinner while a block runs; report elapsed time only if >= 60 s."""
+    done = threading.Event()
+    elapsed = [0.0]
+
+    def spin():
+        for char in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
+            if done.is_set():
+                break
+            sys.stderr.write(f"\r    {char} {in_progress_msg}")
+            sys.stderr.flush()
+            time.sleep(0.1)
+        if elapsed[0] >= 60:
+            mins, secs = divmod(int(elapsed[0]), 60)
+            time_str = f"(took ~{mins} min and {secs} sec)"
+        else:
+            time_str = ""
+        sys.stderr.write(f"\r    ✔ {complete_msg}{time_str}          \n")
+        sys.stderr.flush()
+        time.sleep(0.1)
+
+    t = threading.Thread(target=spin)
+    t.start()
+    start_time = time.monotonic()
+    try:
+        yield
+    finally:
+        elapsed[0] = time.monotonic() - start_time
+        done.set()
+        t.join()
+
+
 def run_cov_analyzer(
     reference_fasta: str,
     bam_file: str,
@@ -32,7 +67,7 @@ def run_cov_analyzer(
     min_region_length: int,
     exclude_contigs: list,
     per_contig: bool,
-    sliding_window_size: int,
+    window_size: int,
     step_size: int,
     allowed_gap: int,
     buffer: int,
@@ -46,9 +81,9 @@ def run_cov_analyzer(
 
     contig_lengths = get_contig_lengths(reference_fasta)
 
-    report_message("Generating windows for the input fasta(s)...")
-    window_bed_path, total_windows = generate_sliding_bed_file(reference_fasta,
-                                                               sliding_window_size,
+    report_message(f"Generating windows for the input fasta (window size: {window_size}; step size: {step_size})...")
+    window_bed_path, total_windows = generate_windows_bed_file(reference_fasta,
+                                                               window_size,
                                                                step_size,
                                                                output_dir)
 
@@ -61,24 +96,41 @@ def run_cov_analyzer(
         cov_df = cov_df.loc[~cov_df["contig"].isin(exclude_contigs)].reset_index(drop=True)
 
     report_message("Computing per-window coverage stats...")
-    cov_stats = CoverageStats(cov_df, per_contig)
+    with _spinner("", ""):
+        cov_stats = CoverageStats(cov_df, per_contig)
 
     report_message("Identifying regions of interest...")
-    high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
-    low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
-    low_merged_regions = filter_nonATGCs_from_low_merged_regions(reference_fasta, low_merged_regions)
+    with _spinner("", ""):
+        high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
+        low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
+        low_merged_regions = filter_nonATGCs_from_low_merged_regions(reference_fasta, low_merged_regions)
+        low_merged_regions = filter_low_complexity_regions(reference_fasta, low_merged_regions)
 
-    if min_region_length > 0:
-        high_merged_regions = high_merged_regions.loc[high_merged_regions["length"] >= min_region_length].reset_index(drop=True)
-        low_merged_regions = low_merged_regions.loc[low_merged_regions["length"] >= min_region_length].reset_index(drop=True)
+        zero_merged_regions = find_zero_coverage_regions(cov_df)
+        zero_merged_regions = filter_nonATGCs_from_low_merged_regions(reference_fasta, zero_merged_regions)
+        zero_merged_regions = filter_low_complexity_regions(reference_fasta, zero_merged_regions)
 
-    high_merged_regions = annotate_zero_cov_bases(high_merged_regions, bam_file)
-    low_merged_regions = annotate_zero_cov_bases(low_merged_regions, bam_file)
+        if min_region_length > 0:
+            high_merged_regions = high_merged_regions.loc[high_merged_regions["length"] >= min_region_length].reset_index(drop=True)
+            low_merged_regions = low_merged_regions.loc[low_merged_regions["length"] >= min_region_length].reset_index(drop=True)
+            zero_merged_regions = zero_merged_regions.loc[zero_merged_regions["length"] >= min_region_length].reset_index(drop=True)
 
-    report_message("Generating outputs...", trailing_newline=True)
-    generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
-                     cov_df, cov_stats, buffer, output_dir, contig_lengths, write_window_stats,
-                     log_file)
+        high_merged_regions = annotate_zero_cov_bases(high_merged_regions, bam_file)
+        low_merged_regions = annotate_zero_cov_bases(low_merged_regions, bam_file)
+
+    report_message("Generating outputs...")
+    with _spinner("", ""):
+        old_stdout = sys.stdout
+        sys.stdout = captured = io.StringIO()
+        try:
+            generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
+                             zero_merged_regions,
+                             cov_df, cov_stats, buffer, output_dir, contig_lengths, write_window_stats,
+                             log_file)
+        finally:
+            sys.stdout = old_stdout
+    print()
+    print(captured.getvalue(), end="")
 
 
 def preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs, log_file, full_cmd_executed):
@@ -123,17 +175,17 @@ def get_contig_lengths(reference_fasta):
         return dict(zip(fasta.references, fasta.lengths))
 
 
-def generate_sliding_bed_file(reference_fasta, sliding_window_size, step_size, output_dir):
-    bed_outfile = f"{output_dir}/mosdepth-files/sliding-windows.bed"
+def generate_windows_bed_file(reference_fasta, window_size, step_size, output_dir):
+    bed_outfile = f"{output_dir}/mosdepth-files/windows.bed"
     flush_size = 100000
     with pysam.FastaFile(reference_fasta) as fasta, open(bed_outfile, "w") as bed_out:
-        contigs = [(c, l) for c, l in zip(fasta.references, fasta.lengths) if l >= sliding_window_size]
-        total_windows = sum((l - sliding_window_size) // step_size + 1 for _, l in contigs)
+        contigs = [(c, l) for c, l in zip(fasta.references, fasta.lengths) if l >= window_size]
+        total_windows = sum((l - window_size) // step_size + 1 for _, l in contigs)
         with tqdm(total=total_windows, ncols=80, unit=" windows", leave=True, bar_format="    {l_bar}{bar}| of {total:,} total{unit} [{elapsed}, {rate_fmt}]") as pbar:
             for contig, length in contigs:
                 buffered_lines = []
-                for start in range(0, length - sliding_window_size + 1, step_size):
-                    end = start + sliding_window_size
+                for start in range(0, length - window_size + 1, step_size):
+                    end = start + window_size
                     buffered_lines.append(f"{contig}\t{start}\t{end}\n")
 
                     if len(buffered_lines) >= flush_size:
@@ -152,22 +204,8 @@ def run_mosdepth(bam_file, window_bed_path, output_dir):
     mosdepth_out_prefix = str(Path(output_dir) / Path(bam_file).stem)
     cmd = f"mosdepth --by {window_bed_path} {mosdepth_out_prefix} {bam_file}"
 
-    done = threading.Event()
-    def spin():
-        for char in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
-            if done.is_set():
-                break
-            sys.stderr.write(f"\r    {char} mosdepth running...")
-            sys.stderr.flush()
-            time.sleep(0.1)
-        sys.stderr.write("\r    ✔ mosdepthinitely complete      \n")
-        sys.stderr.flush()
-
-    t = threading.Thread(target=spin)
-    t.start()
-    subprocess.run(cmd, shell=True)
-    done.set()
-    t.join()
+    with _spinner("mosdepthinitely in progress...", "mosdepthinitely done"):
+        subprocess.run(cmd, shell=True)
 
     mosdepth_regions_file = f"{mosdepth_out_prefix}.regions.bed.gz"
 
@@ -248,7 +286,7 @@ class CoverageStats:
 
     def get_windows(self, type = "high", method = "fold", threshold = 10):
         """
-        Filter for windows above or below a given threshold.
+        filters for windows above or below a given threshold
 
         methods: "percentile", "zscore", "fold", or "log2fold"
         """
@@ -389,6 +427,83 @@ def filter_nonATGCs_from_low_merged_regions(reference_fasta, low_merged_regions)
     return low_merged_regions
 
 
+def linguistic_complexity(seq, k=3):
+    """
+    a metric of complexity following same princple of dustmasker
+
+    we get the ration of observed unique k-mers to the max possible unique k-mers in the seq
+    """
+    seq = seq.upper()
+    n = len(seq)
+    if n < k:
+        return 0.0
+    observed = len({seq[i:i + k] for i in range(n - k + 1)})
+    max_possible = min(n - k + 1, 4 ** k)
+    return observed / max_possible
+
+
+def filter_low_complexity_regions(reference_fasta, merged_regions, min_complexity=0.3, k=3):
+    """
+    this is here to help catch simple tandem repeats that pass
+    the non-ATGC filter but are produce un-informative or false-positive
+    zero/low-coverage calls
+    """
+    if merged_regions.empty:
+        return merged_regions
+
+    regions_to_keep = []
+    with pysam.FastaFile(reference_fasta) as fasta:
+        for idx, row in merged_regions.iterrows():
+            seq = fasta.fetch(row.contig, row.start, row.end)
+            if linguistic_complexity(seq, k) >= min_complexity:
+                regions_to_keep.append(idx)
+
+    return merged_regions.loc[regions_to_keep].reset_index(drop=True)
+
+
+# def annotate_complexity(reference_fasta, merged_regions, k=3):
+#     if merged_regions.empty:
+#         merged_regions = merged_regions.copy()
+#         merged_regions["seq_complexity"] = pd.Series(dtype=float)
+#         return merged_regions
+
+#     scores = []
+#     with pysam.FastaFile(reference_fasta) as fasta:
+#         for _, row in merged_regions.iterrows():
+#             seq = fasta.fetch(row.contig, row.start, row.end)
+#             scores.append(linguistic_complexity(seq, k))
+
+#     merged_regions = merged_regions.copy()
+#     merged_regions["seq_complexity"] = scores
+#     return merged_regions
+
+
+def find_zero_coverage_regions(cov_df):
+
+    "merge adjacent windows with zero coverage into contiguous regions"
+
+    zero_df = cov_df.loc[cov_df["cov"] == 0, ["contig", "start", "end"]].sort_values(["contig", "start"])
+
+    if zero_df.empty:
+        return pd.DataFrame(columns=["contig", "start", "end", "length", "cov"])
+
+    regions = []
+    for contig, group in zero_df.groupby("contig", sort=False):
+        curr_start = curr_end = None
+        for row in group.itertuples(index=False):
+            if curr_start is None:
+                curr_start, curr_end = row.start, row.end
+            elif row.start <= curr_end:
+                curr_end = max(curr_end, row.end)
+            else:
+                regions.append((contig, curr_start, curr_end, curr_end - curr_start, 0.0))
+                curr_start, curr_end = row.start, row.end
+        if curr_start is not None:
+            regions.append((contig, curr_start, curr_end, curr_end - curr_start, 0.0))
+
+    return pd.DataFrame(regions, columns=["contig", "start", "end", "length", "cov"])
+
+
 def annotate_zero_cov_bases(merged_regions, bam_file):
 
     zero_counts = []
@@ -422,6 +537,7 @@ def annotate_zero_cov_bases(merged_regions, bam_file):
 
 
 def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
+                     zero_merged_regions,
                      cov_df, cov_stats, buffer, output_dir, contig_lengths, write_window_stats,
                      log_file):
 
@@ -435,6 +551,9 @@ def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
 
     write_regions_of_interest_table(low_merged_regions, output_dir, "low", log_file)
     write_regions_fasta(reference_fasta, low_merged_regions, buffer, output_dir, "low", contig_lengths)
+
+    write_regions_of_interest_table(zero_merged_regions, output_dir, "zero", log_file)
+    write_regions_fasta(reference_fasta, zero_merged_regions, buffer, output_dir, "zero", contig_lengths)
     print()
 
 
@@ -517,7 +636,7 @@ def write_window_cov_stats(cov_stats, output_dir, contig_lengths, log_file):
                 out.write(f"  {p:>6.2f}% : {val:.2f}\n")
             out.write("\n")
 
-    tee(f"\n  Window-coverage summary written to:\n      {Fore.YELLOW}{out_txt}", log_file)
+    tee(f"\n  Window-coverage summary written to:\n      {Fore.YELLOW}{out_txt}{Fore.RESET}", log_file)
 
     # writing out as tsv
     df_summary = pd.DataFrame(rows)
@@ -525,7 +644,7 @@ def write_window_cov_stats(cov_stats, output_dir, contig_lengths, log_file):
            + [f"p{p}" for p in percentiles]
     df_summary.to_csv(out_tsv, sep="\t", index=False, float_format="%.2f", columns=cols)
 
-    tee(f"  Window-coverage summary table written to:\n      {Fore.YELLOW}{out_tsv}", log_file)
+    tee(f"  Window-coverage summary table written to:\n      {Fore.YELLOW}{out_tsv}{Fore.RESET}", log_file)
 
 
 def write_windows_table(cov_stats, output_dir, log_file):
@@ -534,7 +653,7 @@ def write_windows_table(cov_stats, output_dir, log_file):
                         columns=["contig", "start", "end",
                                  "cov", "percentile", "zscore", "signed_fold_diff",
                                  "fold_diff", "log2_fold_diff"])
-    tee(f"  Window-coverage stats table written to:\n      {Fore.YELLOW + out_path}", log_file)
+    tee(f"  Window-coverage stats table written to:\n      {Fore.YELLOW}{out_path}{Fore.RESET}", log_file)
 
 
 def write_window_plot_cov_histogram(cov_df, output_dir, log_file):
@@ -557,7 +676,7 @@ def write_window_plot_cov_histogram(cov_df, output_dir, log_file):
     out_path = f"{output_dir}/window-coverage-histogram.png"
     plt.savefig(out_path, dpi=125, bbox_inches="tight")
     plt.close()
-    tee(f"  Window-coverage histogram written to:\n      {Fore.YELLOW + out_path}", log_file)
+    tee(f"  Window-coverage histogram written to:\n      {Fore.YELLOW}{out_path}{Fore.RESET}", log_file)
 
 
 def write_regions_of_interest_table(merged_regions, output_dir, type, log_file):
@@ -565,11 +684,14 @@ def write_regions_of_interest_table(merged_regions, output_dir, type, log_file):
 
     sorted_df = merged_regions.sort_values(by=["contig", "start"], ascending=[True, True])
 
+    if type == "zero":
+        sorted_df = sorted_df.drop(columns="cov")
+
     sorted_df.to_csv(out_path, sep="\t", index=False, float_format="%.2f")
 
     if len(sorted_df) > 0:
-        tee(f"\n  Number of {type}-coverage regions identified: {Fore.YELLOW + str(len(sorted_df))}", log_file)
-        tee(f"    {type.capitalize()}-coverage regions-of-interest table written to:\n      {Fore.YELLOW + out_path}", log_file)
+        tee(f"\n  Number of {type}-coverage regions identified: {Fore.YELLOW}{len(sorted_df)}{Fore.RESET}", log_file)
+        tee(f"    {type.capitalize()}-coverage regions-of-interest table written to:\n      {Fore.YELLOW}{out_path}{Fore.RESET}", log_file)
     else:
         tee(f"\n  No {type}-coverage regions-of-interest identified.", log_file)
 
@@ -605,6 +727,8 @@ def write_regions_fasta(reference_fasta, regions_df, buffer, output_dir, type, c
 
     if len(records) > 0:
         with open(output_fasta, "w") as out:
-            SeqIO.write(records, out, "fasta")
+            for record in records:
+                out.write(f">{record.id}\n")
+                out.write(f"{str(record.seq)}\n")
 
-        print(f"    {type.capitalize()}-coverage regions-of-interest fasta written to:\n      {Fore.YELLOW + output_fasta}")
+        print(f"    {type.capitalize()}-coverage regions-of-interest fasta written to:\n      {Fore.YELLOW}{output_fasta}{Fore.RESET}")

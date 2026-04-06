@@ -7,8 +7,12 @@ import pytest
 from bit.modules import cov_analyzer as ca
 
 
-def _write_fasta(path: Path, name: str, length: int, base: str = "A"):
-    seq = (base * length).encode()
+def _write_fasta(path: Path, name: str, length: int, base: str = None):
+    # generating a pseudo-random (but deterministic) sequence so it passes
+    # both the non-ATGC and linguistic complexity filters
+    import random
+    rng = random.Random(42)
+    seq = "".join(rng.choices("ATGC", k=length)).encode()
     with open(path, "wb") as fh:
         fh.write(f">{name}\n".encode())
         # wrapping at 60 so faidx is happy
@@ -131,7 +135,7 @@ def test_run_cov_analyzer_end_to_end(tmp_path, monkeypatch, per_contig):
         min_region_length=0,
         exclude_contigs=[],
         per_contig=per_contig,
-        sliding_window_size=50,
+        window_size=50,
         step_size=50,
         allowed_gap=0,
         buffer=10,

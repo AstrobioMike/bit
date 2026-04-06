@@ -6,16 +6,16 @@ from bit.cli.common import CustomRichHelpFormatter, reconstruct_invocation, add_
 def main():
 
     desc = """
-        This script identifies and pulls out regions of relatively higher and lower coverage when
+        This script identifies and pulls out regions of zero-coverage and relatively higher and lower coverage when
         given a reference fasta and a bam file. It generates a bed file of the specified window-
         and step-size, utilizes mosdepth to get the coverage of those windows, then generates stats
-        for those windows and pulls out regions with coverage above and below specified thresholds.
-        It outputs a table of coverage stats for all windows, a table of merged adjacent windows
+        for those windows and pulls out regions with zero coverage and coverage above and below specified thresholds.
+        It outputs a table of coverage stats for all windows (if requested), a table of merged adjacent windows
         ("regions"), and identified regions in fasta format. By default it looks for coverage variations
         from the global mean coverage, but you can tell it to use per-contig coverages by adding the
         `--per-contig` flag. Additionally, it is recommended to exclude contigs holding mitochondrial
         genomes or chloroplasts due to their generally very relative high coverage, unless you
-        specifically want to investigate them too (if so, probably use `--per-contig` mode). For
+        specifically want to investigate them too (and if so, you should probably use `--per-contig` mode). For
         version info, run `bit-version`.
         """
 
@@ -92,15 +92,15 @@ def main():
         default=False,
     )
     optional.add_argument(
-        "-s",
-        "--sliding-window-size",
+        "-w",
+        "--window-size",
         metavar="<INT>",
         help='Sliding window size (default: 50)',
         type=int,
         default=50,
     )
     optional.add_argument(
-        "-S",
+        "-s",
         "--step-size",
         metavar="<INT>",
         help='Step size for sliding window (default: 10)',
@@ -119,7 +119,7 @@ def main():
         "-B",
         "--buffer",
         metavar="<INT>",
-        help='Add this length to each side of a region of interest when pulled out as fasta (default: 100)',
+        help='Add this length to each side of a high/low region of interest when pulled out as fasta (default: 100)',
         type=int,
         default=100,
     )
@@ -149,7 +149,7 @@ def main():
         min_region_length = args.min_region_length,
         exclude_contigs = args.exclude_contigs,
         per_contig = args.per_contig,
-        sliding_window_size = args.sliding_window_size,
+        window_size = args.window_size,
         step_size = args.step_size,
         allowed_gap = args.allowed_gap,
         buffer = args.buffer,
