@@ -8,7 +8,8 @@ from bit.modules.general import get_package_path
 from bit.tests.utils import run_cli
 from bit.modules.gen_reads import (gen_paired_reads,
                                    gen_single_reads,
-                                   get_proportions)
+                                   get_proportions,
+                                   extract_subsequence)
 
 
 test_fasta = get_package_path("tests/data/ez-screen-assembly.fasta")
@@ -106,6 +107,7 @@ def test_wrapped_fragments_generated_with_circularize(tmp_path):
         read_length=4,
         output_prefix=str(out_prefix),
         circularize=True,
+        include_Ns=False,
     )
 
     gen_paired_reads(args, get_proportions(args))
@@ -177,6 +179,7 @@ def test_simulate_single_end_reads_unit(tmp_path):
         output_prefix=str(out_prefix),
         circularize=False,
         type="single-end",
+        include_Ns=False,
     )
 
     gen_single_reads(args, get_proportions(args))
@@ -219,6 +222,7 @@ def test_long_reads_variable_length(tmp_path):
         circularize=False,
         type="long",
         long_read_length_range=50,
+        include_Ns=False,
     )
 
     gen_single_reads(args, get_proportions(args))
@@ -275,3 +279,65 @@ def test_long_reads_cli(tmp_path):
     # with default 50% range and read_length=100, expect reads from 50-150
     assert all(50 <= rl <= 150 for rl in read_lengths), \
         f"Read lengths outside expected range: min={min(read_lengths)}, max={max(read_lengths)}"
+
+
+def test_extract_subsequence_skips_Ns():
+    """By default, extract_subsequence retries to avoid N-containing regions."""
+    import random
+    random.seed(0)
+
+    # sequence with Ns only in the middle
+    seq = "ACGTACGT" + "NNNNNNNN" + "ACGTACGT"
+    seq_length = len(seq)
+    read_len = 8
+
+    # generate many reads; none should contain N when include_Ns=False
+    for _ in range(50):
+        subseq, _ = extract_subsequence(seq, seq_length, read_len, circularize=False, include_Ns=False)
+        assert 'N' not in subseq, f"Found N in read when include_Ns=False: {subseq}"
+
+
+def test_extract_subsequence_includes_Ns_when_flagged():
+    """With include_Ns=True, reads may contain Ns."""
+    import random
+    random.seed(0)
+
+    # sequence that is entirely Ns — reads must contain Ns
+    seq = "N" * 20
+    seq_length = len(seq)
+    read_len = 8
+
+    subseq, _ = extract_subsequence(seq, seq_length, read_len, circularize=False, include_Ns=True)
+    assert 'N' in subseq, "Expected Ns in read when include_Ns=True"
+
+
+def test_gen_paired_reads_skips_Ns(tmp_path):
+    """Paired-end reads from a mixed sequence should not contain Ns by default."""
+
+    fasta = tmp_path / "contig.fasta"
+    # 20-char clean regions on each side so all fragment sizes (7-9) fit cleanly
+    seq = "ACGTACGTACGTACGTACGT" + "NNNNNNNNNN" + "ACGTACGTACGTACGTACGT"
+    _write_fasta(fasta, "contig1", seq)
+
+    out_prefix = tmp_path / "no_ns"
+    args = Namespace(
+        input_fastas=[str(fasta)],
+        proportions_file=None,
+        seed=42,
+        num_reads=20,
+        fragment_size=8,
+        fragment_size_range=10,
+        read_length=4,
+        output_prefix=str(out_prefix),
+        circularize=False,
+        include_Ns=False,
+    )
+
+    gen_paired_reads(args, get_proportions(args))
+
+    for suffix in ("_R1.fastq", "_R2.fastq"):
+        with open(str(out_prefix) + suffix, 'r') as f:
+            lines = [l.rstrip('\n') for l in f]
+        seqs = lines[1::4]
+        for s in seqs:
+            assert 'N' not in s, f"Found N in {suffix} read when include_Ns=False: {s}"

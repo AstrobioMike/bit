@@ -82,6 +82,12 @@ def main():
         action="store_true",
         default=False,
     )
+    general.add_argument(
+        "--include-Ns",
+        help="By default, regions with Ns are skipped. Provide this flag to generate reads that will include Ns.",
+        action="store_true",
+        default=False,
+    )
 
     add_seed(general)
 

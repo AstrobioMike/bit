@@ -63,24 +63,30 @@ def parse_proportions_file(proportions_file, input_fastas):
         return {fasta_file: 1 / num_fastas for fasta_file in input_fastas}
 
 
-def extract_subsequence(sequence, seq_length, subseq_len, circularize):
+def extract_subsequence(sequence, seq_length, subseq_len, circularize, include_Ns=False, max_attempts=100):
 
-    if circularize:
-        start = random.randint(0, seq_length - 1)
-        end = start + subseq_len
-        if end <= seq_length:
-            subseq = sequence[start:end]
+    for _ in range(max_attempts):
+
+        if circularize:
+            start = random.randint(0, seq_length - 1)
+            end = start + subseq_len
+            if end <= seq_length:
+                subseq = sequence[start:end]
+            else:
+                subseq = sequence[start:] + sequence[: end - seq_length]
+        elif subseq_len >= seq_length:
+            # when the requested length meets or exceeds the contig length,
+            # pick any start position and truncate at the contig end
+            start = random.randint(0, seq_length - 1)
+            subseq = sequence[start:]
         else:
-            subseq = sequence[start:] + sequence[: end - seq_length]
-    elif subseq_len >= seq_length:
-        # when the requested length meets or exceeds the contig length,
-        # pick any start position and truncate at the contig end
-        start = random.randint(0, seq_length - 1)
-        subseq = sequence[start:]
-    else:
-        start = random.randint(0, seq_length - subseq_len)
-        subseq = sequence[start:start + subseq_len]
+            start = random.randint(0, seq_length - subseq_len)
+            subseq = sequence[start:start + subseq_len]
 
+        if include_Ns or 'N' not in subseq.upper():
+            return subseq, start
+
+    # fallback: return last attempt if all had Ns
     return subseq, start
 
 
@@ -135,7 +141,7 @@ def gen_paired_reads(args, proportions):
                 for _ in range(entry_reads):
                     frag_len = min(random.randint(min_frag, max_frag), seq_length)
 
-                    fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize)
+                    fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize, args.include_Ns)
 
                     forward_read = fragment[:args.read_length]
                     reverse_read = fragment[-args.read_length:][::-1].translate(str.maketrans("ACGT", "TGCA"))
@@ -168,7 +174,7 @@ def gen_paired_reads(args, proportions):
 
             for _ in range(reads_remaining):
                 frag_len = min(random.randint(min_frag, max_frag), seq_length)
-                fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize)
+                fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize, args.include_Ns)
 
                 forward_read = fragment[:args.read_length]
                 reverse_read = fragment[-args.read_length:][::-1].translate(str.maketrans("ACGT", "TGCA"))
@@ -224,7 +230,7 @@ def gen_single_reads(args, proportions):
                     else:
                         read_len = min(args.read_length, seq_length)
 
-                    read, start = extract_subsequence(sequence, seq_length, read_len, args.circularize)
+                    read, start = extract_subsequence(sequence, seq_length, read_len, args.circularize, args.include_Ns)
 
                     quality_scores = "I" * len(read)
 
@@ -253,7 +259,7 @@ def gen_single_reads(args, proportions):
                 else:
                     read_len = min(args.read_length, seq_length)
 
-                read, start = extract_subsequence(sequence, seq_length, read_len, args.circularize)
+                read, start = extract_subsequence(sequence, seq_length, read_len, args.circularize, args.include_Ns)
 
                 quality_scores = "I" * len(read)
                 read_count += 1
