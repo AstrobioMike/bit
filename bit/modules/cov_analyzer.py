@@ -206,7 +206,7 @@ def run_mosdepth(bam_file, window_bed_path, output_dir):
     mosdepth_out_prefix = str(Path(output_dir) / Path(bam_file).stem)
     cmd = f"mosdepth --by {window_bed_path} {mosdepth_out_prefix} {bam_file}"
 
-    with _spinner("mosdepthinitely in progress...", "mosdepthinitely done"):
+    with _spinner("mosdepthinitely in progress...", "mosdepthinitely done "):
         subprocess.run(cmd, shell=True)
 
     mosdepth_regions_file = f"{mosdepth_out_prefix}.regions.bed.gz"

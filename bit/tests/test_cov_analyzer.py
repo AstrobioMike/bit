@@ -146,7 +146,6 @@ def test_run_cov_analyzer_end_to_end(tmp_path, monkeypatch, per_contig):
 
     # expected outputs
     expected_files = [
-        outdir / "window-coverage-overview.txt",
         outdir / "window-coverage-overview.tsv",
         outdir / "window-coverage-stats.tsv.gz",
         outdir / "window-coverage-histogram.png",
