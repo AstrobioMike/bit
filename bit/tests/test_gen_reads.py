@@ -282,7 +282,7 @@ def test_long_reads_cli(tmp_path):
 
 
 def test_extract_subsequence_skips_Ns():
-    """By default, extract_subsequence retries to avoid N-containing regions."""
+
     import random
     random.seed(0)
 
