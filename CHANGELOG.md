@@ -13,7 +13,7 @@
 
 -->
 
-## v1.14.0 (NOT RELEASED YET)
+## v1.14.0 (07-Apr-2026)
 
 ### Added
 - to `bit-cov-analyzer`
@@ -33,6 +33,7 @@
   - default window size change from 50 to 100, and default step size changed from 10 to 20
   - drastic improvements to efficiency when working with large genomes (e.g., 3GB)
   - histogram of coverages no longer plotted by default, only done now when adding the `--write-window-stats` flag
+  - no longer produces window-coverage-overview.txt as all of that info is captured within window-coverage-overview.tsv
 - `bit-get-mapped-reads-pid`
   - minor improvements to efficiency
 - `bit-get-cov-stats`

@@ -563,7 +563,6 @@ def generate_outputs(reference_fasta, high_merged_regions, low_merged_regions,
 
 
 def write_window_cov_stats(cov_stats, output_dir, contig_lengths, log_file):
-    out_txt = f"{output_dir}/window-coverage-overview.txt"
     out_tsv = f"{output_dir}/window-coverage-overview.tsv"
     percentiles = [0.01, 0.1, 1, 5, 10, 25, 50, 75, 90, 95, 99, 99.9, 99.99]
 
@@ -598,58 +597,12 @@ def write_window_cov_stats(cov_stats, output_dir, contig_lengths, log_file):
             **{f"p{p}": group["cov"].quantile(p/100) for p in percentiles}
         })
 
-    # writing assembly level
-    with open(out_txt, "w") as out:
-        out.write("====================================\n")
-        out.write("=== GLOBAL WINDOW COVERAGE STATS ===\n")
-        out.write("====================================\n")
-        out.write(f"Assembly size: {assembly_length:,} bp\n")
-        out.write(f"Number of windows: {len(cov_stats.df)}\n")
-        out.write(f"Mean:   {cov_stats.global_mean:.2f}\n")
-        out.write(f"Median: {cov_stats.global_median:.2f}\n")
-        out.write(f"Std:    {cov_stats.global_std:.2f}\n")
-        out.write(f"Min:    {cov_stats.global_min:.2f}\n")
-        out.write(f"Max:    {cov_stats.global_max:.2f}\n\n")
-
-        out.write("Percentiles (global):\n")
-        for p in percentiles:
-            val = cov_stats.df["cov"].quantile(p/100)
-            out.write(f"  {p:>6.2f}% : {val:.2f}\n")
-
-        # now writing per-contig
-        out.write("\n========================================\n")
-        out.write("=== PER-CONTIG WINDOW COVERAGE STATS ===\n")
-        out.write("========================================\n")
-        for contig, group in cov_stats.df.groupby("contig", sort=False):
-            out.write(f"\n-- {contig} --\n")
-            contig_length = contig_lengths.get(contig, 0)
-            gm = group["cov"].mean()
-            md = group["cov"].median()
-            sd = group["cov"].std()
-            mn = group["cov"].min()
-            mx = group["cov"].max()
-            out.write(f"Contig size: {contig_length:,} bp\n")
-            out.write(f"Number of windows: {len(group)}\n")
-            out.write(f"Mean:   {gm:.2f}\n")
-            out.write(f"Median: {md:.2f}\n")
-            out.write(f"Std:    {sd:.2f}\n")
-            out.write(f"Min:    {mn:.2f}\n")
-            out.write(f"Max:    {mx:.2f}\n")
-            out.write("\nPercentiles:\n")
-            for p in percentiles:
-                val = group["cov"].quantile(p/100)
-                out.write(f"  {p:>6.2f}% : {val:.2f}\n")
-            out.write("\n")
-
-    tee(f"\n  Window-coverage summary written to:\n      {Fore.YELLOW}{out_txt}{Fore.RESET}", log_file)
-
-    # writing out as tsv
     df_summary = pd.DataFrame(rows)
     cols = ["name","length_bp","num_windows","mean","median","std","min","max"] \
            + [f"p{p}" for p in percentiles]
     df_summary.to_csv(out_tsv, sep="\t", index=False, float_format="%.2f", columns=cols)
 
-    tee(f"  Window-coverage summary table written to:\n      {Fore.YELLOW}{out_tsv}{Fore.RESET}", log_file)
+    tee(f"\n  Window-coverage overview written to:\n      {Fore.YELLOW}{out_tsv}{Fore.RESET}", log_file)
 
 
 def write_windows_table(cov_stats, output_dir, log_file):
@@ -697,10 +650,10 @@ def write_regions_of_interest_table(merged_regions, output_dir, type, log_file):
     if len(sorted_df) > 0:
         n_low_complexity = int(sorted_df["low_complexity"].sum()) if "low_complexity" in sorted_df.columns else 0
         lc_note = f" ({n_low_complexity} flagged as low-complexity)" if n_low_complexity > 0 else ""
-        tee(f"\n  Number of {type}-coverage regions identified: {Fore.YELLOW}{len(sorted_df)}{Fore.RESET}{lc_note}", log_file)
+        tee(f"\n\n  Number of {type}-coverage regions identified: {Fore.YELLOW}{len(sorted_df)}{Fore.RESET}{lc_note}", log_file)
         tee(f"    {type.capitalize()}-coverage regions-of-interest table written to:\n      {Fore.YELLOW}{out_path}{Fore.RESET}", log_file)
     else:
-        tee(f"\n  No {type}-coverage regions-of-interest identified.", log_file)
+        tee(f"\n\n  No {type}-coverage regions-of-interest identified.", log_file)
 
 
 def write_regions_fasta(reference_fasta, regions_df, buffer, output_dir, type, contig_lengths):
