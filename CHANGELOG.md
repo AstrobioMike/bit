@@ -13,7 +13,7 @@
 
 -->
 
-## v1.13.16 (NOT RELEASED YET)
+## v1.14.0 (NOT RELEASED YET)
 
 ### Added
 - to `bit-cov-analyzer`
