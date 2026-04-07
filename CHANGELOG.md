@@ -16,16 +16,21 @@
 ## v1.13.16 (NOT RELEASED YET)
 
 ### Added
-- `bit-cov-analyzer`
+- to `bit-cov-analyzer`
   - progress updates while running
   - zero-coverage region outputs now also generated
+  - output region tsvs now have a "low_complexity" column that holds True or False
+    - this is based on:
+      -  low_complexity = True if: unique 3-mers / all-possible-3mers <= 0.3
 - `bit-extract-seqs`
   - enables pulling out target seqs from a fasta by bed file or specified primers via subcommands
-- `--fragment-size-range` option added to `bit-gen-reads`, defaults to 10% of fragment size
+- to `bit-gen-reads`
+  - `--fragment-size-range` option added, defaults to 10% of fragment size
 
 ### Changed
 - `bit-cov-analyzer`
   - `-s | --sliding-window-size` changed to `-w | --window-size`, and `-S | --step-size` changed to `-s | --step-size` (lower-case)
+  - default window size change from 50 to 100, and default step size changed from 10 to 20
   - drastic improvements to efficiency when working with large genomes (e.g., 3GB)
   - histogram of coverages no longer plotted by default, only done now when adding the `--write-window-stats` flag
 - `bit-get-mapped-reads-pid`

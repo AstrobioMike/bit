@@ -95,17 +95,17 @@ def main():
         "-w",
         "--window-size",
         metavar="<INT>",
-        help='Sliding window size (default: 50)',
+        help='Sliding window size (default: 100)',
         type=int,
-        default=50,
+        default=100,
     )
     optional.add_argument(
         "-s",
         "--step-size",
         metavar="<INT>",
-        help='Step size for sliding window (default: 10)',
+        help='Step size for sliding window (default: 20)',
         type=int,
-        default=10,
+        default=20,
     )
     optional.add_argument(
         "-g",

@@ -104,11 +104,9 @@ def run_cov_analyzer(
         high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
         low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
         low_merged_regions = filter_nonATGCs_from_low_merged_regions(reference_fasta, low_merged_regions)
-        low_merged_regions = filter_low_complexity_regions(reference_fasta, low_merged_regions)
 
         zero_merged_regions = find_zero_coverage_regions(cov_df)
         zero_merged_regions = filter_nonATGCs_from_low_merged_regions(reference_fasta, zero_merged_regions)
-        zero_merged_regions = filter_low_complexity_regions(reference_fasta, zero_merged_regions)
 
         if min_region_length > 0:
             high_merged_regions = high_merged_regions.loc[high_merged_regions["length"] >= min_region_length].reset_index(drop=True)
@@ -117,6 +115,10 @@ def run_cov_analyzer(
 
         high_merged_regions = annotate_zero_cov_bases(high_merged_regions, bam_file)
         low_merged_regions = annotate_zero_cov_bases(low_merged_regions, bam_file)
+
+        high_merged_regions = annotate_low_complexity(reference_fasta, high_merged_regions)
+        low_merged_regions = annotate_low_complexity(reference_fasta, low_merged_regions)
+        zero_merged_regions = annotate_low_complexity(reference_fasta, zero_merged_regions)
 
     report_message("Generating outputs...")
     with _spinner("", ""):
@@ -442,40 +444,43 @@ def linguistic_complexity(seq, k=3):
     return observed / max_possible
 
 
-def filter_low_complexity_regions(reference_fasta, merged_regions, min_complexity=0.3, k=3):
-    """
-    this is here to help catch simple tandem repeats that pass
-    the non-ATGC filter but are produce un-informative or false-positive
-    zero/low-coverage calls
-    """
-    if merged_regions.empty:
-        return merged_regions
-
-    regions_to_keep = []
-    with pysam.FastaFile(reference_fasta) as fasta:
-        for idx, row in merged_regions.iterrows():
-            seq = fasta.fetch(row.contig, row.start, row.end)
-            if linguistic_complexity(seq, k) >= min_complexity:
-                regions_to_keep.append(idx)
-
-    return merged_regions.loc[regions_to_keep].reset_index(drop=True)
-
-
-# def annotate_complexity(reference_fasta, merged_regions, k=3):
+# def filter_low_complexity_regions(reference_fasta, merged_regions, min_complexity=0.3, k=3):
+#     """
+#     this is here to help catch simple tandem repeats that pass
+#     the non-ATGC filter but are produce un-informative or false-positive
+#     zero/low-coverage calls
+#     """
 #     if merged_regions.empty:
-#         merged_regions = merged_regions.copy()
-#         merged_regions["seq_complexity"] = pd.Series(dtype=float)
 #         return merged_regions
 
-#     scores = []
+#     regions_to_keep = []
 #     with pysam.FastaFile(reference_fasta) as fasta:
-#         for _, row in merged_regions.iterrows():
+#         for idx, row in merged_regions.iterrows():
 #             seq = fasta.fetch(row.contig, row.start, row.end)
-#             scores.append(linguistic_complexity(seq, k))
+#             if linguistic_complexity(seq, k) >= min_complexity:
+#                 regions_to_keep.append(idx)
 
-#     merged_regions = merged_regions.copy()
-#     merged_regions["seq_complexity"] = scores
-#     return merged_regions
+#     return merged_regions.loc[regions_to_keep].reset_index(drop=True)
+
+
+def annotate_low_complexity(reference_fasta, merged_regions, k=3, min_complexity=0.4):
+    """
+    rather than removing them, this just flags the low-complexity seqs in the output tsvs
+    """
+    if merged_regions.empty:
+        merged_regions = merged_regions.copy()
+        merged_regions["low_complexity"] = pd.Series(dtype=bool)
+        return merged_regions
+
+    flags = []
+    with pysam.FastaFile(reference_fasta) as fasta:
+        for _, row in merged_regions.iterrows():
+            seq = fasta.fetch(row.contig, row.start, row.end)
+            flags.append(linguistic_complexity(seq, k) <= min_complexity)
+
+    merged_regions = merged_regions.copy()
+    merged_regions["low_complexity"] = flags
+    return merged_regions
 
 
 def find_zero_coverage_regions(cov_df):
@@ -690,7 +695,9 @@ def write_regions_of_interest_table(merged_regions, output_dir, type, log_file):
     sorted_df.to_csv(out_path, sep="\t", index=False, float_format="%.2f")
 
     if len(sorted_df) > 0:
-        tee(f"\n  Number of {type}-coverage regions identified: {Fore.YELLOW}{len(sorted_df)}{Fore.RESET}", log_file)
+        n_low_complexity = int(sorted_df["low_complexity"].sum()) if "low_complexity" in sorted_df.columns else 0
+        lc_note = f" ({n_low_complexity} flagged as low-complexity)" if n_low_complexity > 0 else ""
+        tee(f"\n  Number of {type}-coverage regions identified: {Fore.YELLOW}{len(sorted_df)}{Fore.RESET}{lc_note}", log_file)
         tee(f"    {type.capitalize()}-coverage regions-of-interest table written to:\n      {Fore.YELLOW}{out_path}{Fore.RESET}", log_file)
     else:
         tee(f"\n  No {type}-coverage regions-of-interest identified.", log_file)
