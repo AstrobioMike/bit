@@ -21,7 +21,7 @@
   - zero-coverage region outputs now also generated
   - output region tsvs now have a "low_complexity" column that holds True or False
     - this is based on:
-      -  low_complexity = True if: unique 3-mers / all-possible-3mers <= 0.3
+      -  low_complexity = True if: unique 3-mers / all-possible-3mers <= 0.4
 - `bit-extract-seqs`
   - enables pulling out target seqs from a fasta by bed file or specified primers via subcommands
 - to `bit-gen-reads`
