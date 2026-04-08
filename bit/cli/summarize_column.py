@@ -3,7 +3,7 @@ import argparse
 from bit.modules.general import report_failure, color_text
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help)
-import pandas as pd
+import pandas as pd # type: ignore
 import csv
 import io
 
@@ -27,11 +27,10 @@ def build_parser():
     optional = parser.add_argument_group("Optional Parameters")
 
     required.add_argument(
-        "-i",
-        "--input-file",
+        "input_file",
         metavar="<FILE>",
-        type=argparse.FileType('r'),
-        default='-',
+        nargs='?',
+        default=sys.stdin,
         help="Input file or stdin if none provided"
     )
     optional.add_argument(
@@ -56,19 +55,20 @@ def build_parser():
 
 
 def main():
+
     parser = build_parser()
+
+    if len(sys.argv) == 1 and sys.stdin.isatty():
+        parser.print_help(sys.stderr)
+        sys.exit(0)
 
     args = parser.parse_args()
 
-    # this handles if no standard in was provided and no -i input file was provided
-    if sys.stdin.isatty():
-        if args.input_file.name == "<stdin>":
-            parser.print_help(sys.stderr)
-            sys.exit(0)
-
-    if args.input_file.name == '<stdin>' or args.input_file is sys.stdin:
+    if args.input_file is sys.stdin:
         text = args.input_file.read()
         args.input_file = io.StringIO(text)
+    else:
+        args.input_file = open(args.input_file, 'r')
 
     summarize_column(
         input_file=args.input_file,

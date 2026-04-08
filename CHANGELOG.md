@@ -11,17 +11,18 @@
 
 ---
 
+-->
 
 ## v1.14.1 (NOT RELEASED YET)
 
 ### Added
 
 ### Changed
-
+- `bit-summarize-column` no longer has an `-i` flag, it expects the input table/file to be given as a positional argument
+- `bit-count-bases` can now take STDIN
 
 ---
 
--->
 
 ## v1.14.0 (07-Apr-2026)
 

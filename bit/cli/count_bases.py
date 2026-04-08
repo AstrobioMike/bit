@@ -1,3 +1,4 @@
+import io
 import sys
 import argparse
 from bit.modules.general import check_files_are_found
@@ -27,8 +28,9 @@ def build_parser():
     required.add_argument(
         "input_fasta",
         metavar="<FILE>",
-        help="Input fasta file",
-        action="store",
+        nargs='?',
+        default=sys.stdin,
+        help="Input fasta file or stdin if none provided",
     )
 
     optional.add_argument(
@@ -36,7 +38,6 @@ def build_parser():
         "--output-tsv",
         metavar="<FILE>",
         help='Name of output tab-delimited file if you want all sequence lengths written out',
-        action="store",
     )
 
     add_help(optional)
@@ -45,15 +46,21 @@ def build_parser():
 
 
 def main():
+
     parser = build_parser()
 
-    if len(sys.argv) == 1:
+    if len(sys.argv) == 1 and sys.stdin.isatty():
         parser.print_help(sys.stderr)
         sys.exit(0)
 
     args = parser.parse_args()
 
-    check_files_are_found([args.input_fasta])
+    if args.input_fasta is not sys.stdin:
+        check_files_are_found([args.input_fasta])
+
+    if args.input_fasta is sys.stdin:
+        text = args.input_fasta.read()
+        args.input_fasta = io.StringIO(text)
 
     stats = parse_fasta_lengths(args.input_fasta)
     total_length = stats["stats"]["total_length"]

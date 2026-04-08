@@ -2,7 +2,7 @@ import os
 from argparse import Namespace
 import shutil
 import gzip
-import pytest
+import pytest # type: ignore
 from bit.modules.gen_reads import parse_proportions_file
 from bit.modules.general import get_package_path
 from bit.tests.utils import run_cli
