@@ -47,7 +47,7 @@ Some of the helper programs/scripts in _bit_ include:
 | `bit-get-cov-stats` | get detection, coverage, and mean percent ID information for a single or multiple references given the fasta(s) and a bam file |  
 | `bit-get-mapped-reads-pid` | get percent ID information for mapped reads in a bam file |  
 | `bit-summarize-assembly` | quickly summarize nucleotide assemblies |  
-| `bit-ez-screen` | search for nucleotide targets in nucleotide input fastas based on blast or in reads based on mapping, filtered based on tunable target-coverage and percent-ID thresholds and summarized in a simple table |  
+| `bit-ez-screen` | search for nucleotide targets in nucleotide input fastas based on blast, or in reads based on mapping, filtered based on tunable target-coverage and percent-ID thresholds and summarized in a simple table |  
 | `bit-normalize-table` | normalize a table to counts- or coverage-per million (CPM) or with the median-ratio method from DESeq2 (allowing for floats) |  
 | `bit-calc-variation-in-msa` | calculate [variation](http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |  
 | `bit-summarize-column` | summarize a numeric column in a table |  
