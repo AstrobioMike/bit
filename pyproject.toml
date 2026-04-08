@@ -64,8 +64,8 @@ bit-summarize-assembly = "bit.cli.summarize_assembly:main"
 ## table utilities ##
 bit-colnames = "bit.cli.colnames:main"
 bit-summarize-column = "bit.cli.summarize_column:main"
+bit-normalize-table = "bit.cli.normalize_table:main"
 # bit-filter-table
-# bit-normalize-table
 
 
 ## miscellaneous ##
@@ -102,7 +102,7 @@ bit-kraken2-to-taxon-summaries = "bit.cli.kraken2_to_taxon_summaries:main"
 ## genbank manipulations ##
 # bit-genbank-locus-clean-slate
 # bit-genbank-to-AA-seqs
-# bit-genbank-to-cds-table
+# bit-genbank-to-cds-table (can this produce the seqs too?)
 # bit-genbank-to-fasta
 # bit-gff-to-anvio
     # can probably drop gff-to-anvio (since that's better maintained in anvio now)

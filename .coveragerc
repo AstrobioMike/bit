@@ -4,6 +4,7 @@ concurrency = multiprocessing
 
 source =
     bit.modules
+    bit.cli.normalize_table
     bit.cli.summarize_assembly
     bit.cli.summarize_column
 

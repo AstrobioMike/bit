@@ -55,7 +55,7 @@ def test_summarize_first_column_from_stdin(sample_table):
 def test_summarize_second_column_by_name(sample_table):
     cmd = [
         "bit-summarize-column",
-        "-i", str(sample_table),
+        str(sample_table),
         "-c", "lee",
     ]
     result = run_cli(cmd)

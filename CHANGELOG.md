@@ -20,6 +20,7 @@
 ### Changed
 - `bit-summarize-column` no longer has an `-i` flag, it expects the input table/file to be given as a positional argument
 - `bit-count-bases` can now take STDIN
+- `bit-normalize-table` modularized and tests added
 
 ---
 

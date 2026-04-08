@@ -16,7 +16,7 @@ def build_parser():
         description=desc,
         epilog="Ex. usage: `bit-colnames input.tsv`",
         formatter_class=CustomRichHelpFormatter,
-        add_help=False,
+        add_help=False
     )
 
     required = parser.add_argument_group("Required Parameters")
@@ -25,7 +25,7 @@ def build_parser():
     required.add_argument(
         "input_file",
         metavar="<FILE>",
-        help="Input delimited file",
+        help="Input delimited file"
     )
 
     add_help(optional)
