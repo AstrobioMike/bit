@@ -7,7 +7,7 @@ from importlib.resources import files
 from pathlib import Path
 from importlib.metadata import version
 import urllib.request
-from tqdm import tqdm
+from tqdm import tqdm # type: ignore
 
 
 def get_package_path(rel_path = ""):

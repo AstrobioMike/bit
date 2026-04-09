@@ -1,10 +1,10 @@
 import sys
 import argparse
+import argcomplete # type: ignore
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help,
                             add_common_snakemake_arguments,
                             reconstruct_invocation)
-from bit.modules.ez_screen import run_assembly, run_reads
 
 
 def build_parser():
@@ -93,7 +93,7 @@ def build_parser():
 
     add_help(assembly_optional)
 
-    assembly_parser.set_defaults(func=run_assembly)
+    assembly_parser.set_defaults(func="run_assembly")
 
     ### subcommand cli for reads screening ###
     reads_description = ("This subcommand maps input reads (currently paired-end only; bwa mem) against a set of target genes or regions (in "
@@ -132,13 +132,15 @@ def build_parser():
 
     add_common_snakemake_arguments(reads_snakemake)
 
-    reads_parser.set_defaults(func=run_reads)
+    reads_parser.set_defaults(func="run_reads")
 
     return parser
 
 def main():
 
     parser = build_parser()
+    argcomplete.autocomplete(parser)
+
     if len(sys.argv)==1:
         parser.print_help(sys.stderr)
         sys.exit(0)
@@ -161,9 +163,18 @@ def main():
 
     args = parser.parse_args()
 
+    from bit.modules.ez_screen import run_assembly, run_reads
+
+    func_map = {
+        "run_assembly": run_assembly,
+        "run_reads": run_reads
+    }
+
+    func = func_map[args.func]
+
     # reconstructing the full command-line invocation for logging
     full_cmd_executed = reconstruct_invocation(parser, args)
-    args.func(args, full_cmd_executed)
+    func(args, full_cmd_executed)
 
 
 if __name__ == "__main__":

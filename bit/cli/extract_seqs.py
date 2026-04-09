@@ -1,10 +1,7 @@
 import sys
 import argparse
+import argcomplete # type: ignore
 from bit.cli.common import CustomRichHelpFormatter, add_help
-from bit.modules.general import report_message, notify_premature_exit
-from bit.modules.extract_seqs import (extract_seqs_by_coords,
-                                      extract_seqs_by_primers,
-                                      extract_seqs_by_headers)
 
 
 def build_parser():
@@ -16,7 +13,6 @@ def build_parser():
 
     parser = argparse.ArgumentParser(
         description=desc,
-        # epilog="Use `bit-extract-seqs by-coords -h` or `bit-extract-seqs by-primers -h` to see subcommand-specific help.",
         formatter_class=CustomRichHelpFormatter
     )
 
@@ -73,7 +69,7 @@ def build_parser():
 
     add_help(by_coords_optional)
 
-    by_coords_parser.set_defaults(func=extract_seqs_by_coords)
+    by_coords_parser.set_defaults(func="extract_seqs_by_coords")
 
 
     ### subcommand cli for extracting sequences by header ###
@@ -121,7 +117,7 @@ def build_parser():
 
     add_help(by_headers_optional)
 
-    by_headers_parser.set_defaults(func=extract_seqs_by_headers)
+    by_headers_parser.set_defaults(func="extract_seqs_by_headers")
 
     ### subcommand cli for extracting sequences by primers ###
     by_primers_desc = """
@@ -170,13 +166,16 @@ def build_parser():
 
     add_help(by_primers_optional)
 
-    by_primers_parser.set_defaults(func=extract_seqs_by_primers)
+    by_primers_parser.set_defaults(func="extract_seqs_by_primers")
 
     return parser
+
 
 def main():
 
     parser = build_parser()
+    argcomplete.autocomplete(parser)
+
     if len(sys.argv)==1: # pragma: no cover
         parser.print_help(sys.stderr)
         sys.exit(0)
@@ -199,17 +198,31 @@ def main():
 
     args = parser.parse_args()
 
-    if hasattr(args, "func"):
-        if args.func == extract_seqs_by_headers:
-            check_by_headers_required_inputs(args)
+    from bit.modules.extract_seqs import (extract_seqs_by_coords,
+                                          extract_seqs_by_primers,
+                                          extract_seqs_by_headers)
 
-    args.func(args)
+    func_map = {
+        "extract_seqs_by_coords": extract_seqs_by_coords,
+        "extract_seqs_by_primers": extract_seqs_by_primers,
+        "extract_seqs_by_headers": extract_seqs_by_headers,
+    }
+
+    func = func_map[args.func]
+
+    if func == extract_seqs_by_headers:
+        check_by_headers_required_inputs(args)
+
+    func(args)
 
 if __name__ == "__main__":
     main()
 
 
 def check_by_headers_required_inputs(args):
+
+    from bit.modules.general import report_message, notify_premature_exit
+
     if not args.headers and not args.file_with_headers:
         report_message("You must provide either -H/--headers or -f/--file-with-headers.",
                        initial_indent="    ", subsequent_indent="    ")
