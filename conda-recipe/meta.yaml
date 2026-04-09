@@ -23,6 +23,7 @@ requirements:
     - matplotlib=3.9
     - pybedtools
     - pyfastx
+    - edlib=1.3
     - parallel
     - scikit-bio
     - pip
@@ -45,6 +46,7 @@ requirements:
     - bwa>=0.7
     - rich
     - rich-argparse=1.7.1
+    - argcomplete=3.6
     - pytest
     - pytest-cov
 
