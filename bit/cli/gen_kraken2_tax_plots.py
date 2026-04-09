@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import sys
 import argparse
-from bit.modules.gen_kraken2_tax_plots import gen_kraken2_tax_plots
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help)
 
@@ -72,5 +71,7 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    from bit.modules.gen_kraken2_tax_plots import gen_kraken2_tax_plots
 
     gen_kraken2_tax_plots(args.input_kraken, args.output_prefix, args.max_taxa, args.min_percent, args.no_annots)

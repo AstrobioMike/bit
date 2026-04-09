@@ -28,11 +28,8 @@ the same amount when the median-ratio method is applied.
 
 import sys
 import argparse
-import pandas as pd # type: ignore
-import numpy as np # type: ignore
-from scipy.stats.mstats import gmean # type: ignore
-from bit.modules.general import check_files_are_found
 from bit.cli.common import CustomRichHelpFormatter, add_help
+
 
 
 def build_parser():
@@ -93,7 +90,11 @@ def main(args=None):
 
     args = parser.parse_args(args)
 
+    from bit.modules.general import check_files_are_found
+
     check_files_are_found([args.input_table])
+
+    import pandas as pd # type: ignore
 
     tab = pd.read_csv(args.input_table, sep="\t", index_col=0, low_memory=False)
 
@@ -130,6 +131,9 @@ def normalize_cpm(tab):
 
 
 def normalize_median_ratio(tab):
+
+    import numpy as np # type: ignore
+    from scipy.stats.mstats import gmean # type: ignore
 
     # getting geometric means for each row
     with np.errstate(divide='ignore'):

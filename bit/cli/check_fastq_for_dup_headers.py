@@ -1,8 +1,6 @@
 #!/usr/bin/env python
 import sys
 import argparse
-from bit.modules.seqs import check_fastq_for_dup_headers
-from bit.modules.general import report_message
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help)
 
@@ -47,7 +45,11 @@ def main():
 
     args = parser.parse_args()
 
-    dup_keys, seq_count = check_for_fastq_dup_headers(args.input_fastq, args.output_file)
+    from bit.modules.seqs import check_fastq_for_dup_headers
+
+    dup_keys, seq_count = check_fastq_for_dup_headers(args.input_fastq, args.output_file)
+
+    from bit.modules.general import report_message
 
     if len(dup_keys) > 0:
 

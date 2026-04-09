@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import sys
 import argparse
-from bit.modules.seqs import calc_variation_in_msa
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help)
 
@@ -67,6 +66,8 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    from bit.modules.seqs import calc_variation_in_msa
 
     df = calc_variation_in_msa(args)
     df.to_csv(args.output_tsv, sep="\t", index=False)

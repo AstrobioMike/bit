@@ -1,7 +1,6 @@
 #!/usr/bin/env python
 import sys
 import argparse
-from bit.modules.kraken2_to_taxon_summaries import kraken2_to_taxon_summaries
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help)
 
@@ -46,5 +45,7 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    from bit.modules.kraken2_to_taxon_summaries import kraken2_to_taxon_summaries
 
     kraken2_to_taxon_summaries(args.input_report, args.output_tsv)

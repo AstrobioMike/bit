@@ -1,6 +1,5 @@
 import sys
 import argparse
-from bit.modules.cov_analyzer import run_cov_analyzer
 from bit.cli.common import CustomRichHelpFormatter, reconstruct_invocation, add_help
 
 def main():
@@ -139,6 +138,8 @@ def main():
 
     # reconstructing the full command-line invocation for logging
     full_cmd_executed = reconstruct_invocation(parser, args)
+
+    from bit.modules.cov_analyzer import run_cov_analyzer
 
     run_cov_analyzer(
         reference_fasta = args.reference_fasta,

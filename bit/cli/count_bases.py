@@ -1,9 +1,7 @@
 import io
 import sys
 import argparse
-from bit.modules.general import check_files_are_found
 from bit.cli.common import CustomRichHelpFormatter, add_help
-from bit.modules.seqs import parse_fasta_lengths
 
 
 def build_parser():
@@ -55,12 +53,16 @@ def main():
 
     args = parser.parse_args()
 
+    from bit.modules.general import check_files_are_found
+
     if args.input_fasta is not sys.stdin:
         check_files_are_found([args.input_fasta])
 
     if args.input_fasta is sys.stdin:
         text = args.input_fasta.read()
         args.input_fasta = io.StringIO(text)
+
+    from bit.modules.seqs import parse_fasta_lengths
 
     stats = parse_fasta_lengths(args.input_fasta)
     total_length = stats["stats"]["total_length"]

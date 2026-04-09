@@ -1,8 +1,6 @@
 import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help
-from bit.modules.seqs import filter_fasta_by_length
-from bit.modules.general import check_files_are_found
 
 
 def build_parser():
@@ -57,19 +55,24 @@ def build_parser():
 
 
 def main():
+
     parser = build_parser()
+
     if len(sys.argv) == 1:  # pragma: no cover
         parser.print_help(sys.stderr)
         sys.exit(0)
 
     args = parser.parse_args()
 
+    from bit.modules.general import check_files_are_found
     check_files_are_found([args.input_fasta])
 
     in_fasta = args.input_fasta
     out_fasta = args.output_file
     min_length = int(args.min_length) if args.min_length else None
     max_length = int(args.max_length)
+
+    from bit.modules.seqs import filter_fasta_by_length
 
     (num_initial_seqs, num_seqs_retained,
      num_initial_bases, num_bases_retained) = filter_fasta_by_length(in_fasta, out_fasta,

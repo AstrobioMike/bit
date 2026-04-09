@@ -3,8 +3,6 @@ import sys
 import argparse
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help)
-import pandas as pd
-import pyfastx
 
 
 def build_parser():
@@ -69,6 +67,9 @@ def main():
 
 
 def summarize_assemblies(input_assemblies, output_tsv=False, transpose_output_tsv=False):
+
+    import pandas as pd # type: ignore
+
     df, use_paths_instead_of_basenames = setup_master_df(input_assemblies)
     df = summarize(df, input_assemblies, use_paths_instead_of_basenames)
 
@@ -95,6 +96,9 @@ def summarize_assemblies(input_assemblies, output_tsv=False, transpose_output_ts
 
 
 def setup_master_df(input_assemblies):
+
+    import pandas as pd # type: ignore
+
     df_colnames = []
 
     for assembly in input_assemblies:
@@ -126,6 +130,9 @@ def setup_master_df(input_assemblies):
 
 
 def summarize(df, input_assemblies, use_paths_instead_of_basenames):
+
+    import pyfastx # type: ignore
+
     for assembly in input_assemblies:
         if use_paths_instead_of_basenames:
             assembly_name = assembly.rsplit(".", 1)[0]

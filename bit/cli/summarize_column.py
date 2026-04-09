@@ -3,9 +3,6 @@ import argparse
 from bit.modules.general import report_failure, color_text
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help)
-import pandas as pd # type: ignore
-import csv
-import io
 
 
 def build_parser():
@@ -65,6 +62,7 @@ def main():
     args = parser.parse_args()
 
     if args.input_file is sys.stdin:
+        import io
         text = args.input_file.read()
         args.input_file = io.StringIO(text)
     else:
@@ -84,6 +82,8 @@ def summarize_column(input_file, column, delimiter):
 
 def load_series(input_file, column, delimiter):
     header = detect_header(input_file, column)
+    import pandas as pd # type: ignore
+
     df = pd.read_csv(
         input_file,
         sep=delimiter,
@@ -100,6 +100,8 @@ def load_series(input_file, column, delimiter):
 def detect_header(input_file, column):
     sample = input_file.read(4096)
     input_file.seek(0)
+    import csv
+
     try:
         header = csv.Sniffer().has_header(sample)
     except csv.Error:

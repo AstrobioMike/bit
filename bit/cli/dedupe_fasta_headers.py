@@ -1,7 +1,6 @@
 import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help
-from bit.modules.seqs import dedupe_fasta_headers
 
 
 def build_parser():
@@ -50,5 +49,7 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    from bit.modules.seqs import dedupe_fasta_headers
 
     dedupe_fasta_headers(args.input_fasta, args.output_fasta)

@@ -2,7 +2,6 @@ import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_seed
 from bit.modules.general import check_files_are_found, report_message, notify_premature_exit
-from bit.modules.add_insertion import add_insertion
 
 
 def build_parser():
@@ -89,6 +88,8 @@ def main():
     args = parser.parse_args()
 
     preflight_checks(args)
+
+    from bit.modules.add_insertion import add_insertion
 
     result = add_insertion(args)
 

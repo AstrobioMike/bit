@@ -1,6 +1,5 @@
 import sys
 import argparse
-from bit.modules.seqs import calc_gc_per_seq
 from bit.cli.common import CustomRichHelpFormatter
 
 def main():
@@ -46,6 +45,8 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    from bit.modules.seqs import calc_gc_per_seq
 
     gc_dict = calc_gc_per_seq(input_fasta=args.input_fasta)
 

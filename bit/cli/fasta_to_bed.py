@@ -1,7 +1,6 @@
 import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help
-from bit.modules.seqs import fasta_to_bed
 
 
 def build_parser():
@@ -51,6 +50,8 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    from bit.modules.seqs import fasta_to_bed
 
     bed_records = fasta_to_bed(args.input_fasta)
 

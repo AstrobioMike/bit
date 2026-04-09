@@ -1,6 +1,5 @@
 import sys
 import argparse
-from bit.modules.seqs import calc_gc_sliding_window
 from bit.cli.common import CustomRichHelpFormatter, add_help
 
 def main():
@@ -61,6 +60,8 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    from bit.modules.seqs import calc_gc_sliding_window
 
     gc_window_dict = calc_gc_sliding_window(input_fasta=args.input_fasta,
                                             window = args.window_size,

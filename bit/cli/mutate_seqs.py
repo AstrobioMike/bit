@@ -4,8 +4,6 @@ import datetime
 import random
 from bit.cli.common import CustomRichHelpFormatter, add_help
 from bit.modules.general import check_files_are_found
-from Bio import SeqIO
-from bit.modules.seqs import mutate_seq
 
 
 def build_parser():
@@ -115,6 +113,9 @@ def main():
     args = parser.parse_args()
 
     available_substitutions, seed = preflight_checks_and_setup(args)
+
+    from Bio import SeqIO # type: ignore
+    from bit.modules.seqs import mutate_seq
 
     # doing mutations per sequence
     with (open (args.input_fasta, "r") as in_fasta,

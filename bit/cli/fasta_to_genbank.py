@@ -2,7 +2,7 @@ import sys
 import argparse
 from Bio import SeqIO
 from bit.cli.common import CustomRichHelpFormatter, add_help
-from bit.modules.seqs import fasta_to_genbank
+
 
 
 def build_parser():
@@ -51,6 +51,8 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    from bit.modules.seqs import fasta_to_genbank
 
     sequences = fasta_to_genbank(args.input_fasta)
 
