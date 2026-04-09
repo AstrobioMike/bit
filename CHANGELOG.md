@@ -13,14 +13,20 @@
 
 -->
 
-## v1.14.1 (NOT RELEASED YET)
+## v1.15.0 (NOT RELEASED YET)
 
 ### Added
+- `bit-extract-seqs`
+  - added `by-headers` subcommand (**this replaces `bit-parse-fasta-by-headers`**)
+  - `by-coords` subcommand **replaces `bit-extract-seqs-by-coords`**
 
 ### Changed
 - `bit-summarize-column` no longer has an `-i` flag, it expects the input table/file to be given as a positional argument
 - `bit-count-bases` can now take STDIN
 - `bit-normalize-table` modularized and tests added
+- `bit-parse-fasta-by-headers` removed and replaced with `bit-extract-seqs by-headers`
+- `bit-extract-seqs-by-coords` removed and replaced with `bit-extract-seqs by-coords`
+
 
 ---
 

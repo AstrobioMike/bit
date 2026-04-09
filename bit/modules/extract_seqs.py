@@ -17,8 +17,69 @@ def extract_seqs_by_coords(args):
 
     with open(args.output_fasta, "w") as out_fasta:
         out_fasta.write(content)
-    report_message(f"Extracted sequences based on the provided coordinates were written to:")
-    report_message(args.output_fasta, color="green", initial_indent="    ", leading_newline=False, trailing_newline=True)
+    report_message(f"Extracted sequences based on the provided coordinates were written to:", color="none")
+    report_message(args.output_fasta, color="yellow", initial_indent="    ", leading_newline=False, trailing_newline=True)
+
+
+def extract_seqs_by_headers(args):
+
+    if args.headers:
+        headers_of_interest = set(line.strip() for line in args.headers)
+    else:
+        headers_of_interest = set(line.strip() for line in open(args.file_with_headers, "r"))
+
+    seqs_pulled = 0
+    num_targets = len(headers_of_interest)
+
+    with open(args.output_fasta, "w") as out_fasta:
+
+        if not args.inverse:
+
+            for header, seq in read_fasta(args.input_fasta):
+                if header in headers_of_interest:
+                    seqs_pulled += 1
+                    out_fasta.write(f">{header}\n")
+                    out_fasta.write(f"{seq}\n")
+
+            report_by_header_results(seqs_pulled, num_targets, args.output_fasta)
+
+        else:
+
+            for header, seq in read_fasta(args.input_fasta):
+                if header not in headers_of_interest:
+                    seqs_pulled += 1
+                    out_fasta.write(f">{header}\n")
+                    out_fasta.write(f"{seq}\n")
+
+            report_by_header_inverse_results(seqs_pulled, args.output_fasta)
+
+
+def report_by_header_results(seqs_pulled, num_targets, output_fasta):
+
+    if seqs_pulled == 0:
+        report_message("No sequences were found based on the provided headers.", initial_indent="    ",
+                        subsequent_indent="    ", trailing_newline=True)
+        os.remove(output_fasta)
+
+    if seqs_pulled == num_targets:
+        report_message(f"Extracted all {seqs_pulled} target sequence(s), written to:\n", color="none")
+        report_message(output_fasta, color="yellow", initial_indent="    ", leading_newline=False, trailing_newline=True)
+
+    if seqs_pulled < num_targets:
+        report_message(f"Extracted {seqs_pulled} out of {num_targets} target sequence(s) based on the provided headers, written to:\n", color="none")
+        report_message(output_fasta, color="yellow", initial_indent="    ", leading_newline=False, trailing_newline=True)
+
+
+def report_by_header_inverse_results(seqs_pulled, output_fasta):
+
+    if seqs_pulled == 0:
+        report_message("No sequences were extracted based on the provided headers with the --inverse flag.",
+                        initial_indent="    ", subsequent_indent="    ", trailing_newline=True)
+        os.remove(output_fasta)
+
+    if seqs_pulled > 0:
+        report_message(f"Extracted {seqs_pulled} sequence(s) based on the provided headers with the --inverse flag, written to:\n", color="none")
+        report_message(output_fasta, color="yellow", initial_indent="    ", leading_newline=False, trailing_newline=True)
 
 
 def extract_seqs_by_primers(args):
@@ -47,8 +108,8 @@ def extract_seqs_by_primers(args):
         os.remove(args.output_fasta)
         report_message("No sequences were found based on the provided primers.", trailing_newline=True)
     else:
-        report_message(f"Extracted {hit_count} sequence(s) based on the provided primers, written to:")
-        report_message(args.output_fasta, color="green", initial_indent="    ", leading_newline=False, trailing_newline=True)
+        report_message(f"Extracted {hit_count} sequence(s) based on the provided primers, written to:", color="none")
+        report_message(args.output_fasta, color="yellow", initial_indent="    ", leading_newline=False, trailing_newline=True)
 
 
 def find_all_primer_hits(seq, fwd, rev, max_mismatches = 0):

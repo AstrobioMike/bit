@@ -41,12 +41,12 @@ Some of the helper programs/scripts in _bit_ include:
 | ------- | ------- |
 | `bit-dl-ncbi-assemblies` | download NCBI assemblies in different formats by just providing accessions |  
 | `bit-get-accessions-from-GTDB` | search the (stellar) [Genome Taxonomy Database](https://gtdb.ecogenomic.org/) by taxonomy and get their NCBI accessions |  
+| `bit-summarize-assembly` | quickly summarize nucleotide assemblies |  
 | `bit-mutate-seqs` | introduce point mutations (substitutions/indels) in nucleotide or amino acid fasta files |  
 | `bit-gen-reads` | quickly generate reads from fasta files in desired proportions |  
 | `bit-cov-analyzer` | analyze coverage patterns by providing a bam file and reference fasta to identify regions of relatively higher or lower coverage |  
 | `bit-get-cov-stats` | get detection, coverage, and mean percent ID information for a single or multiple references given the fasta(s) and a bam file |  
 | `bit-get-mapped-reads-pid` | get percent ID information for mapped reads in a bam file |  
-| `bit-summarize-assembly` | quickly summarize nucleotide assemblies |  
 | `bit-ez-screen` | search for nucleotide targets in nucleotide input fastas based on blast, or in reads based on mapping, filtered based on tunable target-coverage and percent-ID thresholds and summarized in a simple table |  
 | `bit-normalize-table` | normalize a table to counts- or coverage-per million (CPM) or with the median-ratio method from DESeq2 (allowing for floats) |  
 | `bit-calc-variation-in-msa` | calculate [variation](http://scikit-bio.org/docs/0.5.3/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |  
@@ -54,12 +54,11 @@ Some of the helper programs/scripts in _bit_ include:
 | `bit-filter-table` | filter a table based on wanted IDs |  
 | `bit-count-bases` | count and summarize the number of bases per sequence in a fasta file |  
 | `bit-rename-fasta-headers` | rename sequences in a fasta |  
-| `bit-parse-fasta-by-headers` | split a fasta file based on headers |  
+| `bit-extract-seqs` | extract sequences from a fasta based on primer seqs, headers, or coordinates |  
 | `bit-reorder-fasta` | re-order a fasta file |  
-| `bit-extract-seqs-by-coords` | pull out sequences from a fasta by their coordinates |  
 | `bit-genbank-to-cds-table` | pull out general CDS info into a tsv from a GenBank file |  
 | `bit-genbank-to-AA-seqs`, `bit-genbank-to-fasta` | pull amino-acid or nucleotide sequences out of a GenBank file |  
-| `bit-get-lineage-from-taxids` | get full lineage info from a list of taxon IDs (making use of the also stellar [TaxonKit](https://bioinf.shenwei.me/taxonkit/)) |  
+| `bit-get-lineage-from-taxids` | get full lineage info from a list of taxon IDs (making use of the stellar [TaxonKit](https://bioinf.shenwei.me/taxonkit/)) |  
 | `bit-filter-KOFamScan-results` | filter [KOFamScan](https://github.com/takaram/kofam_scan) results |  
 | `bit-get-go-term-info` | get information about a specific [GO](http://geneontology.org/) term |  
 | `bit-summarize-go-annotations` | summarize GO annotations |  

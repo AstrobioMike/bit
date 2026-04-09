@@ -1,19 +1,22 @@
 import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help
-from bit.modules.extract_seqs import extract_seqs_by_coords, extract_seqs_by_primers
+from bit.modules.general import report_message, notify_premature_exit
+from bit.modules.extract_seqs import (extract_seqs_by_coords,
+                                      extract_seqs_by_primers,
+                                      extract_seqs_by_headers)
 
 
 def build_parser():
 
     desc = """
-        This program extracts sequences from an input file based on either coordinates provided in a bed file
-        or primer sequences provided to the command line. For version info, run `bit-version`.
+        This program extracts sequences from an input fasta through various methods, see subcommand-specific
+        help menus for more info. For version info, run `bit-version`.
         """
 
     parser = argparse.ArgumentParser(
         description=desc,
-        epilog="Use `bit-extract-seqs by-coords -h` or `bit-extract-seqs by-primers -h` to see subcommand-specific help.",
+        # epilog="Use `bit-extract-seqs by-coords -h` or `bit-extract-seqs by-primers -h` to see subcommand-specific help.",
         formatter_class=CustomRichHelpFormatter
     )
 
@@ -38,6 +41,7 @@ def build_parser():
             metavar = "<FILE>",
             default = "extracted-seqs.fasta"
         )
+
 
     ### subcommand cli for extracting sequences by coordinates ###
     by_coords_desc = """
@@ -70,6 +74,54 @@ def build_parser():
     add_help(by_coords_optional)
 
     by_coords_parser.set_defaults(func=extract_seqs_by_coords)
+
+
+    ### subcommand cli for extracting sequences by header ###
+    by_headers_desc = """
+        This subcommand takes a fasta file and specified headers and extracts the sequences
+        with those headers (or does the inverse if wanted).
+        """
+
+    by_headers_parser = subparsers.add_parser(
+        "by-headers",
+        help="Extract sequences based on specified headers",
+        description=by_headers_desc,
+        epilog="Ex. usage: `bit-extract-seqs by-headers -i input.fasta -h contig-1 contig-2`",
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
+    )
+
+    by_headers_required = by_headers_parser.add_argument_group("Required Parameters (choose one of `--headers` or `--file-with-headers)")
+    by_headers_optional = by_headers_parser.add_argument_group("Optional Parameters")
+
+    add_common_required_arguments(by_headers_required)
+
+    by_headers_required.add_argument(
+        "-H",
+        "--headers",
+        help="Headers of sequences (space-delimited if more than one)",
+        metavar="<STR>",
+        nargs="+"
+    )
+
+    by_headers_required.add_argument(
+        "-f",
+        "--file-with-headers",
+        help="File with headers of sequences (one header per line)",
+        metavar="<FILE>"
+    )
+
+    add_common_optional_arguments(by_headers_optional)
+
+    by_headers_optional.add_argument(
+        "--inverse",
+        help="If specified, we will extract all sequences [bold]other[/bold] than the provided headers (default: False)",
+        action="store_true"
+    )
+
+    add_help(by_headers_optional)
+
+    by_headers_parser.set_defaults(func=extract_seqs_by_headers)
 
     ### subcommand cli for extracting sequences by primers ###
     by_primers_desc = """
@@ -147,7 +199,22 @@ def main():
 
     args = parser.parse_args()
 
+    if hasattr(args, "func"):
+        if args.func == extract_seqs_by_headers:
+            check_by_headers_required_inputs(args)
+
     args.func(args)
 
 if __name__ == "__main__":
     main()
+
+
+def check_by_headers_required_inputs(args):
+    if not args.headers and not args.file_with_headers:
+        report_message("You must provide either -H/--headers or -f/--file-with-headers.",
+                       initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
+    if args.headers and args.file_with_headers:
+        report_message("You have provided both -H/--headers and -f/--file-with-headers parameters, please only provide one.",
+                       initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
