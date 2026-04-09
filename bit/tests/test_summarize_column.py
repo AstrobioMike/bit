@@ -1,5 +1,5 @@
 import io
-import pytest
+import pytest # type: ignore
 import csv
 from unittest.mock import patch
 from bit.tests.utils import run_cli

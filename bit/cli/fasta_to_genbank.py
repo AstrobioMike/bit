@@ -1,6 +1,5 @@
 import sys
 import argparse
-from Bio import SeqIO
 from bit.cli.common import CustomRichHelpFormatter, add_help
 
 
@@ -55,6 +54,8 @@ def main():
     from bit.modules.seqs import fasta_to_genbank
 
     sequences = fasta_to_genbank(args.input_fasta)
+
+    from Bio import SeqIO # type: ignore
 
     with open(args.output_file, "w") as out:
         SeqIO.write(sequences, out, "genbank")
