@@ -19,15 +19,22 @@
 - `bit-extract-seqs`
   - added `by-headers` subcommand (**this replaces `bit-parse-fasta-by-headers`**)
   - `by-coords` subcommand **replaces `bit-extract-seqs-by-coords`**
+- `bit-genbank` which has subcommmands for all genbank helpers
+  - `to-fasta` replaces `bit-genbank-to-fasta`
+  - `to-AA-seqs` replaces `bit-genbank-to-AA-seqs`
+
 
 ### Changed
 - moved many imports from top of cli modules until they are needed to increase snappiness when just doing things like trying to view the help menu
 - `bit-summarize-column` no longer has an `-i` flag, it expects the input table/file to be given as a positional argument
 - `bit-count-bases` can now take STDIN
 - `bit-normalize-table` modularized and tests added
-- `bit-parse-fasta-by-headers` removed and replaced with `bit-extract-seqs by-headers`
-- `bit-extract-seqs-by-coords` removed and replaced with `bit-extract-seqs by-coords`
-- `bit-filter-seqs-by-length` has been replaces with `bit-filter-fasta-by-length`
+- `bit-parse-fasta-by-headers` has been removed and replaced with `bit-extract-seqs by-headers`
+- `bit-extract-seqs-by-coords` has been removed and replaced with `bit-extract-seqs by-coords`
+- `bit-filter-seqs-by-length` has been renamed to `bit-filter-fasta-by-length`
+- `bit-genbank-to-fasta` has been removed and replaced with `bit-genbank to-fasta`
+- `bit-genbank-to-AA-seqs` has been removed and replaced with `bit-genbank to-AA-seqs`
+
 
 ---
 

@@ -33,3 +33,8 @@ for script in bit/scripts/*; do
     fi
     ln -sf "$(realpath "${script}")" "${BIN_DIR}/${name}"
 done
+
+# setting up tab-completion for the bit commands with subcommands
+for cmd in bit-extract-seqs bit-ez-screen bit-genbank; do
+    eval "$(register-python-argcomplete "$cmd")"
+done

@@ -13,8 +13,11 @@ def build_parser():
 
     parser = argparse.ArgumentParser(
         description=desc,
-        formatter_class=CustomRichHelpFormatter
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
     )
+
+    add_help(parser)
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
     parser.subparsers = subparsers

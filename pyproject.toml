@@ -98,6 +98,7 @@ bit-kraken2-to-taxon-summaries = "bit.cli.kraken2_to_taxon_summaries:main"
 
 
 ## genbank manipulations ##
+bit-genbank = "bit.cli.genbank:main"
 # bit-genbank-locus-clean-slate
 # bit-genbank-to-AA-seqs
 # bit-genbank-to-cds-table (can this produce the seqs too?)
