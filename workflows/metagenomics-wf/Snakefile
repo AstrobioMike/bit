@@ -1589,7 +1589,7 @@ rule setup_CAT_db:
         printf "### Setting up CAT reference database ###\n\n" > {log} 2>&1
 
         printf "  Downloading reference db:\n\n" >> {log} 2>&1
-        curl -L -C - -o {params.compressed_cat} {params.cat_dl_link} >> {log} 2>&1
+        curl -L --insecure -C - -o {params.compressed_cat} {params.cat_dl_link} >> {log} 2>&1
 
         printf "\n\n  Extracting reference db:\n\n" >> {log} 2>&1
         tar -xvzf {params.compressed_cat} -C {params.REF_DB_ROOT_DIR} >> {log} 2>&1
