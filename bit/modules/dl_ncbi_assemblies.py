@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from tqdm import tqdm # type: ignore
 from bit.modules.general import (color_text, check_files_are_found,
                                  attempt_to_make_dir, report_message)
-from bit.modules.ncbi.parse_assembly_summary import parse_assembly_summary
+from bit.modules.ncbi.parse_ncbi_assembly_summary import parse_ncbi_assembly_summary
 from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data
 
 
@@ -59,7 +59,7 @@ def parse_main_assembly_table(run_data):
 
     assembly_summary_file = Path(os.environ['NCBI_assembly_data_dir']) / "ncbi-assembly-info.tsv"
 
-    run_data = parse_assembly_summary(assembly_summary_file, run_data)
+    run_data = parse_ncbi_assembly_summary(assembly_summary_file, run_data)
 
     return run_data
 

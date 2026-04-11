@@ -1,7 +1,4 @@
-from pathlib import Path
-
-
-def parse_assembly_summary(assembly_summary_file, run_data):
+def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
 
     wanted_dict = {}
 
