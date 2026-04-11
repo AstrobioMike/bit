@@ -38,3 +38,7 @@ done
 for cmd in bit-extract-seqs bit-ez-screen bit-genbank; do
     eval "$(register-python-argcomplete "$cmd")"
 done
+
+
+# if coverage isn't tracking properly, i may need to set this variable to point at the .coveragerc on whatever system i am working on, e.g.:
+# export COVERAGE_PROCESS_START=/Users/mike/Documents/github/bit/.coveragerc
