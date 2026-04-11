@@ -1,5 +1,9 @@
 # Metagenomics workflow change log
 
+## 1.0.3
+- CAT was having trouble downloading its DB, so added `-k` to curl command
+- moved `bit-GL-combine-contig-tax-tables` and `bit-GL-combine-KO-and-tax-tables` from bit package into workflow scripts
+
 ## 1.0.2
 - pinned specific version of diamond (2.0.6) to the CAT environment
 

@@ -1,32 +1,16 @@
 #!/usr/bin/env python
 
 """
-This is a helper program designed for use with the NASA GeneLab 
-metagenomics assembly-based workflow. It takes as input multiple individual-
-sample annotation and taxonomic coverage tables and creates 4 output merged tables:
-    1) summed based on KO annotations
-    2) summed based on KO annotations and normalized with the specified method (set with -n flag)
-    3) summed based on taxonomic classification
-    4) summed based on taxonomic classification and normalized with the specified method (set with -n flag)
+This is a helper program designed for use with the bit metagenomics workflow. It takes as input multiple individual-
+sample coverage and taxonomy tables and creates 2 output merged tables based on taxonomic
+classifications:
 
-These tables are produced during the GeneLab Illumina metagenomics processing workflow. The location of this protocol 
-document be added here as soon as it is publically available.
+1) merged but not normalized across samples
+2) one normalized based on specified method (set with the -n flag)
 
 ### details on normalization methods
 Normalization for sampling depth is done by either coverage per million (CPM) or using the median-ratio (MR)
 method as performed in DESeq2. 
-
-I initially wrote this for normalizing metagenomic coverage data, like gene-level coverage, or summed KO coverages. 
-These are normalized for gene-length already because they are "coverages", but they are not yet normalized 
-for sampling depth – which is where this script comes in. 
-
-I also found myself wanting this because I wanted to do differential abundance testing of coverages
-of KO terms. DESeq2 doesn't require normalizing for gene-length because it is the same unit being analyzed
-across all samples – the same gene, so the same size. However, after grouping genes into their KO annotations,
-(which we may need to compare across samples that don't all share the same underlying assembly or genes), or by
-taxonomy, they no longer all represent the same units across all samples. It is because of this I decided to 
-stick with gene-level coverages (which are normalized for gene-length), and then sum those values based on KO 
-annotations or taxonomy.
 
 The CPM (coverage per million) normalization is just like a percent, except scaled to 1 million instead of 100.
 So each row's entry (e.g. gene/KO/taxon/etc.) is the proportion out of 1 million for that column (sample), 
@@ -49,22 +33,17 @@ from numpy import NaN
 import numpy as np
 from scipy.stats.mstats import gmean
 
-parser = argparse.ArgumentParser(description="This is a helper program designed for use with the NASA GeneLab \
-                                             metagenomics assembly-based workflow. See note at top of script for more info. \
-                                             For version info, run `bit-version`.")
+parser = argparse.ArgumentParser(description="This is a helper program designed for use with the bit \
+                                              metagenomics workflow. See note at top of script for more info.")
 
 required = parser.add_argument_group('required arguments')
 
-required.add_argument("input_tables", metavar="input-tables", type=str, nargs="+", help='Input coverage, \
-                      annotation, and tax tables (as written, expected to end with extension ".tsv")')
-
+required.add_argument("input_tables", metavar="input-tables", type=str, nargs="+", help="Input coverage, annotation, and tax tables (as written, expected to end with extension '.tsv')")
 parser.add_argument("-n", "--normalization-method", help='Desired normalization method of either "none", \
                     "CPM" as in coverage per million, or "MR" as in median-ratio as performed in DESeq2. \
                     See note at top of program for more info. (default: "CPM")', choices=["CPM", "MR"], \
                     action="store", default="CPM")
-
-parser.add_argument("-o", "--output-prefix", help='Desired output prefix (default: "Combined")', \
-                    action="store", default="Combined", dest="output_prefix")
+parser.add_argument("-o", "--output-prefix", help='Desired output prefix (default: "Combined")', action="store", default="Combined", dest="output_prefix")
 
 if len(sys.argv)==1:
     parser.print_help(sys.stderr)
@@ -81,22 +60,19 @@ def main():
 
     input_files, sample_names = setup_input_lists(args.input_tables)
 
-    KO_dict, tax_dict = {}, {}
+    tax_dict = {}
 
     na_taxids = []
 
-    KO_collapsed_tabs, tax_collapsed_tabs, KO_dict, tax_dict = process_each_table(input_files, KO_dict, tax_dict, na_taxids)
+    tax_collapsed_tabs, tax_dict = process_each_table(input_files, tax_dict, na_taxids)
 
-    combined_KO_tab, combined_tax_tab = combine_tabs(KO_collapsed_tabs, tax_collapsed_tabs, sample_names, KO_dict, tax_dict)
+    combined_tax_tab = combine_tabs(tax_collapsed_tabs, sample_names, tax_dict)
 
-    norm_KO_tab, norm_tax_tab = normalize_tabs(combined_KO_tab, combined_tax_tab, args.normalization_method)
+    norm_tax_tab = normalize_tab(combined_tax_tab, args.normalization_method)
 
     # writing outputs
-    combined_KO_tab.to_csv(args.output_prefix + "-gene-level-KO-function-coverages.tsv", index=False, sep="\t")
-    norm_KO_tab.to_csv(args.output_prefix + "-gene-level-KO-function-coverages-" + args.normalization_method + ".tsv", index=False, sep="\t")
-
-    combined_tax_tab.to_csv(args.output_prefix + "-gene-level-taxonomy-coverages.tsv", index=False, sep="\t")
-    norm_tax_tab.to_csv(args.output_prefix + "-gene-level-taxonomy-coverages-" + args.normalization_method + ".tsv", index=False, sep="\t")
+    combined_tax_tab.to_csv(args.output_prefix + "-contig-level-taxonomy-coverages.tsv", index=False, sep="\t")
+    norm_tax_tab.to_csv(args.output_prefix + "-contig-level-taxonomy-coverages-" + args.normalization_method + ".tsv", index=False, sep="\t")
 
 ################################################################################
 
@@ -155,25 +131,11 @@ def setup_input_lists(input_tables):
         sample = os.path.splitext(os.path.basename(sample_path))[0]
 
         # removing the common superfluous info that my workflow introduces to the names, if it is there
-        sample = sample.replace("-gene-coverage-annotation-and-tax", "")
+        sample = sample.replace("-contig-coverage-and-tax", "")
 
         sample_names.append(sample)
 
     return(input_files, sample_names)
-
-
-def add_to_KO_dict(table, KO_dict):
-    """ function for building KO mapping dictionary """
-
-    for index, row in table.iterrows():
-        
-        if str(row["KO_ID"]).startswith("K"):
-            
-            if str(row["KO_ID"]) not in KO_dict:
-                
-                KO_dict[row["KO_ID"]] = row["KO_function"]
-
-    return(KO_dict)
 
 
 def add_to_tax_dict(table, tax_dict, na_taxids):
@@ -195,10 +157,9 @@ def add_to_tax_dict(table, tax_dict, na_taxids):
     return(tax_dict, na_taxids)
 
 
-def process_each_table(input_files, KO_dict, tax_dict, na_taxids):
-    """ reads in each table, normalizes coverage values, collapses based on KO annotations """
+def process_each_table(input_files, tax_dict, na_taxids):
+    """ reads in each table, normalizes coverage values, collapses based on tax classifications """
 
-    KO_collapsed_tabs = []
     tax_collapsed_tabs = []
 
     # iterator to access the same input file and sample name
@@ -207,14 +168,7 @@ def process_each_table(input_files, KO_dict, tax_dict, na_taxids):
 
         tab = pd.read_csv(input_files[i], sep="\t", dtype = {'taxid': str}, low_memory = False)
 
-        KO_dict = add_to_KO_dict(tab, KO_dict)
-
         tax_dict, na_taxids = add_to_tax_dict(tab, tax_dict, na_taxids)
-
-        # collapsing based on KO terms
-        KO_tab = tab[['KO_ID', 'coverage']].groupby(by = ['KO_ID'], dropna = False).sum()
-        
-        KO_collapsed_tabs.append(KO_tab)
 
         # collapsing based on tax
             # first setting any taxids that are all NA at these standard ranks to "NA"
@@ -222,28 +176,7 @@ def process_each_table(input_files, KO_dict, tax_dict, na_taxids):
         tax_tab = tab[['taxid', 'coverage']].groupby(by = ['taxid'], dropna = False).sum()
         tax_collapsed_tabs.append(tax_tab)
 
-
-    return(KO_collapsed_tabs, tax_collapsed_tabs, KO_dict, tax_dict)
-
-
-def add_KO_functions(tab, KO_dict):
-    """ adds KO functions to combined table based on KO_ID and KO_dict object holding mappings """
-
-    KO_functions = []
-
-    for KO in tab.KO_ID:
-
-        if KO in KO_dict:
-
-            KO_functions.append(str(KO_dict[KO]))
-
-        else:
-
-            KO_functions.append("Not annotated")
-
-    tab.insert(1, "KO_function", KO_functions)
-
-    return(tab)
+    return(tax_collapsed_tabs, tax_dict)
 
 
 def add_tax_info(tab, tax_dict):
@@ -311,22 +244,8 @@ def add_tax_info(tab, tax_dict):
     return(tab)
 
 
-def combine_tabs(KO_tab_list, tax_tab_list, sample_names, KO_dict, tax_dict):
-    """ combines all KO tables into one and all tax tables into one """
-
-    # combining KO tabs
-    KO_combined_tab = pd.concat(KO_tab_list, axis=1).drop_duplicates().fillna(0).sort_index()
-    # moving index to be column and changing that NaN to be "Not annotated"
-    KO_combined_tab = KO_combined_tab.reset_index().fillna("Not annotated")
-
-
-    # setting column names
-    KO_combined_tab.columns = ["KO_ID"] + sample_names
-    
-
-    # adding KO functions
-    KO_combined_tab = add_KO_functions(KO_combined_tab, KO_dict)
-
+def combine_tabs(tax_tab_list, sample_names, tax_dict):
+    """ combines all tax tables into one """
 
     # combining tax tabs
     tax_combined_tab = pd.concat(tax_tab_list, axis=1).drop_duplicates().fillna(0).sort_index()
@@ -339,7 +258,7 @@ def combine_tabs(KO_tab_list, tax_tab_list, sample_names, KO_dict, tax_dict):
     # adding tax full lineage info
     tax_combined_tab = add_tax_info(tax_combined_tab, tax_dict)
 
-    return(KO_combined_tab, tax_combined_tab)
+    return(tax_combined_tab)
 
 
 def median_ratio_norm(tab):
@@ -361,25 +280,22 @@ def median_ratio_norm(tab):
     return(norm_tab)
 
 
-def normalize_tabs(combined_KO_tab, combined_tax_tab, normalization_method):
-    """ generates normalized versions of merged output tables """
+def normalize_tab(combined_tax_tab, normalization_method):
+    """ generates normalized version of merged output table """
 
-    target_cols = [col for col in combined_KO_tab.columns.to_list() if col not in ["KO_ID", "KO_function"]]
+    target_cols = [col for col in combined_tax_tab.columns.to_list() if col not in ["taxid", "domain", "phylum", "class", "order", "family", "genus", "species"]]
     
-    norm_KO_tab = combined_KO_tab.copy()
     norm_tax_tab = combined_tax_tab.copy()
 
     if normalization_method == "CPM":
 
-        norm_KO_tab[target_cols] = norm_KO_tab[target_cols] / norm_KO_tab[target_cols].sum() * 1000000
         norm_tax_tab[target_cols] = norm_tax_tab[target_cols] / norm_tax_tab[target_cols].sum() * 1000000
 
     else:
 
-        norm_KO_tab[target_cols] = median_ratio_norm(norm_KO_tab[target_cols])
         norm_tax_tab[target_cols] = median_ratio_norm(norm_tax_tab[target_cols])
 
-    return(norm_KO_tab, norm_tax_tab)
+    return(norm_tax_tab)
 
 
 if __name__ == "__main__":

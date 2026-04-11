@@ -35,7 +35,7 @@
 - `bit-filter-seqs-by-length` has been renamed to `bit-filter-fasta-by-length`
 - `bit-genbank-to-fasta` has been removed and replaced with `bit-genbank to-fasta`
 - `bit-genbank-to-AA-seqs` has been removed and replaced with `bit-genbank to-AA-seqs`
-
+- moved `bit-GL-combine-contig-tax-tables` and `bit-GL-combine-KO-and-tax-tables` from the primary bit package into the metagenomics-wf scripts
 
 ---
 

@@ -636,7 +636,7 @@ rule make_combined_contig_tax_tables:
         benchmarks_dir + "make_combined_contig_tax_tables-benchmarks.tsv"
     shell:
         """
-        bit-GL-combine-contig-tax-tables {input} -o {params.out_prefix}
+        python scripts/combine-contig-tax-tables.py {input} -o {params.out_prefix}
         """
 
 
@@ -656,7 +656,7 @@ rule make_combined_gene_level_tables:
         benchmarks_dir + "make_combined_gene_level_tables-benchmarks.tsv"
     shell:
         """
-        bit-GL-combine-KO-and-tax-tables {input} -o {params.out_prefix}
+        python scripts/combine-KO-and-tax-tables.py {input} -o {params.out_prefix}
         """
 
 
