@@ -1,9 +1,9 @@
 import os
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
-import requests
+import requests # type: ignore
 from dataclasses import dataclass
-from tqdm import tqdm
+from tqdm import tqdm # type: ignore
 from bit.modules.general import (color_text, check_files_are_found,
                                  attempt_to_make_dir, report_message)
 from bit.modules.ncbi.parse_assembly_summary import parse_assembly_summary
