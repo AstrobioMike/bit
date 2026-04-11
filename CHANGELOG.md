@@ -25,6 +25,7 @@
 
 
 ### Changed
+- removed `bit-figshare-upload`, that is now just stored as a gist here: https://gist.github.com/AstrobioMike/9f86931747357ae8949f715145c5eec4
 - moved many imports from top of cli modules until they are needed to increase snappiness when just doing things like trying to view the help menu
 - `bit-summarize-column` no longer has an `-i` flag, it expects the input table/file to be given as a positional argument
 - `bit-count-bases` can now take STDIN
