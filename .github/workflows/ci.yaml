@@ -49,4 +49,5 @@ jobs:
 
     - name: Run pytest
       run: |
+        conda run -n bit bit-version
         conda run -n bit pytest
