@@ -32,14 +32,12 @@ jobs:
         conda build conda-recipe --output-folder build_artifacts
 
     - name: Create conda env
-      run: |
-        conda create -n bit -y
+      run: conda create -n bit -y
 
     - name: Add local area as channel
-      run: |
-        conda run -n bit conda config --add channels file://${PWD}/build_artifacts
+      run: conda run -n bit conda config --add channels file://${PWD}/build_artifacts
 
-    - name: Install built package
+    - name: Install package
       run: |
         conda run -n bit conda install bit -y
         conda run -n bit pip install -e . # the editable pip install is so test coverages make sense
@@ -51,5 +49,4 @@ jobs:
       run: conda run -n bit bit-version
 
     - name: Run pytest
-      run: |
-        conda run -n bit pytest
+      run: conda run -n bit pytest
