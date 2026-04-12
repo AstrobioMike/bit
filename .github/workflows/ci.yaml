@@ -47,7 +47,9 @@ jobs:
     - name: Set env var so subprocesses get coverage
       run: echo "COVERAGE_PROCESS_START=.coveragerc" >> $GITHUB_ENV
 
+    - name: Checking installed version
+      run: conda run -n bit bit-version
+
     - name: Run pytest
       run: |
-        conda run -n bit bit-version
         conda run -n bit pytest
