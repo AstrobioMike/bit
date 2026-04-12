@@ -1,4 +1,4 @@
-import pytest
+import pytest # type: ignore
 import subprocess
 from unittest.mock import patch, MagicMock, call
 from argparse import Namespace
