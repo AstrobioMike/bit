@@ -20,7 +20,7 @@ def test_dl_test_data_success_first_try(mock_sleep, mock_remove, mock_run, mock_
 
     assert mock_run.call_args_list[0] == call([
         "curl", "-L", "--connect-timeout", "30", "-o", "test-metagenomics-reads.zip",
-        "https://figshare.com/ndownloader/files/46096083"
+        "https://github.com/AstrobioMike/test-data/releases/download/test-metagenomics-reads-v1/test-metagenomics-reads.zip"
     ])
 
     assert mock_run.call_args_list[1] == call(["unzip", "-qo", "test-metagenomics-reads.zip"], check=True)

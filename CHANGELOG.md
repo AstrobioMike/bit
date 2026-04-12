@@ -38,6 +38,7 @@
 - moved `bit-GL-combine-contig-tax-tables` and `bit-GL-combine-KO-and-tax-tables` from the primary bit package into the metagenomics-wf scripts
 - `bit-get-test-data metagenome` pulls a smaller, super simple, single-sample dataset I'm hosting on [github](https://github.com/AstrobioMike/test-data/releases/tag/test-metagenomics-reads-v1) now rather than figshare
 
+
 ---
 
 
