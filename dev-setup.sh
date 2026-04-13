@@ -42,3 +42,7 @@ done
 
 # if coverage isn't tracking properly, i may need to set this variable to point at the .coveragerc on whatever system i am working on, e.g.:
 # export COVERAGE_PROCESS_START=/Users/mike/Documents/github/bit/.coveragerc
+
+## if changing conda versions and wanting to install locally entirely (rather than using a prior official conda install of bit)
+# conda build -c conda-forge -c bioconda conda-recipe/
+# conda create -n bit-dev --use-local bit

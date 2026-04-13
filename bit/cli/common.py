@@ -5,7 +5,7 @@ import shutil
 import textwrap
 import argparse
 from pathlib import Path
-from rich_argparse import RichHelpFormatter
+from rich_argparse import RichHelpFormatter # type: ignore
 
 
 # cli/assemble.py has as example of partial RawTextRichHelpFormatter usage

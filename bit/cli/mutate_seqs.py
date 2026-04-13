@@ -2,16 +2,15 @@ import sys
 import argparse
 import datetime
 import random
-from bit.cli.common import CustomRichHelpFormatter, add_help
-from bit.modules.general import check_files_are_found
+from bit.cli.common import CustomRichHelpFormatter, add_help, reconstruct_invocation
+from bit.modules.general import check_files_are_found, report_message
 
 
 def build_parser():
 
     desc = """
         This script will mutate all sequences of a nucleotide or amino-acid multifasta with
-        the specified mutation rate. It does not take into consideration transition/transversion
-        rates. By default it only swaps bases, but it can optionally introduce indels also.
+        the specified mutation rate. By default it only swaps bases, but it can optionally introduce indels also.
         For version info, run `bit-version`.
         """
 
@@ -35,6 +34,15 @@ def build_parser():
     )
 
     optional.add_argument(
+        "-t",
+        "--molecule-type",
+        help = "'NT' for nucleotides or 'AA' for amino acids (default = 'NT')",
+        action = "store",
+        choices = ["NT", "AA"],
+        default = 'NT'
+    )
+
+    optional.add_argument(
         "-m",
         "--mutation-rate",
         metavar = "<FLOAT>",
@@ -45,30 +53,13 @@ def build_parser():
     )
 
     optional.add_argument(
-        "-t",
-        "--molecule-type",
-        help = "'NT' for nucleotides or 'AA' for amino acids (default = 'NT')",
+        "-T",
+        "--ti-tv-ratio",
+        metavar = "<FLOAT>",
+        help = "Specify a transition/transversion ratio for nucleotide sequences (default = 1.0).",
         action = "store",
-        choices = ["NT", "AA"],
-        default = 'NT'
-    )
-
-    optional.add_argument(
-        "-o",
-        "--output-fasta",
-        metavar = "<FILE>",
-        help = 'Output mutated fasta file (default: "mutated.fasta").',
-        action = "store",
-        default = "mutated.fasta"
-    )
-
-    optional.add_argument(
-        "-l",
-        "--output-log",
-        metavar = "<FILE>",
-        help = 'Output file reporting the seed used and how many characters were changed in each input sequence (default: "mutated.log")',
-        action = "store",
-        default = "mutated.log"
+        type = float,
+        default = 1.0
     )
 
     optional.add_argument(
@@ -76,16 +67,24 @@ def build_parser():
         "--indel-rate",
         metavar = "<FLOAT>",
         help = """
-            Specify the frequency of indels wanted, must be a float between 0 and 1. This
-            is a subset of the overall mutation rate provided via the '-m' argument.
-            E.g., providing '-f 0.2' means 1 out of every 5 generated mutations will be an indel.
-            By default, no indels are incorporated (default = 0.0). The likelihood
-            of adding an insertion/deletion is 50/50, with all characters equally likely
-            to be inserted.
+            Specify the frequency of indels wanted, must be a float between 0 and 1 (default = 0.0).
+            This is a subset of the overall mutation rate provided via the '-m' argument.
+            E.g., providing '-I 0.2' means 1 out of every 5 generated mutations will be an indel.
+            By default, no indels are incorporated. The likelihood of adding an insertion/deletion
+            is 50/50, with all characters equally likely to be inserted.
             """,
         action = "store",
         type = float,
         default = 0.0
+    )
+
+    optional.add_argument(
+        "-o",
+        "--output-prefix",
+        metavar = "<STR>",
+        help = 'Output prefix (default: "mutated").',
+        action = "store",
+        default = "mutated"
     )
 
     optional.add_argument(
@@ -112,6 +111,8 @@ def main():
 
     args = parser.parse_args()
 
+    full_command = reconstruct_invocation(parser, args)
+
     available_substitutions, seed = preflight_checks_and_setup(args)
 
     from Bio import SeqIO # type: ignore
@@ -119,26 +120,39 @@ def main():
 
     # doing mutations per sequence
     with (open (args.input_fasta, "r") as in_fasta,
-          open(args.output_fasta, "w") as out_fasta,
-          open(args.output_log, "w") as log):
+          open(f"{args.output_prefix}.fasta", "w") as out_fasta,
+          open(f"{args.output_prefix}.tsv", "w") as tsv,
+          open(f"{args.output_prefix}.log", "w") as log):
 
-        # starting log file
-        log.write(f"# seed used: {seed}\n")
-        log.write(f"# indel frequency utilized: {args.indel_rate}\n")
-        log.write("# the rest below is a tab-delimited table summarizing the changes introduced to each input sequence\n")
-        log.write("seq_id\tseq_length\tnum_total_changes_made\tnum_substitutions\tnum_total_indels\tnum_insertions\tnum_deletions\n")
+        # writing primary log file
+        log.write(f"Full command executed: {full_command}\n")
+        log.write(f"Mutation rate utilized: {args.mutation_rate}\n")
+        if args.molecule_type == "NT":
+            log.write(f"Transition/transversion ratio utilized: {args.ti_tv_ratio}\n")
+        log.write(f"Indel rate utilized: {args.indel_rate}\n")
+        log.write(f"Seed used: {seed}\n")
+
+        tsv.write("seq_id\tseq_length\tnum_total_changes_made\tnum_substitutions\tnum_transitions\tnum_transversions\tnum_total_indels\tnum_insertions\tnum_deletions\n")
 
         for seq_record in SeqIO.parse(in_fasta, "fasta"):
 
-            (seq, total_num_mutations, num_substitutions, num_indels,
-            num_insertions, num_deletions) = mutate_seq(seq_record.seq, available_substitutions,
-                                                                              args.mutation_rate, args.indel_rate)
+            (seq, total_num_mutations,
+             num_substitutions, num_indels,
+             num_insertions, num_deletions,
+             num_transitions, num_transversions) = mutate_seq(seq_record.seq,
+                                                              args.molecule_type,
+                                                              available_substitutions,
+                                                              args.mutation_rate,
+                                                              args.ti_tv_ratio,
+                                                              args.indel_rate)
 
             out_fasta.write(f">{seq_record.id}\n")
             out_fasta.write(f"{seq}\n")
 
             # writing out log file
-            log.write(f"{seq_record.id}\t{len(seq_record)}\t{total_num_mutations}\t{num_substitutions}\t{num_indels}\t{num_insertions}\t{num_deletions}\n")
+            tsv.write(f"{seq_record.id}\t{len(seq_record)}\t{total_num_mutations}\t{num_substitutions}\t{num_transitions}\t{num_transversions}\t{num_indels}\t{num_insertions}\t{num_deletions}\n")
+
+    report_outputs(out_fasta, tsv, log)
 
 
 def preflight_checks_and_setup(args):
@@ -204,3 +218,12 @@ def set_seed(input_seed):
     random.seed(seed)
 
     return seed
+
+
+def report_outputs(out_fasta, tsv, log):
+
+    report_message("Seqs mutated!", color = "green", initial_indent="    ")
+    report_message(f"Output fasta:        {out_fasta.name}", color = "none", initial_indent="        ", subsequent_indent="        ", join=False)
+    report_message(f"Output summary tsv:  {tsv.name}", color = "none", initial_indent="        ", subsequent_indent="        ", join=False, leading_newline=False)
+    report_message(f"Output log:          {log.name}", color = "none", initial_indent="        ", subsequent_indent="        ", join=False, leading_newline=False)
+    print()

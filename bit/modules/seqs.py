@@ -1,8 +1,8 @@
-from Bio import SeqIO
-from skbio import TabularMSA, DNA, Protein
-from skbio.sequence import GrammaredSequence
-from skbio.util import classproperty
-import pandas as pd
+from Bio import SeqIO # type: ignore
+from skbio import TabularMSA, DNA, Protein # type: ignore
+from skbio.sequence import GrammaredSequence # type: ignore
+from skbio.util import classproperty # type: ignore
+import pandas as pd # type: ignore
 import gzip
 from bit.modules.general import is_gzipped
 from statistics import mean, median
@@ -177,7 +177,7 @@ def parse_fasta_lengths(input_fasta):
     }
 
 
-def mutate_seq(seq, available_substitutions, mutation_rate, indel_rate):
+def mutate_seq(seq, molecule_type, available_substitutions, mutation_rate, ti_tv_ratio, indel_rate):
 
     # converting sequence to a list for mutability
     seq_list = list(seq)
@@ -191,12 +191,41 @@ def mutate_seq(seq, available_substitutions, mutation_rate, indel_rate):
     # tracking counts of insertions and deletions (if any)
     num_insertions = 0
     num_deletions = 0
+    num_transitions = 0
+    num_transversions = 0
 
     substitution_indices = random.sample(range(seq_length), k=num_substitutions)
 
+    if molecule_type == "NT":
+
+        transitions = {'A': 'G', 'G': 'A', 'C': 'T', 'T': 'C'}
+        transversions = {
+            'A': ['C', 'T'],
+            'G': ['C', 'T'],
+            'C': ['A', 'G'],
+            'T': ['A', 'G']
+        }
+
     for index_to_change in substitution_indices:
+
         original_char = seq_list[index_to_change]
-        new_char = random.choice([char for char in available_substitutions if char != original_char])
+
+        if molecule_type == "NT" and original_char in transitions:
+
+            prob_ts = ti_tv_ratio / (ti_tv_ratio + 1)
+
+            if random.random() < prob_ts:
+                # transition
+                new_char = transitions[original_char]
+                num_transitions += 1
+            else:
+                # transversion
+                new_char = random.choice([b for b in transversions[original_char] if b != original_char])
+                num_transversions += 1
+        else:
+            # any base except original
+            new_char = random.choice([char for char in available_substitutions if char != original_char])
+
         seq_list[index_to_change] = new_char
 
     # incorporating indels next, if any
@@ -228,7 +257,8 @@ def mutate_seq(seq, available_substitutions, mutation_rate, indel_rate):
     mutated_seq = ''.join(seq_list)
 
     return (mutated_seq, total_num_mutations, num_substitutions,
-            num_indels, num_insertions, num_deletions)
+            num_indels, num_insertions, num_deletions, num_transitions,
+            num_transversions)
 
 
 def dedupe_fasta_headers(input_fasta, output_fasta):

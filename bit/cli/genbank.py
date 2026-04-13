@@ -94,11 +94,69 @@ def build_parser():
 
     to_AA_seqs_parser.set_defaults(func="to-AA-seqs")
 
+    ### subcommand cli for extracting CDS info to a table ###
+    to_cds_tsv_desc = """
+        This subcommand extracts basic info for every 'CDS' feature
+        including: 'gene', 'protein_id', 'locus_tag', and 'product'. It then writes those
+        out to a tab-delimited file.
+        """
+
+    to_cds_tsv_parser = subparsers.add_parser(
+        "to-cds-tsv",
+        help="Extract CDS info to a tab-delimited file",
+        description=to_cds_tsv_desc,
+        epilog="Ex. usage: `bit-genbank to-cds-tsv -i input.gbff`",
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
+    )
+
+    to_cds_tsv_required = to_cds_tsv_parser.add_argument_group("Required Parameters")
+    to_cds_tsv_optional = to_cds_tsv_parser.add_argument_group("Optional Parameters")
+
+    add_common_required_arguments(to_cds_tsv_required)
+    add_common_optional_arguments(to_cds_tsv_optional)
+
+    add_help(to_cds_tsv_optional)
+
+    to_cds_tsv_parser.set_defaults(func="to-cds-tsv")
+
+    ### subcommand cli for extracting CDS nucleotide sequences ###
+    to_cds_seqs_desc = """
+        This subcommand extracts nucleotide sequences for all CDS features in the GenBank file.
+        """
+
+    to_cds_seqs_desc = """
+        This subcommand extracts nucleotide sequences for complete CDS features.
+        It filters out gene calls that:
+        1) are noted as "frameshifted", "internal stop", "incomplete", or "pseudo";
+        2) have a "location" containing "join" (spanning multiple contigs) or "<" or ">" (running off a contig); or
+        3) have an overlapping translation frame ("transl_except").
+        """
+
+
+    to_cds_seqs_parser = subparsers.add_parser(
+        "to-cds-seqs",
+        help="Extract nucleotide sequences for CDS features",
+        description=to_cds_seqs_desc,
+        epilog="Ex. usage: `bit-genbank to-cds-seqs -i input.gbff`",
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
+    )
+
+    to_cds_seqs_required = to_cds_seqs_parser.add_argument_group("Required Parameters")
+    to_cds_seqs_optional = to_cds_seqs_parser.add_argument_group("Optional Parameters")
+
+    add_common_required_arguments(to_cds_seqs_required)
+    add_common_optional_arguments(to_cds_seqs_optional)
+
+    add_help(to_cds_seqs_optional)
+
+    to_cds_seqs_parser.set_defaults(func="to-cds-seqs")
+
     return parser
 
 
 def main():
-
     parser = build_parser()
     argcomplete.autocomplete(parser)
 
@@ -133,3 +191,13 @@ def main():
         from bit.modules.genbank import genbank_to_AA_seqs
         output_fasta = f"{args.output_prefix}.faa"
         genbank_to_AA_seqs(args.input_genbank, output_fasta)
+
+    elif args.subcommand == "to-cds-tsv":
+        from bit.modules.genbank import genbank_to_cds_tsv
+        output_tsv = f"{args.output_prefix}.tsv"
+        genbank_to_cds_tsv(args.input_genbank, output_tsv)
+
+    elif args.subcommand == "to-cds-seqs":
+        from bit.modules.genbank import genbank_to_cds_seqs
+        output_fasta = f"{args.output_prefix}-cds.fasta"
+        genbank_to_cds_seqs(args.input_genbank, output_fasta)

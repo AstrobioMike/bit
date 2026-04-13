@@ -16,16 +16,21 @@
 ## v1.15.0 (NOT RELEASED YET)
 
 ### Added
+- `bit-mutate-seqs` now has a tunable parameter for transitions/transversions
 - `bit-extract-seqs`
   - added `by-headers` subcommand (**this replaces `bit-parse-fasta-by-headers`**)
   - `by-coords` subcommand **replaces `bit-extract-seqs-by-coords`**
 - `bit-genbank` which has subcommmands for all genbank helpers
   - `to-fasta` replaces `bit-genbank-to-fasta`
   - `to-AA-seqs` replaces `bit-genbank-to-AA-seqs`
+  - `to-cds-seqs` 
+  - `to-cds-tsv` replaces `bit-genbank-to-cds-table`
+  - `clean-slate` replaces `bit-genbank-to-clean-slate`
 
 
 ### Changed
 - removed `bit-figshare-upload`, that is now just stored as a gist here: https://gist.github.com/AstrobioMike/9f86931747357ae8949f715145c5eec4
+- removed `bit-locus-clean-slate`, that is now just stored as a gist here: https://gist.github.com/AstrobioMike/17324583568b051cd3b190cf4767b524
 - moved many imports from top of cli modules until they are needed to increase snappiness when just doing things like trying to view the help menu
 - `bit-summarize-column` no longer has an `-i` flag, it expects the input table/file to be given as a positional argument
 - `bit-count-bases` can now take STDIN
@@ -35,6 +40,8 @@
 - `bit-filter-seqs-by-length` has been renamed to `bit-filter-fasta-by-length`
 - `bit-genbank-to-fasta` has been removed and replaced with `bit-genbank to-fasta`
 - `bit-genbank-to-AA-seqs` has been removed and replaced with `bit-genbank to-AA-seqs`
+- `bit-genbank-to-cds-table` has been removed and replaced with `bit-genbank to-cds-tsv`
+- `bit-genbank-to-clean-slate` has been removed and replaced with `bit-genbank clean-slate`
 - moved `bit-GL-combine-contig-tax-tables` and `bit-GL-combine-KO-and-tax-tables` from the primary bit package into the metagenomics-wf scripts
 - `bit-get-test-data metagenome` pulls a smaller, super simple, single-sample dataset I'm hosting on [github](https://github.com/AstrobioMike/test-data/releases/tag/test-metagenomics-reads-v1) now rather than figshare
 
