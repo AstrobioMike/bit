@@ -257,8 +257,8 @@ def mutate_seq(seq, molecule_type, available_substitutions, mutation_rate, ti_tv
     mutated_seq = ''.join(seq_list)
 
     return (mutated_seq, total_num_mutations, num_substitutions,
-            num_indels, num_insertions, num_deletions, num_transitions,
-            num_transversions)
+            num_transitions, num_transversions, num_indels, num_insertions,
+            num_deletions)
 
 
 def dedupe_fasta_headers(input_fasta, output_fasta):

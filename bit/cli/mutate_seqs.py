@@ -137,14 +137,14 @@ def main():
         for seq_record in SeqIO.parse(in_fasta, "fasta"):
 
             (seq, total_num_mutations,
-             num_substitutions, num_indels,
-             num_insertions, num_deletions,
-             num_transitions, num_transversions) = mutate_seq(seq_record.seq,
-                                                              args.molecule_type,
-                                                              available_substitutions,
-                                                              args.mutation_rate,
-                                                              args.ti_tv_ratio,
-                                                              args.indel_rate)
+             num_substitutions, num_transitions,
+             num_transversions, num_indels,
+             num_insertions, num_deletions) = mutate_seq(seq_record.seq,
+                                                         args.molecule_type,
+                                                         available_substitutions,
+                                                         args.mutation_rate,
+                                                         args.ti_tv_ratio,
+                                                         args.indel_rate)
 
             out_fasta.write(f">{seq_record.id}\n")
             out_fasta.write(f"{seq}\n")

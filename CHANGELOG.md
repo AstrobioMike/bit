@@ -25,7 +25,6 @@
   - `to-AA-seqs` replaces `bit-genbank-to-AA-seqs`
   - `to-cds-seqs` 
   - `to-cds-tsv` replaces `bit-genbank-to-cds-table`
-  - `clean-slate` replaces `bit-genbank-to-clean-slate`
 
 
 ### Changed

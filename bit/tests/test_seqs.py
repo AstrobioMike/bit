@@ -206,22 +206,31 @@ def test_mutate_seq():
     random.seed(9)
 
     seq = "AAAAAAAAAA"
+    molecule_type = "NT"
     available_substitutions = ["A", "T", "C", "G"]
     mutation_rate = 0.8
+    ti_tv_ratio = 2
     indel_rate = 0.5
 
-    expected_mutated_seq = "ACATAGTA"
+    expected_mutated_seq = "ACTAAGTAGA"
     expected_total_changes = 8
     expected_subtitutions = 4
+    expected_transitions = 2
+    expected_transversions = 2
     expected_indels = 4
-    expected_insertions = 1
-    expected_deletions = 3
+    expected_insertions = 2
+    expected_deletions = 2
 
-    (mutated_seq, total_num_changes, num_subs, num_indels,
-     num_insertions, num_deletions) = seqs.mutate_seq(seq, available_substitutions, mutation_rate, indel_rate)
+
+    (mutated_seq, total_num_changes, num_subs, num_transitions,
+     num_transversions, num_indels, num_insertions,
+     num_deletions) = seqs.mutate_seq(seq, molecule_type, available_substitutions,
+                                      mutation_rate, ti_tv_ratio, indel_rate)
 
     assert total_num_changes == expected_total_changes
     assert num_subs == expected_subtitutions
+    assert num_transitions == expected_transitions
+    assert num_transversions == expected_transversions
     assert num_indels == expected_indels
     assert num_insertions == expected_insertions
     assert num_deletions == expected_deletions
