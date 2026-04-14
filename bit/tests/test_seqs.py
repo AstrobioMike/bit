@@ -1,6 +1,6 @@
 from bit.modules.general import get_package_path
 import bit.modules.seqs as seqs
-from Bio import SeqIO
+from Bio import SeqIO # type: ignore
 import gzip
 from types import SimpleNamespace
 from io import StringIO
