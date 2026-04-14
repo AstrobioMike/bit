@@ -13,7 +13,7 @@
 
 -->
 
-## v1.15.0 (NOT RELEASED YET)
+## v1.15.0 (14-Apr-2026)
 
 ### Added
 - `bit-mutate-seqs` now has a tunable parameter for transitions/transversions
