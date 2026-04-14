@@ -41,6 +41,7 @@ Some of the helper programs/scripts in _bit_ include:
 | ------- | ------- |
 | `bit-dl-ncbi-assemblies` | download NCBI assemblies in different formats by just providing accessions |  
 | `bit-get-accessions-from-GTDB` | search the (stellar) [Genome Taxonomy Database](https://gtdb.ecogenomic.org/) by taxonomy and get their NCBI accessions |  
+| `bit-assemble` | simple wrapper for assembly with optional quality trimming and normalization |  
 | `bit-summarize-assembly` | quickly summarize nucleotide assemblies |  
 | `bit-mutate-seqs` | introduce point mutations (substitutions/indels) in nucleotide or amino acid fasta files |  
 | `bit-gen-reads` | quickly generate reads from fasta files in desired proportions |  
@@ -52,12 +53,11 @@ Some of the helper programs/scripts in _bit_ include:
 | `bit-calc-variation-in-msa` | calculate [variation](https://scikit.bio/docs/dev/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |  
 | `bit-summarize-column` | summarize a numeric column in a table |  
 | `bit-filter-table` | filter a table based on wanted IDs |  
-| `bit-count-bases` | count and summarize the number of bases per sequence in a fasta file |  
+| `bit-count-bases` | count and summarize the number of bases in a fasta file per seq or total |  
 | `bit-rename-fasta-headers` | rename sequences in a fasta |  
-| `bit-extract-seqs` | extract sequences from a fasta based on primer seqs, headers, or coordinates |  
+| `bit-extract-seqs` | has subcommands to extract sequences from a fasta based on primer seqs, headers, or coordinates |  
+| `bit-genbank` | has subcommands to extract sequences and information from genbank files |
 | `bit-reorder-fasta` | re-order a fasta file |  
-| `bit-genbank-to-cds-table` | pull out general CDS info into a tsv from a GenBank file |  
-| `bit-genbank-to-AA-seqs`, `bit-genbank-to-fasta` | pull amino-acid or nucleotide sequences out of a GenBank file |  
 | `bit-get-lineage-from-taxids` | get full lineage info from a list of taxon IDs (making use of the stellar [TaxonKit](https://bioinf.shenwei.me/taxonkit/)) |  
 | `bit-filter-KOFamScan-results` | filter [KOFamScan](https://github.com/takaram/kofam_scan) results |  
 | `bit-get-go-term-info` | get information about a specific [GO](http://geneontology.org/) term |  
@@ -66,7 +66,6 @@ Some of the helper programs/scripts in _bit_ include:
 | `bit-kraken2-to-taxon-summaries`, `bit-combine-kraken2-taxon-summaries` | summarize [kraken2](https://github.com/DerrickWood/kraken2) outputs in a table with counts of full taxonomic lineages, and combining multiple samples |  
 | `bit-combine-bracken-and-add-lineage` | combine [bracken](https://github.com/jenniferlu717/Bracken) outputs and adding full taxonomic lineage info |  
 | `bit-gen-iToL-map`, `bit-gen-iToL-colorstrip`, `bit-gen-iToL-text-dataset`, `bit-gen-iToL-binary-dataset` | generate color/mapping/data files for use with trees being viewed on the [Interactive Tree of Life](https://itol.embl.de/) site |  
-| `bit-figshare-upload` | upload a file to figshare |  
 
 And other just convenient things that are nice to have handy, like removing soft line wraps that some fasta files have (`bit-remove-wraps`), and printing out the column names of a TSV with numbers (`bit-colnames`) to quickly see which columns we want to provide to things like `cut` or `awk` 🙂  
 
