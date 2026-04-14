@@ -2,7 +2,7 @@
 <br>
 <a href="https://github.com/AstrobioMike/bit#citation-info"><img align="right" alt="Brief paper" src="https://img.shields.io/badge/Citation%20info-blue" height="22"></a>
 <br>
-<a href="https://doi.org/10.5281/zenodo.3383647"><img align="right" src="https://zenodo.org/badge/DOI/10.5281/zenodo.3383647.svg" alt="DOI"></a>
+<a href="https://doi.org/10.5281/zenodo.3383647"><img align="right" alt="DOI" src="https://img.shields.io/badge/DOI-blue" height="22"></a>
 <br>
 <a href="https://twitter.com/AstrobioMike"><img align="right" alt="Twitter Follow" src="https://img.shields.io/twitter/follow/AstrobioMike?color=blue&style=social"></a>
 
