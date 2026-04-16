@@ -54,8 +54,8 @@ bit-mutate-seqs = "bit.cli.mutate_seqs:main"
 # bit-parse-fastq-by-headers
 # bit-remove-wraps
 # bit-reorder-fasta
-# bit-rename-fasta-headers
-# bit-split-multifasta
+# bit-rename-fasta-headers -> bit-simplify-fasta-headers
+# bit-split-multifasta -> move to gist only
 bit-summarize-assembly = "bit.cli.summarize_assembly:main"
 
 
@@ -70,7 +70,6 @@ bit-normalize-table = "bit.cli.normalize_table:main"
 bit-assemble = "bit.cli.assemble:main"
 bit-ez-screen = "bit.cli.ez_screen:main"
 bit-data-locations = "bit.cli.data_locations:main"
-# bit-figshare-upload
 bit-get-test-data = "bit.cli.get_test_data:main"
 bit-get-workflow = "bit.cli.get_workflow:main"
 bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
@@ -99,18 +98,6 @@ bit-kraken2-to-taxon-summaries = "bit.cli.kraken2_to_taxon_summaries:main"
 
 ## genbank manipulations ##
 bit-genbank = "bit.cli.genbank:main"
-# bit-genbank-locus-clean-slate
-# bit-genbank-to-AA-seqs
-# bit-genbank-to-cds-table (can this produce the seqs too?)
-# bit-genbank-to-fasta
-# bit-gff-to-anvio
-    # can probably drop gff-to-anvio (since that's better maintained in anvio now)
-    # then subcommand situation for all that take in a genbank file
-    # bit-genbank
-        # to-AA-seqs
-        # to-cds-table
-        # to-fasta
-        # clean-slate
 
 
 ## Database related ##

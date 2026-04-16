@@ -13,6 +13,17 @@
 
 -->
 
+## v1.16.0 (NOT YET RELEASED)
+### Added
+
+### Changed
+- removed `bit-gff-to-anvio`, that is now just stored as a gist here: https://gist.github.com/AstrobioMike/45e10adb3eaceb338a7eb10f49038355
+- removed `bit-split-multifasta`, that is now just stored as a gist here: https://gist.github.com/AstrobioMike/28cae086241bc0d68e05c215acd91a69
+
+
+---
+
+
 ## v1.15.0 (14-Apr-2026)
 
 ### Added
@@ -44,9 +55,7 @@
 - moved `bit-GL-combine-contig-tax-tables` and `bit-GL-combine-KO-and-tax-tables` from the primary bit package into the metagenomics-wf scripts
 - `bit-get-test-data metagenome` pulls a smaller, super simple, single-sample dataset I'm hosting on [github](https://github.com/AstrobioMike/test-data/releases/tag/test-metagenomics-reads-v1) now rather than figshare
 
-
 ---
-
 
 ## v1.14.0 (07-Apr-2026)
 
