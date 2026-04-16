@@ -8,6 +8,13 @@ if [ "${CONDA_DEFAULT_ENV}" != "bit-dev" ]; then
     return 1 2>/dev/null || exit 1
 fi
 
+# if coverage isn't tracking properly, i may need to set this variable to point at the .coveragerc on whatever system i am working on, e.g.:
+# export COVERAGE_PROCESS_START=/Users/michael.lee/Documents/github/bit/.coveragerc
+if [[ -z "$COVERAGE_PROCESS_START" ]]; then
+    conda env config vars set COVERAGE_PROCESS_START="/Users/michael.lee/Documents/github/bit/.coveragerc" --name bit-dev > /dev/null 2>&1
+    cda bit-dev
+fi
+
 rm -rf build/ bit.egg-info/
 
 BIN_DIR=$(dirname $(which python))
@@ -40,8 +47,6 @@ for cmd in bit-extract-seqs bit-ez-screen bit-genbank; do
 done
 
 
-# if coverage isn't tracking properly, i may need to set this variable to point at the .coveragerc on whatever system i am working on, e.g.:
-# export COVERAGE_PROCESS_START=/Users/mike/Documents/github/bit/.coveragerc
 
 ## if changing conda versions and wanting to install locally entirely (rather than using a prior official conda install of bit)
 # conda build -c conda-forge -c bioconda conda-recipe/
