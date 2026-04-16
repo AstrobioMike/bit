@@ -1,6 +1,7 @@
 import sys
 import argparse
-from bit.cli.common import CustomRichHelpFormatter, reconstruct_invocation, add_help
+from bit.cli.common import (CustomRichHelpFormatter, reconstruct_invocation,
+                            add_help, add_force)
 
 def main():
 
@@ -128,6 +129,7 @@ def main():
         action="store_true",
     )
 
+    add_force(optional)
     add_help(optional)
 
     if len(sys.argv) == 1:  # pragma: no cover
@@ -155,6 +157,7 @@ def main():
         allowed_gap = args.allowed_gap,
         buffer = args.buffer,
         write_window_stats = args.write_window_stats,
+        force_overwrite = args.force_overwrite,
         log_file = f"{args.output_dir}/runlog.txt",
         full_cmd_executed = full_cmd_executed
     )

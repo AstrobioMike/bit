@@ -2,10 +2,6 @@ import io
 import os
 import sys
 import subprocess
-import itertools
-import threading
-import time
-from contextlib import contextmanager
 from pathlib import Path
 import pysam # type: ignore
 import pandas as pd # type: ignore
@@ -16,46 +12,14 @@ from Bio.SeqRecord import SeqRecord # type: ignore
 import matplotlib.pyplot as plt # type: ignore
 from tqdm import tqdm # type: ignore
 from colorama import Fore, init # type: ignore
-from bit.modules.general import (check_files_are_found,
+from bit.modules.general import (check_if_output_dir_exists,
+                                 check_files_are_found,
                                  notify_premature_exit,
                                  report_message,
                                  log_command_run,
-                                 tee)
+                                 tee, spinner)
 
 init(autoreset=True)
-
-
-@contextmanager
-def _spinner(in_progress_msg, complete_msg):
-    """Show a spinner while a block runs; report elapsed time only if >= 60 s."""
-    done = threading.Event()
-    elapsed = [0.0]
-
-    def spin():
-        for char in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
-            if done.is_set():
-                break
-            sys.stderr.write(f"\r    {char} {in_progress_msg}")
-            sys.stderr.flush()
-            time.sleep(0.1)
-        if elapsed[0] >= 60:
-            mins, secs = divmod(int(elapsed[0]), 60)
-            time_str = f"(took ~{mins} min and {secs} sec)"
-        else:
-            time_str = ""
-        sys.stderr.write(f"\r    ✔ {complete_msg}{time_str}          \n")
-        sys.stderr.flush()
-        time.sleep(0.1)
-
-    t = threading.Thread(target=spin)
-    t.start()
-    start_time = time.monotonic()
-    try:
-        yield
-    finally:
-        elapsed[0] = time.monotonic() - start_time
-        done.set()
-        t.join()
 
 
 def run_cov_analyzer(
@@ -72,12 +36,13 @@ def run_cov_analyzer(
     allowed_gap: int,
     buffer: int,
     write_window_stats: bool,
+    force_overwrite: bool,
     log_file = str,
     full_cmd_executed: str = None
 ):
 
     preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs,
-                     log_file, full_cmd_executed)
+                     force_overwrite, log_file, full_cmd_executed)
 
     contig_lengths = get_contig_lengths(reference_fasta)
 
@@ -96,11 +61,11 @@ def run_cov_analyzer(
         cov_df = cov_df.loc[~cov_df["contig"].isin(exclude_contigs)].reset_index(drop=True)
 
     report_message("Computing per-window coverage stats...")
-    with _spinner("", ""):
+    with spinner("", ""):
         cov_stats = CoverageStats(cov_df, per_contig)
 
     report_message("Identifying regions of interest...")
-    with _spinner("", ""):
+    with spinner("", ""):
         high_merged_regions = cov_stats.merge_windows(type="high", threshold = high_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
         low_merged_regions = cov_stats.merge_windows(type="low", threshold = 1/low_threshold, contig_lengths = contig_lengths, allowed_gap = allowed_gap)
         low_merged_regions = filter_nonATGCs_from_low_merged_regions(reference_fasta, low_merged_regions)
@@ -121,7 +86,7 @@ def run_cov_analyzer(
         zero_merged_regions = annotate_low_complexity(reference_fasta, zero_merged_regions)
 
     report_message("Generating outputs...")
-    with _spinner("", ""):
+    with spinner("", ""):
         old_stdout = sys.stdout
         sys.stdout = captured = io.StringIO()
         try:
@@ -135,8 +100,9 @@ def run_cov_analyzer(
     print(captured.getvalue(), end="")
 
 
-def preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs, log_file, full_cmd_executed):
+def preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs, force_overwrite, log_file, full_cmd_executed):
 
+    check_if_output_dir_exists(output_dir, force_overwrite)
     paths_list = [reference_fasta, bam_file]
     check_files_are_found(paths_list)
     check_bam_file_is_indexed(bam_file)
@@ -203,10 +169,10 @@ def generate_windows_bed_file(reference_fasta, window_size, step_size, output_di
 
 
 def run_mosdepth(bam_file, window_bed_path, output_dir):
-    mosdepth_out_prefix = str(Path(output_dir) / Path(bam_file).stem)
+    mosdepth_out_prefix = str(Path(output_dir) / "mosdepth-files" / Path(bam_file).stem)
     cmd = f"mosdepth --by {window_bed_path} {mosdepth_out_prefix} {bam_file}"
 
-    with _spinner("mosdepthinitely in progress...", "mosdepthinitely done "):
+    with spinner("mosdepthinitely in progress...", "mosdepthinitely done "):
         subprocess.run(cmd, shell=True)
 
     mosdepth_regions_file = f"{mosdepth_out_prefix}.regions.bed.gz"
@@ -215,6 +181,7 @@ def run_mosdepth(bam_file, window_bed_path, output_dir):
 
 
 def read_mosdepth_regions_file(mosdepth_regions_file, total_rows=None):
+
     chunks = []
     reader = pd.read_csv(
         mosdepth_regions_file,

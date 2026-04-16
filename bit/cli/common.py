@@ -28,6 +28,14 @@ def add_help(group):
         help = wrap_help("Show this help message and exit")
     )
 
+def add_force(group):
+    group.add_argument(
+        "-F",
+        "--force-overwrite",
+        help = wrap_help("Force overwrite of output files if they already exist"),
+        action = "store_true",
+    )
+
 def add_seed(group):
     group.add_argument(
         "-s",

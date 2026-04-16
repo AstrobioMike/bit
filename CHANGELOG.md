@@ -16,6 +16,8 @@
 ## v1.16.0 (NOT YET RELEASED)
 ### Added
 - setup for argcomplete during conda install for commands with subcommands
+- added flag `--skip-read-pids` to `bit-get-cov-stats` so user can save time if they don't want that info
+
 
 ### Changed
 - removed `bit-gff-to-anvio`, that is now just stored as a gist here: https://gist.github.com/AstrobioMike/45e10adb3eaceb338a7eb10f49038355

@@ -8,8 +8,8 @@ import pyfastx #type: ignore
 from collections import defaultdict
 from colorama import Fore, init #type: ignore
 from tqdm import tqdm #type: ignore
-from bit.modules.general import check_files_are_found, report_message
-from bit.modules.get_mapped_reads_pid import get_mapped_reads_pids, get_per_contig_pid_stats, PidStats
+from bit.modules.general import check_files_are_found, check_bam_file_is_indexed, spinner
+from bit.modules.get_mapped_reads_pid import get_per_contig_pid_stats, PidStats
 
 
 init(autoreset=True)
@@ -24,7 +24,7 @@ def get_cov_stats(args):
     (ref_mean_pids, ref_median_pids, ref_mapped_counts,
      contig_mean_pids, contig_median_pids, contig_mapped_counts) = compute_pid_stats(args.bam, refs, contigs,
                                                                  args.include_non_primary,
-                                                                 args.skip_per_contig)
+                                                                 args.skip_per_contig, args.skip_read_pids)
 
     bed = args.bed if args.bed else run_mosdepth(args.bam, args.output_prefix, args.include_non_primary)
 
@@ -132,75 +132,84 @@ def parse_refs(reference_fastas, skip_per_contig=False):
     contigs_dict = {}
     header_to_ref_dict = {}
 
-    for fasta in reference_fastas:
-        ref = RefData(fasta)
-        fxi_path = fasta + ".fxi"
-        fxi_existed = os.path.exists(fxi_path)
-        fa = pyfastx.Fasta(fasta)
-        for seq in fa:
-            name = seq.name
-            seq_len = len(seq)
-            ref.headers.add(name)
-            ref.contig_order.append(name)
-            ref.stats.length += seq_len
-            if not skip_per_contig:
-                contigs_dict[name] = ContigData(path=fasta, header=name, stats=CoverageStats(length=seq_len))
-            header_to_ref_dict[name] = ref
-        refs.append(ref)
-        # clean up pyfastx index file if we created it
-        if not fxi_existed and os.path.exists(fxi_path):
-            os.remove(fxi_path)
+    with spinner("", ""):
+        for fasta in reference_fastas:
+            ref = RefData(fasta)
+            fxi_path = fasta + ".fxi"
+            fxi_existed = os.path.exists(fxi_path)
+            fa = pyfastx.Fasta(fasta)
+            for seq in fa:
+                name = seq.name
+                seq_len = len(seq)
+                ref.headers.add(name)
+                ref.contig_order.append(name)
+                ref.stats.length += seq_len
+                if not skip_per_contig:
+                    contigs_dict[name] = ContigData(path=fasta, header=name, stats=CoverageStats(length=seq_len))
+                header_to_ref_dict[name] = ref
+            refs.append(ref)
+            # clean up pyfastx index file if we created it
+            if not fxi_existed and os.path.exists(fxi_path):
+                os.remove(fxi_path)
 
     return refs, contigs_dict, header_to_ref_dict
 
 
-def compute_pid_stats(bam_path, refs, contigs_dict, include_non_primary=False, skip_per_contig=False):
+def compute_pid_stats(bam_path, refs, contigs_dict, include_non_primary=False, skip_per_contig=False, skip_read_pids=False):
 
-    if not bam_path:
+    if not bam_path or skip_read_pids:
         return None, None, None, None, None, None
 
-    try:
-        # single-pass BAM scan that builds per-contig PidStats directly
-        contig_pid_stats = get_per_contig_pid_stats(bam_path, include_non_primary)
-    except Exception:
-        return None, None, None, None, None, None
+    print(f"\n  {Fore.YELLOW}Computing PID stats for mapped reads...")
 
-    contig_mean_pids = {}
-    contig_median_pids = {}
-    contig_mapped_counts = {}
+    with spinner("", ""):
+        try:
+            # single-pass BAM scan that builds per-contig PidStats directly
+            contig_pid_stats = get_per_contig_pid_stats(bam_path, include_non_primary)
+        except Exception:
+            return None, None, None, None, None, None
 
-    if not skip_per_contig:
-        for contig_name in contigs_dict.keys():
-            if contig_name in contig_pid_stats:
-                stats = contig_pid_stats[contig_name]
-                contig_mapped_counts[contig_name] = stats.count
-                contig_mean_pids[contig_name] = round(stats.mean, 2) if stats.count > 0 else None
-                contig_median_pids[contig_name] = round(stats.median, 2) if stats.count > 0 else None
-            else:
-                contig_mapped_counts[contig_name] = 0
-                contig_mean_pids[contig_name] = None
-                contig_median_pids[contig_name] = None
+        contig_mean_pids = {}
+        contig_median_pids = {}
+        contig_mapped_counts = {}
 
-    ref_mean_pids = {}
-    ref_median_pids = {}
-    ref_mapped_counts = {}
+        if not skip_per_contig:
+            for contig_name in contigs_dict.keys():
+                if contig_name in contig_pid_stats:
+                    stats = contig_pid_stats[contig_name]
+                    contig_mapped_counts[contig_name] = stats.count
+                    contig_mean_pids[contig_name] = round(stats.mean, 2) if stats.count > 0 else None
+                    contig_median_pids[contig_name] = round(stats.median, 2) if stats.count > 0 else None
+                else:
+                    contig_mapped_counts[contig_name] = 0
+                    contig_mean_pids[contig_name] = None
+                    contig_median_pids[contig_name] = None
 
-    for ref in refs:
-        ref_pid_stats = PidStats()
-        for contig_name in ref.headers:
-            if contig_name in contig_pid_stats:
-                ref_pid_stats.merge(contig_pid_stats[contig_name])
+        ref_mean_pids = {}
+        ref_median_pids = {}
+        ref_mapped_counts = {}
 
-        ref_mapped_counts[ref.path] = ref_pid_stats.count
-        ref_mean_pids[ref.path] = round(ref_pid_stats.mean, 2) if ref_pid_stats.count > 0 else None
-        ref_median_pids[ref.path] = round(ref_pid_stats.median, 2) if ref_pid_stats.count > 0 else None
+        for ref in refs:
+            ref_pid_stats = PidStats()
+            for contig_name in ref.headers:
+                if contig_name in contig_pid_stats:
+                    ref_pid_stats.merge(contig_pid_stats[contig_name])
+
+            ref_mapped_counts[ref.path] = ref_pid_stats.count
+            ref_mean_pids[ref.path] = round(ref_pid_stats.mean, 2) if ref_pid_stats.count > 0 else None
+            ref_median_pids[ref.path] = round(ref_pid_stats.median, 2) if ref_pid_stats.count > 0 else None
 
     return ref_mean_pids, ref_median_pids, ref_mapped_counts, contig_mean_pids, contig_median_pids, contig_mapped_counts
 
 
 def parse_bed_file(refs, bed_file, contigs, header_to_ref_dict):
 
-    print(f"\n  {Fore.YELLOW}Parsing coverage info...")
+    print(f"\n  {Fore.YELLOW}Processing coverage data...")
+
+    lookup = {}
+    for header, ref in header_to_ref_dict.items():
+        contig_stats = contigs[header].stats if header in contigs else None
+        lookup[header] = (contig_stats, ref.stats)
 
     # using pigz for parallel decompression on larger files (>200 MB)
     use_pigz = os.path.getsize(bed_file) > 200 * 1024 * 1024
@@ -218,17 +227,20 @@ def parse_bed_file(refs, bed_file, contigs, header_to_ref_dict):
         line_iter = gzip.open(bed_file, "rt")
 
     try:
-        for line in tqdm(line_iter, unit=" lines", desc="    Processing bed file", leave=True, bar_format="    Processing bed file: {n:,} lines [{elapsed}, {rate_fmt}]"):
+
+        for line in tqdm(line_iter, ncols=74, unit=" lines", leave=True, bar_format="    Processed: {n:,} lines [{elapsed}, {rate_fmt}]"):
             fields = line.split("\t")
             header = fields[0]
             span = int(fields[2]) - int(fields[1])
             n_reads = int(fields[3])
 
-            if header in contigs:
-                contigs[header].stats.update_from_bed_line(span, n_reads)
+            entry = lookup.get(header)
+            if entry is not None:
+                contig_stats, ref_stats = entry
+                if contig_stats is not None:
+                    contig_stats.update_from_bed_line(span, n_reads)
+                ref_stats.update_from_bed_line(span, n_reads)
 
-            if header in header_to_ref_dict:
-                header_to_ref_dict[header].stats.update_from_bed_line(span, n_reads)
     finally:
         if proc is not None:
             proc.stdout.close()
@@ -240,31 +252,26 @@ def parse_bed_file(refs, bed_file, contigs, header_to_ref_dict):
 
 
 def run_mosdepth(bam_file, output_prefix, include_non_primary):
+
     check_bam_file_is_indexed(bam_file)
+
     mosdepth_output_dir = f"{output_prefix}-mosdepth-files"
+    if Path(mosdepth_output_dir).is_dir():
+        shutil.rmtree(mosdepth_output_dir)
     mosdepth_prefix = str(Path(mosdepth_output_dir) / Path(bam_file).stem)
     os.makedirs(mosdepth_output_dir, exist_ok=True)
     if include_non_primary:
         cmd = f"mosdepth -x --flag 1540 {mosdepth_prefix} {bam_file}"
     else:
         cmd = f"mosdepth -x {mosdepth_prefix} {bam_file}"
-    print(f"\n  {Fore.YELLOW}Running mosdepth to generate the required per-base coverage file...")
-    subprocess.run(cmd, shell=True)
+    print(f"\n  {Fore.YELLOW}Running mosdepth to generate per-base coverage data...")
+
+    with spinner("mosdepthinitely in progress...", "mosdepthinitely done "):
+        subprocess.run(cmd, shell=True)
+
     bed_file = f"{mosdepth_prefix}.per-base.bed.gz"
-    print(f"    Mosdepth outputs can be found in: {Fore.YELLOW}{mosdepth_output_dir}/")
 
     return bed_file
-
-
-def check_bam_file_is_indexed(bam_file):
-    if not Path(bam_file + ".bai").is_file():
-        cmd = f"samtools index {bam_file}"
-        subprocess.run(cmd, shell=True)
-        message = """
-                  We indexed the BAM for you. Why? Because it's common courtesy.
-                  All the programs that don't do this for us when it's needed are just big jerks!
-                  """
-        report_message(message, color="orange", initial_indent="    ", subsequent_indent="    ")
 
 
 def generate_output(refs, output_prefix, ref_mean_pids=None, ref_median_pids=None, ref_mapped_counts=None,

@@ -140,6 +140,7 @@ def test_run_cov_analyzer_end_to_end(tmp_path, monkeypatch, per_contig):
         allowed_gap=0,
         buffer=10,
         write_window_stats=True,
+        force_overwrite=True,
         log_file=None,
         full_cmd_executed="pytest-run",
     )

@@ -1,9 +1,15 @@
 import os
 import re
+import shutil
 import sys
 import textwrap
 import csv
+import subprocess
 from importlib.resources import files
+from contextlib import contextmanager
+import itertools
+import threading
+import time
 from pathlib import Path
 from importlib.metadata import version
 import urllib.request
@@ -83,9 +89,19 @@ def check_files_are_found(paths_list):
             notify_premature_exit()
 
 
+def check_if_output_dir_exists(output_dir, force_overwrite=False):
+    if Path(output_dir).is_dir():
+        if not force_overwrite:
+            print(f"\n    {color_text(f'Output directory already exists: {output_dir}', 'yellow')}")
+            print("\n    Please specify a different output directory or add the `-F/--force-overwrite` flag.")
+            notify_premature_exit()
+        else:
+            shutil.rmtree(output_dir)
+
+
 def notify_premature_exit():
     print("\n  Exiting for now :(\n")
-    sys.exit(1)
+    sys.exit(0)
 
 
 def tee(msg, log_path, end="\n"):
@@ -176,3 +192,47 @@ def report_version():
     today = datetime.today().strftime('%A')
     signoff = f"Happy {today} :)"
     print(f"                                                   {color_text(signoff,'green')}\n")
+
+
+@contextmanager
+def spinner(in_progress_msg, complete_msg):
+    """Show a spinner while a block runs; report elapsed time only if >= 60 s."""
+    done = threading.Event()
+    elapsed = [0.0]
+
+    def spin():
+        for char in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
+            if done.is_set():
+                break
+            sys.stderr.write(f"\r    {char} {in_progress_msg}")
+            sys.stderr.flush()
+            time.sleep(0.1)
+        if elapsed[0] >= 10:
+            mins, secs = divmod(int(elapsed[0]), 60)
+            time_str = f"(took ~{mins} min and {secs} sec)"
+        else:
+            time_str = ""
+        sys.stderr.write(f"\r    ✔ {complete_msg}{time_str}          \n")
+        sys.stderr.flush()
+        time.sleep(0.1)
+
+    t = threading.Thread(target=spin)
+    t.start()
+    start_time = time.monotonic()
+    try:
+        yield
+    finally:
+        elapsed[0] = time.monotonic() - start_time
+        done.set()
+        t.join()
+
+
+def check_bam_file_is_indexed(bam_file):
+    if not Path(bam_file + ".bai").is_file():
+        cmd = f"samtools index {bam_file}"
+        subprocess.run(cmd, shell=True)
+        message = """
+                  We indexed the BAM for you. Why? Because it's common courtesy.
+                  All the programs that don't do this for us when it's needed are just big jerks!
+                  """
+        report_message(message, color="orange", initial_indent="    ", subsequent_indent="    ")

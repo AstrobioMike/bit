@@ -1,17 +1,17 @@
 import sys
 import argparse
 from bit.modules.get_cov_stats import get_cov_stats
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_force, add_help
 from bit.modules.general import report_message, notify_premature_exit, is_gzipped
+
 
 def build_parser():
 
     desc = """
-        This script generates whole-reference (and contig-level) detection and coverage info
-        for specified references given the input reference fasta(s) and a bam file AND/OR
-        a mosdepth-produced per-base.bed.gz file. When provided a bam file, it will also report
-        mean and median percent ID values of mapped reads to each input reference and contig. For version
-        info, run `bit-version`.
+        This script generates whole-reference and contig-level detection and coverage info
+        given the input reference fasta(s) and a bam file AND/OR a mosdepth-produced per-base.bed.gz file.
+        If providing a bam file, it will also report mean and median percent ID values of mapped reads to
+        each input reference and contig. For version info, run `bit-version`.
         """
 
     parser = argparse.ArgumentParser(
@@ -28,7 +28,7 @@ def build_parser():
         "-r",
         "--reference-fastas",
         metavar="<STR>",
-        help='Path to reference fasta file(s) (takes precendence over -R/[cyan]--reference-list[/] if both provided) OR',
+        help='Path to reference fasta file(s) (this takes precedence over -R/[cyan]--reference-list[/] if both provided) OR',
         nargs="+",
     )
 
@@ -57,8 +57,8 @@ def build_parser():
         "-o",
         "--output-prefix",
         metavar="<STR>",
-        help='Name of the output prefix (default: "coverage-stats")',
-        default="coverage-stats",
+        help='Name of the output prefix (default: "cov-stats")',
+        default="cov-stats",
     )
 
     optional.add_argument(
@@ -68,11 +68,18 @@ def build_parser():
     )
 
     optional.add_argument(
-    "--include-non-primary",
-    action="store_true",
-    help="Include secondary and supplementary alignments in the percent ID calculations, and run mosdepth with '--flag 1540' set",
+        "--include-non-primary",
+        action="store_true",
+        help="Include secondary and supplementary alignments in the percent ID calculations (if being done), and run mosdepth with '--flag 1540' set",
     )
 
+    optional.add_argument(
+        "--skip-read-pids",
+        action="store_true",
+        help="Skip calculating mean and median percent ID values of mapped reads to each input reference and contig (can save spacetime)",
+    )
+
+    add_force(optional)
     add_help(optional)
 
     return parser
