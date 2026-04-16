@@ -431,9 +431,7 @@ def filter_nonATGCs_from_low_merged_regions(reference_fasta, low_merged_regions)
 
 def linguistic_complexity(seq, k=3):
     """
-    a metric of complexity following same princple of dustmasker
-
-    we get the ration of observed unique k-mers to the max possible unique k-mers in the seq
+    we get the ratio of observed unique k-mers to the max possible unique k-mers in the seq
     """
     seq = seq.upper()
     n = len(seq)
