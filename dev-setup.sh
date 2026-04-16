@@ -5,7 +5,7 @@
 if [ "${CONDA_DEFAULT_ENV}" != "bit-dev" ]; then
     printf "\n    This should be run in the 'bit-dev' conda environment..\n"
     printf "    You know this, Mike...\n\n"
-    exit 1
+    return 1 2>/dev/null || exit 1
 fi
 
 rm -rf build/ bit.egg-info/
