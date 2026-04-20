@@ -22,6 +22,9 @@
 ### Changed
 - removed `bit-gff-to-anvio`, that is now just stored as a gist here: https://gist.github.com/AstrobioMike/45e10adb3eaceb338a7eb10f49038355
 - removed `bit-split-multifasta`, that is now just stored as a gist here: https://gist.github.com/AstrobioMike/28cae086241bc0d68e05c215acd91a69
+- `bit-get-cov-stats`
+  - now just called `bit-cov-stats`
+  - output *-per-ref.tsv now includes "length" and "num_contigs" columns
 
 
 ---

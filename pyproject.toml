@@ -34,7 +34,7 @@ bit-update-ncbi-taxonomy = "bit.modules.ncbi.get_ncbi_tax_data:main"
 
 ## coverage / mapping ##
 bit-cov-analyzer = "bit.cli.cov_analyzer:main"
-bit-get-cov-stats = "bit.cli.get_cov_stats:main"
+bit-cov-stats = "bit.cli.cov_stats:main"
 bit-get-mapped-reads-pid = "bit.cli.get_mapped_reads_pid:main"
 
 ## sequence utilities ##

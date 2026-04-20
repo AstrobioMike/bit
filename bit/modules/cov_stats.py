@@ -278,17 +278,20 @@ def generate_output(refs, output_prefix, ref_mean_pids=None, ref_median_pids=Non
                     contigs=None, contig_mean_pids=None, contig_median_pids=None, contig_mapped_counts=None,
                     skip_per_contig=False):
 
+
     primary_out_path = f"{output_prefix}-per-ref.tsv"
 
     with open(primary_out_path, "w") as f:
 
-        cols = ["ref", "detection", "detection_at_10x", "mean_coverage", "median_coverage"]
+        cols = ["ref", "length", "num_contigs", "detection", "detection_at_10x", "mean_coverage", "median_coverage"]
         if ref_mean_pids is not None:
             cols.extend(["mean_pid", "median_pid", "num_mapped_reads"])
         f.write("\t".join(cols) + "\n")
 
         for ref in refs:
             detection, detection_at_10x, mean_coverage, median_coverage = ref.stats.compute_metrics()
+            ref_length = ref.stats.length
+            num_contigs = len(ref.headers)
 
             if ref_mean_pids is not None:
                 mean_pid = ref_mean_pids.get(ref.path)
@@ -296,9 +299,9 @@ def generate_output(refs, output_prefix, ref_mean_pids=None, ref_median_pids=Non
                 mapped_reads = ref_mapped_counts.get(ref.path, 0)
                 mean_pid_str = "NA" if mean_pid is None else f"{mean_pid}"
                 median_pid_str = "NA" if median_pid is None else f"{median_pid}"
-                f.write(f"{ref.path}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\t{mean_pid_str}\t{median_pid_str}\t{mapped_reads:,}\n")
+                f.write(f"{ref.path}\t{ref_length}\t{num_contigs}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\t{mean_pid_str}\t{median_pid_str}\t{mapped_reads:,}\n")
             else:
-                f.write(f"{ref.path}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\n")
+                f.write(f"{ref.path}\t{ref_length}\t{num_contigs}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\n")
 
     print(f"\n\n  Ref-level coverage stats written to: {Fore.YELLOW}{primary_out_path}")
 

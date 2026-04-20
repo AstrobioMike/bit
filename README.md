@@ -46,7 +46,7 @@ Some of the helper programs/scripts in _bit_ include:
 | `bit-mutate-seqs` | introduce point mutations (substitutions/indels) in nucleotide or amino acid fasta files |  
 | `bit-gen-reads` | quickly generate reads from fasta files in desired proportions |  
 | `bit-cov-analyzer` | analyze coverage patterns by providing a bam file and reference fasta to identify regions of relatively higher or lower coverage |  
-| `bit-get-cov-stats` | get detection, coverage, and mean percent ID information for a single or multiple references given the fasta(s) and a bam file |  
+| `bit-cov-stats` | get detection, coverage, and mean percent ID information for a single or multiple references given the fasta(s) and a bam file |  
 | `bit-get-mapped-reads-pid` | get percent ID information for mapped reads in a bam file |  
 | `bit-ez-screen` | search for nucleotide targets in nucleotide input fastas based on blast, or in reads based on mapping, filtered based on tunable target-coverage and percent-ID thresholds and summarized in a simple table |  
 | `bit-normalize-table` | normalize a table to counts- or coverage-per million (CPM) or with the median-ratio method from DESeq2 (allowing for floats) |  

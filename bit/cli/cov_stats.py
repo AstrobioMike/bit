@@ -1,6 +1,6 @@
 import sys
 import argparse
-from bit.modules.get_cov_stats import get_cov_stats
+from bit.modules.cov_stats import get_cov_stats
 from bit.cli.common import CustomRichHelpFormatter, add_force, add_help
 from bit.modules.general import report_message, notify_premature_exit, is_gzipped
 
@@ -16,7 +16,7 @@ def build_parser():
 
     parser = argparse.ArgumentParser(
         description=desc,
-        epilog="Ex. usage: `bit-get-cov-stats -r reference.fasta -b mapping.bam` or `bit-get-cov-stats -r reference.fasta --bed per-base.bed.gz`",
+        epilog="Ex. usage: `bit-cov-stats -r reference.fasta -b mapping.bam` or `bit-cov-stats -r reference.fasta --bed per-base.bed.gz`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

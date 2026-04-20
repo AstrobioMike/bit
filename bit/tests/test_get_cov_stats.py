@@ -1,7 +1,7 @@
 from pathlib import Path
-import pytest
+import pytest # type: ignore
 from collections import defaultdict
-from bit.modules.get_cov_stats import CoverageStats
+from bit.modules.cov_stats import CoverageStats
 from bit.modules.general import get_package_path
 from bit.tests.utils import run_cli
 
@@ -12,7 +12,7 @@ def test_get_cov_stats(tmp_path):
     out_prefix = tmp_path / "cov-stats"
 
     cmd = [
-        "bit-get-cov-stats",
+        "bit-cov-stats",
         "-r", str(test_fasta_path),
         "-b", str(test_bam_path),
         "-o", str(out_prefix),
@@ -24,14 +24,16 @@ def test_get_cov_stats(tmp_path):
     assert ref_summary_tsv.exists(), f"Coverage stats TSV not found at {ref_summary_tsv}"
 
     observed = ref_summary_tsv.read_text().splitlines()
-    expected_header = "ref\tdetection\tdetection_at_10x\tmean_coverage\tmedian_coverage\tmean_pid\tmedian_pid\tnum_mapped_reads"
+    expected_header = "ref\tlength\tnum_contigs\tdetection\tdetection_at_10x\tmean_coverage\tmedian_coverage\tmean_pid\tmedian_pid\tnum_mapped_reads"
     assert observed[0] == expected_header, f"Header does not match expected:\n{observed[0]}\nExpected:\n{expected_header}"
 
     fields = observed[1].split("\t")
-    assert len(fields) == 8, f"Unexpected number of columns:\n{fields}"
+    assert len(fields) == 10, f"Unexpected number of columns:\n{fields}"
 
-    ref, detection, detection10x, mean_cov, median_cov, mean_pid, median_pid, num_mapped_reads = fields
+    ref, length, num_contigs, detection, detection10x, mean_cov, median_cov, mean_pid, median_pid, num_mapped_reads = fields
     assert ref.endswith("ez-screen-assembly.fasta"), f"Unexpected ref path: {ref}"
+    assert int(length) == 3010
+    assert int(num_contigs) == 1
     assert float(detection) == pytest.approx(0.87, rel=1e-3)
     assert float(detection10x) == pytest.approx(0.0, rel=1e-1)
     assert float(mean_cov) == pytest.approx(1.99, rel=1e-1)
