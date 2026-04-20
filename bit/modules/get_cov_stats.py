@@ -1,0 +1,341 @@
+import os
+import shutil
+import subprocess
+import gzip
+from pathlib import Path
+from dataclasses import dataclass, field
+import pyfastx #type: ignore
+from collections import defaultdict
+from colorama import Fore, init #type: ignore
+from tqdm import tqdm #type: ignore
+from bit.modules.general import check_files_are_found, check_bam_file_is_indexed, spinner
+from bit.modules.get_mapped_reads_pid import get_per_contig_pid_stats, PidStats
+
+
+init(autoreset=True)
+
+
+def get_cov_stats(args):
+
+    preflight_checks(args)
+
+    refs, contigs, header_to_ref_dict = parse_refs(args.reference_fastas, args.skip_per_contig)
+
+    (ref_mean_pids, ref_median_pids, ref_mapped_counts,
+     contig_mean_pids, contig_median_pids, contig_mapped_counts) = compute_pid_stats(args.bam, refs, contigs,
+                                                                 args.include_non_primary,
+                                                                 args.skip_per_contig, args.skip_read_pids)
+
+    bed = args.bed if args.bed else run_mosdepth(args.bam, args.output_prefix, args.include_non_primary)
+
+    refs = parse_bed_file(refs, bed, contigs, header_to_ref_dict)
+
+    generate_output(refs, args.output_prefix, ref_mean_pids, ref_median_pids, ref_mapped_counts,
+                    contigs, contig_mean_pids, contig_median_pids, contig_mapped_counts, args.skip_per_contig)
+
+
+def preflight_checks(args):
+
+    paths_list = list(args.reference_fastas)
+    if args.bed:
+        paths_list.append(args.bed)
+    if args.bam:
+        paths_list.append(args.bam)
+    check_files_are_found(paths_list)
+
+
+@dataclass
+class CoverageStats:
+    length: int = 0
+    total_coverage_count: int = 0
+    total_bases_detected_at_all: int = 0
+    total_bases_detected_at_10x: int = 0
+    depth_hist: dict = field(default_factory=lambda: defaultdict(int))
+
+    def update_from_bed_line(self, span, num_reads):
+        self.total_coverage_count += num_reads * span
+        if num_reads > 0:
+            self.total_bases_detected_at_all += span
+        if num_reads >= 10:
+            self.total_bases_detected_at_10x += span
+
+        self.depth_hist[num_reads] += span
+
+    def compute_metrics(self):
+        if self.length == 0:
+            return 0.0, 0.0, 0.0
+        detection = round(self.total_bases_detected_at_all / self.length, 2)
+        detection_at_10x = round(self.total_bases_detected_at_10x / self.length, 2)
+        mean_coverage = round(self.total_coverage_count / self.length, 2)
+        median_coverage = self._median_from_hist()
+
+        return detection, detection_at_10x, mean_coverage, median_coverage
+
+    def _median_from_hist(self):
+        if self.length == 0:
+            return 0.0
+
+        # getting two (possible) middle indices
+        i1 = (self.length - 1) // 2
+        i2 = self.length // 2
+
+        # handling potential missing bases as 0s
+        total_counted = sum(self.depth_hist.values())
+        needed_extra_zeros = self.length - total_counted
+
+        cumulative_count = 0
+        v1 = v2 = None
+
+        depths = sorted(self.depth_hist)
+        if 0 not in self.depth_hist:
+            depths = [0] + depths
+
+        for depth in depths:
+            count = self.depth_hist[depth]
+
+            if depth == 0:
+                count += needed_extra_zeros
+
+            next_cumulative_count = cumulative_count + count
+
+            if v1 is None and i1 < next_cumulative_count:
+                v1 = depth
+            if v2 is None and i2 < next_cumulative_count:
+                v2 = depth
+                break
+
+            cumulative_count = next_cumulative_count
+
+        return round((float(v1) + float(v2)) / 2.0, 2)
+
+
+@dataclass
+class ContigData:
+    path: str
+    header: str
+    stats: CoverageStats = field(default_factory=CoverageStats)
+
+
+@dataclass
+class RefData:
+    path: str
+    headers: set = field(default_factory=set)
+    contig_order: list = field(default_factory=list)
+    stats: CoverageStats = field(default_factory=CoverageStats)
+
+
+def parse_refs(reference_fastas, skip_per_contig=False):
+
+    print(f"\n  {Fore.YELLOW}Parsing input reference(s)...")
+
+    refs = []
+    contigs_dict = {}
+    header_to_ref_dict = {}
+
+    with spinner("", ""):
+        for fasta in reference_fastas:
+            ref = RefData(fasta)
+            fxi_path = fasta + ".fxi"
+            fxi_existed = os.path.exists(fxi_path)
+            fa = pyfastx.Fasta(fasta)
+            for seq in fa:
+                name = seq.name
+                seq_len = len(seq)
+                ref.headers.add(name)
+                ref.contig_order.append(name)
+                ref.stats.length += seq_len
+                if not skip_per_contig:
+                    contigs_dict[name] = ContigData(path=fasta, header=name, stats=CoverageStats(length=seq_len))
+                header_to_ref_dict[name] = ref
+            refs.append(ref)
+            # clean up pyfastx index file if we created it
+            if not fxi_existed and os.path.exists(fxi_path):
+                os.remove(fxi_path)
+
+    return refs, contigs_dict, header_to_ref_dict
+
+
+def compute_pid_stats(bam_path, refs, contigs_dict, include_non_primary=False, skip_per_contig=False, skip_read_pids=False):
+
+    if not bam_path or skip_read_pids:
+        return None, None, None, None, None, None
+
+    print(f"\n  {Fore.YELLOW}Computing PID stats for mapped reads...")
+
+    with spinner("", ""):
+        try:
+            # single-pass BAM scan that builds per-contig PidStats directly
+            contig_pid_stats = get_per_contig_pid_stats(bam_path, include_non_primary)
+        except Exception:
+            return None, None, None, None, None, None
+
+        contig_mean_pids = {}
+        contig_median_pids = {}
+        contig_mapped_counts = {}
+
+        if not skip_per_contig:
+            for contig_name in contigs_dict.keys():
+                if contig_name in contig_pid_stats:
+                    stats = contig_pid_stats[contig_name]
+                    contig_mapped_counts[contig_name] = stats.count
+                    contig_mean_pids[contig_name] = round(stats.mean, 2) if stats.count > 0 else None
+                    contig_median_pids[contig_name] = round(stats.median, 2) if stats.count > 0 else None
+                else:
+                    contig_mapped_counts[contig_name] = 0
+                    contig_mean_pids[contig_name] = None
+                    contig_median_pids[contig_name] = None
+
+        ref_mean_pids = {}
+        ref_median_pids = {}
+        ref_mapped_counts = {}
+
+        for ref in refs:
+            ref_pid_stats = PidStats()
+            for contig_name in ref.headers:
+                if contig_name in contig_pid_stats:
+                    ref_pid_stats.merge(contig_pid_stats[contig_name])
+
+            ref_mapped_counts[ref.path] = ref_pid_stats.count
+            ref_mean_pids[ref.path] = round(ref_pid_stats.mean, 2) if ref_pid_stats.count > 0 else None
+            ref_median_pids[ref.path] = round(ref_pid_stats.median, 2) if ref_pid_stats.count > 0 else None
+
+    return ref_mean_pids, ref_median_pids, ref_mapped_counts, contig_mean_pids, contig_median_pids, contig_mapped_counts
+
+
+def parse_bed_file(refs, bed_file, contigs, header_to_ref_dict):
+
+    print(f"\n  {Fore.YELLOW}Processing coverage data...")
+
+    lookup = {}
+    for header, ref in header_to_ref_dict.items():
+        contig_stats = contigs[header].stats if header in contigs else None
+        lookup[header] = (contig_stats, ref.stats)
+
+    # using pigz for parallel decompression on larger files (>200 MB)
+    use_pigz = os.path.getsize(bed_file) > 200 * 1024 * 1024
+
+    if use_pigz:
+        proc = subprocess.Popen(
+            ["pigz", "-dc", bed_file],
+            stdout=subprocess.PIPE,
+            text=True,
+            bufsize=1024 * 1024,
+        )
+        line_iter = proc.stdout
+    else:
+        proc = None
+        line_iter = gzip.open(bed_file, "rt")
+
+    try:
+
+        for line in tqdm(line_iter, ncols=74, unit=" lines", leave=True, bar_format="    Processed: {n:,} lines [{elapsed}, {rate_fmt}]"):
+            fields = line.split("\t")
+            header = fields[0]
+            span = int(fields[2]) - int(fields[1])
+            n_reads = int(fields[3])
+
+            entry = lookup.get(header)
+            if entry is not None:
+                contig_stats, ref_stats = entry
+                if contig_stats is not None:
+                    contig_stats.update_from_bed_line(span, n_reads)
+                ref_stats.update_from_bed_line(span, n_reads)
+
+    finally:
+        if proc is not None:
+            proc.stdout.close()
+            proc.wait()
+        else:
+            line_iter.close()
+
+    return refs
+
+
+def run_mosdepth(bam_file, output_prefix, include_non_primary):
+
+    check_bam_file_is_indexed(bam_file)
+
+    mosdepth_output_dir = f"{output_prefix}-mosdepth-files"
+    if Path(mosdepth_output_dir).is_dir():
+        shutil.rmtree(mosdepth_output_dir)
+    mosdepth_prefix = str(Path(mosdepth_output_dir) / Path(bam_file).stem)
+    os.makedirs(mosdepth_output_dir, exist_ok=True)
+    if include_non_primary:
+        cmd = f"mosdepth -x --flag 1540 {mosdepth_prefix} {bam_file}"
+    else:
+        cmd = f"mosdepth -x {mosdepth_prefix} {bam_file}"
+    print(f"\n  {Fore.YELLOW}Running mosdepth to generate per-base coverage data...")
+
+    with spinner("mosdepthinitely in progress...", "mosdepthinitely done "):
+        subprocess.run(cmd, shell=True)
+
+    bed_file = f"{mosdepth_prefix}.per-base.bed.gz"
+
+    return bed_file
+
+
+def generate_output(refs, output_prefix, ref_mean_pids=None, ref_median_pids=None, ref_mapped_counts=None,
+                    contigs=None, contig_mean_pids=None, contig_median_pids=None, contig_mapped_counts=None,
+                    skip_per_contig=False):
+
+
+    primary_out_path = f"{output_prefix}-per-ref.tsv"
+
+    with open(primary_out_path, "w") as f:
+
+        cols = ["ref", "length", "num_contigs", "detection", "detection_at_10x", "mean_coverage", "median_coverage"]
+        if ref_mean_pids is not None:
+            cols.extend(["mean_pid", "median_pid", "num_mapped_reads"])
+        f.write("\t".join(cols) + "\n")
+
+        for ref in refs:
+            detection, detection_at_10x, mean_coverage, median_coverage = ref.stats.compute_metrics()
+            ref_length = ref.stats.length
+            num_contigs = len(ref.headers)
+
+            if ref_mean_pids is not None:
+                mean_pid = ref_mean_pids.get(ref.path)
+                median_pid = ref_median_pids.get(ref.path)
+                mapped_reads = ref_mapped_counts.get(ref.path, 0)
+                mean_pid_str = "NA" if mean_pid is None else f"{mean_pid}"
+                median_pid_str = "NA" if median_pid is None else f"{median_pid}"
+                f.write(f"{ref.path}\t{ref_length}\t{num_contigs}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\t{mean_pid_str}\t{median_pid_str}\t{mapped_reads:,}\n")
+            else:
+                f.write(f"{ref.path}\t{ref_length}\t{num_contigs}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\n")
+
+    print(f"\n\n  Ref-level coverage stats written to: {Fore.YELLOW}{primary_out_path}")
+
+    if not skip_per_contig:
+
+        contig_out_path = f"{output_prefix}-per-contig.tsv"
+
+        with open(contig_out_path, "w") as cf:
+
+            cols = ["ref", "contig", "length", "detection", "detection_at_10x", "mean_coverage", "median_coverage"]
+
+            if contig_mean_pids is not None:
+                cols.extend(["mean_pid", "median_pid", "num_mapped_reads"])
+            cf.write("\t".join(cols) + "\n")
+
+            written_contigs = set()
+            for ref in sorted(refs, key=lambda r: r.path):
+                for contig_name in ref.contig_order:
+                    if contig_name not in contigs:
+                        continue
+                    contig_data = contigs[contig_name]
+                    detection, detection_at_10x, mean_coverage, median_coverage = contig_data.stats.compute_metrics()
+
+                    if contig_mean_pids is not None:
+                        mean_pid = contig_mean_pids.get(contig_name)
+                        median_pid = contig_median_pids.get(contig_name)
+                        mapped_reads = contig_mapped_counts.get(contig_name, 0)
+                        mean_pid_str = "NA" if mean_pid is None else f"{mean_pid}"
+                        median_pid_str = "NA" if median_pid is None else f"{median_pid}"
+                        cf.write(f"{contig_data.path}\t{contig_name}\t{contig_data.stats.length}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\t{mean_pid_str}\t{median_pid_str}\t{mapped_reads:,}\n")
+                    else:
+                        cf.write(f"{contig_data.path}\t{contig_name}\t{contig_data.stats.length}\t{detection}\t{detection_at_10x}\t{mean_coverage}\t{median_coverage}\n")
+                    written_contigs.add(contig_name)
+
+        print(f"  Contig-level coverage stats written to: {Fore.YELLOW}{contig_out_path}")
+
+        print()

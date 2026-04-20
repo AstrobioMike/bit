@@ -207,7 +207,7 @@ def spinner(in_progress_msg, complete_msg):
             sys.stderr.write(f"\r    {char} {in_progress_msg}")
             sys.stderr.flush()
             time.sleep(0.1)
-        if elapsed[0] >= 10:
+        if elapsed[0] >= 60:
             mins, secs = divmod(int(elapsed[0]), 60)
             time_str = f"(took ~{mins} min and {secs} sec)"
         else:

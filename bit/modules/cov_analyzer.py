@@ -85,6 +85,13 @@ def run_cov_analyzer(
         low_merged_regions = annotate_low_complexity(reference_fasta, low_merged_regions)
         zero_merged_regions = annotate_low_complexity(reference_fasta, zero_merged_regions)
 
+        for df in [high_merged_regions, low_merged_regions, zero_merged_regions]:
+            df.insert(1, "contig_length", df["contig"].map(contig_lengths))
+
+        # high_merged_regions["contig_length"] = high_merged_regions["contig"].map(contig_lengths)
+        # low_merged_regions["contig_length"] = low_merged_regions["contig"].map(contig_lengths)
+        # zero_merged_regions["contig_length"] = zero_merged_regions["contig"].map(contig_lengths)
+
     report_message("Generating outputs...")
     with spinner("", ""):
         old_stdout = sys.stdout
@@ -343,7 +350,7 @@ class CoverageStats:
 
     def _summarize_region(self, contig, start, end, covs):
         "helper to compute the summary metrics given a list of window coverages"
-        region_length = end - start
+        length = end - start
         region_mean_cov = float(np.mean(covs))
 
         if self.per_contig:
@@ -367,7 +374,7 @@ class CoverageStats:
         nobody_likes_zero = 1e-6
         log2_fold_diff = float(np.log2((region_mean_cov + nobody_likes_zero) / (baseline_mean + nobody_likes_zero)))
 
-        return (contig, start, end, region_length, region_mean_cov, percentile, zscore, signed_fold_diff, fold_diff, log2_fold_diff)
+        return (contig, start, end, length, region_mean_cov, percentile, zscore, signed_fold_diff, fold_diff, log2_fold_diff)
 
 
 def filter_nonATGCs_from_low_merged_regions(reference_fasta, low_merged_regions):
