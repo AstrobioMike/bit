@@ -10,9 +10,8 @@ def main():
 
     desc = """
         This script generates perfect (no error model) reads in FASTQ format from one or
-        multiple input FASTA files. Use --type to select paired-end (default), single-end,
-        or long reads. See `bit-mutate-seqs` if wanting to introduce variation to a fasta
-        prior to read-generation. For version info, run `bit-version`.
+        multiple input FASTA files. See `bit-mutate-seqs` if wanting to introduce variation
+        to a fasta prior to read-generation. For version info, run `bit-version`.
         """
 
     parser = argparse.ArgumentParser(
@@ -65,16 +64,26 @@ def main():
         default=None,
     )
     general.add_argument(
+        "-c",
+        "--coverage",
+        metavar="<INT or FILE>",
+        help="Wanted coverage(s). This can be just an integer if wanting the same coverage for \
+              all input fasta files, or a coverages file (tab-delimited) specifying wanted \
+              coverages per input fasta (1st column should be path to input fasta; 2nd column \
+              should be wanted coverage for each input). This overrides the --num-reads option. \
+              Cannot be combined with the --proportions-file option.",
+    )
+    general.add_argument(
         "-p",
         "--proportions-file",
         metavar="<FILE>",
-        help="Proportions file (tab-delimited) specifying read proportions per input fasta \
+        help="Proportions file (tab-delimited) specifying read-proportions per input fasta \
               (1st column should be path to input fasta; 2nd column should be wanted \
               proportion for each input with the total summing to one). If not provided, \
-              equal proportions are assumed.",
+              equal proportions are assumed. Cannot be combined with the --coverage option.",
     )
     general.add_argument(
-        "-c",
+        "-C",
         "--circularize",
         help="Treat input contigs as circular and allow fragments that span the end-to-start \
               boundary to be generated. (You probably don't want this if your inputs include \
@@ -84,7 +93,7 @@ def main():
     )
     general.add_argument(
         "--include-Ns",
-        help="By default, regions with Ns are skipped. Provide this flag to generate reads that will include Ns.",
+        help="By default, regions with Ns are skipped. Provide this flag to generate reads that might include Ns.",
         action="store_true",
         default=False,
     )

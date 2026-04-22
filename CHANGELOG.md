@@ -13,11 +13,11 @@
 
 -->
 
-## v1.16.0 (NOT YET RELEASED)
+## v1.16.0 (22-Apr-2026)
 ### Added
 - setup for argcomplete during conda install for commands with subcommands
 - added flag `--skip-read-pids` to `bit-cov-stats` so user can save time if they don't want that info
-
+- added coverage options to `bit-gen-reads` for easier generation of desired coverages than the read-proportions method allowed
 
 ### Changed
 - removed `bit-gff-to-anvio`, that is now just stored as a gist here: https://gist.github.com/AstrobioMike/45e10adb3eaceb338a7eb10f49038355
@@ -27,6 +27,8 @@
   - output *-per-ref.tsv now includes "length" and "num_contigs" columns
 - `bit-cov-analyzer`
   - added "contig_length" column to output tsvs
+- `bit-gen-reads`
+  - `-c` changed to `--coverage` and now `-C` is for `--cirulcarize`
 
 ---
 

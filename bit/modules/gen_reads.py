@@ -20,6 +20,13 @@ def preflight_checks(args):
 
     missing_files = [f for f in args.input_fastas if not os.path.exists(f)]
 
+    if args.coverage:
+        try:
+            float(args.coverage)
+        except ValueError:
+            if not os.path.exists(args.coverage):
+                missing_files.append(args.coverage)
+
     if args.proportions_file and not os.path.exists(args.proportions_file):
         missing_files.append(args.proportions_file)
 
@@ -28,15 +35,89 @@ def preflight_checks(args):
         print("\n    Exiting for now :(\n")
         sys.exit(1)
 
+    if args.proportions_file and args.coverage:
+        print("\n    Cannot use both `--proportions-file` and `--coverage` options together.")
+        print("\n    Exiting for now :(\n")
+        sys.exit(1)
+
+
 def get_proportions(args):
+
+    if args.coverage:
+        return compute_reads_from_coverage(args)
 
     proportions = parse_proportions_file(args.proportions_file, args.input_fastas)
 
     for fasta_file in args.input_fastas:
         if fasta_file not in proportions:
-            raise ValueError(f"{fasta_file} is not specified in the proportions file.")
+            print(f"\n   {fasta_file} is not specified in the proportions file.")
+            print("\n    Exiting for now :(\n")
+            sys.exit(1)
 
     return proportions
+
+
+def compute_reads_from_coverage(args):
+
+    coverages = parse_coverages_input(args.coverage, args.input_fastas)
+
+    for fasta_file in args.input_fastas:
+        if fasta_file not in coverages:
+            print(f"\n    {fasta_file} is not specified in the coverage file.")
+            print("\n    Exiting for now :(\n")
+            sys.exit(1)
+
+    # compute reads needed per genome: coverage * genome_size / read_length
+    reads_per_file = {}
+
+    for fasta_file in args.input_fastas:
+        genome_size = sum(len(record.seq) for record in SeqIO.parse(fasta_file, "fasta"))
+
+        if args.type == "paired-end":
+            # each fragment produces 2 reads, so reads needed = 2 * fragments needed
+            # fragments needed = coverage * genome_size / fragment_size
+            reads_per_file[fasta_file] = round(2 * coverages[fasta_file] * genome_size / args.fragment_size)
+        else:
+            reads_per_file[fasta_file] = round(coverages[fasta_file] * genome_size / args.read_length)
+
+    total_reads = sum(reads_per_file.values())
+
+    if total_reads == 0:
+        print("\n    Processing the coverage file resulted in 0 total reads. Check coverage values and genome sizes.")
+        print("\n    Exiting for now :(\n")
+        sys.exit(1)
+
+    # override num_reads with computed total
+    args.num_reads = total_reads
+
+    # print(f"\n    Coverage mode: generating {total_reads:,} total reads across {len(args.input_fastas)} input file(s).")
+
+    # return proportions derived from the per-file read counts
+    proportions = {fasta_file: reads / total_reads for fasta_file, reads in reads_per_file.items()}
+
+    return proportions
+
+
+def parse_coverages_input(coverage_input, input_fastas):
+
+    try:
+        coverage_value = float(coverage_input)
+        return {fasta_file: coverage_value for fasta_file in input_fastas}
+
+    except ValueError:
+        pass
+
+    coverages = {}
+
+    with open(coverage_input, 'r') as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            fasta_file, coverage = line.split('\t')
+            coverages[fasta_file] = float(coverage)
+
+    return coverages
 
 
 def parse_proportions_file(proportions_file, input_fastas):

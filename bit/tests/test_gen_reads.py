@@ -9,7 +9,8 @@ from bit.tests.utils import run_cli
 from bit.modules.gen_reads import (gen_paired_reads,
                                    gen_single_reads,
                                    get_proportions,
-                                   extract_subsequence)
+                                   extract_subsequence,
+                                   parse_coverages_input)
 
 
 test_fasta = get_package_path("tests/data/ez-screen-assembly.fasta")
@@ -100,6 +101,7 @@ def test_wrapped_fragments_generated_with_circularize(tmp_path):
     args = Namespace(
         input_fastas=[str(fasta)],
         proportions_file=None,
+        coverage=None,
         seed=9,
         num_reads=20,
         fragment_size=6,
@@ -173,6 +175,7 @@ def test_simulate_single_end_reads_unit(tmp_path):
     args = Namespace(
         input_fastas=[str(fasta)],
         proportions_file=None,
+        coverage=None,
         seed=42,
         num_reads=5,
         read_length=8,
@@ -215,6 +218,7 @@ def test_long_reads_variable_length(tmp_path):
     args = Namespace(
         input_fastas=[str(fasta)],
         proportions_file=None,
+        coverage=None,
         seed=42,
         num_reads=100,
         read_length=1000,
@@ -298,7 +302,7 @@ def test_extract_subsequence_skips_Ns():
 
 
 def test_extract_subsequence_includes_Ns_when_flagged():
-    """With include_Ns=True, reads may contain Ns."""
+
     import random
     random.seed(0)
 
@@ -312,7 +316,6 @@ def test_extract_subsequence_includes_Ns_when_flagged():
 
 
 def test_gen_paired_reads_skips_Ns(tmp_path):
-    """Paired-end reads from a mixed sequence should not contain Ns by default."""
 
     fasta = tmp_path / "contig.fasta"
     # 20-char clean regions on each side so all fragment sizes (7-9) fit cleanly
@@ -323,6 +326,7 @@ def test_gen_paired_reads_skips_Ns(tmp_path):
     args = Namespace(
         input_fastas=[str(fasta)],
         proportions_file=None,
+        coverage=None,
         seed=42,
         num_reads=20,
         fragment_size=8,
@@ -341,3 +345,181 @@ def test_gen_paired_reads_skips_Ns(tmp_path):
         seqs = lines[1::4]
         for s in seqs:
             assert 'N' not in s, f"Found N in {suffix} read when include_Ns=False: {s}"
+
+
+def test_parse_coverages_input_single_value():
+
+    input_fastas = ["a.fasta", "b.fasta", "c.fasta"]
+    result = parse_coverages_input("50", input_fastas)
+
+    assert result == {"a.fasta": 50.0, "b.fasta": 50.0, "c.fasta": 50.0}
+
+
+def test_parse_coverages_input_float_value():
+
+    input_fastas = ["a.fasta"]
+    result = parse_coverages_input("10.5", input_fastas)
+
+    assert result == {"a.fasta": 10.5}
+
+
+def test_parse_coverages_input_tsv(tmp_path):
+
+    cov_file = tmp_path / "coverages.tsv"
+    cov_file.write_text("a.fasta\t100\nb.fasta\t50\n")
+
+    result = parse_coverages_input(str(cov_file), ["a.fasta", "b.fasta"])
+
+    assert result == {"a.fasta": 100.0, "b.fasta": 50.0}
+
+
+def test_coverage_mode_paired_end(tmp_path):
+
+    fasta = tmp_path / "genome.fasta"
+    # 1000-bp genome, 100x coverage, fragment_size=500
+    # fragments needed = 100 * 1000 / 500 = 200, reads = 400
+    _write_fasta(fasta, "contig1", "ACGT" * 250)
+
+    out_prefix = tmp_path / "cov_pe"
+    args = Namespace(
+        input_fastas=[str(fasta)],
+        proportions_file=None,
+        coverage="100",
+        seed=42,
+        num_reads=1000000,  # should be overridden
+        fragment_size=500,
+        fragment_size_range=10,
+        read_length=150,
+        output_prefix=str(out_prefix),
+        circularize=False,
+        include_Ns=False,
+        type="paired-end",
+    )
+
+    proportions = get_proportions(args)
+
+    assert args.num_reads == 400, f"Expected 400 reads, got {args.num_reads}"
+    assert proportions[str(fasta)] == pytest.approx(1.0)
+
+
+def test_coverage_mode_single_end(tmp_path):
+
+    fasta = tmp_path / "genome.fasta"
+    # 1000-bp genome, 50x coverage, read_length=100
+    # reads needed = 50 * 1000 / 100 = 500
+    _write_fasta(fasta, "contig1", "ACGT" * 250)
+
+    out_prefix = tmp_path / "cov_se"
+    args = Namespace(
+        input_fastas=[str(fasta)],
+        proportions_file=None,
+        coverage="50",
+        seed=42,
+        num_reads=1000000,  # should be overridden
+        read_length=100,
+        output_prefix=str(out_prefix),
+        circularize=False,
+        include_Ns=False,
+        type="single-end",
+    )
+
+    proportions = get_proportions(args)
+
+    assert args.num_reads == 500, f"Expected 500 reads, got {args.num_reads}"
+    assert proportions[str(fasta)] == pytest.approx(1.0)
+
+
+def test_coverage_mode_multiple_genomes(tmp_path):
+
+    fasta_a = tmp_path / "big.fasta"
+    fasta_b = tmp_path / "small.fasta"
+    _write_fasta(fasta_a, "big", "ACGT" * 500)    # 2000 bp
+    _write_fasta(fasta_b, "small", "ACGT" * 125)   # 500 bp
+
+    args = Namespace(
+        input_fastas=[str(fasta_a), str(fasta_b)],
+        proportions_file=None,
+        coverage="100",
+        seed=42,
+        num_reads=1000000,
+        read_length=100,
+        output_prefix=str(tmp_path / "cov_multi"),
+        circularize=False,
+        include_Ns=False,
+        type="single-end",
+    )
+
+    proportions = get_proportions(args)
+
+    # big genome: 100 * 2000 / 100 = 2000 reads
+    # small genome: 100 * 500 / 100 = 500 reads
+    # total = 2500
+    assert args.num_reads == 2500, f"Expected 2500 reads, got {args.num_reads}"
+    assert proportions[str(fasta_a)] == pytest.approx(0.8)
+    assert proportions[str(fasta_b)] == pytest.approx(0.2)
+
+
+def test_coverage_cli_paired_end(tmp_path):
+
+    shutil.copy(test_fasta, tmp_path / "input.fasta")
+
+    cmd = [
+        "bit-gen-reads",
+        "-i", str(tmp_path / "input.fasta"),
+        "-o", str(tmp_path / "cov-reads"),
+        "-c", "10",
+        "-r", "10",
+        "-f", "20",
+        "-s", "1",
+    ]
+
+    run_cli(cmd)
+
+    R1_path = tmp_path / "cov-reads_R1.fastq.gz"
+    R2_path = tmp_path / "cov-reads_R2.fastq.gz"
+    assert R1_path.exists(), f"R1 file not found at {R1_path}"
+    assert R2_path.exists(), f"R2 file not found at {R2_path}"
+
+
+def test_coverage_cli_single_end(tmp_path):
+
+    shutil.copy(test_fasta, tmp_path / "input.fasta")
+
+    cmd = [
+        "bit-gen-reads",
+        "-i", str(tmp_path / "input.fasta"),
+        "-o", str(tmp_path / "cov-se-reads"),
+        "-c", "10",
+        "-r", "10",
+        "--type", "single-end",
+        "-s", "1",
+    ]
+
+    run_cli(cmd)
+
+    se_path = tmp_path / "cov-se-reads.fastq.gz"
+    assert se_path.exists(), f"Single-end file not found at {se_path}"
+
+
+def test_coverage_tsv_cli(tmp_path):
+
+    shutil.copy(test_fasta, tmp_path / "input.fasta")
+
+    cov_file = tmp_path / "coverages.tsv"
+    cov_file.write_text(f"{str(tmp_path / 'input.fasta')}\t5\n")
+
+    cmd = [
+        "bit-gen-reads",
+        "-i", str(tmp_path / "input.fasta"),
+        "-o", str(tmp_path / "cov-tsv-reads"),
+        "-c", str(cov_file),
+        "-r", "10",
+        "-s", "1",
+    ]
+
+    run_cli(cmd)
+
+    R1_path = tmp_path / "cov-tsv-reads_R1.fastq.gz"
+    R2_path = tmp_path / "cov-tsv-reads_R2.fastq.gz"
+    assert R1_path.exists(), f"R1 file not found at {R1_path}"
+    assert R2_path.exists(), f"R2 file not found at {R2_path}"
