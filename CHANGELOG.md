@@ -11,6 +11,15 @@
 
 ---
 
+## v1.16.1 (NOT YET RELEASED)
+
+### Added
+
+### Changed
+
+
+---
+
 -->
 
 ## v1.16.0 (22-Apr-2026)
@@ -28,7 +37,12 @@
 - `bit-cov-analyzer`
   - added "contig_length" column to output tsvs
 - `bit-gen-reads`
-  - `-c` changed to `--coverage` and now `-C` is for `--cirulcarize`
+  - `-c` now corresponds to `--coverage` and `-C` is for `--circularize`
+
+### Fixed
+- `bit-gen-reads`
+  - if generating paired-end reads with a fragment size shorter than the read size, the appropriate length quality scores are now output
+
 
 ---
 

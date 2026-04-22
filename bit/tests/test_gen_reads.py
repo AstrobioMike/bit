@@ -376,8 +376,10 @@ def test_parse_coverages_input_tsv(tmp_path):
 def test_coverage_mode_paired_end(tmp_path):
 
     fasta = tmp_path / "genome.fasta"
-    # 1000-bp genome, 100x coverage, fragment_size=500
-    # fragments needed = 100 * 1000 / 500 = 200, reads = 400
+    # 1000-bp genome, 100x coverage, fragment_size=500, read_length=150
+    # bases_per_fragment = min(2*150, 500) = 300
+    # fragments needed = 100 * 1000 / 300 = 333 (rounded)
+    # reads = 2 * 333 = 666
     _write_fasta(fasta, "contig1", "ACGT" * 250)
 
     out_prefix = tmp_path / "cov_pe"
@@ -398,7 +400,7 @@ def test_coverage_mode_paired_end(tmp_path):
 
     proportions = get_proportions(args)
 
-    assert args.num_reads == 400, f"Expected 400 reads, got {args.num_reads}"
+    assert args.num_reads == 666, f"Expected 666 reads, got {args.num_reads}"
     assert proportions[str(fasta)] == pytest.approx(1.0)
 
 

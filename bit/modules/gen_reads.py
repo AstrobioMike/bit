@@ -4,6 +4,7 @@ import os
 import sys
 import subprocess
 from tqdm import tqdm # type: ignore
+from bit.modules.general import color_text
 
 def generate_reads(args):
 
@@ -74,9 +75,9 @@ def compute_reads_from_coverage(args):
         genome_size = sum(len(record.seq) for record in SeqIO.parse(fasta_file, "fasta"))
 
         if args.type == "paired-end":
-            # each fragment produces 2 reads, so reads needed = 2 * fragments needed
-            # fragments needed = coverage * genome_size / fragment_size
-            reads_per_file[fasta_file] = round(2 * coverages[fasta_file] * genome_size / args.fragment_size)
+            bases_per_fragment = min(2 * args.read_length, args.fragment_size)
+            fragments_needed = round(coverages[fasta_file] * genome_size / bases_per_fragment)
+            reads_per_file[fasta_file] = 2 * fragments_needed
         else:
             reads_per_file[fasta_file] = round(coverages[fasta_file] * genome_size / args.read_length)
 
@@ -90,7 +91,7 @@ def compute_reads_from_coverage(args):
     # override num_reads with computed total
     args.num_reads = total_reads
 
-    # print(f"\n    Coverage mode: generating {total_reads:,} total reads across {len(args.input_fastas)} input file(s).")
+    print(f"\n    {color_text('Running in coverage-specified mode:', 'yellow')} making {total_reads:,} total reads from {len(args.input_fastas)} input file(s)")
 
     # return proportions derived from the per-file read counts
     proportions = {fasta_file: reads / total_reads for fasta_file, reads in reads_per_file.items()}
@@ -211,7 +212,7 @@ def gen_paired_reads(args, proportions):
 
             for record in SeqIO.parse(fasta_file, "fasta"):
                 seq_id = record.id
-                sequence = str(record.seq)
+                sequence = str(record.seq).upper()
                 seq_length = len(sequence)
 
                 exact = (seq_length / total_length) * num_fragments * proportions[fasta_file] + remainder
@@ -227,18 +228,19 @@ def gen_paired_reads(args, proportions):
                     forward_read = fragment[:args.read_length]
                     reverse_read = fragment[-args.read_length:][::-1].translate(str.maketrans("ACGT", "TGCA"))
 
-                    quality_scores = "I" * args.read_length
+                    fwd_quality_scores = "I" * len(forward_read)
+                    rev_quality_scores = "I" * len(reverse_read)
 
                     read_count += 1
                     fw.write(f"@{seq_id}_{read_count}_{start}/1\n")
                     fw.write(f"{forward_read}\n")
                     fw.write(f"+\n")
-                    fw.write(f"{quality_scores}\n")
+                    fw.write(f"{fwd_quality_scores}\n")
 
                     rw.write(f"@{seq_id}_{read_count}_{start}/2\n")
                     rw.write(f"{reverse_read}\n")
                     rw.write(f"+\n")
-                    rw.write(f"{quality_scores}\n")
+                    rw.write(f"{rev_quality_scores}\n")
 
                 reads_remaining = reads_remaining - entry_reads
                 if reads_remaining <= 0:
