@@ -8,12 +8,13 @@ if [ "${CONDA_DEFAULT_ENV}" != "bit-dev" ]; then
     return 1 2>/dev/null || exit 1
 fi
 
+## the below should be handled by conftest.py now
 # if coverage isn't tracking properly, i may need to set this variable to point at the .coveragerc on whatever system i am working on, e.g.:
 # export COVERAGE_PROCESS_START=/Users/michael.lee/Documents/github/bit/.coveragerc
-if [[ -z "$COVERAGE_PROCESS_START" ]]; then
-    conda env config vars set COVERAGE_PROCESS_START="/Users/michael.lee/Documents/github/bit/.coveragerc" --name bit-dev > /dev/null 2>&1
-    cda bit-dev
-fi
+# if [[ -z "$COVERAGE_PROCESS_START" ]]; then
+#     conda env config vars set COVERAGE_PROCESS_START="/Users/michael.lee/Documents/github/bit/.coveragerc" --name bit-dev > /dev/null 2>&1
+#     cda bit-dev
+# fi
 
 rm -rf build/ bit.egg-info/
 
