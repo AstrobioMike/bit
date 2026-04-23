@@ -11,16 +11,24 @@
 
 ---
 
-## v1.16.1 (NOT YET RELEASED)
+## v1.XX.X (NOT YET RELEASED)
 
 ### Added
 
 ### Changed
 
-
 ---
 
 -->
+
+## v1.16.1 (NOT YET RELEASED)
+
+### Added
+
+### Changed
+- `bit-gen-reads` fragment size and long-read read lengths are now pulled from a normal distribution rather than uniform
+
+---
 
 ## v1.16.0 (22-Apr-2026)
 ### Added

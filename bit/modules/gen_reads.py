@@ -221,7 +221,9 @@ def gen_paired_reads(args, proportions):
 
                 # generate paired-end reads
                 for _ in range(entry_reads):
-                    frag_len = min(random.randint(min_frag, max_frag), seq_length)
+
+                    frag_len = min(max(min_frag, round(random.gauss(args.fragment_size, args.fragment_size * pct / 3))), max_frag)
+                    frag_len = min(frag_len, seq_length)
 
                     fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize, args.include_Ns)
 
@@ -256,7 +258,10 @@ def gen_paired_reads(args, proportions):
         if reads_remaining > 0 and sequence:
 
             for _ in range(reads_remaining):
-                frag_len = min(random.randint(min_frag, max_frag), seq_length)
+
+                frag_len = min(max(min_frag, round(random.gauss(args.fragment_size, args.fragment_size * pct / 3))), max_frag)
+                frag_len = min(frag_len, seq_length)
+
                 fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize, args.include_Ns)
 
                 forward_read = fragment[:args.read_length]
@@ -309,7 +314,8 @@ def gen_single_reads(args, proportions):
                 for _ in range(entry_reads):
 
                     if args.type == "long":
-                        read_len = min(random.randint(min_len, max_len), seq_length)
+                        read_len = min(max(min_len, round(random.gauss(args.read_length, args.read_length * pct / 3))), max_len)
+                        read_len = min(read_len, seq_length)
                     else:
                         read_len = min(args.read_length, seq_length)
 
@@ -338,7 +344,8 @@ def gen_single_reads(args, proportions):
 
             for _ in range(reads_remaining):
                 if args.type == "long":
-                    read_len = min(random.randint(min_len, max_len), seq_length)
+                    read_len = min(max(min_len, round(random.gauss(args.read_length, args.read_length * pct / 3))), max_len)
+                    read_len = min(read_len, seq_length)
                 else:
                     read_len = min(args.read_length, seq_length)
 
