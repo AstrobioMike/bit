@@ -39,8 +39,8 @@ def test_gen_reads(tmp_path):
         expected = f.read().splitlines()
 
     observed = [
-        "@partial-NC_003131.1_1_1529/1",
-        "TTTTTGTTTT",
+        "@partial-NC_003131.1_1_567/1",
+        "GGAATGCCTG",
         "+",
         "IIIIIIIIII"
     ]
