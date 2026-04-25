@@ -90,7 +90,7 @@ def build_parser():
         add_help=False
     )
 
-    by_headers_required = by_headers_parser.add_argument_group("Required Parameters (choose one of `--headers` or `--file-with-headers)")
+    by_headers_required = by_headers_parser.add_argument_group("Required Parameters (choose one of `--headers` or `--file-with-headers`)")
     by_headers_optional = by_headers_parser.add_argument_group("Optional Parameters")
 
     add_common_required_arguments(by_headers_required)
