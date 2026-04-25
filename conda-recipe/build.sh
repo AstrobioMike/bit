@@ -25,5 +25,5 @@ echo 'export NCBI_assembly_data_dir=${CONDA_PREFIX}/share/bit/ncbi-assembly-summ
 "${PYTHON}" -m pip install . --no-deps --ignore-installed -vv
 
 # copying over the bit-activate.sh script
-mkdir -p ${CONDA_PREFIX}/etc/conda/activate.d/
-cp ${RECIPE_DIR}/bit-activate.sh ${CONDA_PREFIX}/etc/conda/activate.d/
+mkdir -p ${PREFIX}/etc/conda/activate.d/
+cp ${RECIPE_DIR}/bit-subcommands-tab-completion.sh ${PREFIX}/etc/conda/activate.d/

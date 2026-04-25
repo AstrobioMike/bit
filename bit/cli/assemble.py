@@ -1,16 +1,16 @@
 import sys
 import argparse
 from pathlib import Path
-from rich_argparse import RawTextRichHelpFormatter
+from rich_argparse import RawTextRichHelpFormatter # type: ignore
 from bit.cli.common import (wrap_help,
                             wrap_multiline_help,
                             add_help,
                             add_common_snakemake_arguments,
                             reconstruct_invocation)
 from bit.modules.general import report_message, notify_premature_exit
-from bit.modules.assemble import run_assembly
 
 RawTextRichHelpFormatter.group_name_formatter = lambda name: "Usage" if name.lower() == "usage" else name
+
 
 def build_parser():
 
@@ -119,6 +119,7 @@ def build_parser():
 
 
 def main():
+
     parser = build_parser()
     if len(sys.argv) == 1:  # pragma: no cover
         parser.print_help(sys.stderr)
@@ -131,6 +132,8 @@ def main():
     args = check_other_settings(args)
 
     full_cmd_executed = reconstruct_invocation(parser, args)
+
+    from bit.modules.assemble import run_assembly
 
     run_assembly(args, full_cmd_executed)
 
