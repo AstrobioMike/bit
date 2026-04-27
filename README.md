@@ -17,6 +17,13 @@
 
 ---
 
+## NOTE
+**bit is undergoing some changes, and some programs are being renamed and/or grouped into single programs with subcommands for organizational purposes. If you can't find something you are looking for, check in the [CHANGELOG.md](CHANGELOG.md), or post an issue asking :)** 
+
+P.S. - Sorry for doing this without a major version incremenent. I started small and it kind of spiraled, and now I'm waiting until it's all done ¯\\\_(ツ)\_/¯
+
+---
+
 ## Overview 
 There are of course several great and widely used packages of bioinformatics helper programs out there. Some of these include the likes of [seqkit](https://github.com/shenwei356/seqkit), [seqtk](https://github.com/lh3/seqtk), [fastX-toolkit](http://hannonlab.cshl.edu/fastx_toolkit/), and [bbtools](https://jgi.doe.gov/data-and-tools/bbtools/) – all of which I use regularly and have helped me do things I was trying to get done. But there are always more tasks that crop up that may not yet have a helper program or script already written that we can find.  
 

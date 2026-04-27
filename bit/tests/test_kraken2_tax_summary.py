@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np
 import pytest
-from bit.modules import kraken2_to_taxon_summaries as k
+from bit.modules import kraken2_tax_summary as k
 
 
 @pytest.fixture

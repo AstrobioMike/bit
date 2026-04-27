@@ -76,8 +76,9 @@ bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
 
 
 ## kraken2/bracken helpers ##
-bit-gen-kraken2-tax-plots = "bit.cli.gen_kraken2_tax_plots:main"
-bit-kraken2-to-taxon-summaries = "bit.cli.kraken2_to_taxon_summaries:main"
+bit-kraken2-tax-plots = "bit.cli.kraken2_tax_plots:main"
+bit-kraken2-tax-summary = "bit.cli.kraken2_tax_summary:main"
+bit-kraken2-combine-tax-summaries = "bit.cli.kraken2_combine_tax_summaries:main"
 # bit-combine-bracken-and-add-lineages
 
 

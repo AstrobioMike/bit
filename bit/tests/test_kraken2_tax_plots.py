@@ -1,12 +1,12 @@
 from pathlib import Path
-import pandas as pd
-import pytest
-from bit.modules import gen_kraken2_tax_plots as g
+import pandas as pd # type: ignore
+import pytest # type: ignore
+from bit.modules import kraken2_tax_plots as g
 
 
 @pytest.fixture(autouse=True)
 def _use_non_gui_matplotlib(monkeypatch):
-    import matplotlib
+    import matplotlib # type: ignore
     matplotlib.use("Agg", force=True)
     calls = []
     def fake_savefig(path, *a, **k):

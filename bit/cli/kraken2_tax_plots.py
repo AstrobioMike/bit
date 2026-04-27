@@ -72,6 +72,6 @@ def main():
 
     args = parser.parse_args()
 
-    from bit.modules.gen_kraken2_tax_plots import gen_kraken2_tax_plots
+    from bit.modules.kraken2_tax_plots import gen_kraken2_tax_plots
 
     gen_kraken2_tax_plots(args.input_kraken, args.output_prefix, args.max_taxa, args.min_percent, args.no_annots)

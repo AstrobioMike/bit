@@ -46,6 +46,6 @@ def main():
 
     args = parser.parse_args()
 
-    from bit.modules.kraken2_to_taxon_summaries import kraken2_to_taxon_summaries
+    from bit.modules.kraken2_tax_summary import kraken2_to_taxon_summaries
 
     kraken2_to_taxon_summaries(args.input_report, args.output_tsv)
