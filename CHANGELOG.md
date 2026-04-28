@@ -31,7 +31,10 @@
 - `bit-gen-reads` fragment size and long-read read lengths are now pulled from a normal distribution rather than uniform
 - `bit-gen-kraken2-tax-plots` changed to `bit-kraken2-tax-plots`
 - `bit-kraken2-to-taxon-summaries` changed to `bit-kraken2-tax-summary`
-- `bit-combine-kraken2-taxon-summaries` changed to `bit-kraken2-combine-tax-summaries`, and modularized
+- `bit-combine-kraken2-taxon-summaries`
+  - changed to `bit-kraken2-combine-tax-summaries`
+  - `-n`, `--sample-names` now taken as a space-delimited list instead of a comma-delimited list (to match how input files are taken)
+
 
 ---
 

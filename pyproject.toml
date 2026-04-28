@@ -80,13 +80,24 @@ bit-kraken2-tax-plots = "bit.cli.kraken2_tax_plots:main"
 bit-kraken2-tax-summary = "bit.cli.kraken2_tax_summary:main"
 bit-kraken2-combine-tax-summaries = "bit.cli.kraken2_combine_tax_summaries:main"
 # bit-combine-bracken-and-add-lineages
-
+    # maybe put these all under bit-kraken2 with subcommands:
+        # tax-plots
+        # tax-summary
+        # combine-tax-summaries
+        # combine-bracken-and-add-lineages
 
 ## Gene Ontology (GO) helpers ##
 # update-go-dbs
 # bit-summarize-go-annotations
 # bit-slim-down-go-terms
 # bit-get-go-term-info
+    # maybe put these all under bit-go with subcommands:
+        # summarize-annotations
+        # slim-down-terms
+        # get-term-info
+
+    # update-go-dbs would be packed with my bit-data program with its own subcommad there
+
 
 ## iToL helpers ##
 # bit-gen-iToL-binary-dataset
@@ -94,7 +105,7 @@ bit-kraken2-combine-tax-summaries = "bit.cli.kraken2_combine_tax_summaries:main"
 # bit-gen-iToL-map
 # bit-gen-iToL-text-dataset
     # probably make a sub-command setup for these if i'm keeping them here
-    # (they are probably better suited solely in gtotree)
+    # (they are also probably better suited solely in gtotree)
 
 
 ## genbank manipulations ##
@@ -110,7 +121,7 @@ bit-genbank = "bit.cli.genbank:main"
     # bit-data
         # locations
             # check/set
-        # get
+        # get (get or update)
             # ncbi-assembly-data
             # ncbi-tax-data
             # go-dbs

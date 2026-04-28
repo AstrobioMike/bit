@@ -26,7 +26,7 @@ def build_parser():
     required.add_argument(
         "-i",
         "--input-files",
-        metavar="<FILE>(s)",
+        metavar="<FILE>",
         nargs="+",
         help="Spade-delimited list of `bit-kraken2-tax-summary` output files, can be provided with shell wildcards",
         required=True
@@ -35,8 +35,9 @@ def build_parser():
     optional.add_argument(
         "-n",
         "--sample-names",
-        metavar="<NAME>(s)",
-        help='Sample names provided as a comma-delimited list, be sure it matches the order of the input files (by default will use basename of input files up to last period)',
+        metavar="<NAME>",
+        nargs="+",
+        help='Space-delimited list of wanted sample names. Be sure it matches the order of the input files (by default will use basename of input files up to last period)',
         default=''
     )
 
@@ -88,7 +89,7 @@ def preflight_checks(args):
     else:
 
         # checking if sample names provided the length equals the number of input files
-        if len(args.sample_names.split(",")) != len(args.input_files):
+        if len(args.sample_names) != len(args.input_files):
             report_message("\n    It seems the number of provided sample names doesn't match the number of provided input files :(")
             report_message("\n    Check usage with `bit-kraken2-combine-tax-summaries -h`.\n")
             notify_premature_exit()
@@ -97,7 +98,7 @@ def preflight_checks(args):
         # setting iterator
         i = 0
 
-        for curr_sample in args.sample_names.split(","):
+        for curr_sample in args.sample_names:
 
             all_samples[args.input_files[i]] = curr_sample
             i += 1
