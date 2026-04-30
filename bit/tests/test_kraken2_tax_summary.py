@@ -1,6 +1,6 @@
-import pandas as pd
-import numpy as np
-import pytest
+import pandas as pd # type: ignore
+import numpy as np # type: ignore
+import pytest # type: ignore
 from bit.modules import kraken2_tax_summary as k
 
 
@@ -120,20 +120,20 @@ def test_sort_df_custom_groups_and_stability():
     assert list(out["taxid"]) == [0, 2, 4, 5, 3]
 
 
-def test_kraken2_to_taxon_summaries_writes_tsv(tmp_path, report_min, monkeypatch):
-    # avoid touching the filesystem checker in unit tests
-    monkeypatch.setattr(k, "check_files_are_found", lambda paths: None)
+def test_kraken2_tax_summary_writes_tsv(tmp_path, report_min, monkeypatch):
+    monkeypatch.setattr("bit.modules.general.check_files_are_found", lambda paths: None)
 
     out = tmp_path / "summary.tsv"
-    k.kraken2_to_taxon_summaries(str(report_min), str(out))
+    input_map = {str(report_min): "sample"}
+    k.kraken2_tax_summary(input_map, str(out))
 
     assert out.exists()
 
     df = pd.read_csv(out, sep="\t")
-    expected_cols = ["taxid"] + k.STD_RANKS + ["read_counts", "percent_of_reads"]
+    expected_cols = ["taxid"] + k.STD_RANKS + ["sample_read_counts", "sample_perc_of_reads"]
     assert list(df.columns) == expected_cols
     assert (df["taxid"] == 0).any()
-    assert df["percent_of_reads"].map(lambda x: isinstance(x, float)).all()
+    assert df["sample_perc_of_reads"].map(lambda x: isinstance(x, float)).all()
 
 
 def test_parse_report_ignores_blank_and_handles_U_and_R1(tmp_path):
@@ -150,13 +150,6 @@ def test_parse_report_ignores_blank_and_handles_U_and_R1(tmp_path):
     assert (df["taxid"] == 0).any()
     gen = df[df["taxid"] == 9].iloc[0]
     assert gen["domain"] == "Bacteria"
-
-
-def test_preflight_checks_calls_validator(monkeypatch):
-    called = {}
-    monkeypatch.setattr(k, "check_files_are_found", lambda paths: called.setdefault("ok", paths))
-    k.preflight_checks("abc.txt")
-    assert "ok" in called and called["ok"] == ["abc.txt"]
 
 
 def test_parse_report_line_bad_line_uses_report_failure(monkeypatch):

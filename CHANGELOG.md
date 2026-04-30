@@ -34,6 +34,10 @@
 - `bit-combine-kraken2-taxon-summaries`
   - changed to `bit-kraken2-combine-tax-summaries`
   - `-n`, `--sample-names` now taken as a space-delimited list instead of a comma-delimited list (to match how input files are taken)
+- `bit-kraken2-to-taxon-summaries` has been replaced with `bit-kraken2-tax-summary`
+- `bit-kraken2-combine-tax-summaries` removed, `bit-kraken2-tax-summary` automatically does this now, and can take multiple input reports
+- `bit-combine-bracken-and-add-lineage` removed, bracken reports are also done by `bit-kraken2-tax-summary` now
+  - as a result of this, like the lineage-building from kraken2 reports, this builds them based on what's in the report rather than based on taxids and new lookups. This ensures the output lineages will match the state of the taxonomy when kraken2/bracken was run (as it's only pulling from the report itself)
 
 
 ---

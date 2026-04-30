@@ -1,8 +1,9 @@
 #!/usr/bin/env python
-import pandas as pd
-import numpy as np
+import os
+import pandas as pd # type: ignore
+import numpy as np # type: ignore
 import re
-from bit.modules.general import check_files_are_found, report_failure
+from bit.modules.general import report_failure
 
 
 RANK_MAP = {
@@ -18,17 +19,48 @@ RANK_MAP = {
 STD_RANKS = ['domain','phylum','class','order','family','genus','species']
 
 
-def kraken2_to_taxon_summaries(input_report, output_tsv):
+def kraken2_tax_summary(input_map, output_tsv):
 
-    preflight_checks(input_report)
-    df = parse_report(input_report)
-    df = refine_df(df)
-    df.to_csv(output_tsv, sep='\t', index=False, float_format="%.2f")
+    sample_tables = {}
+
+    for report, sample in input_map.items():
+        df = parse_report(report)
+        df = refine_df(df)
+        sample_tables[sample] = df
+
+    combined_df = combine_tax_summaries(sample_tables)
+    combined_df.to_csv(output_tsv, sep='\t', index=False)
 
 
-def preflight_checks(input_report):
+def combine_tax_summaries(sample_tables):
+    # sample_tables: dict of {sample_name: table}
+    # each table has columns: taxid, domain, ..., species, read_counts, percent_of_reads
+    taxid_dict = {}
+    building_tab = pd.DataFrame(columns=["taxid"])
 
-    check_files_are_found([input_report])
+    for sample, curr_tab in sample_tables.items():
+        # adding to building taxid dictionary
+        for _, row in curr_tab.iterrows():
+            taxid = row['taxid']
+            if taxid not in taxid_dict:
+                taxid_dict[taxid] = {r: row[r] for r in STD_RANKS}
+
+        curr_sub_tab = curr_tab[["taxid", "read_counts", "percent_of_reads"]].copy()
+        curr_sub_tab.columns = [
+            "taxid",
+            f"{sample}_read_counts",
+            f"{sample}_perc_of_reads"
+        ]
+        building_tab = building_tab.merge(curr_sub_tab, on="taxid", how="outer")
+
+    building_tab = building_tab.fillna(0)
+    taxid_df = pd.DataFrame.from_dict(taxid_dict, orient="index")
+    taxid_df.reset_index(inplace=True)
+    taxid_df.rename(columns={'index': 'taxid'}, inplace=True)
+    final_tab = taxid_df.merge(building_tab, on="taxid", how="outer")
+    final_tab.sort_values(by=["taxid"], inplace=True)
+    final_tab = final_tab.fillna("NA")
+    return final_tab
 
 
 def parse_report(input_report):

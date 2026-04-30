@@ -78,13 +78,10 @@ bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
 ## kraken2/bracken helpers ##
 bit-kraken2-tax-plots = "bit.cli.kraken2_tax_plots:main"
 bit-kraken2-tax-summary = "bit.cli.kraken2_tax_summary:main"
-bit-kraken2-combine-tax-summaries = "bit.cli.kraken2_combine_tax_summaries:main"
-# bit-combine-bracken-and-add-lineages
     # maybe put these all under bit-kraken2 with subcommands:
         # tax-plots
         # tax-summary
-        # combine-tax-summaries
-        # combine-bracken-and-add-lineages
+
 
 ## Gene Ontology (GO) helpers ##
 # update-go-dbs
