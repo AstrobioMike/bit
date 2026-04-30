@@ -5,7 +5,7 @@ import requests # type: ignore
 from dataclasses import dataclass
 from tqdm import tqdm # type: ignore
 from bit.modules.general import (color_text, check_files_are_found,
-                                 attempt_to_make_dir, report_message)
+                                 attempt_to_make_dir)
 from bit.modules.ncbi.parse_ncbi_assembly_summary import parse_ncbi_assembly_summary
 from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data
 
