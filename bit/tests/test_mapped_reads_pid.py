@@ -1,4 +1,4 @@
-import pysam
+import pysam # type: ignore
 from bit.modules.mapped_reads_pid import (get_mapped_reads_pids,
                                               get_summary_stats,
                                               PidStats)
