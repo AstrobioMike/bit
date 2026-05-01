@@ -9,7 +9,7 @@ from collections import defaultdict
 from colorama import Fore, init #type: ignore
 from tqdm import tqdm #type: ignore
 from bit.modules.general import check_files_are_found, check_bam_file_is_indexed, spinner
-from bit.modules.get_mapped_reads_pid import get_per_contig_pid_stats, PidStats
+from bit.modules.mapped_reads_pid import get_per_contig_pid_stats, PidStats
 
 
 init(autoreset=True)

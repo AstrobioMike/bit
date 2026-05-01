@@ -23,12 +23,19 @@
 
 -->
 
-## v1.XX.X (NOT YET RELEASED)
+## vX.XX.X (NOT YET RELEASED)
 
 ### Added
+- `bit-itol` with subcommands for
+  - `binary-dataset`
+  - `colorstrip`
+  - `map`
+  - `text-dataset`
 
 ### Changed
 - `bit-gen-reads` fragment size and long-read read lengths are now pulled from a normal distribution rather than uniform
+- - `bit-get-mapped-reads-pid` has been renamed to just `bit-mapped-reads-pid`
+- `bit-colnames` can also just accept stdin now
 - `bit-gen-kraken2-tax-plots` changed to `bit-kraken2-tax-plots`
 - `bit-kraken2-to-taxon-summaries` changed to `bit-kraken2-tax-summary`
 - `bit-combine-kraken2-taxon-summaries`
@@ -38,7 +45,12 @@
 - `bit-kraken2-combine-tax-summaries` removed, `bit-kraken2-tax-summary` automatically does this now, and can take multiple input reports
 - `bit-combine-bracken-and-add-lineage` removed, bracken reports are also done by `bit-kraken2-tax-summary` now
   - as a result of this, like the lineage-building from kraken2 reports, this builds them based on what's in the report rather than based on taxids and new lookups. This ensures the output lineages will match the state of the taxonomy when kraken2/bracken was run (as it's only pulling from the report itself)
-
+- `bit-gen-iToL-binary-dataset` replaced with `bit-itol binary-dataset`
+- `bit-gen-iToL-colorstrip` replaced with `bit-itol colorstrip`
+- `bit-gen-iToL-map` replaced with `bit-itol map`
+- `bit-gen-iToL-text-dataset` replaced with `bit-itol text-dataset`
+- removed `bit-reorder-fasta`, that is now stored as a gist here: https://gist.github.com/AstrobioMike/6b91769ad13305ebd4779873afa9aa1f
+- removed `bit-prot-acc-to-taxid`, that is now stored as a gist here: https://gist.github.com/AstrobioMike/2cc5fd147aa28c2b793c7c664502734d
 
 ---
 

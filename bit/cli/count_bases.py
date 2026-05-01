@@ -28,14 +28,14 @@ def build_parser():
         metavar="<FILE>",
         nargs='?',
         default=sys.stdin,
-        help="Input fasta file or stdin if none provided",
+        help="Input fasta file or stdin if none provided"
     )
 
     optional.add_argument(
         "-o",
         "--output-tsv",
         metavar="<FILE>",
-        help='Name of output tab-delimited file if you want all sequence lengths written out',
+        help='Name of output tab-delimited file if you want all sequence lengths written out'
     )
 
     add_help(optional)

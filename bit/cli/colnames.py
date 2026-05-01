@@ -7,8 +7,8 @@ from bit.cli.common import CustomRichHelpFormatter, add_help
 def build_parser():
 
     desc = """
-        Returns the column names (with numbers) from a delimited file. The
-        delimiter is auto-detected (from tab, comma, pipe, semicolon, or space).
+        Returns the column names (numbered) from a delimited file. The
+        delimiter is auto-detected for tab, comma, pipe, semicolon, or space.
         For version info, run `bit-version`.
     """
 
@@ -25,7 +25,9 @@ def build_parser():
     required.add_argument(
         "input_file",
         metavar="<FILE>",
-        help="Input delimited file"
+        nargs='?',
+        default=sys.stdin,
+        help="Input delimited file or stdin if none provided"
     )
 
     add_help(optional)
@@ -37,13 +39,14 @@ def main(args=None):
 
     parser = build_parser()
 
-    if len(sys.argv) == 1:
+    if len(sys.argv) == 1 and sys.stdin.isatty():
         parser.print_help(sys.stderr)
         sys.exit(0)
 
     args = parser.parse_args(args)
 
-    check_files_are_found([args.input_file])
+    if args.input_file is not sys.stdin:
+        check_files_are_found([args.input_file])
 
     colnames(args)
 

@@ -1,5 +1,5 @@
 import pysam
-from bit.modules.get_mapped_reads_pid import (get_mapped_reads_pids,
+from bit.modules.mapped_reads_pid import (get_mapped_reads_pids,
                                               get_summary_stats,
                                               PidStats)
 

@@ -22,41 +22,55 @@ bit = ["tests/data/*", "smk/*.smk", "smk/envs/*"]
 [project.scripts]
 bit-version = "bit.modules.general:report_version"
 
+
 ## ncbi/GTDB-related ##
-# bit-get-accessions-from-GTDB
-# get-gtdb-metadata
 bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
-get-ncbi-assembly-data = "bit.modules.ncbi.get_ncbi_assembly_data:main"
-get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"
-bit-update-ncbi-taxonomy = "bit.modules.ncbi.get_ncbi_tax_data:main"
+# bit-get-accessions-from-GTDB
 # bit-get-lineage-from-taxids
-# bit-prot-acc-to-taxid
+
 
 ## coverage / mapping ##
 bit-cov-analyzer = "bit.cli.cov_analyzer:main"
 bit-cov-stats = "bit.cli.cov_stats:main"
-bit-get-mapped-reads-pid = "bit.cli.get_mapped_reads_pid:main"
+bit-mapped-reads-pid = "bit.cli.mapped_reads_pid:main"
+
 
 ## sequence utilities ##
+bit-extract-seqs = "bit.cli.extract_seqs:main"
+bit-gen-reads = "bit.cli.gen_reads:main"
+bit-mutate-seqs = "bit.cli.mutate_seqs:main"
 bit-add-insertion = "bit.cli.add_insertion:main"
+
 bit-calc-gc-per-seq = "bit.cli.calc_gc_per_seq:main"
 bit-calc-gc-sliding-window = "bit.cli.calc_gc_sliding_window:main"
 bit-calc-variation-in-msa = "bit.cli.calc_variation_in_msa:main"
-bit-check-fastq-for-dup-headers = "bit.cli.check_fastq_for_dup_headers:main"
 bit-count-bases = "bit.cli.count_bases:main"
 bit-dedupe-fasta-headers = "bit.cli.dedupe_fasta_headers:main"
-bit-extract-seqs = "bit.cli.extract_seqs:main"
-bit-gen-reads = "bit.cli.gen_reads:main"
 bit-fasta-to-bed = "bit.cli.fasta_to_bed:main"
 bit-fasta-to-genbank = "bit.cli.fasta_to_genbank:main"
 bit-filter-fasta-by-length = "bit.cli.filter_fasta_by_length:main"
-bit-mutate-seqs = "bit.cli.mutate_seqs:main"
-# bit-parse-fastq-by-headers
 # bit-remove-wraps
-# bit-reorder-fasta
 # bit-rename-fasta-headers -> bit-simplify-fasta-headers
-# bit-split-multifasta -> move to gist only
 bit-summarize-assembly = "bit.cli.summarize_assembly:main"
+
+    # maybe combine the below with subcommands into bit-fasta
+        # bit-calc-gc-per-seq -> bit-fasta calc-gc (combine per-seq and overall like i did with bit-count-bases)
+        # bit-calc-gc-sliding-window -> bit-fasta calc-gc-sliding-window (maybe combine this with above... would make the help menu a lot messier though if i did)
+        # bit-calc-variation-in-msa -> bit-fasta calc-variation-in-msa
+        # bit-count-bases -> bit-fasta count-bases
+        # bit-dedupe-fasta-headers -> bit-fasta dedupe-headers
+        # bit-fasta-to-bed -> bit-fasta to-bed
+        # bit-fasta-to-genbank -> bit-fasta to-genbank
+        # bit-filter-fasta-by-length -> bit-fasta filter-by-length (or put in bit-extract-seqs as mentioned above)
+        # bit-rename-fasta-headers -> bit-fasta simplify-headers
+        # bit-remove-wraps -> bit-fasta remove-wraps
+        # bit-summarize-assembly -> bit-fasta summarize
+
+
+
+## fastq stuff
+bit-check-fastq-for-dup-headers = "bit.cli.check_fastq_for_dup_headers:main" # maybe move to gist only (need to make it standalone first)
+# bit-parse-fastq-by-headers # can maybe put this in extract-seqs if i don't tie that to bit-fasta (or maybe just make this a gist too, until i add more fastq stuff)
 
 
 ## table utilities ##
@@ -69,7 +83,6 @@ bit-normalize-table = "bit.cli.normalize_table:main"
 ## miscellaneous ##
 bit-assemble = "bit.cli.assemble:main"
 bit-ez-screen = "bit.cli.ez_screen:main"
-bit-data-locations = "bit.cli.data_locations:main"
 bit-get-test-data = "bit.cli.get_test_data:main"
 bit-get-workflow = "bit.cli.get_workflow:main"
 bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
@@ -78,13 +91,12 @@ bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
 ## kraken2/bracken helpers ##
 bit-kraken2-tax-plots = "bit.cli.kraken2_tax_plots:main"
 bit-kraken2-tax-summary = "bit.cli.kraken2_tax_summary:main"
-    # maybe put these all under bit-kraken2 with subcommands:
+    # put these all under bit-kraken2 with subcommands:
         # tax-plots
         # tax-summary
 
 
 ## Gene Ontology (GO) helpers ##
-# update-go-dbs
 # bit-summarize-go-annotations
 # bit-slim-down-go-terms
 # bit-get-go-term-info
@@ -93,32 +105,28 @@ bit-kraken2-tax-summary = "bit.cli.kraken2_tax_summary:main"
         # slim-down-terms
         # get-term-info
 
-    # update-go-dbs would be packed with my bit-data program with its own subcommad there
-
 
 ## iToL helpers ##
-# bit-gen-iToL-binary-dataset
-# bit-gen-iToL-colorstrip
-# bit-gen-iToL-map
-# bit-gen-iToL-text-dataset
-    # probably make a sub-command setup for these if i'm keeping them here
-    # (they are also probably better suited solely in gtotree)
-
+bit-itol = "bit.cli.itol:main"
 
 ## genbank manipulations ##
 bit-genbank = "bit.cli.genbank:main"
 
-
 ## Database related ##
-# get-ncbi-assembly-data = "bit.modules.ncbi.get_ncbi_assembly_data:main"
-# get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"
+bit-data-locations = "bit.cli.data_locations:main"
+get-ncbi-assembly-data = "bit.modules.ncbi.get_ncbi_assembly_data:main" # move to bit-data program eventually
+get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"           # move to bit-data program eventually
+bit-update-ncbi-taxonomy = "bit.modules.ncbi.get_ncbi_tax_data:main"    # move to bit-data program eventually
+    # get-ncbi-tax-data and bit-update-ncbi-taxonomy can probably be combined into below `bit-data get ncbi-tax-data`
+
 # get-go-dbs
 # get-gtdb-metadata
-    # maybe do a subcommand situation for these
+
+    # do a subcommand situation for these
     # bit-data
         # locations
             # check/set
-        # get (get or update)
+        # get (with optional --update flags for all)
             # ncbi-assembly-data
             # ncbi-tax-data
             # go-dbs

@@ -43,7 +43,7 @@ for script in bit/scripts/*; do
 done
 
 # setting up tab-completion for the bit commands with subcommands
-for cmd in bit-extract-seqs bit-ez-screen bit-genbank; do
+for cmd in bit-extract-seqs bit-ez-screen bit-genbank bit-itol; do
     eval "$(register-python-argcomplete "$cmd")"
 done
 

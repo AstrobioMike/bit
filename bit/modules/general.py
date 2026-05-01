@@ -150,8 +150,12 @@ def sniff_delimiter(line):
 
 def colnames(args):
 
-    with open(args.input_file) as f:
-        header_line = f.readline().rstrip('\n\r')
+    input_source = args.input_file
+    if hasattr(input_source, "readline"):
+        header_line = input_source.readline().rstrip('\n\r')
+    else:
+        with open(input_source) as f:
+            header_line = f.readline().rstrip('\n\r')
 
     if not header_line:
         print("  File appears to be empty.", file=sys.stderr)
