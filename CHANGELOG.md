@@ -1,21 +1,14 @@
 # Change Log
 
 <!-- 
-## v (dd-mmm-yyyy)
+
+## vX.XX.X (NOT YET RELEASED)
 
 ### Added
 
 ### Changed
 
 ### Fixed
-
----
-
-## v1.XX.X (NOT YET RELEASED)
-
-### Added
-
-### Changed
 
 ---
 
