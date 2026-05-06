@@ -25,8 +25,8 @@ bit-version = "bit.modules.general:report_version"
 
 ## ncbi/GTDB-related ##
 bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
-# bit-get-accessions-from-GTDB
-# bit-get-lineage-from-taxids
+# bit-get-accessions-from-GTDB -> bit-accessions-from-gtdb
+# bit-get-lineage-from-taxids -> bit-lineage-from-taxids
 
 
 ## coverage / mapping ##
@@ -40,6 +40,7 @@ bit-extract-seqs = "bit.cli.extract_seqs:main"
 bit-gen-reads = "bit.cli.gen_reads:main"
 bit-mutate-seqs = "bit.cli.mutate_seqs:main"
 bit-add-insertion = "bit.cli.add_insertion:main"
+bit-joint-encode = "bit.cli.joint_encode:main"
 
 bit-calc-gc-per-seq = "bit.cli.calc_gc_per_seq:main"
 bit-calc-gc-sliding-window = "bit.cli.calc_gc_sliding_window:main"
@@ -100,7 +101,7 @@ bit-kraken2-tax-summary = "bit.cli.kraken2_tax_summary:main"
 # bit-summarize-go-annotations
 # bit-slim-down-go-terms
 # bit-get-go-term-info
-    # maybe put these all under bit-go with subcommands:
+    # put these all under bit-go with subcommands:
         # summarize-annotations
         # slim-down-terms
         # get-term-info

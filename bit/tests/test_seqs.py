@@ -83,15 +83,7 @@ ATGCATGA
 
     output_file = tmp_path / "variation.tsv"
 
-    # mocking args
-    args = SimpleNamespace(
-        input_alignment_fasta=str(fasta_file),
-        output_tsv=str(output_file),
-        type="DNA",
-        gap_treatment="ignore"
-    )
-
-    df = seqs.calc_variation_in_msa(args)
+    df = seqs.calc_variation_in_msa(str(fasta_file), type="DNA", gap_treatment="ignore")
 
     assert set(df.columns) == {"position", "variation", "conservation"}
     assert len(df) == 8
@@ -114,14 +106,7 @@ acgef
 acdew
 """)
 
-    args = SimpleNamespace(
-        input_alignment_fasta=str(fasta_file),
-        output_tsv=str(tmp_path / "variation.tsv"),
-        type="3Di",
-        gap_treatment="ignore"
-    )
-
-    df = seqs.calc_variation_in_msa(args)
+    df = seqs.calc_variation_in_msa(input_alignment=str(fasta_file), type="3Di", gap_treatment="ignore")
 
     assert set(df.columns) == {"position", "variation", "conservation"}
     assert len(df) == 5

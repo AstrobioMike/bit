@@ -69,5 +69,7 @@ def main():
 
     from bit.modules.seqs import calc_variation_in_msa
 
-    df = calc_variation_in_msa(args)
+    df = calc_variation_in_msa(input_alignment=args.input_alignment_fasta,
+                               type=args.type,
+                               gap_treatment=args.gap_treatment)
     df.to_csv(args.output_tsv, sep="\t", index=False)

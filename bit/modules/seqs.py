@@ -85,7 +85,7 @@ def filter_fasta_by_length(in_fasta, out_fasta, min_length, max_length):
     return (num_initial_seqs, num_seqs_retained, num_initial_bases, num_bases_retained)
 
 
-def calc_variation_in_msa(args):
+def calc_variation_in_msa(input_alignment, type, gap_treatment="include"):
 
     THREEDI_CHARS = set('ACDEFGHIKLMNPQRSTVWY')
 
@@ -109,7 +109,7 @@ def calc_variation_in_msa(args):
 
     SEQUENCE_TYPES = {"DNA": DNA, "Protein": Protein, "3Di": ThreeDi}
 
-    msa = TabularMSA.read(args.input_alignment_fasta, constructor=SEQUENCE_TYPES[args.type], lowercase=True)
+    msa = TabularMSA.read(input_alignment, constructor=SEQUENCE_TYPES[type], lowercase=True)
 
     list_of_cleaned_seqs = []
 
@@ -121,12 +121,27 @@ def calc_variation_in_msa(args):
 
     clean_msa = TabularMSA(list_of_cleaned_seqs)
 
-    conserved = clean_msa.conservation(gap_mode=args.gap_treatment)
+    conserved = clean_msa.conservation(gap_mode=gap_treatment)
     indexes = list(range(1,clean_msa.shape[1] + 1))
 
     df = pd.DataFrame({"position": indexes, "variation":1 - conserved, "conservation": conserved})
 
     return df
+
+
+def get_gap_fracs_per_col(input_alignment):
+    import numpy as np
+
+    seqs = [str(r.seq).upper() for r in SeqIO.parse(input_alignment, "fasta")]
+    if not seqs:
+        return np.array([])
+
+    num_seqs = len(seqs)
+    num_cols = len(seqs[0])
+    gap_fracs = np.array(
+        [sum(1 for seq in seqs if seq[col] in ("-", ".")) / num_seqs for col in range(num_cols)]
+    )
+    return gap_fracs
 
 
 def check_fastq_for_dup_headers(input_fastq):
