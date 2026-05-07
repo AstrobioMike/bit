@@ -19,6 +19,7 @@
 ## vX.XX.X (NOT YET RELEASED)
 
 ### Added
+- `bit-joint-encode`
 - `bit-itol` with subcommands for
   - `binary-dataset`
   - `colorstrip`

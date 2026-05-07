@@ -41,6 +41,8 @@ bit-gen-reads = "bit.cli.gen_reads:main"
 bit-mutate-seqs = "bit.cli.mutate_seqs:main"
 bit-add-insertion = "bit.cli.add_insertion:main"
 bit-joint-encode = "bit.cli.joint_encode:main"
+bit-summarize-assembly = "bit.cli.summarize_assembly:main" # i might want to keep this AND add a bit-fasta version
+
 
 bit-calc-gc-per-seq = "bit.cli.calc_gc_per_seq:main"
 bit-calc-gc-sliding-window = "bit.cli.calc_gc_sliding_window:main"
@@ -52,7 +54,6 @@ bit-fasta-to-genbank = "bit.cli.fasta_to_genbank:main"
 bit-filter-fasta-by-length = "bit.cli.filter_fasta_by_length:main"
 # bit-remove-wraps
 # bit-rename-fasta-headers -> bit-simplify-fasta-headers
-bit-summarize-assembly = "bit.cli.summarize_assembly:main"
 
     # maybe combine the below with subcommands into bit-fasta
         # bit-calc-gc-per-seq -> bit-fasta calc-gc (combine per-seq and overall like i did with bit-count-bases)
@@ -65,7 +66,7 @@ bit-summarize-assembly = "bit.cli.summarize_assembly:main"
         # bit-filter-fasta-by-length -> bit-fasta filter-by-length (or put in bit-extract-seqs as mentioned above)
         # bit-rename-fasta-headers -> bit-fasta simplify-headers
         # bit-remove-wraps -> bit-fasta remove-wraps
-        # bit-summarize-assembly -> bit-fasta summarize
+        # bit-summarize-assembly -> bit-fasta summarize # i might want to also keep this accessible as bit-summarize-assembly
 
 
 
@@ -84,7 +85,7 @@ bit-normalize-table = "bit.cli.normalize_table:main"
 ## miscellaneous ##
 bit-assemble = "bit.cli.assemble:main"
 bit-ez-screen = "bit.cli.ez_screen:main"
-bit-get-test-data = "bit.cli.get_test_data:main"
+bit-get-test-data = "bit.cli.get_test_data:main" # maybe add this as a subcommand to bit-data
 bit-get-workflow = "bit.cli.get_workflow:main"
 bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
 

@@ -8,7 +8,8 @@ def build_parser():
     desc = """
         This program trims and joint encodes a 3di alignment and an amino-acid alignment (that is derived from the 3di alignment).
         It removes columns based on a gap threshold, and it swaps amino-acid characters into the base 3di alignment
-        based on specified column-variability criteria. It produced the joint-encoded alignment and a partitions file.
+        based on specified column-variability criteria (see `bit-calc-variability-is-msa -h` for details on "variability" here).
+        It produces the joint-encoded alignment and a partitions file required for appropriate phylogenetics analysis.
         For version info, run `bit-version`.
         """
 
@@ -53,24 +54,41 @@ def build_parser():
         default=0.5,
     )
     optional.add_argument(
-        "-s",
-        "--swap-3di-variability-threshold",
-        metavar="<FLOAT>",
-        type=float,
-        help="Columns in the 3di alignment with variability <= this value will have their 3di characters swapped to AA characters IF the AA column variability is higher (default: 0.10)",
-        default=0.20,
-    )
-    optional.add_argument(
-        "-t",
-        "--trim-variability-upper-percentile",
+        "--3di-lower-bound",
         metavar="<FLOAT>",
         type=float,
         help="""
-            Columns will be trimmed from the alignment if their variability in 3di space is above this percentile, OR
-            if variability in 3di space is below the `-s` threshold AND their variability in AA space is above this percentile.
-            (default: 95)
+            For a given column, if the variability in 3di space is <= this value,
+            it will be swapped to the corresponding AA character IF the variability
+            in AA space is > the 3di variability AND < the AA-upper-bound.
+            If those conditions are not met, the 3di character will be retained. (default: 0.2)
             """,
-        default=95,
+        default=0.2,
+        dest="threedi_lower_bound"
+    )
+    optional.add_argument(
+        "--3di-upper-bound",
+        metavar="<FLOAT>",
+        type=float,
+        help="""
+            For a given column, if the variability in 3di space is >= this value,
+            it will be swapped to the corresponding AA character IF the variability
+            in AA space is < the AA-upper-bound. If those conditions are not met,
+            the column will be trimmed. (default: 0.7)
+            """,
+        default=0.7,
+        dest="threedi_upper_bound"
+    )
+    optional.add_argument(
+        "--AA-upper-bound",
+        metavar="<FLOAT>",
+        type=float,
+        help="""
+            For a given column, when an amino-acid character is being considered to replace a 3di
+            character, it must have a variability < this value in order to be swapped in. If those
+            conditions are not met, the column will be trimmed. (default: 0.8)
+            """,
+        default=0.8,
     )
     add_help(optional)
 
@@ -98,16 +116,17 @@ def preflight_checks(args):
 
     check_files_are_found([args.input_3di_alignment, args.input_aa_alignment])
 
-    # check that alignments match in length
+    # need check that alignments match in length
 
-    if args.gap_threshold < 0 or args.gap_threshold > 1:
-        report_message("`-g|--gap-threshold` must be between 0 and 1.")
-        notify_premature_exit()
+    bounds_params = [
+        ("gap_threshold", "-g|--gap-threshold"),
+        ("threedi_lower_bound", "--3di-lower-bound"),
+        ("threedi_upper_bound", "--3di-upper-bound"),
+        ("AA_upper_bound", "--AA-upper-bound"),
+    ]
 
-    if args.swap_3di_variability_threshold < 0 or args.swap_3di_variability_threshold > 1:
-        report_message("`-s|--swap-3di-variability-threshold` must be between 0 and 1.")
-        notify_premature_exit()
-
-    if args.trim_variability_upper_percentile < 0 or args.trim_variability_upper_percentile > 100:
-        report_message("`-t|--trim-variability-upper-percentile` must be between 0 and 100.")
-        notify_premature_exit()
+    for attr, flag in bounds_params:
+        val = getattr(args, attr)
+        if val < 0 or val > 1:
+            report_message(f"`{flag}` must be between 0 and 1.")
+            notify_premature_exit()

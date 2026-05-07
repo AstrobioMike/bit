@@ -1,7 +1,4 @@
 from Bio import SeqIO # type: ignore
-from skbio import TabularMSA, DNA, Protein # type: ignore
-from skbio.sequence import GrammaredSequence # type: ignore
-from skbio.util import classproperty # type: ignore
 import pandas as pd # type: ignore
 import gzip
 from bit.modules.general import is_gzipped
@@ -87,6 +84,10 @@ def filter_fasta_by_length(in_fasta, out_fasta, min_length, max_length):
 
 def calc_variation_in_msa(input_alignment, type, gap_treatment="include"):
 
+    from skbio.sequence import GrammaredSequence # type: ignore
+    from skbio.util import classproperty # type: ignore
+    from skbio import TabularMSA, DNA, Protein # type: ignore
+
     THREEDI_CHARS = set('ACDEFGHIKLMNPQRSTVWY')
 
     class ThreeDi(GrammaredSequence):
@@ -130,7 +131,7 @@ def calc_variation_in_msa(input_alignment, type, gap_treatment="include"):
 
 
 def get_gap_fracs_per_col(input_alignment):
-    import numpy as np
+    import numpy as np # type: ignore
 
     seqs = [str(r.seq).upper() for r in SeqIO.parse(input_alignment, "fasta")]
     if not seqs:
