@@ -56,8 +56,8 @@ def determine_action_per_column(variability_3di, variability_aa, gap_fracs, args
            else -> trim
     3. if var_3di <= 3di-lower-bound:
            if var_aa > var_3di AND var_aa < AA-upper-bound -> swap to AA
-           else -> keep 3Di
-    4. Otherwise (3di-lower-bound < var_3di < 3di-upper-bound) -> keep 3Di
+           else -> keep 3di
+    4. Otherwise (3di-lower-bound < var_3di < 3di-upper-bound) -> keep 3di
     """
 
     var_3di = variability_3di["variation"].to_numpy()
@@ -141,17 +141,17 @@ def write_out_partitions_file(threedi_cols, aa_cols, output_partitions_file):
     with open(output_partitions_file, "w") as part_fh:
         threedi_model = "GTR20+FO+R6"
         AA_model = "LG+FO+R6"
-        part_fh.write("#nexus\nbegin sets;\n")
+        part_fh.write("#nexus\n\nbegin sets;\n\n")
         if threedi_cols:
             part_fh.write(f"  charset 3di [3DI] = {_cols_to_ranges(threedi_cols)};\n")
         if aa_cols:
             part_fh.write(f"  charset aa [AA] = {_cols_to_ranges(aa_cols)};\n\n")
         if threedi_cols and aa_cols:
-            part_fh.write(f"  charpartition mike = {threedi_model}:3di, {AA_model}:aa;\n")
+            part_fh.write(f"  charpartition mike = {threedi_model}:3di, {AA_model}:aa;\n\n")
         elif threedi_cols and not aa_cols:
-            part_fh.write(f"  charpartition mike = {threedi_model}:3di;\n")
+            part_fh.write(f"  charpartition mike = {threedi_model}:3di;\n\n")
         elif not threedi_cols and aa_cols:
-            part_fh.write(f"  charpartition mike = {AA_model}:aa;\n")
+            part_fh.write(f"  charpartition mike = {AA_model}:aa;\n\n")
         part_fh.write("end;\n")
 
 
@@ -174,13 +174,20 @@ def _cols_to_ranges(cols):
 
 def report_results(num_cols, num_trimmed, num_kept, num_swapped, output_alignment_file, output_partitions_file):
 
+    percent_trimmed = num_trimmed / num_cols
     print(f"\n  {Fore.GREEN}Done!\n", file=sys.stderr)
     print(f"    {Fore.YELLOW}Summary:")
     print(f"        {'Total initial columns:':<24} {num_cols:,}")
-    print(f"        {'Trimmed:':<24} {num_trimmed:,} ({num_trimmed/num_cols:.1%})")
+    print(f"        {'Trimmed:':<24} {num_trimmed:,} ({percent_trimmed:.1%})")
     print(f"        {'Retained:':<24} {num_kept:,} ({num_kept/num_cols:.1%})")
-    print(f"        {'  3di-to-AA swapped:':<24} {num_swapped:,} ({num_swapped/num_kept:.1%} of retained)\n")
+    if num_kept > 0:
+        print(f"        {'  3di-to-AA swapped:':<24} {num_swapped:,} ({num_swapped/num_kept:.1%} of retained)\n")
     print(f"    {Fore.YELLOW}Output files:")
     print(f"        Alignment:   {output_alignment_file}")
     print(f"        Partitions:  {output_partitions_file}\n")
     print(f"  Note: you may want to modify the 'charpartition' block in the nexus file prior to use.\n")
+
+    if percent_trimmed > 0.1 and percent_trimmed < 1.0:
+        print(f"  {Fore.YELLOW}Warning: {percent_trimmed:.1%} of columns were trimmed.\n")
+    if percent_trimmed == 1.0:
+        print(f"  {Fore.RED}Warning: all columns were trimmed.\n")

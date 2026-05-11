@@ -1,6 +1,6 @@
 import sys
 import argparse
-from bit.cli.common import CustomRichHelpFormatter, add_help, add_seed
+from bit.cli.common import CustomRichHelpFormatter, add_help
 from bit.modules.general import check_files_are_found, report_message, notify_premature_exit
 
 def build_parser():
@@ -116,7 +116,13 @@ def preflight_checks(args):
 
     check_files_are_found([args.input_3di_alignment, args.input_aa_alignment])
 
-    # need check that alignments match in length
+    from Bio import SeqIO # type: ignore
+    first_3di = next(SeqIO.parse(args.input_3di_alignment, "fasta"), None)
+    first_aa = next(SeqIO.parse(args.input_aa_alignment, "fasta"), None)
+    if first_3di is None or first_aa is None or len(first_3di.seq) != len(first_aa.seq):
+        report_message("The 3di and AA alignments must be the same length (which would be \
+                       the case if the AA alignment was derived from the 3di alignment).")
+        notify_premature_exit()
 
     bounds_params = [
         ("gap_threshold", "-g|--gap-threshold"),
