@@ -39,10 +39,11 @@ parser.add_argument("--get-taxon-counts", action = "store_true", help = "Provide
 parser.add_argument("--GTDB-representatives-only", action = "store_true", help = "Provide this flag along with a specified taxon to the `-t` flag \
                                                                         to pull accessions only for genomes designated as GTDB species \
                                                                         representatives (see e.g.: https://gtdb.ecogenomic.org/faq#gtdb_species_clusters).")
-parser.add_argument("--RefSeq-representatives-only", action = "store_true", help = "Provide this flag along with a specified taxon to the `-t` flag \
-                                                                        to pull accessions only for genomes designated as RefSeq representative \
-                                                                        genomes (see e.g.: https://www.ncbi.nlm.nih.gov/refseq/about/prokaryotes/#representative_genomes).\
-                                                                        (Useful for subsetting a view across a broad level of diversity.)")
+parser.add_argument("--RefSeq-reference-genomes-only", action = "store_true", help = "Provide this flag along with a specified taxon to the `-t` flag \
+                                                                                    to pull accessions only for genomes designated as RefSeq \"reference\" \
+                                                                                    genomes (these used to be called \"representative\" genomes, see e.g.: \
+                                                                                    https://www.ncbi.nlm.nih.gov/refseq/about/prokaryotes/#reference_genomes).\
+                                                                                    (Useful for subsetting a view across a broad level of diversity.)")
 
 
 if len(sys.argv)==1:
@@ -84,7 +85,7 @@ def main():
         representatives_source = "GTDB"
 
     if args.RefSeq_representatives_only:
-        gtdb_rep_tab = gtdb_tab[gtdb_tab["ncbi_refseq_category"] == "representative genome"]
+        gtdb_rep_tab = gtdb_tab[gtdb_tab["ncbi_refseq_category"] == "reference genome"]
         representatives_source = "RefSeq"
 
     if args.get_rank_counts:

@@ -28,7 +28,7 @@
 
 ### Changed
 - `bit-gen-reads` fragment size and long-read read lengths are now pulled from a normal distribution rather than uniform
-- - `bit-get-mapped-reads-pid` has been renamed to just `bit-mapped-reads-pid`
+- `bit-get-mapped-reads-pid` has been renamed to just `bit-mapped-reads-pid`
 - `bit-colnames` can also just accept stdin now
 - `bit-gen-kraken2-tax-plots` changed to `bit-kraken2-tax-plots`
 - `bit-kraken2-to-taxon-summaries` changed to `bit-kraken2-tax-summary`
@@ -45,6 +45,7 @@
 - `bit-gen-iToL-text-dataset` replaced with `bit-itol text-dataset`
 - removed `bit-reorder-fasta`, that is now stored as a gist here: https://gist.github.com/AstrobioMike/6b91769ad13305ebd4779873afa9aa1f
 - removed `bit-prot-acc-to-taxid`, that is now stored as a gist here: https://gist.github.com/AstrobioMike/2cc5fd147aa28c2b793c7c664502734d
+- `bit-get-accessions-from-GTDB` has had the `--RefSeq-representatives-only` flag changed to `--RefSeq-reference-genomes-only` to match the NCBI change (https://www.ncbi.nlm.nih.gov/refseq/about/prokaryotes/#reference_genomes)
 
 ---
 
