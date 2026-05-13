@@ -16,10 +16,9 @@
 
 -->
 
-## vX.XX.X (NOT YET RELEASED)
+## v1.17.0 (13-May-2026)
 
 ### Added
-- `bit-joint-encode`
 - `bit-itol` with subcommands for
   - `binary-dataset`
   - `colorstrip`

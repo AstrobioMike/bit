@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bit"
-version = "1.16.0"
+version = "1.17.0"
 description = "A set of bioinformatics scripts and workflows"
 readme = "README.md"
 license = { text = "GPLv3" }
@@ -40,8 +40,7 @@ bit-extract-seqs = "bit.cli.extract_seqs:main"
 bit-gen-reads = "bit.cli.gen_reads:main"
 bit-mutate-seqs = "bit.cli.mutate_seqs:main"
 bit-add-insertion = "bit.cli.add_insertion:main"
-bit-joint-encode = "bit.cli.joint_encode:main"
-bit-summarize-assembly = "bit.cli.summarize_assembly:main" # i might want to keep this AND add a bit-fasta version
+bit-summarize-assembly = "bit.cli.summarize_assembly:main"
 
 
 bit-calc-gc-per-seq = "bit.cli.calc_gc_per_seq:main"
@@ -66,7 +65,6 @@ bit-filter-fasta-by-length = "bit.cli.filter_fasta_by_length:main"
         # bit-filter-fasta-by-length -> bit-fasta filter-by-length (or put in bit-extract-seqs as mentioned above)
         # bit-rename-fasta-headers -> bit-fasta simplify-headers
         # bit-remove-wraps -> bit-fasta remove-wraps
-        # bit-summarize-assembly -> bit-fasta summarize # i might want to also keep this accessible as bit-summarize-assembly
 
 
 
