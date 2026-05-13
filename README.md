@@ -20,7 +20,7 @@
 ## NOTE
 **bit is undergoing some changes, and some programs are being renamed and/or grouped into single programs with subcommands for organizational purposes. If you can't find something you are looking for, check in the [CHANGELOG.md](CHANGELOG.md), or post an issue asking :)** 
 
-P.S. - Sorry for doing this without a major version incremenent. I started small and it kind of spiraled, and now I'm waiting until it's all done ¯\\\_(ツ)\_/¯
+P.S. - Sorry for doing this without a major version increment. I started small and it kind of spiraled, and now I'm waiting until it's all done ¯\\\_(ツ)\_/¯
 
 ---
 
