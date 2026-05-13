@@ -47,6 +47,10 @@
 - removed `bit-prot-acc-to-taxid`, that is now stored as a gist here: https://gist.github.com/AstrobioMike/2cc5fd147aa28c2b793c7c664502734d
 - `bit-get-accessions-from-GTDB` has had the `--RefSeq-representatives-only` flag changed to `--RefSeq-reference-genomes-only` to match the NCBI change (https://www.ncbi.nlm.nih.gov/refseq/about/prokaryotes/#reference_genomes)
 
+## Fixed
+- `bit-summarize-assembly` 
+  - would previously fail if the genome(s) trying to be summarized were in a read-only location, that shouldn't happen anymore
+
 ---
 
 ## v1.16.0 (22-Apr-2026)

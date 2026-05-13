@@ -187,7 +187,7 @@ def report_results(num_cols, num_trimmed, num_kept, num_swapped, output_alignmen
     print(f"        Partitions:  {output_partitions_file}\n")
     print(f"  Note: you may want to modify the 'charpartition' block in the nexus file prior to use.\n")
 
-    if percent_trimmed > 0.1 and percent_trimmed < 1.0:
+    if percent_trimmed > 0.5 and percent_trimmed < 1.0:
         print(f"  {Fore.YELLOW}Warning: {percent_trimmed:.1%} of columns were trimmed.\n")
     if percent_trimmed == 1.0:
         print(f"  {Fore.RED}Warning: all columns were trimmed.\n")

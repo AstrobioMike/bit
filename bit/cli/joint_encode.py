@@ -7,7 +7,7 @@ def build_parser():
 
     desc = """
         This program trims and joint encodes a 3di alignment and an amino-acid alignment (that is derived from the 3di alignment).
-        It removes columns based on a gap threshold, and it swaps amino-acid characters into the base 3di alignment
+        It removes columns based on a gap threshold, and it swaps amino-acid characters into the starting 3di alignment
         based on specified column-variability criteria (see `bit-calc-variability-is-msa -h` for details on "variability" here).
         It produces the joint-encoded alignment and a partitions file required for appropriate phylogenetics analysis.
         For version info, run `bit-version`.
