@@ -59,12 +59,6 @@ bit-fasta = "bit.cli.fasta:main"
         # bit-remove-wraps -> bit-fasta remove-wraps
 
 
-
-## fastq stuff
-bit-check-fastq-for-dup-headers = "bit.cli.check_fastq_for_dup_headers:main" # maybe move to gist only (need to make it standalone first)
-# bit-parse-fastq-by-headers # can maybe put this in extract-seqs if i don't tie that to bit-fasta (or maybe just make this a gist too, until i add more fastq stuff)
-
-
 ## table utilities ##
 bit-colnames = "bit.cli.colnames:main"
 bit-summarize-column = "bit.cli.summarize_column:main"
