@@ -7,7 +7,7 @@ from bit.cli.common import CustomRichHelpFormatter, add_help
 def build_parser():
 
     desc = """
-        This program extracts sequences from an input fasta through various methods, see subcommand-specific
+        This program extracts sequences from an input fasta through various methods. See subcommand-specific
         help menus for more info. For version info, run `bit-version`.
         """
 
@@ -192,12 +192,14 @@ def main():
             sys.exit(0)
 
         if cmd in parser.subparsers.choices:
-            parser.subparsers.choices[cmd].print_help(sys.stderr)
-            sys.exit(0)
-
-        print(f"\n  Invalid subcommand provided: '{cmd}'\n\n  See help below.\n", file=sys.stderr)
-        parser.print_help(sys.stderr)
-        sys.exit(1)
+            if sys.stdin.isatty():
+                parser.subparsers.choices[cmd].print_help(sys.stderr)
+                sys.exit(0)
+            # else: stdin is being piped, fall through to parse_args()
+        else:
+            print(f"\n  Invalid subcommand provided: '{cmd}'\n\n  See help below.\n", file=sys.stderr)
+            parser.print_help(sys.stderr)
+            sys.exit(1)
 
     args = parser.parse_args()
 
@@ -217,9 +219,6 @@ def main():
         check_by_headers_required_inputs(args)
 
     func(args)
-
-if __name__ == "__main__":
-    main()
 
 
 def check_by_headers_required_inputs(args):

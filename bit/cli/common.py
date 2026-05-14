@@ -12,6 +12,13 @@ from rich_argparse import RichHelpFormatter # type: ignore
 # and using the helper functions wrap_help and wrap_multiline_help from below
 
 class CustomRichHelpFormatter(RichHelpFormatter):
+
+    # this was added so help text appears on same line as subcommand
+    def add_argument(self, action):
+        super().add_argument(action)
+        if hasattr(action, '_get_subactions'):
+            self._action_max_length += 2
+
     def start_section(self, heading):
         if heading == "positional arguments":
             heading = "Available Subcommands"

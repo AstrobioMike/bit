@@ -3,8 +3,8 @@
 ### handling setting up of argcomplete for bit commands with subcommands ###
 
 ARGCOMPLETE_COMMANDS=(
-    bit-extract-seqs
     bit-ez-screen
+    bit-fasta
     bit-genbank
 )
 

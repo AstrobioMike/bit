@@ -14,6 +14,32 @@
 
 -->
 
+
+## vX.XX.X (NOT YET RELEASED)
+
+### Added
+
+### Changed
+- several fasta-related programs have been placed as subcommands under `bit-fasta`
+  - `bit-calc-gc-per-seq` and `bit-calc-gc-sliding-window` -> `bit-fasta calc-gc`
+  - `bit-calc-variation-in-msa` -> `bit-fasta calc-var-in-msa`
+  - `bit-count-bases` -> `bit-fasta count`
+  - `bit-extract-seqs by-coords` -> `bit-fasta extract-by-coords`
+  - `bit-extract-seqs by-headers` -> `bit-fasta extract-by-headers`
+  - `bit-extract-seqs by-primers` -> `bit-fasta extract-by-primers`
+  - `bit-fasta-to-bed` -> `bit-fasta to-bed`
+  - `bit-fasta-to-genbank` -> `bit-fasta to-genbank`
+  - `bit-filter-fasta-by-length` -> `bit-fasta filter-by-length`
+
+
+- `bit-dedupe-fasta-headers` has been removed entirely, as it's purpose can be achieved with `bit-fasta modify-headers`
+- `bit-check-fastq-for-dup-headers` removed due to only super-niche utility
+
+
+### Fixed
+
+---
+
 ## v1.17.0 (13-May-2026)
 
 ### Added

@@ -25,8 +25,8 @@ bit-version = "bit.modules.general:report_version"
 
 ## ncbi/GTDB-related ##
 bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
-# bit-get-accessions-from-GTDB -> bit-accessions-from-gtdb
-# bit-get-lineage-from-taxids -> bit-lineage-from-taxids
+# bit-get-accessions-from-GTDB -> bit-accessions-from-gtdb?
+# bit-get-lineage-from-taxids -> bit-lineage-from-taxids?
 
 
 ## coverage / mapping ##
@@ -36,34 +36,26 @@ bit-mapped-reads-pid = "bit.cli.mapped_reads_pid:main"
 
 
 ## sequence utilities ##
-bit-extract-seqs = "bit.cli.extract_seqs:main"
 bit-gen-reads = "bit.cli.gen_reads:main"
 bit-mutate-seqs = "bit.cli.mutate_seqs:main"
 bit-add-insertion = "bit.cli.add_insertion:main"
 bit-summarize-assembly = "bit.cli.summarize_assembly:main"
 
 
-bit-calc-gc-per-seq = "bit.cli.calc_gc_per_seq:main"
-bit-calc-gc-sliding-window = "bit.cli.calc_gc_sliding_window:main"
-bit-calc-variation-in-msa = "bit.cli.calc_variation_in_msa:main"
-bit-count-bases = "bit.cli.count_bases:main"
-bit-dedupe-fasta-headers = "bit.cli.dedupe_fasta_headers:main"
-bit-fasta-to-bed = "bit.cli.fasta_to_bed:main"
-bit-fasta-to-genbank = "bit.cli.fasta_to_genbank:main"
-bit-filter-fasta-by-length = "bit.cli.filter_fasta_by_length:main"
-# bit-remove-wraps
-# bit-rename-fasta-headers -> bit-simplify-fasta-headers
+bit-fasta = "bit.cli.fasta:main"
+    # subcommands:
+        # calc-gc
+        # calc-var-in-msa
+        # count
+        # extract-by-coords
+        # extract-by-headers
+        # extract-by-primers
+        # filter-by-length
+        # to-bed
+        # to-genbank
 
-    # maybe combine the below with subcommands into bit-fasta
-        # bit-calc-gc-per-seq -> bit-fasta calc-gc (combine per-seq and overall like i did with bit-count-bases)
-        # bit-calc-gc-sliding-window -> bit-fasta calc-gc-sliding-window (maybe combine this with above... would make the help menu a lot messier though if i did)
-        # bit-calc-variation-in-msa -> bit-fasta calc-variation-in-msa
-        # bit-count-bases -> bit-fasta count-bases
-        # bit-dedupe-fasta-headers -> bit-fasta dedupe-headers
-        # bit-fasta-to-bed -> bit-fasta to-bed
-        # bit-fasta-to-genbank -> bit-fasta to-genbank
-        # bit-filter-fasta-by-length -> bit-fasta filter-by-length (or put in bit-extract-seqs as mentioned above)
-        # bit-rename-fasta-headers -> bit-fasta simplify-headers
+    # still need to combine the below with subcommands into bit-fasta
+        # bit-rename-fasta-headers -> bit-fasta modify-headers
         # bit-remove-wraps -> bit-fasta remove-wraps
 
 

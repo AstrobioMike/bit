@@ -6,14 +6,10 @@ from statistics import mean, median
 import random
 
 def calc_gc_per_seq(input_fasta):
-    """
-    Parses a nucleotide multifasta and returns a list of dicts with each holding:
-      - header: the record name
-      - length: sequence length
-      - gc: GC fraction (rounded to two decimals)
-    """
+
     gc_stats = []
-    with open(input_fasta, "r") as fasta_file:
+    fasta_handle = input_fasta if hasattr(input_fasta, "read") else open(input_fasta, "r")
+    with fasta_handle as fasta_file:
         for record in SeqIO.parse(fasta_file, "fasta"):
             seq = record.seq
             length = len(seq)
@@ -27,17 +23,11 @@ def calc_gc_per_seq(input_fasta):
 
 
 def calc_gc_sliding_window(input_fasta, window, step):
-    """
-    Parses a nucleotide multifasta and returns a list of dicts with each holding:
-      - header: the record name
-      - length: sequence length
-      - gc: GC fraction (rounded to two decimals)
-      - gc_windows: list of GC fractions for each sliding window
-    """
 
     window_gc_stats = []
 
-    with open(input_fasta, "r") as fasta_file:
+    fasta_handle = input_fasta if hasattr(input_fasta, "read") else open(input_fasta, "r")
+    with fasta_handle as fasta_file:
         for record in SeqIO.parse(fasta_file, "fasta"):
             seq = record.seq
             length = len(seq)
@@ -301,7 +291,8 @@ def fasta_to_bed(input_fasta):
 
     bed_records = []
 
-    with open(input_fasta, "r") as in_fasta:
+    fasta_handle = input_fasta if hasattr(input_fasta, "read") else open(input_fasta, "r")
+    with fasta_handle as in_fasta:
 
         for record in SeqIO.parse(in_fasta, "fasta"):
             name = record.name
