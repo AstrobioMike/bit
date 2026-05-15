@@ -30,13 +30,21 @@
   - `bit-fasta-to-bed` -> `bit-fasta to-bed`
   - `bit-fasta-to-genbank` -> `bit-fasta to-genbank`
   - `bit-filter-fasta-by-length` -> `bit-fasta filter-by-length`
+  - `bit-rename-fasta-headers` -> `bit-fasta modify-headers`
+  - `bit-remove-wraps` -> `bit-fasta remove-wraps`
+    - this is moderately slower now since i took it out of shell and put in into python
+    - you can add the shell way as a function as found in this gist: https://gist.github.com/AstrobioMike/4054ce9ed84162f31c830bac03beda68
 
 
+  - `bit-update-GO-dbs` -> `helper-bit-setup-GO-dbs`
+
+
+
+### Removed
 - `bit-dedupe-fasta-headers` has been removed entirely, as it's purpose can be achieved with `bit-fasta modify-headers`
 - `bit-check-fastq-for-dup-headers` removed due to only super-niche utility
+- `bit-parse-fastq-by-headers` removed due to only niche utility, gist is here: https://gist.github.com/AstrobioMike/785265b43847e7cb10089d102573b575
 
-
-### Fixed
 
 ---
 

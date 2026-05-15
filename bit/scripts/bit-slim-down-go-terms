@@ -12,7 +12,7 @@ parser = argparse.ArgumentParser(description = 'This script wraps the goatools `
                                               See there for more details, and if you use it in your work, be sure to properly cite them :) \
                                               https://www.nature.com/articles/s41598-018-28948-z. It is included here to streamline integration with \
                                               with the GO databases stored with `bit` and programs like `bit-summarize-go-annotations`. Stored databases \
-                                              can be updated with `bit-update-go-dbs`. For version info, run `bit-version`.')
+                                              can be updated with `helper-bit-setup-GO-dbs`. For version info, run `bit-version`.')
 
 required = parser.add_argument_group('required arguments')
 

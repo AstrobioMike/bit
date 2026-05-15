@@ -51,19 +51,17 @@ bit-fasta = "bit.cli.fasta:main"
         # extract-by-headers
         # extract-by-primers
         # filter-by-length
+        # modify-headers
+        # remove-wraps
         # to-bed
         # to-genbank
-
-    # still need to combine the below with subcommands into bit-fasta
-        # bit-rename-fasta-headers -> bit-fasta modify-headers
-        # bit-remove-wraps -> bit-fasta remove-wraps
 
 
 ## table utilities ##
 bit-colnames = "bit.cli.colnames:main"
 bit-summarize-column = "bit.cli.summarize_column:main"
 bit-normalize-table = "bit.cli.normalize_table:main"
-# bit-filter-table
+bit-filter-table = "bit.cli.filter_table:main"
 
 
 ## miscellaneous ##
@@ -106,7 +104,7 @@ bit-update-ncbi-taxonomy = "bit.modules.ncbi.get_ncbi_tax_data:main"    # move t
     # get-ncbi-tax-data and bit-update-ncbi-taxonomy can probably be combined into below `bit-data get ncbi-tax-data`
 
 # get-go-dbs
-# get-gtdb-metadata
+# get-gtdb-metadata (right now this is in bit-get-accessions-from-GTDB)
 
     # do a subcommand situation for these
     # bit-data

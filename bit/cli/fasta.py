@@ -35,7 +35,7 @@ def build_parser():
     ### subcommand cli for calculating gc content ###
     #################################################
     calc_gc_desc = """
-        This script takes a nucleotide fasta or multifasta and returns GC content either per
+        This subcommand takes a nucleotide fasta or multifasta and returns GC content either per
         sequence or per sliding window.
         """
 
@@ -85,7 +85,7 @@ def build_parser():
     ### subcommand cli for calculating variation in msa ###
     #######################################################
     calc_var_desc = """
-        This script takes an alignment in fasta format as input and returns the Shannon uncertainty values for each column
+        This subcommand takes an alignment in fasta format as input and returns the Shannon uncertainty values for each column
         (using: https://scikit.bio/docs/dev/generated/skbio.alignment.TabularMSA.conservation.html). In output, a "variation" value of 0 would
         mean the same character in all sequences for that position (highest conservation); 1 would mean equal probability of any character
         (greatest variability). "Conservation" column is inverse. As written, any ambiguous bases or residues are converted to gap characters.
@@ -139,7 +139,7 @@ def build_parser():
     ### subcommand cli for counting bases and seqs ###
     ##################################################
     count_desc = """
-        This script takes a fasta as input and returns the total number of characters if the input
+        This subcommand takes a fasta as input and returns the total number of characters if the input
         holds a single sequence, or some summary stats if it is a multifasta. If you specify an output
         file, it also produces a tab-delimited file with two columns (header and number of characters for
         each sequence).
@@ -394,20 +394,105 @@ def build_parser():
     ############################################
     ### subcommand cli for modifying headers ###
     ############################################
-        # bit-rename-fasta-headers -> bit-fasta modify-headers
+    modify_headers_desc = """
+        This subcommand facilitates modifying or renaming headers in a fasta. You can specify a string to be the same
+        for all headers (and a number will be appened to keep them unique), or give a prefix or suffix to be added to existing headers.
+        """
+
+    modify_headers_parser = subparsers.add_parser(
+        "modify-headers",
+        help="Modify or rename fasta headers",
+        description=modify_headers_desc,
+        epilog="Ex. usage: `bit-fasta modify-headers -i input.fasta -w contig`",
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
+    )
+
+    modify_headers_required = modify_headers_parser.add_argument_group("Required Parameters")
+    modify_headers_optional = modify_headers_parser.add_argument_group("Optional Parameters")
+
+    modify_headers_required.add_argument(
+        "-i",
+        "--input-fasta",
+        help="Input fasta file",
+        metavar="<FILE>",
+        required=True
+    )
+
+    modify_headers_optional.add_argument(
+        "-o",
+        "--output-fasta",
+        metavar="<FILE>",
+        help='Output fasta file (default: "modified-headers.fasta")',
+        default="modified-headers.fasta"
+    )
+
+    modify_headers_optional.add_argument(
+        "-w",
+        "--wanted-text",
+        metavar="<STR>",
+        help='Base name to give seqs when renaming to "<wanted-text>_<n>" (default: "s")'
+    )
+
+    modify_headers_optional.add_argument(
+        "-p",
+        "--prefix",
+        metavar="<STR>",
+        help="Prepend this text to the original header (include separator if you want one; cannot be combined with --wanted-text)",
+    )
+
+    modify_headers_optional.add_argument(
+        "-s",
+        "--suffix",
+        metavar="<STR>",
+        help="Append this text to the original header (include separator if you want one; cannot be combined with "
+        "--wanted-text; enter as -s='-suffix' if wanting a dash at the front)",
+    )
+
+    add_help(modify_headers_optional)
+
+    modify_headers_parser.set_defaults(func="modify_headers")
 
 
     #############################################
     ### subcommand cli for removing softwraps ###
     #############################################
-        # bit-remove-wraps -> bit-fasta remove-wraps
+    remove_wraps_desc = """
+        This subcommand removes line wraps from a fasta file, joining wrapped sequence
+        lines back into single lines per sequence.
+        """
+
+    remove_wraps_parser = subparsers.add_parser(
+        "remove-wraps",
+        help="Remove line wraps from a fasta file",
+        description=remove_wraps_desc,
+        epilog="Ex. usage: `bit-fasta remove-wraps input.fasta > unwrapped.fasta`",
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
+    )
+
+    remove_wraps_required = remove_wraps_parser.add_argument_group("Required Parameters")
+    remove_wraps_optional = remove_wraps_parser.add_argument_group("Optional Parameters")
+    add_common_required_arguments(remove_wraps_required)
+
+    remove_wraps_optional.add_argument(
+        "-o",
+        "--output-fasta",
+        metavar="<FILE>",
+        help="Output fasta file (default: stdout)",
+        default=None
+    )
+
+    add_help(remove_wraps_optional)
+
+    remove_wraps_parser.set_defaults(func="remove_wraps")
 
 
     ################################################
     ### subcommand cli for generating a bed file ###
     ################################################
     to_bed_desc = """
-        This script takes a fasta as input and returns a tab-delimited bed file.
+        This subcommand takes a fasta as input and returns a tab-delimited bed file.
         """
 
     to_bed_parser = subparsers.add_parser(
@@ -440,7 +525,7 @@ def build_parser():
     ### subcommand cli for generating a genbank file ###
     ####################################################
     to_genbank_desc = """
-        This script takes a nucleotide fasta file and generates a file in minimal genbank format.
+        This subcommand takes a nucleotide fasta file and generates a file in minimal genbank format.
         """
 
     to_genbank_parser = subparsers.add_parser(
@@ -519,6 +604,8 @@ def main():
         "extract_by_headers": run_extract_by_headers,
         "extract_by_primers": run_extract_by_primers,
         "filter_by_length": run_filter_by_length,
+        "modify_headers": run_modify_headers,
+        "remove_wraps": run_remove_wraps,
         "to_bed": run_to_bed,
         "to_genbank": run_to_genbank,
     }
@@ -696,3 +783,33 @@ def run_to_genbank(args):
 
     with open(args.output_file, "w") as out:
         SeqIO.write(sequences, out, "genbank")
+
+
+def run_remove_wraps(args):
+
+    from bit.modules.seqs import remove_wraps
+
+    if args.output_fasta:
+        with open(args.output_fasta, "w") as out:
+            remove_wraps(args.input_fasta, out)
+    else:
+        remove_wraps(args.input_fasta, sys.stdout)
+
+
+def run_modify_headers(args):
+
+
+    if args.wanted_text and (args.prefix or args.suffix):
+
+        from bit.modules.general import report_message, notify_premature_exit
+
+        report_message("The --wanted-text argument is incompatible with --prefix and --suffix.",
+                       initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
+
+    elif not args.prefix and not args.suffix and not args.wanted_text:
+        args.wanted_text = "s"
+
+    from bit.modules.seqs import modify_fasta_headers
+
+    modify_fasta_headers(args)

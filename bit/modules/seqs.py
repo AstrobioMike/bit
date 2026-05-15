@@ -72,6 +72,32 @@ def filter_fasta_by_length(in_fasta, out_fasta, min_length, max_length):
     return (num_initial_seqs, num_seqs_retained, num_initial_bases, num_bases_retained)
 
 
+def modify_fasta_headers(args):
+
+    with open(args.input_fasta, "r") as in_file, open(args.output_fasta, "w") as out_file:
+
+        if args.wanted_text:
+            counter = 0
+            for seq_record in SeqIO.parse(in_file, "fasta"):
+                counter += 1
+                out_file.write(f">{args.wanted_text}_{counter}\n")
+                out_file.write(str(seq_record.seq) + "\n")
+
+        else:
+
+            prefix = args.prefix or ""
+            suffix = args.suffix or ""
+
+            for seq_record in SeqIO.parse(in_file, "fasta"):
+
+                # using description so it preserves the full header
+                original_header = seq_record.description
+
+                new_header = f"{prefix}{original_header}{suffix}"
+                out_file.write(f">{new_header}\n{seq_record.seq}\n")
+
+
+
 def calc_variation_in_msa(input_alignment, type, gap_treatment="include"):
 
     from skbio.sequence import GrammaredSequence # type: ignore
@@ -312,6 +338,22 @@ def fasta_to_genbank(input_fasta):
             seq.annotations["molecule_type"] = "DNA"
 
     return sequences
+
+
+def remove_wraps(input_fasta, output):
+
+    fasta_handle = input_fasta if hasattr(input_fasta, "read") else open(input_fasta, "r")
+
+    with fasta_handle as f:
+        n = ""
+        for line in f:
+            if line.startswith(">"):
+                output.write(n + line)
+                n = ""
+            else:
+                output.write(line.rstrip("\n"))
+                n = "\n"
+        output.write(n)
 
 
 def revcomp(seq):
