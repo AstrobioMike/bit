@@ -10,7 +10,7 @@ import sys
 import subprocess
 
 parser = argparse.ArgumentParser(description = "Get quick information on individual GO terms. For version info, run `bit-version`.")
-parser.add_argument('GO-term', metavar = "<STR>", help =  'GO term you want to investigate, e.g. "GO:0010501"')
+parser.add_argument('GO_term', metavar = "<STR>", help =  'GO term you want to investigate, e.g. "GO:0010501"')
 
 parser.add_argument("-g", "--GO-obo-file", metavar = "<STR>", help = 'GO obo file to use (e.g. from: geneontology.org/docs/download-ontology/). By default will \
                                                  use "go-basic.obo". "goslim_metagenomics.obo" is also a pre-packaged option (enter `-g goslim_metagenomics` to specify it). Or \
@@ -84,11 +84,13 @@ print(input_df.to_string(index=False))
 parents = input_go_term.get_all_parents()
 
 if parents:
-    parent_df = pd.DataFrame([])
+    parent_rows = []
 
     for term in parents:
         curr_parent_info = get_general_info(term)
-        parent_df = parent_df.append([curr_parent_info])
+        parent_rows.append(curr_parent_info)
+
+    parent_df = pd.DataFrame(parent_rows)
 
     print("\nParent terms info:")
     print(parent_df.to_string(index=False, header = header))
@@ -101,11 +103,13 @@ if not args.parents_only:
     children = input_go_term.get_all_children()
 
     if children:
-        child_df = pd.DataFrame([])
+        child_rows = []
 
         for term in children:
             curr_child_info = get_general_info(term)
-            child_df = child_df.append([curr_child_info])
+            child_rows.append(curr_child_info)
+
+        child_df = pd.DataFrame(child_rows)
 
         print("\nChild terms info:")
         print(child_df.to_string(index=False, header = header))

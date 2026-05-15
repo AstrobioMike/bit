@@ -10,7 +10,7 @@ import sys
 import subprocess
 
 parser = argparse.ArgumentParser(description = 'This script takes an GO-annotated tab-delimited file with gene IDs in the first column, and associated \
-                                              GO terms in second column (can be multiple delimited by semi-colons). By default, it returns one \
+                                              GO terms in second column (can be multiple delimited by semi-colons; no header allowed). By default, it returns one \
                                               tab-delimited summary table with counts and percentages for each GO term. If the `--by_namespace` \
                                               flag is added, it will also return separate summaries for each GO namespace. For version info,  \
                                               run `bit-version`.')
@@ -19,9 +19,9 @@ required = parser.add_argument_group('required arguments')
 
 required.add_argument("-i", "--input-GO-annotations", metavar = "<FILE>", help = "Input annotations file", action = "store", dest="input_annotations", required = True)
 parser.add_argument("-g", "--GO-obo-file", metavar = "<STR>", help = 'GO obo file to use (e.g. from: http://geneontology.org/docs/download-ontology/). By default will \
-                                                 use "goslim_metagenomics.obo". "go-basic.obo" is also a pre-packaged option (enter `-g go_basic` to specify it). Or \
+                                                 use "go_basic.obo". "goslim_metagenomics.obo" is also a pre-packaged option (enter `-g goslim_metagenomics` to specify it). Or \
                                                  a different obo-formatted file can be specified here (it should probably be the one the annotations are based off of, or were slimmed based on).',
-                    action = "store", dest = "obo", default = "goslim_metagenomics")
+                    action = "store", dest = "obo", default = "go_basic")
 parser.add_argument("-o", "--output-file", metavar = "<FILE>", help = 'Output file name (default: "GO-summary.tsv").', action = "store", default = "GO-summary.tsv")
 parser.add_argument("--keep-zeroes", help = "By default the program will remove any rows with for GO terms with 0 counts to them. Add this flag \
                                              to keep them.", action = "store_true")
@@ -85,7 +85,9 @@ header = ["GO_term", "namespace", "depth", "name", "is_obsolete"]
 GO_df = pd.DataFrame(table_list, columns=header).sort_values(by=["depth"])
 
 #### REMOVING ANY TERMS THAT ARE OBSOLETE FROM THE TABLE AND MAKING A SET OF OBSOLETE IDS TO HANDLE THEM PROPERLY IF IN THE INPUT ANNOTATIONS (http://geneontology.org/docs/GO-term-elements)
-if True in GO_df["is_obsolete"]:
+obsolete_terms = set()
+
+if True in GO_df["is_obsolete"].values:
 
     GO_df_of_obsolete = GO_df.loc[GO_df["is_obsolete"] == True, ["GO_term"]]
     obsolete_terms = set(GO_df_of_obsolete["GO_term"])

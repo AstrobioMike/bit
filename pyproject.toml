@@ -62,6 +62,11 @@ bit-colnames = "bit.cli.colnames:main"
 bit-summarize-column = "bit.cli.summarize_column:main"
 bit-normalize-table = "bit.cli.normalize_table:main"
 bit-filter-table = "bit.cli.filter_table:main"
+    # maybe put these under bit-table with subcommands:
+        # colnames
+        # filter
+        # normalize
+        # summarize-column
 
 
 ## miscellaneous ##
@@ -75,7 +80,7 @@ bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
 ## kraken2/bracken helpers ##
 bit-kraken2-tax-plots = "bit.cli.kraken2_tax_plots:main"
 bit-kraken2-tax-summary = "bit.cli.kraken2_tax_summary:main"
-    # put these all under bit-kraken2 with subcommands:
+    # put these under bit-kraken2 with subcommands:
         # tax-plots
         # tax-summary
 
@@ -84,7 +89,7 @@ bit-kraken2-tax-summary = "bit.cli.kraken2_tax_summary:main"
 # bit-summarize-go-annotations
 # bit-slim-down-go-terms
 # bit-get-go-term-info
-    # put these all under bit-go with subcommands:
+    # put these under bit-go with subcommands:
         # summarize-annotations
         # slim-down-terms
         # get-term-info
