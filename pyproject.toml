@@ -39,6 +39,11 @@ bit-mapped-reads-pid = "bit.cli.mapped_reads_pid:main"
 bit-gen-reads = "bit.cli.gen_reads:main"
 bit-mutate-seqs = "bit.cli.mutate_seqs:main"
 bit-add-insertion = "bit.cli.add_insertion:main"
+    # maybe put these under bit-seq or bit-simulate with subcommands:
+        # gen-reads
+        # mutate-seqs
+        # add-insertion
+
 bit-summarize-assembly = "bit.cli.summarize_assembly:main"
 
 
@@ -95,12 +100,24 @@ bit-go = "bit.cli.go:main"
 
 ## iToL helpers ##
 bit-itol = "bit.cli.itol:main"
+    # subcommands:
+        # binary-dataset
+        # colorstrip
+        # map
+        # text-dataset
+
 
 ## genbank manipulations ##
 bit-genbank = "bit.cli.genbank:main"
+    # subcommands:
+        # to-fasta
+        # to-AA-seqs
+        # to-cds-tsv
+        # to-cds-seqs
+
 
 ## Database related ##
-bit-data-locations = "bit.cli.data_locations:main"
+bit-data-locations = "bit.cli.data_locations:main"                      # move to bit-data program eventually
 get-ncbi-assembly-data = "bit.modules.ncbi.get_ncbi_assembly_data:main" # move to bit-data program eventually
 get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"           # move to bit-data program eventually
 bit-update-ncbi-taxonomy = "bit.modules.ncbi.get_ncbi_tax_data:main"    # move to bit-data program eventually
