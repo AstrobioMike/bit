@@ -20,6 +20,9 @@
 ### Added
 
 ### Changed
+- kraken2/bracken-related porgrams have been placed as subcommands under `bit-kraken2`
+  - `bit-kraken2-tax-summary` -> `bit-kraken2 tax-summary`
+  - `bit-kraken2-tax-plots` -> `bit-kraken2 tax-plots`
 - several fasta-related programs have been placed as subcommands under `bit-fasta`
   - `bit-calc-gc-per-seq` and `bit-calc-gc-sliding-window` -> `bit-fasta calc-gc`
   - `bit-calc-variation-in-msa` -> `bit-fasta calc-var-in-msa`
@@ -33,10 +36,13 @@
   - `bit-rename-fasta-headers` -> `bit-fasta modify-headers`
   - `bit-remove-wraps` -> `bit-fasta remove-wraps`
     - this is moderately slower now since i took it out of shell and put in into python
-    - you can add the shell way as a function as found in this gist: https://gist.github.com/AstrobioMike/4054ce9ed84162f31c830bac03beda68
-
-
-  - `bit-update-GO-dbs` -> `helper-bit-setup-GO-dbs`
+    - if wanted, you can add the shell way as a function as found in this gist: https://gist.github.com/AstrobioMike/4054ce9ed84162f31c830bac03beda68
+- GO-related commands have been placed as subcommands under `bit-go`
+  - `bit-get-go-term-info` -> `bit-go get-term-info`
+  - `bit-go-summarize-annotations` -> `bit-go summarize-annotations`
+  - `bit-combine-go-summaries` -> `bit-go combine-summaries`
+  - `bit-slim-down-go-terms` -> `bit-go slim-terms`
+  - `bit-update-GO-dbs` -> `get-go-dbs`
 
 
 

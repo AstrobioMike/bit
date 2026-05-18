@@ -13,7 +13,12 @@ from rich_argparse import RichHelpFormatter # type: ignore
 
 class CustomRichHelpFormatter(RichHelpFormatter):
 
-    # this was added so help text appears on same line as subcommand
+    # this was added so help text appears on same line as subcommand for programs with subcommands
+    def __init__(self, prog, indent_increment=2, max_help_position=24, width=None, **kwargs):
+        super().__init__(prog, indent_increment=indent_increment,
+                         max_help_position=max(max_help_position, 36),
+                         width=width, **kwargs)
+
     def add_argument(self, action):
         super().add_argument(action)
         if hasattr(action, '_get_subactions'):

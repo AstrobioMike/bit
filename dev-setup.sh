@@ -43,8 +43,19 @@ for script in bit/scripts/*; do
 done
 
 # setting up tab-completion for the bit commands with subcommands
-for cmd in bit-ez-screen bit-fasta bit-genbank bit-itol; do
-    eval "$(register-python-argcomplete "$cmd")"
+ARGCOMPLETE_COMMANDS=(
+    bit-ez-screen
+    bit-fasta
+    bit-genbank
+    bit-go
+    bit-itol
+    bit-kraken2
+)
+
+for cmd in "${ARGCOMPLETE_COMMANDS[@]}"; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+        eval "$(register-python-argcomplete "$cmd")"
+    fi
 done
 
 

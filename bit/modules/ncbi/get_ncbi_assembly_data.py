@@ -21,7 +21,7 @@ from bit.modules.general import (wprint, color_text,
 def main():
 
     parser = argparse.ArgumentParser(
-        description="This is a bit helper program to download NCBI assembly-summary tables.",
+        description="This is a bit helper program to download or update NCBI's assembly-summary tables.",
         epilog="Ex. usage: `get-ncbi-assembly-tables`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False

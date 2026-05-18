@@ -118,6 +118,9 @@ def is_gzipped(file_path):
 
 
 def download_with_tqdm(url, target, filename=None, urlopen=False):
+    opener = urllib.request.build_opener()
+    opener.addheaders = [('User-Agent', 'curl/8.0')]
+    urllib.request.install_opener(opener)
     with tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1, desc=target, ncols = 90) as t:
         def reporthook(block_num, block_size, total_size):
             if total_size > 0:

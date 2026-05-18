@@ -6,6 +6,9 @@ ARGCOMPLETE_COMMANDS=(
     bit-ez-screen
     bit-fasta
     bit-genbank
+    bit-go
+    bit-itol
+    bit-kraken2
 )
 
 # checking interactive shell

@@ -78,21 +78,19 @@ bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
 
 
 ## kraken2/bracken helpers ##
-bit-kraken2-tax-plots = "bit.cli.kraken2_tax_plots:main"
-bit-kraken2-tax-summary = "bit.cli.kraken2_tax_summary:main"
-    # put these under bit-kraken2 with subcommands:
-        # tax-plots
+bit-kraken2 = "bit.cli.kraken2:main"
+    # subcommands:
         # tax-summary
+        # tax-plots
 
 
 ## Gene Ontology (GO) helpers ##
-# bit-summarize-go-annotations
-# bit-slim-down-go-terms
-# bit-get-go-term-info
-    # put these under bit-go with subcommands:
-        # summarize-annotations
-        # slim-down-terms
+bit-go = "bit.cli.go:main"
+    # subcommands:
         # get-term-info
+        # summarize-annotations
+        # combine-summaries
+        # slim-terms
 
 
 ## iToL helpers ##
@@ -106,7 +104,8 @@ bit-data-locations = "bit.cli.data_locations:main"
 get-ncbi-assembly-data = "bit.modules.ncbi.get_ncbi_assembly_data:main" # move to bit-data program eventually
 get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"           # move to bit-data program eventually
 bit-update-ncbi-taxonomy = "bit.modules.ncbi.get_ncbi_tax_data:main"    # move to bit-data program eventually
-    # get-ncbi-tax-data and bit-update-ncbi-taxonomy can probably be combined into below `bit-data get ncbi-tax-data`
+    # get-ncbi-tax-data and bit-update-ncbi-taxonomy can be combined into below `bit-data get ncbi-tax-data`
+get-go-dbs = "bit.modules.go.get_go_dbs:main" # move to bit-data program eventually
 
 # get-go-dbs
 # get-gtdb-metadata (right now this is in bit-get-accessions-from-GTDB, need to modularize)
