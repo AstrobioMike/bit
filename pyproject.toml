@@ -20,7 +20,8 @@ include-package-data = true
 bit = ["tests/data/*", "smk/*.smk", "smk/envs/*"]
 
 [project.scripts]
-bit-version = "bit.modules.general:report_version"
+bit-version = "bit.modules.general:report_version" 
+    # maybe drop this and add a -v|--version flag to every program (add_version_arg() similar to add_common_args() like i've done) that prints this out?
 
 
 ## ncbi/GTDB-related ##
@@ -80,6 +81,7 @@ bit-ez-screen = "bit.cli.ez_screen:main"
 bit-get-test-data = "bit.cli.get_test_data:main" # maybe add this as a subcommand to bit-data
 bit-get-workflow = "bit.cli.get_workflow:main"
 bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
+# bit-get-lineage-from-taxids -> bit-lineage-from-taxids?
 
 
 ## kraken2/bracken helpers ##
@@ -131,9 +133,10 @@ get-gtdb-data = "bit.modules.gtdb.get_gtdb_data:main" # move to bit-data program
     # do a subcommand situation for these
     # bit-data
         # locations
-            # check/set
+            # check
+            # set
         # get (with optional --update flags for all)
             # ncbi-assembly-data
             # ncbi-tax-data
             # go-dbs
-            # gtdb-metadata
+            # gtdb-data
