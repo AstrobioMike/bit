@@ -18,6 +18,7 @@
 ## vX.XX.X (NOT YET RELEASED)
 
 ### Added
+- `get-gtdb-data` (pulled out of `bit-get-accessions-from-gtdb`)
 
 ### Changed
 - kraken2/bracken-related porgrams have been placed as subcommands under `bit-kraken2`
@@ -43,7 +44,6 @@
   - `bit-combine-go-summaries` -> `bit-go combine-summaries`
   - `bit-slim-down-go-terms` -> `bit-go slim-terms`
   - `bit-update-GO-dbs` -> `get-go-dbs`
-
 
 
 ### Removed

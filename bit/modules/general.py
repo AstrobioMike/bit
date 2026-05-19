@@ -127,8 +127,9 @@ def download_with_tqdm(url, target, filename=None, urlopen=False):
                 t.total = total_size
             t.update(block_size)
         if not urlopen:
-            urllib.request.urlretrieve(url, filename, reporthook=reporthook)
+            downloaded_path, _ = urllib.request.urlretrieve(url, filename, reporthook=reporthook)
             sys.stdout.write("")
+            return downloaded_path
         else:
             dl = urllib.request.urlopen(url, reporthook=reporthook)
             sys.stdout.write("")

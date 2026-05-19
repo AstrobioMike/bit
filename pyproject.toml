@@ -25,7 +25,7 @@ bit-version = "bit.modules.general:report_version"
 
 ## ncbi/GTDB-related ##
 bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
-# bit-get-accessions-from-GTDB -> bit-accessions-from-gtdb?
+bit-get-accessions-from-gtdb = "bit.cli.get_accessions_from_gtdb:main"
 # bit-get-lineage-from-taxids -> bit-lineage-from-taxids?
 
 
@@ -123,6 +123,7 @@ get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"           # move t
 bit-update-ncbi-taxonomy = "bit.modules.ncbi.get_ncbi_tax_data:main"    # move to bit-data program eventually
     # get-ncbi-tax-data and bit-update-ncbi-taxonomy can be combined into below `bit-data get ncbi-tax-data`
 get-go-dbs = "bit.modules.go.get_go_dbs:main" # move to bit-data program eventually
+get-gtdb-data = "bit.modules.gtdb.get_gtdb_data:main" # move to bit-data program eventually
 
 # get-go-dbs
 # get-gtdb-metadata (right now this is in bit-get-accessions-from-GTDB, need to modularize)
