@@ -27,7 +27,7 @@ def parse_lines(output):
 
 def test_summarize_first_column_from_stdin(sample_table):
     cmd = [
-        "bit-summarize-column",
+        "bit-table", "summarize-column",
         "-c", "1",
     ]
     data = sample_table.read_text()
@@ -54,7 +54,7 @@ def test_summarize_first_column_from_stdin(sample_table):
 
 def test_summarize_second_column_by_name(sample_table):
     cmd = [
-        "bit-summarize-column",
+        "bit-table", "summarize-column",
         str(sample_table),
         "-c", "lee",
     ]

@@ -64,11 +64,8 @@ bit-fasta = "bit.cli.fasta:main"
 
 
 ## table utilities ##
-bit-colnames = "bit.cli.colnames:main"
-bit-summarize-column = "bit.cli.summarize_column:main"
-bit-normalize-table = "bit.cli.normalize_table:main"
-bit-filter-table = "bit.cli.filter_table:main"
-    # maybe put these under bit-table with subcommands:
+bit-table = "bit.cli.table:main"
+    # subcommands:
         # colnames
         # filter
         # normalize
@@ -82,7 +79,6 @@ bit-ez-screen = "bit.cli.ez_screen:main"
 bit-get-test-data = "bit.cli.get_test_data:main" # maybe add this as a subcommand to bit-data
 bit-get-workflow = "bit.cli.get_workflow:main"
 bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
-# bit-get-lineage-from-taxids -> bit-lineage-from-taxids?
 
 
 ## kraken2/bracken helpers ##

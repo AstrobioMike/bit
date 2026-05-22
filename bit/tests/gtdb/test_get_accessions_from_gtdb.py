@@ -1,0 +1,364 @@
+import pytest
+import pandas as pd
+from argparse import Namespace
+from pathlib import Path
+from unittest.mock import patch
+
+from bit.modules.gtdb.get_accessions_from_gtdb import (
+    report_gtdb_version_info,
+    copy_gtdb_table,
+    read_gtdb_tab,
+    resolve_taxon_name,
+    find_ranks_for_taxon,
+    get_accessions,
+    get_unique_taxon_counts,
+    get_unique_taxa_counts_of_all_ranks,
+    get_accessions_from_gtdb,
+)
+
+
+# ─── helpers / fixtures ───────────────────────────────────────────────────────
+
+def make_args(**kwargs):
+    defaults = {
+        'get_table': False,
+        'get_taxon_counts': False,
+        'target_taxon': None,
+        'gtdb_representatives_only': False,
+        'refseq_reference_genomes_only': False,
+        'get_rank_counts': False,
+        'target_rank': None,
+    }
+    defaults.update(kwargs)
+    return Namespace(**defaults)
+
+
+ROWS = [
+    {
+        "accession": "RS_GCF_000002125.1",
+        "domain": "Archaea", "phylum": "Halobacteriota", "class": "Halobacteria",
+        "order": "Halobacteriales", "family": "Haloarculaceae", "genus": "Haloarcula",
+        "species": "Haloarcula hispanica",
+        "gtdb_representative": "t", "ncbi_refseq_category": "reference genome",
+        "ncbi_genbank_assembly_accession": "GCA_000002125.1",
+    },
+    {
+        "accession": "RS_GCF_000009905.1",
+        "domain": "Archaea", "phylum": "Halobacteriota", "class": "Halobacteria",
+        "order": "Halobacteriales", "family": "Haloarculaceae", "genus": "Haloarcula",
+        "species": "Haloarcula marismortui",
+        "gtdb_representative": "f", "ncbi_refseq_category": "na",
+        "ncbi_genbank_assembly_accession": "GCA_000009905.1",
+    },
+    {
+        "accession": "GB_GCA_000001405.1",
+        "domain": "Bacteria", "phylum": "Proteobacteria", "class": "Gammaproteobacteria",
+        "order": "Enterobacterales", "family": "Enterobacteriaceae", "genus": "Escherichia",
+        "species": "Escherichia coli",
+        "gtdb_representative": "t", "ncbi_refseq_category": "reference genome",
+        "ncbi_genbank_assembly_accession": "GCA_000001405.1",
+    },
+    {
+        "accession": "GB_GCA_000005845.2",
+        "domain": "Bacteria", "phylum": "Proteobacteria", "class": "Gammaproteobacteria",
+        "order": "Enterobacterales", "family": "Enterobacteriaceae", "genus": "Escherichia",
+        "species": "Escherichia coli",
+        "gtdb_representative": "f", "ncbi_refseq_category": "na",
+        "ncbi_genbank_assembly_accession": "GCA_000005845.2",
+    },
+    {
+        "accession": "GB_GCA_000006925.2",
+        "domain": "Bacteria", "phylum": "Proteobacteria", "class": "Gammaproteobacteria",
+        "order": "Enterobacterales", "family": "Enterobacteriaceae", "genus": "Salmonella",
+        "species": "Salmonella enterica",
+        "gtdb_representative": "t", "ncbi_refseq_category": "reference genome",
+        "ncbi_genbank_assembly_accession": "GCA_000006925.2",
+    },
+]
+
+
+@pytest.fixture
+def gtdb_tab():
+    return pd.DataFrame(ROWS)
+
+
+@pytest.fixture
+def gtdb_dir(tmp_path):
+    """A tmp directory with the two files that GTDB helper functions need."""
+    (tmp_path / "GTDB-version-info.txt").write_text("R220\n2024-04-24\n")
+    pd.DataFrame(ROWS).to_csv(tmp_path / "GTDB-arc-and-bac-metadata.tsv", sep="\t", index=False)
+    return tmp_path
+
+
+# ─── report_gtdb_version_info ─────────────────────────────────────────────────
+
+def test_report_gtdb_version_info_prints_version(gtdb_dir, capsys):
+    report_gtdb_version_info(str(gtdb_dir))
+    assert "R220" in capsys.readouterr().out
+
+
+# ─── copy_gtdb_table ──────────────────────────────────────────────────────────
+
+def test_copy_gtdb_table_copies_file(gtdb_dir, tmp_path, monkeypatch):
+    out_dir = tmp_path / "output"
+    out_dir.mkdir()
+    monkeypatch.chdir(out_dir)
+    copy_gtdb_table(str(gtdb_dir))
+    assert (out_dir / "GTDB-arc-and-bac-metadata.tsv").exists()
+
+
+# ─── read_gtdb_tab ────────────────────────────────────────────────────────────
+
+def test_read_gtdb_tab_returns_dataframe(gtdb_dir):
+    result = read_gtdb_tab(str(gtdb_dir))
+    assert isinstance(result, pd.DataFrame)
+    assert len(result) == 5
+    assert "domain" in result.columns
+
+
+# ─── resolve_taxon_name ───────────────────────────────────────────────────────
+
+def test_resolve_taxon_name_all(gtdb_tab):
+    assert resolve_taxon_name("all", gtdb_tab) == "all"
+
+
+def test_resolve_taxon_name_exact_match(gtdb_tab):
+    assert resolve_taxon_name("Escherichia", gtdb_tab) == "Escherichia"
+
+
+def test_resolve_taxon_name_case_insensitive_returns_canonical(gtdb_tab):
+    assert resolve_taxon_name("escherichia", gtdb_tab) == "Escherichia"
+
+
+def test_resolve_taxon_name_not_found_exits(gtdb_tab):
+    with pytest.raises(SystemExit):
+        resolve_taxon_name("NonExistentTaxon", gtdb_tab)
+
+
+# ─── find_ranks_for_taxon ─────────────────────────────────────────────────────
+
+def test_find_ranks_for_taxon_single_rank(gtdb_tab):
+    assert find_ranks_for_taxon("Escherichia", gtdb_tab) == ["genus"]
+
+
+def test_find_ranks_for_taxon_domain(gtdb_tab):
+    assert find_ranks_for_taxon("Archaea", gtdb_tab) == ["domain"]
+
+
+def test_find_ranks_for_taxon_not_found(gtdb_tab):
+    assert find_ranks_for_taxon("NonExistent", gtdb_tab) == []
+
+
+def test_find_ranks_for_taxon_multiple_ranks():
+    multi_tab = pd.DataFrame([{
+        "domain": "Bacteria", "phylum": "A", "class": "Duplicate",
+        "order": "C", "family": "Duplicate", "genus": "G", "species": "G sp",
+        "accession": "acc1", "gtdb_representative": "t",
+        "ncbi_refseq_category": "na", "ncbi_genbank_assembly_accession": "GCA_001.1",
+    }])
+    result = find_ranks_for_taxon("Duplicate", multi_tab)
+    assert "class" in result
+    assert "family" in result
+
+
+# ─── get_accessions ───────────────────────────────────────────────────────────
+
+def test_get_accessions_all_writes_accs_file(gtdb_tab, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    get_accessions("all", gtdb_tab)
+    accs = (tmp_path / "GTDB-arc-and-bac-accessions.txt").read_text().splitlines()
+    assert len(accs) == 5
+
+
+def test_get_accessions_all_no_rep_source_no_tab_file(gtdb_tab, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    get_accessions("all", gtdb_tab)
+    assert not (tmp_path / "GTDB-arc-and-bac-refseq-rep-metadata.tsv").exists()
+
+
+def test_get_accessions_all_with_rep_source_writes_both_files(gtdb_tab, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    rep_tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
+    get_accessions("all", gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="GTDB")
+    assert (tmp_path / "GTDB-arc-and-bac-refseq-rep-metadata.tsv").exists()
+    accs = (tmp_path / "GTDB-arc-and-bac-refseq-rep-accessions.txt").read_text().splitlines()
+    assert len(accs) == 3
+
+
+def test_get_accessions_specific_taxon_writes_accs_file(gtdb_tab, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    get_accessions("Escherichia", gtdb_tab)
+    accs = (tmp_path / "GTDB-Escherichia-genus-accs.txt").read_text().splitlines()
+    assert len(accs) == 2
+
+
+def test_get_accessions_specific_taxon_writes_metadata_file(gtdb_tab, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    get_accessions("Escherichia", gtdb_tab)
+    assert (tmp_path / "GTDB-Escherichia-genus-metadata.tsv").exists()
+
+
+def test_get_accessions_rank_specified_explicitly(gtdb_tab, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    get_accessions("Escherichia", gtdb_tab, rank="genus")
+    accs = (tmp_path / "GTDB-Escherichia-genus-accs.txt").read_text().splitlines()
+    assert len(accs) == 2
+
+
+def test_get_accessions_species_with_space_replaced_by_dash(gtdb_tab, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    get_accessions("Escherichia coli", gtdb_tab, rank="species")
+    assert (tmp_path / "GTDB-Escherichia-coli-species-accs.txt").exists()
+
+
+def test_get_accessions_with_rep_source_in_filename(gtdb_tab, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    rep_tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
+    get_accessions("Escherichia", gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="GTDB")
+    assert (tmp_path / "GTDB-Escherichia-genus-GTDB-rep-accs.txt").exists()
+    accs = (tmp_path / "GTDB-Escherichia-genus-GTDB-rep-accs.txt").read_text().splitlines()
+    assert len(accs) == 1
+
+
+def test_get_accessions_multi_rank_no_rank_exits():
+    multi_tab = pd.DataFrame([{
+        "domain": "Bacteria", "phylum": "A", "class": "Duplicate",
+        "order": "C", "family": "Duplicate", "genus": "G", "species": "G sp",
+        "accession": "acc1", "gtdb_representative": "t",
+        "ncbi_refseq_category": "na", "ncbi_genbank_assembly_accession": "GCA_001.1",
+    }])
+    with pytest.raises(SystemExit):
+        get_accessions("Duplicate", multi_tab)
+
+
+def test_get_accessions_taxon_not_found_exits(gtdb_tab, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit):
+        get_accessions("NonExistent", gtdb_tab)
+
+
+# ─── get_unique_taxon_counts ──────────────────────────────────────────────────
+
+def test_get_unique_taxon_counts_all_total(gtdb_tab, capsys):
+    get_unique_taxon_counts("all", gtdb_tab)
+    assert "5" in capsys.readouterr().out
+
+
+def test_get_unique_taxon_counts_all_with_rep_tab(gtdb_tab, capsys):
+    rep_tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
+    get_unique_taxon_counts("all", gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="RefSeq")
+    out = capsys.readouterr().out
+    assert "5" in out   # total
+    assert "3" in out   # rep count
+
+
+def test_get_unique_taxon_counts_specific_taxon(gtdb_tab, capsys):
+    get_unique_taxon_counts("Escherichia", gtdb_tab)
+    assert "2" in capsys.readouterr().out
+
+
+def test_get_unique_taxon_counts_not_found_exits(gtdb_tab):
+    with pytest.raises(SystemExit):
+        get_unique_taxon_counts("NonExistent", gtdb_tab)
+
+
+# ─── get_unique_taxa_counts_of_all_ranks ──────────────────────────────────────
+
+def test_get_unique_taxa_counts_of_all_ranks_prints_all_ranks(gtdb_tab, capsys):
+    get_unique_taxa_counts_of_all_ranks(gtdb_tab)
+    out = capsys.readouterr().out
+    for rank in ("domain", "phylum", "class", "order", "family", "genus", "species"):
+        assert rank in out
+
+
+def test_get_unique_taxa_counts_of_all_ranks_with_refseq_rep(gtdb_tab, capsys):
+    rep_tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
+    get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="RefSeq")
+    assert "RefSeq" in capsys.readouterr().out
+
+
+# ─── get_accessions_from_gtdb (orchestrator) ──────────────────────────────────
+
+def test_orchestrator_get_table_copies_file_and_exits(gtdb_dir, tmp_path, monkeypatch):
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    monkeypatch.chdir(out_dir)
+    with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
+               return_value=str(gtdb_dir)):
+        with pytest.raises(SystemExit):
+            get_accessions_from_gtdb(make_args(get_table=True))
+    assert (out_dir / "GTDB-arc-and-bac-metadata.tsv").exists()
+
+
+def test_orchestrator_get_taxon_counts_without_taxon_exits(tmp_path):
+    with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
+               return_value=str(tmp_path)):
+        with pytest.raises(SystemExit):
+            get_accessions_from_gtdb(make_args(get_taxon_counts=True, target_taxon=None))
+
+
+def test_orchestrator_conflicting_rep_flags_exits(tmp_path):
+    with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
+               return_value=str(tmp_path)):
+        with pytest.raises(SystemExit):
+            get_accessions_from_gtdb(make_args(
+                gtdb_representatives_only=True,
+                refseq_reference_genomes_only=True,
+            ))
+
+
+def test_orchestrator_get_rank_counts_exits(gtdb_dir, capsys):
+    with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
+               return_value=str(gtdb_dir)):
+        with pytest.raises(SystemExit):
+            get_accessions_from_gtdb(make_args(get_rank_counts=True))
+    assert "domain" in capsys.readouterr().out
+
+
+def test_orchestrator_get_taxon_counts_exits(gtdb_dir, capsys):
+    with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
+               return_value=str(gtdb_dir)):
+        with pytest.raises(SystemExit):
+            get_accessions_from_gtdb(make_args(get_taxon_counts=True, target_taxon="Escherichia"))
+    assert "2" in capsys.readouterr().out
+
+
+def test_orchestrator_get_accessions_exits(gtdb_dir, tmp_path, monkeypatch):
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    monkeypatch.chdir(out_dir)
+    with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
+               return_value=str(gtdb_dir)):
+        with pytest.raises(SystemExit):
+            get_accessions_from_gtdb(make_args(target_taxon="Escherichia"))
+    assert (out_dir / "GTDB-Escherichia-genus-accs.txt").exists()
+
+
+def test_orchestrator_gtdb_rep_only_filters_to_rep_genomes(gtdb_dir, tmp_path, monkeypatch):
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    monkeypatch.chdir(out_dir)
+    with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
+               return_value=str(gtdb_dir)):
+        with pytest.raises(SystemExit):
+            get_accessions_from_gtdb(make_args(
+                target_taxon="Escherichia",
+                gtdb_representatives_only=True,
+            ))
+    accs = (out_dir / "GTDB-Escherichia-genus-GTDB-rep-accs.txt").read_text().splitlines()
+    assert len(accs) == 1
+
+
+def test_orchestrator_refseq_ref_only_filters_to_ref_genomes(gtdb_dir, tmp_path, monkeypatch):
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    monkeypatch.chdir(out_dir)
+    with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
+               return_value=str(gtdb_dir)):
+        with pytest.raises(SystemExit):
+            get_accessions_from_gtdb(make_args(
+                target_taxon="Escherichia",
+                refseq_reference_genomes_only=True,
+            ))
+    accs = (out_dir / "GTDB-Escherichia-genus-RefSeq-rep-accs.txt").read_text().splitlines()
+    assert len(accs) == 1

@@ -1,0 +1,89 @@
+/Users/michael.lee/miniconda3/envs/bit-dev/lib/python3.10/site-packages/coverage/inorout.py:561: CoverageWarning: Module bit.cli.normalize_table was never imported. (module-not-imported); see https://coverage.readthedocs.io/en/7.13.5/messages.html#warning-module-not-imported
+  self.warn(f"Module {pkg} was never imported.", slug="module-not-imported")
+/Users/michael.lee/miniconda3/envs/bit-dev/lib/python3.10/site-packages/coverage/inorout.py:561: CoverageWarning: Module bit.cli.summarize_assembly was never imported. (module-not-imported); see https://coverage.readthedocs.io/en/7.13.5/messages.html#warning-module-not-imported
+  self.warn(f"Module {pkg} was never imported.", slug="module-not-imported")
+/Users/michael.lee/miniconda3/envs/bit-dev/lib/python3.10/site-packages/coverage/inorout.py:561: CoverageWarning: Module bit.cli.summarize_column was never imported. (module-not-imported); see https://coverage.readthedocs.io/en/7.13.5/messages.html#warning-module-not-imported
+  self.warn(f"Module {pkg} was never imported.", slug="module-not-imported")
+
+============================= test session starts ==============================
+platform darwin -- Python 3.10.20, pytest-9.0.3, pluggy-1.6.0 -- /Users/michael.lee/miniconda3/envs/bit-dev/bin/python3.10
+cachedir: .pytest_cache
+rootdir: /Users/michael.lee/Documents/github/bit
+configfile: pytest.ini
+plugins: cov-7.1.0
+collecting ... collected 35 items
+
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_report_gtdb_version_info_prints_version PASSED [  2%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_copy_gtdb_table_copies_file PASSED [  5%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_read_gtdb_tab_returns_dataframe PASSED [  8%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_resolve_taxon_name_all PASSED [ 11%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_resolve_taxon_name_exact_match PASSED [ 14%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_resolve_taxon_name_case_insensitive_returns_canonical PASSED [ 17%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_resolve_taxon_name_not_found_exits PASSED [ 20%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_find_ranks_for_taxon_single_rank PASSED [ 22%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_find_ranks_for_taxon_domain PASSED [ 25%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_find_ranks_for_taxon_not_found PASSED [ 28%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_find_ranks_for_taxon_multiple_ranks PASSED [ 31%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_accessions_all_writes_accs_file PASSED [ 34%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_accessions_all_no_rep_source_no_tab_file PASSED [ 37%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_accessions_all_with_rep_source_writes_both_files PASSED [ 40%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_accessions_specific_taxon_writes_accs_file PASSED [ 42%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_accessions_specific_taxon_writes_metadata_file PASSED [ 45%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_accessions_rank_specified_explicitly PASSED [ 48%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_accessions_species_with_space_replaced_by_dash PASSED [ 51%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_accessions_with_rep_source_in_filename PASSED [ 54%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_accessions_multi_rank_no_rank_exits PASSED [ 57%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_accessions_taxon_not_found_exits PASSED [ 60%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_unique_taxon_counts_all_total PASSED [ 62%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_unique_taxon_counts_all_with_rep_tab PASSED [ 65%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_unique_taxon_counts_specific_taxon PASSED [ 68%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_unique_taxon_counts_not_found_exits PASSED [ 71%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_unique_taxa_counts_of_all_ranks_prints_all_ranks PASSED [ 74%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_get_unique_taxa_counts_of_all_ranks_with_refseq_rep PASSED [ 77%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_orchestrator_get_table_copies_file_and_exits PASSED [ 80%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_orchestrator_get_taxon_counts_without_taxon_exits PASSED [ 82%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_orchestrator_conflicting_rep_flags_exits PASSED [ 85%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_orchestrator_get_rank_counts_exits PASSED [ 88%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_orchestrator_get_taxon_counts_exits PASSED [ 91%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_orchestrator_get_accessions_exits PASSED [ 94%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_orchestrator_gtdb_rep_only_filters_to_rep_genomes PASSED [ 97%]
+bit/tests/gtdb/test_get_accessions_from_gtdb.py::test_orchestrator_refseq_ref_only_filters_to_ref_genomes PASSED [100%]
+
+================================ tests coverage ================================
+______________ coverage: platform darwin, python 3.10.20-final-0 _______________
+
+Name                                              Stmts   Miss  Cover   Missing
+-------------------------------------------------------------------------------
+bit/modules/add_insertion.py                        100    100     0%   1-147
+bit/modules/assemble.py                             114    114     0%   1-152
+bit/modules/cov_analyzer.py                         371    371     0%   1-666
+bit/modules/cov_stats.py                            231    231     0%   1-341
+bit/modules/dl_ncbi_assemblies.py                   117    117     0%   1-189
+bit/modules/extract_seqs.py                         114    114     0%   1-207
+bit/modules/ez_screen.py                            242    242     0%   1-451
+bit/modules/filter_kofamscan_results.py              26     26     0%   1-52
+bit/modules/gen_reads.py                            259    259     0%   1-387
+bit/modules/genbank.py                               67     67     0%   1-119
+bit/modules/general.py                              163    124    24%   20, 33, 48-65, 69-72, 76-82, 86-89, 93-99, 103-104, 108-112, 116-117, 121-136, 140-143, 148-152, 157-181, 186-202, 208-235, 239-246
+bit/modules/get_test_data.py                         51     51     0%   1-75
+bit/modules/get_workflow.py                          79     79     0%   1-190
+bit/modules/go/get_go_dbs.py                         58     58     0%   3-100
+bit/modules/go/go.py                                153    153     0%   1-262
+bit/modules/gtdb/get_accessions_from_gtdb.py        175     11    94%   244-257
+bit/modules/gtdb/get_gtdb_data.py                    93     81    13%   18-32, 37-50, 54-60, 65-78, 84-146
+bit/modules/input_parsing.py                         63     63     0%   1-97
+bit/modules/itol.py                                  64     64     0%   1-121
+bit/modules/kraken2_tax_plots.py                     95     95     0%   3-247
+bit/modules/kraken2_tax_summary.py                  101    101     0%   2-203
+bit/modules/lineage_to_tsv.py                        32     32     0%   1-63
+bit/modules/mapped_reads_pid.py                     109    109     0%   3-177
+bit/modules/ncbi/get_lineage_from_taxids.py          26     26     0%   1-45
+bit/modules/ncbi/get_ncbi_assembly_data.py           69     69     0%   8-127
+bit/modules/ncbi/get_ncbi_tax_data.py                59     59     0%   8-103
+bit/modules/ncbi/parse_ncbi_assembly_summary.py      52     52     0%   1-92
+bit/modules/seqs.py                                 217    217     0%   1-383
+-------------------------------------------------------------------------------
+TOTAL                                              3300   3085     7%
+Coverage HTML written to dir htmlcov
+============================== 35 passed in 1.30s ==============================
+

@@ -8,7 +8,7 @@ from bit.modules.general import check_files_are_found
 def build_parser():
 
     desc = """
-        This script converts lineages (in, e.g., this format: "d__Bacteria;p__Campylobacterota;c__Campylobacteria",
+        This script converts condensed lineages (in, e.g., this format: "d__Bacteria;p__Campylobacterota;c__Campylobacteria",
         only including up to the standard 7 ranks d,p,c,o,f,g,s) into tsv format (e.g., the previous would be output
         tab-separated as "Bacteria\tCampylobacterota\tCampylobacteria\tNA\tNA\tNA\tNA"). It expects as input a 2-column
         tab-delimited file with column 1 holding an identifier and column 2 holding the lineage. For version info,

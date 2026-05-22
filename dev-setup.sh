@@ -51,6 +51,7 @@ ARGCOMPLETE_COMMANDS=(
     bit-go
     bit-itol
     bit-kraken2
+    bit-table
 )
 
 for cmd in "${ARGCOMPLETE_COMMANDS[@]}"; do

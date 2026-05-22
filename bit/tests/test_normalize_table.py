@@ -104,7 +104,7 @@ def test_restore_zero_columns():
 def test_cli_cpm(sample_table, tmp_path):
     out = tmp_path / "out_cpm.tsv"
     cmd = [
-        "bit-normalize-table",
+        "bit-table", "normalize",
         "-i", str(sample_table),
         "-n", "CPM",
         "-o", str(out),
@@ -124,7 +124,7 @@ def test_cli_cpm(sample_table, tmp_path):
 def test_cli_mr(sample_table, tmp_path):
     out = tmp_path / "out_mr.tsv"
     cmd = [
-        "bit-normalize-table",
+        "bit-table", "normalize",
         "-i", str(sample_table),
         "-n", "MR",
         "-o", str(out),

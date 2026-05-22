@@ -17,7 +17,7 @@
 
 ## v2.0.0 (NOT YET RELEASED)
 
-A lot of changes have been made recently to group and reorganize bit commands (alongside a hefty python revamp). The changelog over several past versions should be able to help you find anything you might be looking for that's been moved. But if you're having trouble finding something you used to use, please reach out and let me know! You can post and issue here or reach out to me however :)
+A lot of changes have been made recently to group and reorganize bit commands (alongside a hefty python revamp). The changelog over several past versions should be able to help you find anything you might be looking for that's been moved. But if you're having trouble finding something you used to use, please reach out and let me know! You can post an issue on this repo or reach out to me however :)
 
 ### Added
 - `bit-data`
@@ -49,6 +49,11 @@ A lot of changes have been made recently to group and reorganize bit commands (a
 - kraken2/bracken-related programs have been placed as subcommands under `bit-kraken2`
   - `bit-kraken2-tax-summary` -> `bit-kraken2 tax-summary`
   - `bit-kraken2-tax-plots` -> `bit-kraken2 tax-plots`
+- several table-related commands have been combined as subcommands under `bit-table`
+  - `bit-colnames` -> `bit-table colnames`
+  - `bit-filter-table` -> `bit-table filter`
+  - `bit-normalize-table` -> `bit-table normalize`
+  - `bit-summarize-column` -> `bit-table summarize-column`
 - GO-related commands have been placed as subcommands under `bit-go`
   - `bit-get-go-term-info` -> `bit-go get-term-info`
   - `bit-go-summarize-annotations` -> `bit-go summarize-annotations`

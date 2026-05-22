@@ -10,6 +10,7 @@ ARGCOMPLETE_COMMANDS=(
     bit-go
     bit-itol
     bit-kraken2
+    bit-table
 )
 
 # checking interactive shell
