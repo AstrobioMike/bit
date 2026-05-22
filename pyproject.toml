@@ -20,7 +20,7 @@ include-package-data = true
 bit = ["tests/data/*", "smk/*.smk", "smk/envs/*"]
 
 [project.scripts]
-bit-version = "bit.modules.general:report_version" 
+bit-version = "bit.modules.general:report_version"
     # maybe drop this and add a -v|--version flag to every program (add_version_arg() similar to add_common_args() like i've done) that prints this out?
 
 
@@ -76,6 +76,7 @@ bit-filter-table = "bit.cli.filter_table:main"
 
 
 ## miscellaneous ##
+bit-filter-kofamscan-results = "bit.cli.filter_kofamscan_results:main"
 bit-assemble = "bit.cli.assemble:main"
 bit-ez-screen = "bit.cli.ez_screen:main"
 bit-get-test-data = "bit.cli.get_test_data:main" # maybe add this as a subcommand to bit-data

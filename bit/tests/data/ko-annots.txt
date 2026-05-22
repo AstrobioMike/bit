@@ -1,0 +1,10 @@
+#	gene name	KO	thrshld score	E-value	"KO definition"
+#	---------	 ------	-------	------	---------	-------------
+	k119_6520_1	K01999	126.63	44.1	6.7e-11	"branched-chain amino acid transport system substrate-binding protein"
+	k119_6520_1
+	k119_6520_1	K04615	290.13	300	0.0035	"gamma-aminobutyric acid type B receptor"
+	k119_6520_1	K11959	388.40	400	1.7e-05	"urea transport system substrate-binding protein"
+	k119_6520_1	K05387	467.63	11.1	0.25	"glutamate receptor, ionotropic, plant"
+	k119_19560_1	K02014	164.80	144.6	2.1e-41	"iron complex outermembrane recepter protein"
+	k119_19560_1	K15721	575.63	122.5	7.3e-35	"pesticin/yersiniabactin receptor"
+	k119_19560_1	K16090	578.13	90.5	3.3e-25	"catecholate siderophore receptor"
