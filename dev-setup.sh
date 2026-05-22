@@ -31,16 +31,16 @@ done
 
 pip install --no-build-isolation -e .
 
-printf "\n\n  Linking unported scripts to ${BIN_DIR}/ for dev...\n\n\n"
+# printf "\n\n  Linking unported scripts to ${BIN_DIR}/ for dev...\n\n\n"
 
-for script in bit/scripts/*; do
-    name=$(basename "${script}")
-    # skip if pip already created an entry point for this name
-    if [ -f "${BIN_DIR}/${name}" ]; then
-        continue
-    fi
-    ln -sf "$(realpath "${script}")" "${BIN_DIR}/${name}"
-done
+# for script in bit/scripts/*; do
+#     name=$(basename "${script}")
+#     # skip if pip already created an entry point for this name
+#     if [ -f "${BIN_DIR}/${name}" ]; then
+#         continue
+#     fi
+#     ln -sf "$(realpath "${script}")" "${BIN_DIR}/${name}"
+# done
 
 # setting up tab-completion for the bit commands with subcommands
 ARGCOMPLETE_COMMANDS=(

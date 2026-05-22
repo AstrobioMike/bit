@@ -27,7 +27,7 @@ bit-version = "bit.modules.general:report_version"
 ## ncbi/GTDB-related ##
 bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
 bit-get-accessions-from-gtdb = "bit.cli.get_accessions_from_gtdb:main"
-# bit-get-lineage-from-taxids -> bit-lineage-from-taxids?
+bit-get-lineage-from-taxids = "bit.cli.get_lineage_from_taxids:main"
 
 
 ## coverage / mapping ##
