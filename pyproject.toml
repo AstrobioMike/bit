@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "bit"
-version = "1.17.0"
+version = "2.0.0"
 description = "A set of bioinformatics scripts and workflows"
 readme = "README.md"
 license = { text = "GPLv3" }
@@ -120,23 +120,12 @@ bit-genbank = "bit.cli.genbank:main"
 
 
 ## Database related ##
-bit-data-locations = "bit.cli.data_locations:main"                      # move to bit-data program eventually
-get-ncbi-assembly-data = "bit.modules.ncbi.get_ncbi_assembly_data:main" # move to bit-data program eventually
-get-ncbi-tax-data = "bit.modules.ncbi.get_ncbi_tax_data:main"           # move to bit-data program eventually
-bit-update-ncbi-taxonomy = "bit.modules.ncbi.get_ncbi_tax_data:main"    # move to bit-data program eventually
-    # get-ncbi-tax-data and bit-update-ncbi-taxonomy can be combined into below `bit-data get ncbi-tax-data`
-get-go-dbs = "bit.modules.go.get_go_dbs:main" # move to bit-data program eventually
-get-gtdb-data = "bit.modules.gtdb.get_gtdb_data:main" # move to bit-data program eventually
-
-# get-go-dbs
-# get-gtdb-metadata (right now this is in bit-get-accessions-from-GTDB, need to modularize)
-
-    # do a subcommand situation for these
-    # bit-data
+bit-data = "bit.cli.data:main"
+    # subcommands:
         # locations
             # check
             # set
-        # get (with optional --update flags for all)
+        # get
             # ncbi-assembly-data
             # ncbi-tax-data
             # go-dbs

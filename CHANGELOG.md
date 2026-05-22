@@ -15,15 +15,23 @@
 -->
 
 
-## vX.XX.X (NOT YET RELEASED)
+## v2.0.0 (NOT YET RELEASED)
+
+A lot of changes have been made recently to group and reorganize bit commands (alongside a hefty python revamp). The changelog over several past versions should be able to help you find anything you might be looking for that's been moved. But if you're having trouble finding something you used to use, please reach out and let me know! You can post and issue here or reach out to me however :)
 
 ### Added
-- `get-gtdb-data` (pulled out of `bit-get-accessions-from-gtdb`)
+- `bit-data`
+  - this replaces `bit-data-locations` and all the database download programs with subcommands:
+    - `locations`
+      - `check`
+      - `set`
+    - `get`
+      - `ncbi-assembly-data`
+      - `ncbi-tax-data`
+      - `go-dbs`
+      - `gtdb-data`
 
 ### Changed
-- kraken2/bracken-related porgrams have been placed as subcommands under `bit-kraken2`
-  - `bit-kraken2-tax-summary` -> `bit-kraken2 tax-summary`
-  - `bit-kraken2-tax-plots` -> `bit-kraken2 tax-plots`
 - several fasta-related programs have been placed as subcommands under `bit-fasta`
   - `bit-calc-gc-per-seq` and `bit-calc-gc-sliding-window` -> `bit-fasta calc-gc`
   - `bit-calc-variation-in-msa` -> `bit-fasta calc-var-in-msa`
@@ -38,12 +46,22 @@
   - `bit-remove-wraps` -> `bit-fasta remove-wraps`
     - this is moderately slower now since i took it out of shell and put in into python
     - if wanted, you can add the shell way as a function as found in this gist: https://gist.github.com/AstrobioMike/4054ce9ed84162f31c830bac03beda68
+- kraken2/bracken-related programs have been placed as subcommands under `bit-kraken2`
+  - `bit-kraken2-tax-summary` -> `bit-kraken2 tax-summary`
+  - `bit-kraken2-tax-plots` -> `bit-kraken2 tax-plots`
 - GO-related commands have been placed as subcommands under `bit-go`
   - `bit-get-go-term-info` -> `bit-go get-term-info`
   - `bit-go-summarize-annotations` -> `bit-go summarize-annotations`
   - `bit-combine-go-summaries` -> `bit-go combine-summaries`
   - `bit-slim-down-go-terms` -> `bit-go slim-terms`
   - `bit-update-GO-dbs` -> `get-go-dbs`
+- database helpers for setting/checking locations has been reorganized
+  - `bit-data-locations` -> `bit-data locations`
+- database helpers for downloading/updating them have been reorganized
+  - `get-ncbi-assembly-data` -> `bit-data get ncbi-assembly-data`
+  - `get-ncbi-tax-data` -> `bit-data get ncbi-tax-data`
+  - `get-go-dbs` -> `bit-data get go-dbs`
+  - `get-gtdb-data` -> `bit-data get gtdb-data`
 
 
 ### Removed

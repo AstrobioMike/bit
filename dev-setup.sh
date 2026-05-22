@@ -44,6 +44,7 @@ pip install --no-build-isolation -e .
 
 # setting up tab-completion for the bit commands with subcommands
 ARGCOMPLETE_COMMANDS=(
+    bit-data
     bit-ez-screen
     bit-fasta
     bit-genbank
