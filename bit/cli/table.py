@@ -285,7 +285,7 @@ def _run_colnames(args):
 
 def _run_filter(args):
     from bit.modules.general import check_files_are_found
-    from bit.cli.filter_table import filter_table
+    from bit.modules.table import filter_table
     check_files_are_found([args.input_table, args.wanted_values])
     filter_table(
         input_table=args.input_table,
@@ -300,8 +300,8 @@ def _run_filter(args):
 
 def _run_normalize(args):
     from bit.modules.general import check_files_are_found
-    from bit.cli.normalize_table import (remove_zero_columns, normalize_cpm,
-                                         normalize_median_ratio, restore_zero_columns)
+    from bit.modules.table import (remove_zero_columns, normalize_cpm,
+                                   normalize_median_ratio, restore_zero_columns)
     import pandas as pd # type: ignore
     check_files_are_found([args.input_table])
     tab = pd.read_csv(args.input_table, sep="\t", index_col=0, low_memory=False)
@@ -312,7 +312,7 @@ def _run_normalize(args):
 
 
 def _run_summarize_column(args):
-    from bit.cli.summarize_column import summarize_column
+    from bit.modules.table import summarize_column
     input_file = args.input_file
     if isinstance(input_file, str):
         input_file = open(input_file, "r")
