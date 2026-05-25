@@ -2,14 +2,15 @@
 import os
 import sys
 import argparse
-from bit.cli.common import CustomRichHelpFormatter, add_help
+import argcomplete # type: ignore
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 
 def build_parser():
 
     desc = """
         This program provides subcommands for working with kraken2 (or bracken) output. See subcommand-specific
-        help menus for more info. For version info, run `bit-version`.
+        help menus for more info.
         """
 
     parser = argparse.ArgumentParser(
@@ -19,6 +20,8 @@ def build_parser():
     )
 
     add_help(parser)
+
+    add_version_arg(parser)
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
     parser.subparsers = subparsers
@@ -89,6 +92,8 @@ def build_parser():
 
     add_help(tax_plots_optional)
 
+    add_version_arg(tax_plots_optional)
+
     tax_plots_parser.set_defaults(func="tax_plots")
 
 
@@ -144,6 +149,8 @@ def build_parser():
 
     add_help(tax_summary_optional)
 
+    add_version_arg(tax_summary_optional)
+
     tax_summary_parser.set_defaults(func="tax_summary")
 
     return parser
@@ -152,6 +159,8 @@ def build_parser():
 def main():
 
     parser = build_parser()
+    argcomplete.autocomplete(parser)
+
 
     if len(sys.argv) == 1:
         parser.print_help(sys.stderr)
@@ -162,6 +171,11 @@ def main():
 
         if cmd in ("-h", "--help"):
             parser.print_help(sys.stderr)
+            sys.exit(0)
+
+        if cmd in ("-v", "--version"):
+            from bit.modules.general import report_version
+            report_version()
             sys.exit(0)
 
         if cmd in parser.subparsers.choices:

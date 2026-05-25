@@ -1,14 +1,14 @@
 import sys
 import argparse
 import argcomplete # type: ignore
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 
 def build_parser():
 
     desc = """
         This program manages bit-utilized databases and their location settings. See subcommand-specific
-        help menus for more info. For version info, run `bit-version`.
+        help menus for more info.
         """
 
     parser = argparse.ArgumentParser(
@@ -18,6 +18,8 @@ def build_parser():
     )
 
     add_help(parser)
+
+    add_version_arg(parser)
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
     parser.subparsers = subparsers
@@ -42,6 +44,8 @@ def build_parser():
     )
 
     add_help(get_parser)
+
+    add_version_arg(get_parser)
 
     get_subparsers = get_parser.add_subparsers(dest="get_action", required=True, metavar='')
     get_parser.subparsers = get_subparsers
@@ -79,6 +83,8 @@ def build_parser():
     add_get_common_args(get_go_dbs_optional)
     add_help(get_go_dbs_optional)
 
+    add_version_arg(get_go_dbs_parser)
+
     get_go_dbs_parser.set_defaults(func="get_go_dbs")
 
 
@@ -100,6 +106,8 @@ def build_parser():
     get_gtdb_data_optional = get_gtdb_data_parser.add_argument_group("Optional Parameters")
     add_get_common_args(get_gtdb_data_optional)
     add_help(get_gtdb_data_optional)
+
+    add_version_arg(get_gtdb_data_parser)
 
     get_gtdb_data_parser.set_defaults(func="get_gtdb_data")
 
@@ -123,6 +131,8 @@ def build_parser():
     add_get_common_args(get_ncbi_assembly_optional)
     add_help(get_ncbi_assembly_optional)
 
+    add_version_arg(get_ncbi_assembly_parser)
+
     get_ncbi_assembly_parser.set_defaults(func="get_ncbi_assembly_data")
 
 
@@ -144,6 +154,8 @@ def build_parser():
     get_ncbi_tax_optional = get_ncbi_tax_parser.add_argument_group("Optional Parameters")
     add_get_common_args(get_ncbi_tax_optional)
     add_help(get_ncbi_tax_optional)
+
+    add_version_arg(get_ncbi_tax_parser)
 
     get_ncbi_tax_parser.set_defaults(func="get_ncbi_tax_data")
 
@@ -167,6 +179,8 @@ def build_parser():
 
     add_help(locations_parser)
 
+    add_version_arg(locations_parser)
+
     locations_subparsers = locations_parser.add_subparsers(dest="locations_action", required=True, metavar='')
     locations_parser.subparsers = locations_subparsers
 
@@ -189,6 +203,8 @@ def build_parser():
 
     locations_check_optional = locations_check_parser.add_argument_group("Optional Parameters")
     add_help(locations_check_optional)
+
+    add_version_arg(locations_check_optional)
     locations_check_parser.set_defaults(func="locations_check")
 
 
@@ -209,6 +225,8 @@ def build_parser():
 
     locations_set_optional = locations_set_parser.add_argument_group("Optional Parameters")
     add_help(locations_set_optional)
+
+    add_version_arg(locations_set_optional)
 
     locations_set_parser.set_defaults(func="locations_set")
 
@@ -233,6 +251,11 @@ def main():
 
         if cmd in ("-h", "--help"):
             parser.print_help(sys.stderr)
+            sys.exit(0)
+
+        if cmd in ("-v", "--version"):
+            from bit.modules.general import report_version
+            report_version()
             sys.exit(0)
 
         if cmd in parser.subparsers.choices:

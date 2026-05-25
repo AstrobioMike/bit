@@ -115,9 +115,9 @@ If you happen to find *bit* useful in your work, please be sure to cite it 🙂
 
 > Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122. [https://doi.org/10.12688/f1000research.79530.1](https://doi.org/10.12688/f1000research.79530.1)
 
-You can get the version you are using by running `bit-version`.  
+You can get the version you are using by adding the `-v` or `--version` flag to any of the programs.
 
-If you are using a script in *bit* that also leverages another program, please be sure to cite them too. For instance, `bit-get-lineage-from-taxids` uses [TaxonKit](https://bioinf.shenwei.me/taxonkit/), and `bit-slim-down-go-terms` uses [goatools](https://github.com/tanghaibao/goatools). For cases where a *bit* script relies on other programs like those, it will be indicated in the help menu of that *bit* script.  
+If you are using a script in *bit* that also leverages another program, please be sure to cite them too. For instance, `bit-get-lineage-from-taxids` uses [TaxonKit](https://bioinf.shenwei.me/taxonkit/), and the `bit-go` subcommands use [goatools](https://github.com/tanghaibao/goatools). For cases where *bit* relies on other programs like those, it will be indicated in the help menu of that *bit* program.  
 
 ---
 

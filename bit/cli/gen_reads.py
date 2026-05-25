@@ -3,7 +3,8 @@ import argparse
 from bit.modules.gen_reads import generate_reads
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help,
-                            add_seed)
+                            add_seed,
+                            add_version_arg)
 
 
 def main():
@@ -11,7 +12,7 @@ def main():
     desc = """
         This script generates perfect (no error model) reads in FASTQ format from one or
         multiple input FASTA files. See `bit-mutate-seqs` if wanting to introduce variation
-        to a fasta prior to read-generation. For version info, run `bit-version`.
+        to a fasta prior to read-generation.
         """
 
     parser = argparse.ArgumentParser(
@@ -101,6 +102,8 @@ def main():
     add_seed(general)
 
     add_help(general)
+
+    add_version_arg(general)
 
     paired.add_argument(
         "-f",

@@ -1,14 +1,14 @@
 import sys
 import argparse
 import argcomplete # type: ignore
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 
 def build_parser():
 
     desc = """
         This program has helpers for working Gene Ontology (GO) annotations. See subcommand-specific
-        help menus for more info. For version info, run `bit-version`.
+        help menus for more info.
         """
 
     parser = argparse.ArgumentParser(
@@ -18,6 +18,8 @@ def build_parser():
     )
 
     add_help(parser)
+
+    add_version_arg(parser)
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
     parser.subparsers = subparsers
@@ -79,6 +81,8 @@ def build_parser():
 
     add_help(get_term_info_optional)
 
+    add_version_arg(get_term_info_optional)
+
     get_term_info_parser.set_defaults(func="get_term_info")
 
 
@@ -125,6 +129,8 @@ def build_parser():
     )
 
     add_help(summarize_annotations_optional)
+
+    add_version_arg(summarize_annotations_optional)
 
     summarize_annotations_parser.set_defaults(func="summarize_annotations")
 
@@ -174,6 +180,8 @@ def build_parser():
     )
 
     add_help(combine_summaries_optional)
+
+    add_version_arg(combine_summaries_optional)
 
     combine_summaries_parser.set_defaults(func="combine_summaries")
 
@@ -236,6 +244,8 @@ def build_parser():
 
     add_help(slim_terms_optional)
 
+    add_version_arg(slim_terms_optional)
+
     slim_terms_parser.set_defaults(func="slim_terms")
 
     return parser
@@ -256,6 +266,11 @@ def main():
 
         if cmd in ("-h", "--help"):
             parser.print_help(sys.stderr)
+            sys.exit(0)
+
+        if cmd in ("-v", "--version"):
+            from bit.modules.general import report_version
+            report_version()
             sys.exit(0)
 
         if cmd in parser.subparsers.choices:

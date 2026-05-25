@@ -43,7 +43,7 @@ jobs:
         conda run -n bit pip install -e . # the editable pip install is so test coverages make sense
 
     - name: Check installed version
-      run: conda run -n bit bit-version
+      run: conda run -n bit bit-cov-analyzer -v
 
     - name: Set env var so subprocesses get coverage during pytest
       run: echo "COVERAGE_PROCESS_START=.coveragerc" >> $GITHUB_ENV

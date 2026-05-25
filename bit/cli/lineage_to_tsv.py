@@ -1,7 +1,8 @@
 import os
 import sys
 import argparse
-from bit.cli.common import (CustomRichHelpFormatter, add_help)
+from bit.cli.common import (CustomRichHelpFormatter, add_help,
+                            add_version_arg)
 from bit.modules.lineage_to_tsv import convert_lineage_to_tsv
 from bit.modules.general import check_files_are_found
 
@@ -11,8 +12,7 @@ def build_parser():
         This script converts condensed lineages (in, e.g., this format: "d__Bacteria;p__Campylobacterota;c__Campylobacteria",
         only including up to the standard 7 ranks d,p,c,o,f,g,s) into tsv format (e.g., the previous would be output
         tab-separated as "Bacteria\tCampylobacterota\tCampylobacteria\tNA\tNA\tNA\tNA"). It expects as input a 2-column
-        tab-delimited file with column 1 holding an identifier and column 2 holding the lineage. For version info,
-        run `bit-version`.
+        tab-delimited file with column 1 holding an identifier and column 2 holding the lineage..
     """
 
     parser = argparse.ArgumentParser(
@@ -49,6 +49,8 @@ def build_parser():
     )
 
     add_help(optional)
+
+    add_version_arg(optional)
 
     return parser
 

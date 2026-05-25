@@ -40,6 +40,23 @@ def add_help(group):
         help = wrap_help("Show this help message and exit")
     )
 
+class VersionAction(argparse.Action):
+    def __init__(self, option_strings, dest, **kwargs):
+        super().__init__(option_strings, dest, nargs=0, **kwargs)
+
+    def __call__(self, parser, namespace, values, option_string=None):
+        from bit.modules.general import report_version
+        report_version()
+        parser.exit()
+
+def add_version_arg(group):
+    group.add_argument(
+        "-v",
+        "--version",
+        action = VersionAction,
+        help = wrap_help("Show bit version and exit")
+    )
+
 def add_force(group):
     group.add_argument(
         "-F",

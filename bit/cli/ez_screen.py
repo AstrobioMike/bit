@@ -4,14 +4,14 @@ import argcomplete # type: ignore
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help,
                             add_common_snakemake_arguments,
-                            reconstruct_invocation)
+                            reconstruct_invocation,
+                            add_version_arg)
 
 
 def build_parser():
 
     desc = """
-        This program helps detect target-genes/regions present in assemblies or reads. For version
-        info, run `bit-version`.
+        This program helps detect target-genes/regions present in assemblies or reads..
         """
 
     parser = argparse.ArgumentParser(
@@ -19,6 +19,8 @@ def build_parser():
         epilog="Use `bit-ez-screen assembly -h` or `bit-ez-screen reads -h` to see subcommand-specific help.",
         formatter_class=CustomRichHelpFormatter
     )
+
+    add_version_arg(parser)
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
     parser.subparsers = subparsers
@@ -93,6 +95,8 @@ def build_parser():
 
     add_help(assembly_optional)
 
+    add_version_arg(assembly_optional)
+
     assembly_parser.set_defaults(func="run_assembly")
 
     ### subcommand cli for reads screening ###
@@ -130,6 +134,8 @@ def build_parser():
 
     add_help(reads_optional)
 
+    add_version_arg(reads_optional)
+
     add_common_snakemake_arguments(reads_snakemake)
 
     reads_parser.set_defaults(func="run_reads")
@@ -151,6 +157,11 @@ def main():
 
         if cmd in ("-h", "--help"):
             parser.print_help(sys.stderr)
+            sys.exit(0)
+
+        if cmd in ("-v", "--version"):
+            from bit.modules.general import report_version
+            report_version()
             sys.exit(0)
 
         if cmd in parser.subparsers.choices:

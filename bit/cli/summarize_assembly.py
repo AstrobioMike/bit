@@ -2,7 +2,8 @@ import os
 import sys
 import argparse
 from bit.cli.common import (CustomRichHelpFormatter,
-                            add_help)
+                            add_help,
+                            add_version_arg)
 
 
 def build_parser():
@@ -11,8 +12,7 @@ def build_parser():
         This script outputs general summary stats for assemblies provided in fasta
         format. If an output file is specified, it writes the results there as a tsv.
         Otherwise it prints the results to the screen. "Ambiguous characters" reports
-        total counts of any letter that is not "A", "T", "C", or "G". For version
-        info, run `bit-version`.
+        total counts of any letter that is not "A", "T", "C", or "G"..
     """
 
     parser = argparse.ArgumentParser(
@@ -46,6 +46,8 @@ def build_parser():
     )
 
     add_help(optional)
+
+    add_version_arg(optional)
 
     return parser
 

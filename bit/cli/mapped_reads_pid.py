@@ -1,6 +1,6 @@
 import sys
 import argparse
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 from bit.modules.mapped_reads_pid import (get_mapped_reads_pids,
                                               get_summary_stats)
 
@@ -12,7 +12,7 @@ def build_parser():
         based on edit distance (using the NM field) and total alignment length. By default,
         it just prints out some summary stats. Specify an output file if you also want it to write out the
         percent identities for each mapped read. [bold]TO ALSO GET[/bold] coverage and detection information, use
-        `bit-cov-stats` instead. For version info, run `bit-version`.
+        `bit-cov-stats` instead.
         """
 
     parser = argparse.ArgumentParser(
@@ -46,6 +46,8 @@ def build_parser():
 
 
     add_help(optional)
+
+    add_version_arg(optional)
 
     return parser
 

@@ -2,7 +2,7 @@ import sys
 import argparse
 import datetime
 import random
-from bit.cli.common import CustomRichHelpFormatter, add_help, reconstruct_invocation
+from bit.cli.common import CustomRichHelpFormatter, add_help, reconstruct_invocation, add_version_arg
 from bit.modules.general import check_files_are_found, report_message
 
 
@@ -11,7 +11,7 @@ def build_parser():
     desc = """
         This script will mutate all sequences of a nucleotide or amino-acid multifasta with
         the specified mutation rate. By default it only swaps bases, but it can optionally introduce indels also.
-        For version info, run `bit-version`.
+        Use `-v` or `--version` flag for version info.
         """
 
     parser = argparse.ArgumentParser(
@@ -97,6 +97,8 @@ def build_parser():
     )
 
     add_help(optional)
+
+    add_version_arg(optional)
 
     return parser
 

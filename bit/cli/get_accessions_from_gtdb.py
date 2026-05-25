@@ -1,6 +1,6 @@
 import sys
 import argparse
-from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help, add_version_arg
 from bit.modules.gtdb.get_accessions_from_gtdb import get_accessions_from_gtdb
 
 
@@ -14,8 +14,7 @@ def main():
         currently has filtering capabilities built-in for specifying only GTDB
         representative species or RefSeq reference genomes (see help menu
         and links therein for explanations of what these are). It will cache the GTDB
-        metadata tables, if you want to update them, run `get-gtdb-data -f`. 
-        For version info, run `bit-version`.
+        metadata tables, if you want to update them, run `bit-data get gtdb-data -f`.
         """
 
     parser = argparse.ArgumentParser(
@@ -86,6 +85,8 @@ def main():
     )
 
     add_help(optional)
+
+    add_version_arg(optional)
 
     if len(sys.argv) == 1:  # pragma: no cover
         parser.print_help(sys.stderr)

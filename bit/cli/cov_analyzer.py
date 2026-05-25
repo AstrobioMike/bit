@@ -1,7 +1,7 @@
 import sys
 import argparse
 from bit.cli.common import (CustomRichHelpFormatter, reconstruct_invocation,
-                            add_help, add_force)
+                            add_help, add_version_arg, add_force)
 
 def main():
 
@@ -16,7 +16,7 @@ def main():
         coverages by adding the `--per-contig` flag. Additionally, it is recommended to exclude contigs
         holding mitochondrial genomes or chloroplasts due to their relatively high coverage (if you
         specifically want to investigate them too, you should probably use `--per-contig` mode).
-        For version info, run `bit-version`.
+        Use `-v` or `--version` flag for version info.
         """
 
     parser = argparse.ArgumentParser(
@@ -131,6 +131,7 @@ def main():
 
     add_force(optional)
     add_help(optional)
+    add_version_arg(optional)
 
     if len(sys.argv) == 1:  # pragma: no cover
         parser.print_help(sys.stderr)

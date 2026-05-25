@@ -2,14 +2,14 @@ import sys
 import io
 import argparse
 import argcomplete # type: ignore
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 
 def build_parser():
 
     desc = """
         This program has utilities for working with tabular data. See subcommand-specific
-        help menus for more info. For version info, run `bit-version`.
+        help menus for more info..
         """
 
     parser = argparse.ArgumentParser(
@@ -19,6 +19,7 @@ def build_parser():
     )
 
     add_help(parser)
+    add_version_arg(parser)
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
     parser.subparsers = subparsers
@@ -52,6 +53,8 @@ def build_parser():
     )
 
     add_help(colnames_optional)
+    add_version_arg(colnames_optional)
+
     colnames_parser.set_defaults(func="colnames")
 
 
@@ -127,6 +130,8 @@ def build_parser():
     )
 
     add_help(filter_optional)
+    add_version_arg(filter_optional)
+
     filter_parser.set_defaults(func="filter")
 
 
@@ -175,6 +180,8 @@ def build_parser():
     )
 
     add_help(normalize_optional)
+    add_version_arg(normalize_optional)
+
     normalize_parser.set_defaults(func="normalize")
 
 
@@ -222,6 +229,8 @@ def build_parser():
     )
 
     add_help(summarize_col_optional)
+    add_version_arg(summarize_col_optional)
+
     summarize_col_parser.set_defaults(func="summarize_column")
 
 
@@ -246,6 +255,11 @@ def main():
 
         if cmd in ("-h", "--help"):
             parser.print_help(sys.stderr)
+            sys.exit(0)
+
+        if cmd in ("-v", "--version"):
+            from bit.modules.general import report_version
+            report_version()
             sys.exit(0)
 
         if cmd in parser.subparsers.choices:

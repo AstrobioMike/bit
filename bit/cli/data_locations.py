@@ -9,7 +9,7 @@ import sys
 import os
 import argparse
 import shutil
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 from bit.modules.general import color_text, wprint
 
 def build_parser():
@@ -24,6 +24,8 @@ def build_parser():
     parser.add_argument('task', choices = ['check', 'set'], help = 'check or set required environmental variables')
 
     add_help(parser)
+
+    add_version_arg(optional)
 
     return parser
 

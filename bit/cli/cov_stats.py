@@ -1,7 +1,7 @@
 import sys
 import argparse
 from bit.modules.cov_stats import get_cov_stats
-from bit.cli.common import CustomRichHelpFormatter, add_force, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_force, add_help, add_version_arg
 from bit.modules.general import report_message, notify_premature_exit, is_gzipped
 
 
@@ -11,7 +11,7 @@ def build_parser():
         This script generates whole-reference and contig-level detection and coverage info
         given the input reference fasta(s) and a bam file AND/OR a mosdepth-produced per-base.bed.gz file.
         If providing a bam file, it will also report mean and median percent ID values of mapped reads to
-        each input reference and contig. For version info, run `bit-version`.
+        each input reference and contig.
         """
 
     parser = argparse.ArgumentParser(
@@ -81,6 +81,8 @@ def build_parser():
 
     add_force(optional)
     add_help(optional)
+
+    add_version_arg(optional)
 
     return parser
 

@@ -1,14 +1,14 @@
 import sys
 import argparse
 from bit.modules.get_test_data import dl_test_data
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 
 def build_parser():
 
     desc = """
         This is a program for downloading test data files.
-        For version info, run `bit-version`.
+        Use `-v` or `--version` flag for version info.
         """
 
     parser = argparse.ArgumentParser(
@@ -28,6 +28,8 @@ def build_parser():
     )
 
     add_help(optional)
+
+    add_version_arg(optional)
 
     return parser
 

@@ -1,14 +1,14 @@
 import sys
 import argparse
 import argcomplete # type: ignore
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 
 def build_parser():
 
     desc = """
         This program extracts sequences from an input fasta through various methods. See subcommand-specific
-        help menus for more info. For version info, run `bit-version`.
+        help menus for more info.
         """
 
     parser = argparse.ArgumentParser(
@@ -18,6 +18,8 @@ def build_parser():
     )
 
     add_help(parser)
+
+    add_version_arg(optional)
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
     parser.subparsers = subparsers
@@ -72,6 +74,8 @@ def build_parser():
 
     add_help(by_coords_optional)
 
+    add_version_arg(optional)
+
     by_coords_parser.set_defaults(func="extract_seqs_by_coords")
 
 
@@ -119,6 +123,8 @@ def build_parser():
     )
 
     add_help(by_headers_optional)
+
+    add_version_arg(optional)
 
     by_headers_parser.set_defaults(func="extract_seqs_by_headers")
 
@@ -169,6 +175,8 @@ def build_parser():
 
     add_help(by_primers_optional)
 
+    add_version_arg(optional)
+
     by_primers_parser.set_defaults(func="extract_seqs_by_primers")
 
     return parser
@@ -189,6 +197,11 @@ def main():
 
         if cmd in ("-h", "--help"):
             parser.print_help(sys.stderr)
+            sys.exit(0)
+
+        if cmd in ("-v", "--version"):
+            from bit.modules.general import report_version
+            report_version()
             sys.exit(0)
 
         if cmd in parser.subparsers.choices:

@@ -1,14 +1,14 @@
 import sys
 import argparse
 import argcomplete # type: ignore
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 
 def build_parser():
 
     desc = """
         This program extracts different types of information and sequences from GenBank files.
-        For version info, run `bit-version`.
+        Use `-v` or `--version` flag for version info.
         """
 
     parser = argparse.ArgumentParser(
@@ -18,6 +18,8 @@ def build_parser():
     )
 
     add_help(parser)
+
+    add_version_arg(parser)
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
     parser.subparsers = subparsers
@@ -64,6 +66,8 @@ def build_parser():
 
     add_help(to_fasta_optional)
 
+    add_version_arg(to_fasta_optional)
+
     to_fasta_parser.set_defaults(func="to-fasta")
 
     ### subcommand cli for extracting AA sequences ###
@@ -92,6 +96,8 @@ def build_parser():
 
     add_help(to_AA_seqs_optional)
 
+    add_version_arg(to_AA_seqs_optional)
+
     to_AA_seqs_parser.set_defaults(func="to-AA-seqs")
 
     ### subcommand cli for extracting CDS info to a table ###
@@ -117,6 +123,8 @@ def build_parser():
     add_common_optional_arguments(to_cds_tsv_optional)
 
     add_help(to_cds_tsv_optional)
+
+    add_version_arg(to_cds_tsv_optional)
 
     to_cds_tsv_parser.set_defaults(func="to-cds-tsv")
 
@@ -151,6 +159,8 @@ def build_parser():
 
     add_help(to_cds_seqs_optional)
 
+    add_version_arg(to_cds_seqs_optional)
+
     to_cds_seqs_parser.set_defaults(func="to-cds-seqs")
 
     return parser
@@ -170,6 +180,11 @@ def main():
 
         if cmd in ("-h", "--help"):
             parser.print_help(sys.stderr)
+            sys.exit(0)
+
+        if cmd in ("-v", "--version"):
+            from bit.modules.general import report_version
+            report_version()
             sys.exit(0)
 
         if cmd in parser.subparsers.choices:

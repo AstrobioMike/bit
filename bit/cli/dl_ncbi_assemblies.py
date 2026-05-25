@@ -1,6 +1,6 @@
 import sys
 import argparse
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 from bit.modules.dl_ncbi_assemblies import dl_ncbi_assemblies
 
 def main():
@@ -8,7 +8,7 @@ def main():
     desc = """
         This program downloads assembly files for NCBI genomes. It takes as input
         assembly accessions (either GCA_* or GCF_*) and optionally a specification of
-        which format to download. For version info, run `bit-version`.
+        which format to download.
         """
 
     parser = argparse.ArgumentParser(
@@ -56,6 +56,7 @@ def main():
     )
 
     add_help(optional)
+    add_version_arg(optional)
 
     if len(sys.argv) == 1:  # pragma: no cover
         parser.print_help(sys.stderr)

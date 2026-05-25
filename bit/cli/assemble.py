@@ -5,6 +5,7 @@ from rich_argparse import RawTextRichHelpFormatter # type: ignore
 from bit.cli.common import (wrap_help,
                             wrap_multiline_help,
                             add_help,
+                            add_version_arg,
                             add_common_snakemake_arguments,
                             reconstruct_invocation)
 from bit.modules.general import report_message, notify_premature_exit
@@ -16,7 +17,7 @@ def build_parser():
 
     raw_desc = (
         "This program runs an assembly workflow with optional QC and digital normalization "
-        "(short-read and paired-end only currently). For version info, run `bit-version`."
+        "(short-read and paired-end only currently)."
     )
 
     desc = wrap_help(raw_desc, 4)
@@ -82,6 +83,7 @@ def build_parser():
     )
 
     add_help(general)
+    add_version_arg(general)
 
     assembly.add_argument(
         "-a",

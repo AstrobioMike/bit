@@ -1,13 +1,13 @@
 import sys
 import argparse
-from bit.cli.common import CustomRichHelpFormatter, add_help, add_seed
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg, add_seed
 from bit.modules.general import check_files_are_found, report_message, notify_premature_exit
 
 
 def build_parser():
 
     desc = """
-        This script is for adding an insertion sequence to an input fasta. For version info, run `bit-version`.
+        This script is for adding an insertion sequence to an input fasta.
         """
 
     parser = argparse.ArgumentParser(
@@ -73,6 +73,7 @@ def build_parser():
     add_seed(optional)
 
     add_help(optional)
+    add_version_arg(optional)
 
     return parser
 

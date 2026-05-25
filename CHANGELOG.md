@@ -70,6 +70,7 @@ A lot of changes have been made recently to group and reorganize bit commands (a
 
 
 ### Removed
+- `bit-version` has been removed, each program has its own `-v|--version` parameter now
 - `bit-dedupe-fasta-headers` has been removed entirely, as it's purpose can be achieved with `bit-fasta modify-headers`
 - `bit-check-fastq-for-dup-headers` removed due to only super-niche utility
 - `bit-parse-fastq-by-headers` removed due to only niche utility, gist is here: https://gist.github.com/AstrobioMike/785265b43847e7cb10089d102573b575

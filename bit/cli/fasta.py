@@ -1,13 +1,13 @@
 import sys
 import argparse
 import argcomplete # type: ignore
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 def build_parser():
 
     desc = """
         This program performs various operations on fasta files. See subcommand-specific
-        help menus for more info. For version info, run `bit-version`.
+        help menus for more info.
         """
 
     parser = argparse.ArgumentParser(
@@ -17,6 +17,8 @@ def build_parser():
     )
 
     add_help(parser)
+
+    add_version_arg(parser)
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
     parser.subparsers = subparsers
@@ -79,6 +81,8 @@ def build_parser():
 
     add_help(calc_gc_optional)
 
+    add_version_arg(calc_gc_optional)
+
     calc_gc_parser.set_defaults(func="calc_gc")
 
     #######################################################
@@ -133,6 +137,8 @@ def build_parser():
 
     add_help(calc_var_optional)
 
+    add_version_arg(calc_var_optional)
+
     calc_var_parser.set_defaults(func="calc_var_in_msa")
 
     ##################################################
@@ -166,6 +172,8 @@ def build_parser():
     )
 
     add_help(count_optional)
+
+    add_version_arg(count_optional)
 
     count_parser.set_defaults(func="count")
 
@@ -212,6 +220,8 @@ def build_parser():
     )
 
     add_help(extract_by_coords_optional)
+
+    add_version_arg(extract_by_coords_optional)
 
     extract_by_coords_parser.set_defaults(func="extract_by_coords")
 
@@ -271,6 +281,8 @@ def build_parser():
     )
 
     add_help(extract_by_headers_optional)
+
+    add_version_arg(extract_by_headers_optional)
 
     extract_by_headers_parser.set_defaults(func="extract_by_headers")
 
@@ -334,6 +346,8 @@ def build_parser():
 
     add_help(extract_by_primers_optional)
 
+    add_version_arg(extract_by_primers_optional)
+
     extract_by_primers_parser.set_defaults(func="extract_by_primers")
 
 
@@ -387,6 +401,8 @@ def build_parser():
     )
 
     add_help(filter_by_length_optional)
+
+    add_version_arg(filter_by_length_optional)
 
     filter_by_length_parser.set_defaults(func="filter_by_length")
 
@@ -451,6 +467,8 @@ def build_parser():
 
     add_help(modify_headers_optional)
 
+    add_version_arg(modify_headers_optional)
+
     modify_headers_parser.set_defaults(func="modify_headers")
 
 
@@ -485,6 +503,8 @@ def build_parser():
 
     add_help(remove_wraps_optional)
 
+    add_version_arg(remove_wraps_optional)
+
     remove_wraps_parser.set_defaults(func="remove_wraps")
 
 
@@ -517,6 +537,8 @@ def build_parser():
     )
 
     add_help(to_bed_optional)
+
+    add_version_arg(to_bed_optional)
 
     to_bed_parser.set_defaults(func="to_bed")
 
@@ -551,6 +573,8 @@ def build_parser():
 
     add_help(to_genbank_optional)
 
+    add_version_arg(to_genbank_optional)
+
     to_genbank_parser.set_defaults(func="to_genbank")
 
     return parser
@@ -571,6 +595,11 @@ def main():
 
         if cmd in ("-h", "--help"):
             parser.print_help(sys.stderr)
+            sys.exit(0)
+
+        if cmd in ("-v", "--version"):
+            from bit.modules.general import report_version
+            report_version()
             sys.exit(0)
 
         if cmd in parser.subparsers.choices:

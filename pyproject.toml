@@ -20,10 +20,6 @@ include-package-data = true
 bit = ["tests/data/*", "smk/*.smk", "smk/envs/*"]
 
 [project.scripts]
-bit-version = "bit.modules.general:report_version"
-    # maybe drop this and add a -v|--version flag to every program (add_version_arg() similar to add_common_args() like i've done) that prints this out?
-
-
 ## ncbi/GTDB-related ##
 bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
 bit-get-accessions-from-gtdb = "bit.cli.get_accessions_from_gtdb:main"

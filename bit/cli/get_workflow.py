@@ -1,6 +1,6 @@
 import sys
 import argparse
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 from bit.modules.get_workflow import dl_wf
 
 
@@ -9,7 +9,7 @@ def build_parser():
     desc = """
         This is a helper program for downloading bit workflows.
         Workflow version is included with the downloaded workflow.
-        For bit version info, run `bit-version`.
+       .
         """
 
     parser = argparse.ArgumentParser(
@@ -37,10 +37,11 @@ def build_parser():
     optional.add_argument(
         "--wanted-version",
         metavar="VERSION",
-        help="Specify the version you'd like to download (leaving out this argument will pull the latest by default)"
+        help="Specify the workflow version you'd like to download (leaving out this argument will pull the latest by default)"
     )
 
     add_help(optional)
+    add_version_arg(optional)
 
     return parser
 

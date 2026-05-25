@@ -1,6 +1,6 @@
 import sys
 import argparse
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 from bit.modules.filter_kofamscan_results import filter_kofamscan_results
 from bit.modules.general import check_files_are_found
 
@@ -12,7 +12,7 @@ def build_parser():
         only those above the KO-specific score threshold, and retains only the hit with the
         lowest e-value for each gene if there are multiple (thereby simplifying things to one
         KO annotation per input gene). It outputs a 3-column tab-delimited file
-        with: gene_ID, KO_ID, and KO_annotation. For version info, run `bit-version`.
+        with: gene_ID, KO_ID, and KO_annotation.
     """
 
     parser = argparse.ArgumentParser(
@@ -42,6 +42,8 @@ def build_parser():
     )
 
     add_help(optional)
+
+    add_version_arg(optional)
 
     return parser
 

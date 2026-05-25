@@ -1,6 +1,6 @@
 import sys
 import argparse
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 from bit.modules.ncbi.get_lineage_from_taxids import get_lineage_from_taxids
 from bit.modules.general import check_files_are_found
 
@@ -11,7 +11,7 @@ def build_parser():
         This program uses taxonkit to get NCBI lineage info from taxids. It expects a
         single-column file of taxids with no header and returns a table in the same order.
         Thanks go to taxonkit, don't forget to cite it if using:
-        https://bioinf.shenwei.me/taxonkit/. For version info, run `bit-version`.
+        https://bioinf.shenwei.me/taxonkit/.
     """
 
     parser = argparse.ArgumentParser(
@@ -48,6 +48,8 @@ def build_parser():
     )
 
     add_help(optional)
+
+    add_version_arg(optional)
 
     return parser
 

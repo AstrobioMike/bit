@@ -1,14 +1,14 @@
 import sys
 import argparse
 import argcomplete # type: ignore
-from bit.cli.common import CustomRichHelpFormatter, add_help
+from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 def build_parser():
 
     desc = """
         This program helps generate various Interacitve Tree of Life (iToL) files that can be dropped onto a
         tree on the website for visualization/annotation. See itol.embl.de/help.cgi for information on the different types.
-        For version info, run `bit-version`.
+        Use `-v` or `--version` flag for version info.
         """
 
     parser = argparse.ArgumentParser(
@@ -18,6 +18,8 @@ def build_parser():
     )
 
     add_help(parser)
+
+    add_version_arg(parser)
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
     parser.subparsers = subparsers
@@ -98,6 +100,8 @@ def build_parser():
 
     add_help(binary_optional)
 
+    add_version_arg(binary_optional)
+
     binary_parser.set_defaults(func="binary_dataset")
 
 
@@ -145,6 +149,8 @@ def build_parser():
 
     add_help(colorstrip_optional)
 
+    add_version_arg(colorstrip_optional)
+
     colorstrip_parser.set_defaults(func="colorstrip")
 
 
@@ -186,6 +192,8 @@ def build_parser():
 
     add_help(map_optional)
 
+    add_version_arg(map_optional)
+
     map_parser.set_defaults(func="itol_map")
 
 
@@ -220,6 +228,8 @@ def build_parser():
 
     add_help(text_optional)
 
+    add_version_arg(text_optional)
+
     text_parser.set_defaults(func="text_dataset")
 
     return parser
@@ -240,6 +250,11 @@ def main():
 
         if cmd in ("-h", "--help"):
             parser.print_help(sys.stderr)
+            sys.exit(0)
+
+        if cmd in ("-v", "--version"):
+            from bit.modules.general import report_version
+            report_version()
             sys.exit(0)
 
         if cmd in parser.subparsers.choices:
