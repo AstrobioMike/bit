@@ -8,7 +8,6 @@ def build_parser():
 
     desc = """
         This program extracts different types of information and sequences from GenBank files.
-        Use `-v` or `--version` flag for version info.
         """
 
     parser = argparse.ArgumentParser(

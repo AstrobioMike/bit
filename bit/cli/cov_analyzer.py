@@ -16,7 +16,6 @@ def main():
         coverages by adding the `--per-contig` flag. Additionally, it is recommended to exclude contigs
         holding mitochondrial genomes or chloroplasts due to their relatively high coverage (if you
         specifically want to investigate them too, you should probably use `--per-contig` mode).
-        Use `-v` or `--version` flag for version info.
         """
 
     parser = argparse.ArgumentParser(

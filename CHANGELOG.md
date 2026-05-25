@@ -30,6 +30,12 @@ A lot of changes have been made recently to group and reorganize bit commands (a
       - `ncbi-tax-data`
       - `go-dbs`
       - `gtdb-data`
+- `bit-fasta` which holds subcommands as listed below
+- `bit-lineage` which holds subcommands as listed below
+- `bit-kraken2` which holds subcommands as listed below
+- `bit-table` which holds subcommands as listed below
+- `bit-go` which holds subcommands as listed below
+
 
 ### Changed
 - several fasta-related programs have been placed as subcommands under `bit-fasta`
@@ -67,6 +73,9 @@ A lot of changes have been made recently to group and reorganize bit commands (a
   - `get-ncbi-tax-data` -> `bit-data get ncbi-tax-data`
   - `get-go-dbs` -> `bit-data get go-dbs`
   - `get-gtdb-data` -> `bit-data get gtdb-data`
+- lineage-related helpers have been reorganized
+  - `bit-get-lineage-from-taxids` -> `bit-lineage from-taxids`
+  - `bit-lineage-to-tsv` -> `bit-lineage to-tsv`
 
 
 ### Removed

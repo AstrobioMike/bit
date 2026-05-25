@@ -9,7 +9,6 @@ def build_parser():
     desc = """
         This is a helper program for downloading bit workflows.
         Workflow version is included with the downloaded workflow.
-       .
         """
 
     parser = argparse.ArgumentParser(

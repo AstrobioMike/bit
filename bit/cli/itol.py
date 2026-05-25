@@ -8,7 +8,6 @@ def build_parser():
     desc = """
         This program helps generate various Interacitve Tree of Life (iToL) files that can be dropped onto a
         tree on the website for visualization/annotation. See itol.embl.de/help.cgi for information on the different types.
-        Use `-v` or `--version` flag for version info.
         """
 
     parser = argparse.ArgumentParser(

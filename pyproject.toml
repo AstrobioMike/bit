@@ -23,8 +23,10 @@ bit = ["tests/data/*", "smk/*.smk", "smk/envs/*"]
 ## ncbi/GTDB-related ##
 bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
 bit-get-accessions-from-gtdb = "bit.cli.get_accessions_from_gtdb:main"
-bit-get-lineage-from-taxids = "bit.cli.get_lineage_from_taxids:main"
 
+
+## lineage related ##
+bit-lineage = "bit.cli.lineage:main"
 
 ## coverage / mapping ##
 bit-cov-analyzer = "bit.cli.cov_analyzer:main"
@@ -74,7 +76,6 @@ bit-assemble = "bit.cli.assemble:main"
 bit-ez-screen = "bit.cli.ez_screen:main"
 bit-get-test-data = "bit.cli.get_test_data:main" # maybe add this as a subcommand to bit-data
 bit-get-workflow = "bit.cli.get_workflow:main"
-bit-lineage-to-tsv = "bit.cli.lineage_to_tsv:main"
 
 
 ## kraken2/bracken helpers ##

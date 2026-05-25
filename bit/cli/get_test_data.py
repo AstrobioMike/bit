@@ -8,7 +8,6 @@ def build_parser():
 
     desc = """
         This is a program for downloading test data files.
-        Use `-v` or `--version` flag for version info.
         """
 
     parser = argparse.ArgumentParser(

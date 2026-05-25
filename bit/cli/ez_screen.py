@@ -11,15 +11,17 @@ from bit.cli.common import (CustomRichHelpFormatter,
 def build_parser():
 
     desc = """
-        This program helps detect target-genes/regions present in assemblies or reads..
+        This program helps detect target-genes/regions present in assemblies or reads. See subcommand-specific
+        help menus for more info.
         """
 
     parser = argparse.ArgumentParser(
         description=desc,
-        epilog="Use `bit-ez-screen assembly -h` or `bit-ez-screen reads -h` to see subcommand-specific help.",
-        formatter_class=CustomRichHelpFormatter
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
     )
 
+    add_help(parser)
     add_version_arg(parser)
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
