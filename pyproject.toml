@@ -20,6 +20,9 @@ include-package-data = true
 bit = ["tests/data/*", "smk/*.smk", "smk/envs/*"]
 
 [project.scripts]
+
+### MIKE: need to revamp the README.md to update the table to reflect newly named programs and subcommands before releasing
+
 ## ncbi/GTDB-related ##
 bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
 bit-get-accessions-from-gtdb = "bit.cli.get_accessions_from_gtdb:main"

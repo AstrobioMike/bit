@@ -12,6 +12,8 @@
 
 ---
 
+### MIKE: need to revamp the README.md to update the table to reflect newly named programs and subcommands before releasing
+
 -->
 
 
