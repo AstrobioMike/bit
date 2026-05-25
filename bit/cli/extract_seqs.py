@@ -19,7 +19,7 @@ def build_parser():
 
     add_help(parser)
 
-    add_version_arg(optional)
+    add_version_arg(parser)
 
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
     parser.subparsers = subparsers
@@ -74,7 +74,7 @@ def build_parser():
 
     add_help(by_coords_optional)
 
-    add_version_arg(optional)
+    add_version_arg(by_coords_optional)
 
     by_coords_parser.set_defaults(func="extract_seqs_by_coords")
 
@@ -124,7 +124,7 @@ def build_parser():
 
     add_help(by_headers_optional)
 
-    add_version_arg(optional)
+    add_version_arg(by_headers_optional)
 
     by_headers_parser.set_defaults(func="extract_seqs_by_headers")
 
@@ -175,7 +175,7 @@ def build_parser():
 
     add_help(by_primers_optional)
 
-    add_version_arg(optional)
+    add_version_arg(by_primers_optional)
 
     by_primers_parser.set_defaults(func="extract_seqs_by_primers")
 
