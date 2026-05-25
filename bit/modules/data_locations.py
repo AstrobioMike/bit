@@ -1,62 +1,7 @@
-#!/usr/bin/env python
-
-"""
-This is a helper program of bit, initially written for GToTree (https://github.com/AstrobioMike/GToTree/wiki),
-to check and set required environmental variables.
-"""
-
 import sys
 import os
-import argparse
 import shutil
-from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 from bit.modules.general import color_text, wprint
-
-def build_parser():
-
-    parser = argparse.ArgumentParser(
-        description = "This is a helper program to check and set required environmental variables.",
-        epilog="Ex. usage: `bit-data-locations check`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
-
-    parser.add_argument('task', choices = ['check', 'set'], help = 'check or set required environmental variables')
-
-    add_help(parser)
-
-    add_version_arg(optional)
-
-    return parser
-
-
-################################################################################
-
-
-def main():
-
-    parser = build_parser()
-
-    if len(sys.argv)==1:
-        parser.print_help(sys.stderr)
-        sys.exit(0)
-
-    args = parser.parse_args()
-
-    if args.task == 'check':
-
-        check_and_report_env_variables()
-
-    if args.task == 'set':
-
-        paths_dict = set_env_variables()
-
-        modify_conda_activate_startup_script(paths_dict)
-
-        notify_to_reactivate_conda()
-
-
-################################################################################
 
 
 class PathDoesNotExist(Exception):
@@ -335,8 +280,3 @@ def notify_to_reactivate_conda():
     wprint(color_text("Then you can double-check with `bit-data-locations check`.", "yellow"))
     print(color_text("  --------------------------------------------------------------------------------", "green"))
     print(color_text("  --------------------------------------------------------------------------------\n", "green"))
-
-################################################################################
-
-if __name__ == "__main__":
-    main()

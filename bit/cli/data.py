@@ -301,8 +301,8 @@ def main():
 
     args = parser.parse_args()
 
-    from bit.cli.data_locations import (check_and_report_env_variables, set_env_variables,
-                                        modify_conda_activate_startup_script, notify_to_reactivate_conda)
+    from bit.modules.data_locations import (check_and_report_env_variables, set_env_variables,
+                                            modify_conda_activate_startup_script, notify_to_reactivate_conda)
     from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data
     from bit.modules.ncbi.get_ncbi_tax_data import get_ncbi_tax_data
     from bit.modules.go.get_go_dbs import get_go_data
