@@ -21,7 +21,7 @@ A lot of changes have been made recently to group and reorganize bit commands (a
 
 ### Added
 - `bit-data`
-  - this replaces `bit-data-locations` and all the database download programs with subcommands:
+  - this replaces `bit-data-locations` and all the database download programs with the following subcommands:
     - `locations`
       - `check`
       - `set`
