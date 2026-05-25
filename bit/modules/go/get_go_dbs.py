@@ -1,35 +1,8 @@
-#!/usr/bin/env python
-
 import sys
 import os
-import argparse
-from bit.cli.common import CustomRichHelpFormatter, add_help
 from bit.modules.general import (wprint, color_text,
                                  report_message, notify_premature_exit,
                                  download_with_tqdm)
-
-
-################################################################################
-
-def main():
-
-    parser = argparse.ArgumentParser(
-        description="This is a bit helper program to download or update GO databases.",
-        epilog="Ex. usage: `get-go-dbs`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
-
-    parser.add_argument("-q", "--quiet", help="Exit silently if GO databases already present", action = "store_true")
-    parser.add_argument("-f", "--force-update", help='Update the stored GO databases', action = "store_true")
-
-    add_help(parser)
-
-    args = parser.parse_args()
-
-    get_go_data(force_update=args.force_update, quiet=args.quiet)
-
-################################################################################
 
 
 def check_go_data_location_var_is_set():
@@ -38,7 +11,7 @@ def check_go_data_location_var_is_set():
         go_data_dir = os.environ['GO_DB_DIR']
     except:
         wprint(color_text("The environment variable 'GO_DB_DIR' does not seem to be set :(", "yellow"))
-        wprint("This shouldn't happen, check on things with `bit-data-locations check`.")
+        wprint("This shouldn't happen, check on things with `bit-data locations check`.")
         print("")
         sys.exit(0)
 
@@ -72,7 +45,7 @@ def download_go_data(location):
     go_basic_path = os.path.join(str(location), "go-basic.obo")
     goslim_metagenomics_path = os.path.join(str(location), "goslim_metagenomics.obo")
 
-    print(color_text("\n    Downloading GO databases (only needs to be done once)...\n", "yellow"))
+    print(color_text("\n    Downloading GO databases...\n", "yellow"))
 
     try:
         download_with_tqdm(go_basic_link, "        GO basic", go_basic_path)
@@ -92,14 +65,9 @@ def get_go_data(force_update=False, quiet=False):
         if not quiet:
             report_message(f"GO data already present at:")
             print(f"        {go_db_dir}")
-            report_message(f"Run `get-go-dbs -f` if you want to re-download/update the GO databases.")
+            report_message(f"Run `bit-data get go-dbs -f` if you want to re-download/update it.")
             print()
             return
         return
     else:
         download_go_data(go_db_dir)
-
-################################################################################
-
-if __name__ == "__main__":
-    main()

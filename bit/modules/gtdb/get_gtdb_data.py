@@ -1,37 +1,11 @@
-#!/usr/bin/env python
-
 import sys
 import os
 import pandas as pd
 import urllib
-import argparse
-from bit.cli.common import CustomRichHelpFormatter, add_help
 from bit.modules.general import (wprint, color_text,
                                  report_message, notify_premature_exit,
                                  download_with_tqdm)
 
-
-################################################################################
-
-def main():
-
-    parser = argparse.ArgumentParser(
-        description="This is a bit helper program to download or update the stored GTDB metadata.",
-        epilog="Ex. usage: `get-gtdb-data`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
-
-    parser.add_argument("-q", "--quiet", help="Exit silently if GTDB data already present", action = "store_true")
-    parser.add_argument("-f", "--force-update", help='Update the stored GTDB metadata', action = "store_true")
-
-    add_help(parser)
-
-    args = parser.parse_args()
-
-    get_gtdb_data(force_update=args.force_update, quiet=args.quiet)
-
-################################################################################
 
 def get_gtdb_data(force_update=False, quiet=False):
     GTDB_dir = check_gtdb_location_var_is_set()
@@ -41,7 +15,7 @@ def get_gtdb_data(force_update=False, quiet=False):
         if not quiet:
             report_message("GTDB data already present at:")
             print(f"        {GTDB_dir}")
-            report_message("Run `get-gtdb-data -f` if you want ot re-download/update the GTDB data.")
+            report_message("Run `bit-data get gtdb-data -f` if you want to re-download/update it.")
             print("")
             return GTDB_dir
         return GTDB_dir
@@ -144,7 +118,3 @@ def gen_gtdb_tab(location):
     gtdb_tab.to_csv(metadata_path, index=False, sep="\t")
 
     urllib.request.urlretrieve("https://data.ace.uq.edu.au/public/gtdb/data/releases/latest/VERSION.txt", version_info_path)
-
-
-if __name__ == "__main__":
-    main()

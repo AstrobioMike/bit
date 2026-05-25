@@ -1,42 +1,9 @@
-#!/usr/bin/env python
-
-"""
-This is a helper module of bit taken from my GToTree package (https://github.com/AstrobioMike/GToTree/wiki)
-to download the NCBI assembly summary tables if they are not present, or to update them.
-"""
-
 import sys
 import os
-import argparse
 from datetime import date
-from bit.cli.common import CustomRichHelpFormatter, add_help
 from bit.modules.general import (wprint, color_text,
                                  report_message, notify_premature_exit,
                                  download_with_tqdm)
-
-
-
-################################################################################
-
-def main():
-
-    parser = argparse.ArgumentParser(
-        description="This is a bit helper program to download or update NCBI's assembly-summary tables.",
-        epilog="Ex. usage: `get-ncbi-assembly-tables`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
-
-    parser.add_argument("-q", "--quiet", help="Exit silently if assembly data already present", action = "store_true")
-    parser.add_argument("-f", "--force-update", help='Update the stored NCBI assembly tables', action = "store_true")
-
-    add_help(parser)
-
-    args = parser.parse_args()
-
-    get_ncbi_assembly_data(force_update=args.force_update, quiet=args.quiet)
-
-################################################################################
 
 
 def check_ncbi_assembly_info_location_var_is_set():
@@ -46,7 +13,7 @@ def check_ncbi_assembly_info_location_var_is_set():
         ncbi_assembly_data_dir = os.environ['NCBI_assembly_data_dir']
     except:
         wprint(color_text("The environment variable 'NCBI_assembly_data_dir' does not seem to be set :(", "yellow"))
-        wprint("This shouldn't happen, check on things with `bit-data-locations check`.")
+        wprint("This shouldn't happen, check on things with `bit-data locations check`.")
         print("")
         sys.exit(0)
 
@@ -119,15 +86,9 @@ def get_ncbi_assembly_data(force_update=False, quiet=False):
         if not quiet:
             report_message(f"Assembly data already present at:")
             print(f"        {ncbi_dir}")
-            report_message(f"Run `get-ncbi-assembly-data -f` if you want to re-download/update it.")
+            report_message(f"Run `bit-data get ncbi-assembly-data -f` if you want to re-download/update it.")
             print()
             return
         return
     else:
         download_ncbi_assembly_summary_data(ncbi_dir)
-
-
-################################################################################
-
-if __name__ == "__main__":
-    main()
