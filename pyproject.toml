@@ -27,12 +27,16 @@ bit-get-accessions-from-gtdb = "bit.cli.get_accessions_from_gtdb:main"
 
 ## lineage related ##
 bit-lineage = "bit.cli.lineage:main"
+    # subcommands:
+        # from-taxids
+        # to-tsv
 
 ## coverage / mapping ##
 bit-cov-analyzer = "bit.cli.cov_analyzer:main"
 bit-cov-stats = "bit.cli.cov_stats:main"
 bit-mapped-reads-pid = "bit.cli.mapped_reads_pid:main"
-
+    # think about combining this with bit-cov-stats and have a flag for writting out all read pids (or more info per read)
+        
 
 ## sequence utilities ##
 bit-gen-reads = "bit.cli.gen_reads:main"
