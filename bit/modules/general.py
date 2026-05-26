@@ -188,7 +188,7 @@ def report_version():
 
     ver = f"v{version('bit')}"
     print()
-    print(f"{' ' * 22} Bioinformatics Tools (bit) {color_text(ver, 'green')}")
+    print(f"{' ' * 33} bit {color_text(ver, 'green')}")
     print(f"{' ' * 25} github.com/AstrobioMike/bit\n")
 
     print("    If you happen to find this toolset useful in your work, please be sure to")
@@ -199,7 +199,7 @@ def report_version():
 
     today = datetime.today().strftime('%A')
     signoff = f"Happy {today} :)"
-    print(f"                                                   {color_text(signoff,'green')}\n")
+    print(f"{'':>51}{color_text(signoff,'green')}\n")
 
 
 @contextmanager

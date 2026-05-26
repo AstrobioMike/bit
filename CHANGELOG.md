@@ -22,6 +22,7 @@
 A lot of changes have been made recently to group and reorganize bit commands (alongside a hefty python revamp). The changelog over several past versions should be able to help you find anything you might be looking for that's been moved. But if you're having trouble finding something you used to use, please reach out and let me know! You can post an issue on this repo or reach out to me however :)
 
 ### Added
+- `bit` by itself will print out an overview of available programs
 - `bit-data`
   - this replaces `bit-data-locations` and all the database download programs with the following subcommands:
     - `locations`
@@ -80,6 +81,8 @@ A lot of changes have been made recently to group and reorganize bit commands (a
 - lineage-related helpers have been reorganized
   - `bit-get-lineage-from-taxids` -> `bit-lineage from-taxids`
   - `bit-lineage-to-tsv` -> `bit-lineage to-tsv`
+- `bit-filter-kofamscan-results` -> `bit-filter-ko-results`
+- `bit-get-accessions-from-gtdb` -> `bit-get-accs-from-gtdb`
 
 
 ### Removed

@@ -21,11 +21,12 @@ bit = ["tests/data/*", "smk/*.smk", "smk/envs/*"]
 
 [project.scripts]
 
-### MIKE: need to revamp the README.md to update the table to reflect newly named programs and subcommands before releasing
+bit = "bit.cli.bit:main"
+
 
 ## ncbi/gtdb-related ##
 bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
-bit-get-accessions-from-gtdb = "bit.cli.get_accessions_from_gtdb:main"
+bit-get-accs-from-gtdb = "bit.cli.get_accessions_from_gtdb:main"
 
 
 ## coverage / mapping ##
@@ -98,7 +99,7 @@ bit-get-workflow = "bit.cli.get_workflow:main"
 
 
 ## functional-annotation helpers ##
-bit-filter-kofamscan-results = "bit.cli.filter_kofamscan_results:main"
+bit-filter-ko-results = "bit.cli.filter_kofamscan_results:main"
 bit-go = "bit.cli.go:main"
     # subcommands:
         # get-term-info

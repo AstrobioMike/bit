@@ -51,12 +51,14 @@ conda activate bit
 
 ### Programs
 
+You can see an overview of available programs like below by running `bit` by itself at the command line once it's installed. 
+
 #### GTDB/NCBI-related
 
 | Program | Purpose |
 | ------- | ------- |
 | `bit-dl-ncbi-assemblies` | download NCBI assemblies in different formats given input accessions |
-| `bit-get-accessions-from-gtdb` | search the [GTDB](https://gtdb.ecogenomic.org/) by taxonomy and retrieve NCBI accessions |
+| `bit-get-accs-from-gtdb` | search the [GTDB](https://gtdb.ecogenomic.org/) by taxonomy and retrieve NCBI accessions |
 
 ---
 
@@ -74,7 +76,7 @@ conda activate bit
 
 | Program | Purpose |
 | ------- | ------- |
-| `bit-gen-reads` | quickly generate reads from fasta files in desired proportions |
+| `bit-gen-reads` | generate reads from fasta files |
 | `bit-mutate-seqs` | introduce point mutations (substitutions/indels) into nucleotide or amino-acid fasta files |
 | `bit-add-insertion` | add insertions into nucleotide or amino-acid fasta sequences |
 
@@ -82,9 +84,11 @@ conda activate bit
 
 #### Sequence searching
 
-| Program | Purpose |
+##### Program: `bit-ez-screen`
+| Subcommand | Purpose |
 | ------- | ------- |
-| `bit-ez-screen` | search for nucleotide targets in fastas (blast) or reads (mapping), filtered by tunable coverage and percent-ID thresholds, summarized in a simple table |
+| `assembly` | runs blast-based screening of targets in assemblies |
+| `reads` | runs mapping-based screening of reads against targets |
 
 ---
 
@@ -131,17 +135,18 @@ conda activate bit
 
 #### Taxonomy and lineage helpers
 
+##### Program: `bit-kraken2`
+| Subcommand | Purpose |
+| ---------- | ------- |
+| `tax-plots` | generate standard taxonomy barplots from kraken2/bracken outputs |
+| `tax-summary` | generate summary tables from kraken2/bracken outputs |
+
 ##### Program: `bit-lineage`
 | Subcommand | Purpose |
 | ---------- | ------- |
 | `from-taxids` | get full lineage info from a list of NCBI taxon IDs |
 | `to-tsv` | reformat lineage info to a TSV |
 
-##### Program: `bit-kraken2`
-| Subcommand | Purpose |
-| ---------- | ------- |
-| `tax-plots` | generate standard taxonomy barplots from kraken2/bracken outputs |
-| `tax-summary` | generate summary tables from kraken2/bracken outputs |
 
 ---
 
@@ -161,7 +166,7 @@ conda activate bit
 
 | Program | Purpose |
 | ------- | ------- |
-| `bit-filter-kofamscan-results` | filter [KOFamScan](https://github.com/takaram/kofam_scan) results to best hits |
+| `bit-filter-ko-results` | filter [KOFamScan](https://github.com/takaram/kofam_scan) results |
 
 
 ##### Program: `bit-go`
@@ -197,7 +202,7 @@ Subcommand | Purpose |
 
 ---
 
-Each command/subcommand has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. Once installed, you can see all available primary commands by entering `bit-` and pressing tab twice.  
+Each command/subcommand has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. Once installed, you can see all available primary commands by entering `bit-` and pressing tab twice. And you can see an overview of all programs, like above, by running `bit` by itself.
 
 ---
 
