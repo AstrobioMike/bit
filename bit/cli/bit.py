@@ -189,7 +189,7 @@ PROGRAM_GROUPS = [
         "programs": [
             {
                 "name": "bit-get-workflow",
-                "desc": "retrieve a snakemake workflow (available: sra-download, genome-summarize, metagenomics)",
+                "desc": "download a bit-packaged workflow (available: sra-download, genome-summarize, metagenomics)",
             },
         ],
     },
