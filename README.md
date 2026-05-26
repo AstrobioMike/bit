@@ -44,39 +44,142 @@ conda activate bit
 ### Programs
 Some of the helper programs/scripts in _bit_ include:
 
-| Program/script | Purpose | 
+#### GTDB/NCBI-related
+
+| Program | Purpose |
 | ------- | ------- |
-| `bit-dl-ncbi-assemblies` | download NCBI assemblies in different formats by just providing accessions |  
-| `bit-get-accessions-from-GTDB` | search the (stellar) [Genome Taxonomy Database](https://gtdb.ecogenomic.org/) by taxonomy and get their NCBI accessions |  
-| `bit-assemble` | simple wrapper for assembly with optional quality trimming and normalization |  
-| `bit-summarize-assembly` | quickly summarize nucleotide assemblies |  
-| `bit-mutate-seqs` | introduce point mutations (substitutions/indels) in nucleotide or amino acid fasta files |  
-| `bit-gen-reads` | quickly generate reads from fasta files in desired proportions |  
-| `bit-cov-analyzer` | analyze coverage patterns by providing a bam file and reference fasta to identify regions of relatively higher or lower coverage |  
-| `bit-cov-stats` | get detection, coverage, and mean percent ID information for a single or multiple references given the fasta(s) and a bam file |  
-| `bit-get-mapped-reads-pid` | get percent ID information for mapped reads in a bam file |  
-| `bit-ez-screen` | search for nucleotide targets in nucleotide input fastas based on blast, or in reads based on mapping, filtered based on tunable target-coverage and percent-ID thresholds and summarized in a simple table |  
-| `bit-normalize-table` | normalize a table to counts- or coverage-per million (CPM) or with the median-ratio method from DESeq2 (allowing for floats) |  
-| `bit-calc-variation-in-msa` | calculate [variation](https://scikit.bio/docs/dev/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |  
-| `bit-summarize-column` | summarize a numeric column in a table |  
-| `bit-filter-table` | filter a table based on wanted IDs |  
-| `bit-count-bases` | count and summarize the number of bases in a fasta file per seq or total |  
-| `bit-rename-fasta-headers` | rename sequences in a fasta |  
-| `bit-extract-seqs` | has subcommands to extract sequences from a fasta based on primer seqs, headers, or coordinates |  
-| `bit-genbank` | has subcommands to extract sequences and information from genbank files |
-| `bit-reorder-fasta` | re-order a fasta file |  
-| `bit-get-lineage-from-taxids` | get full lineage info from a list of taxon IDs (making use of the stellar [TaxonKit](https://bioinf.shenwei.me/taxonkit/)) |  
-| `bit-filter-KOFamScan-results` | filter [KOFamScan](https://github.com/takaram/kofam_scan) results |  
-| `bit-get-go-term-info` | get information about a specific [GO](http://geneontology.org/) term |  
-| `bit-summarize-go-annotations` | summarize GO annotations |  
-| `bit-gen-kraken2-tax-plots` | generate bar plots for the most abundant taxa at each rank from a kraken2 output report file |  
-| `bit-kraken2-to-taxon-summaries`, `bit-combine-kraken2-taxon-summaries` | summarize [kraken2](https://github.com/DerrickWood/kraken2) outputs in a table with counts of full taxonomic lineages, and combining multiple samples |  
-| `bit-combine-bracken-and-add-lineage` | combine [bracken](https://github.com/jenniferlu717/Bracken) outputs and adding full taxonomic lineage info |  
-| `bit-gen-iToL-map`, `bit-gen-iToL-colorstrip`, `bit-gen-iToL-text-dataset`, `bit-gen-iToL-binary-dataset` | generate color/mapping/data files for use with trees being viewed on the [Interactive Tree of Life](https://itol.embl.de/) site |  
+| `bit-dl-ncbi-assemblies` | download NCBI assemblies in different formats given input accessions |
+| `bit-get-accessions-from-gtdb` | search the [GTDB](https://gtdb.ecogenomic.org/) by taxonomy and retrieve NCBI accessions |
 
-And other just convenient things that are nice to have handy, like removing soft line wraps that some fasta files have (`bit-remove-wraps`), and printing out the column names of a TSV with numbers (`bit-colnames`) to quickly see which columns we want to provide to things like `cut` or `awk` 🙂  
+---
 
-Each command has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. Once installed, you can see all available commands by entering `bit-` and pressing tab twice.  
+#### Coverage/mapping-related 
+
+| Program | Purpose |
+| ------- | ------- |
+| `bit-cov-analyzer` | analyze coverage patterns from a bam + reference fasta to identify regions of relatively higher or lower coverage |
+| `bit-cov-stats` | get detection, coverage, and mean percent ID for single or multiple references given fasta(s) and a bam file |
+| `bit-mapped-reads-pid` | get percent ID information for mapped reads in a bam file |
+
+---
+
+#### Sequence manipulation / read generation
+
+| Program | Purpose |
+| ------- | ------- |
+| `bit-gen-reads` | quickly generate reads from fasta files in desired proportions |
+| `bit-mutate-seqs` | introduce point mutations (substitutions/indels) into nucleotide or amino-acid fasta files |
+| `bit-add-insertion` | add insertions into nucleotide or amino-acid fasta sequences |
+
+---
+
+#### Sequence searching
+
+| Program | Purpose |
+| ------- | ------- |
+| `bit-ez-screen` | search for nucleotide targets in fastas (blast) or reads (mapping), filtered by tunable coverage and percent-ID thresholds, summarized in a simple table |
+
+---
+
+#### Fasta utilities
+
+##### Program: `bit-fasta`
+| Subcommand | Purpose |
+| ---------- | ------- |
+| `calc-gc` | calculate GC content per sequence or for the full file |
+| `calc-var-in-msa` | calculate [variation](https://scikit.bio/docs/dev/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |
+| `count` | count and summarize bases or sequences in a fasta file |
+| `extract-by-coords` | extract sequences by genomic coordinates |
+| `extract-by-headers` | extract sequences by header names |
+| `extract-by-primers` | extract sequences based on primer sequences |
+| `filter-by-length` | filter sequences by minimum/maximum length |
+| `modify-headers` | rename or reformat sequence headers |
+| `remove-wraps` | remove soft line wraps |
+| `to-bed` | convert fasta to BED format |
+| `to-genbank` | convert fasta to GenBank format |
+
+---
+
+#### Assembly
+
+| Program | Purpose |
+| ------- | ------- |
+| `bit-assemble` | simple wrapper for assembly with optional quality trimming and normalization |
+| `bit-summarize-assembly` | quickly summarize nucleotide assemblies |
+
+---
+
+
+#### GenBank-format utilities
+
+##### Program: `bit-genbank`
+| Subcommand | Purpose |
+| ---------- | ------- |
+| `to-AA-seqs` | extract amino acid sequences |
+| `to-cds-tsv` | extract CDS info to a TSV |
+| `to-cds-seqs` | extract CDS nucleotide sequences |
+| `to-fasta` | extract nucleotide sequences |
+
+---
+
+#### Taxonomy & lineage
+
+##### Program: `bit-lineage`
+| Subcommand | Purpose |
+| ---------- | ------- |
+| `from-taxids` | get full lineage info from a list of NCBI taxon IDs |
+| `to-tsv` | reformat lineage info to a TSV |
+
+##### Program: `bit-kraken2`
+| Subcommand | Purpose |
+| ---------- | ------- |
+| `tax-plots` | generate standard taxonomy barplots from kraken2/bracken outputs |
+| `tax-summary` | generate summary tables from kraken2/bracken outputs |
+
+---
+
+#### Table utilities
+
+##### Program: `bit-table`
+| Subcommand | Purpose |
+| ---------- | ------- |
+| `colnames` | print column names with numbers (handy for `cut`/`awk`) |
+| `filter` | filter a table based on wanted IDs |
+| `normalize` | normalize to CPM or with the DESeq2 median-ratio method |
+| `summarize-column` | summarize a numeric column |
+
+---
+
+#### Functional-annotation helpers
+
+| Program | Purpose |
+| ------- | ------- |
+| `bit-filter-kofamscan-results` | filter [KOFamScan](https://github.com/takaram/kofam_scan) results to best hits |
+
+
+##### Program: `bit-go`
+Subcommand | Purpose |
+| ---------- | ------- |
+| `get-term-info` | look up GO term info |
+| `summarize-annotations` | summarize GO annotations |
+| `combine-summaries` | combine GO summary outputs |
+| `slim-terms` | slim GO terms to a specified ontology |
+
+---
+
+####  iTOL-helpers
+
+##### Program: `bit-itol`
+| Subcommand | Purpose |
+| ---------- | ------- |
+| `binary-dataset` | generate a binary dataset annotation file |
+| `colorstrip` | generate a color strip annotation file |
+| `map` | generate a mapping/connection file |
+| `text-dataset` | generate a text label dataset file |
+
+---
+
+Each command/subcommand has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. Once installed, you can see all available primary commands by entering `bit-` and pressing tab twice.  
 
 ---
 

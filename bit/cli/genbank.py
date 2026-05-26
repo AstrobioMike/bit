@@ -43,31 +43,6 @@ def build_parser():
             type = str
         )
 
-    ### subcommand cli for extracting full fasta ###
-    to_fasta_desc = """
-        This subcommand extracts the full fasta sequence.
-        """
-
-    to_fasta_parser = subparsers.add_parser(
-        "to-fasta",
-        help="Extract the full nucleotide fasta sequence",
-        description=to_fasta_desc,
-        epilog="Ex. usage: `bit-genbank to-fasta -i input.gbff`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
-
-    to_fasta_required = to_fasta_parser.add_argument_group("Required Parameters")
-    to_fasta_optional = to_fasta_parser.add_argument_group("Optional Parameters")
-
-    add_common_required_arguments(to_fasta_required)
-    add_common_optional_arguments(to_fasta_optional)
-
-    add_help(to_fasta_optional)
-
-    add_version_arg(to_fasta_optional)
-
-    to_fasta_parser.set_defaults(func="to-fasta")
 
     ### subcommand cli for extracting AA sequences ###
     to_AA_seqs_desc = """
@@ -161,6 +136,32 @@ def build_parser():
     add_version_arg(to_cds_seqs_optional)
 
     to_cds_seqs_parser.set_defaults(func="to-cds-seqs")
+
+    ### subcommand cli for extracting full fasta ###
+    to_fasta_desc = """
+        This subcommand extracts the full fasta sequence.
+        """
+
+    to_fasta_parser = subparsers.add_parser(
+        "to-fasta",
+        help="Extract the full nucleotide fasta sequence",
+        description=to_fasta_desc,
+        epilog="Ex. usage: `bit-genbank to-fasta -i input.gbff`",
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
+    )
+
+    to_fasta_required = to_fasta_parser.add_argument_group("Required Parameters")
+    to_fasta_optional = to_fasta_parser.add_argument_group("Optional Parameters")
+
+    add_common_required_arguments(to_fasta_required)
+    add_common_optional_arguments(to_fasta_optional)
+
+    add_help(to_fasta_optional)
+
+    add_version_arg(to_fasta_optional)
+
+    to_fasta_parser.set_defaults(func="to-fasta")
 
     return parser
 

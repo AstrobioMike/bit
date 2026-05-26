@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools", "wheel"]
+requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -23,25 +23,19 @@ bit = ["tests/data/*", "smk/*.smk", "smk/envs/*"]
 
 ### MIKE: need to revamp the README.md to update the table to reflect newly named programs and subcommands before releasing
 
-## ncbi/GTDB-related ##
+## ncbi/gtdb-related ##
 bit-dl-ncbi-assemblies = "bit.cli.dl_ncbi_assemblies:main"
 bit-get-accessions-from-gtdb = "bit.cli.get_accessions_from_gtdb:main"
 
-
-## lineage related ##
-bit-lineage = "bit.cli.lineage:main"
-    # subcommands:
-        # from-taxids
-        # to-tsv
 
 ## coverage / mapping ##
 bit-cov-analyzer = "bit.cli.cov_analyzer:main"
 bit-cov-stats = "bit.cli.cov_stats:main"
 bit-mapped-reads-pid = "bit.cli.mapped_reads_pid:main"
     # think about combining this with bit-cov-stats and have a flag for writting out all read pids (or more info per read)
-        
 
-## sequence utilities ##
+
+## sequence manipulation/read generation ##
 bit-gen-reads = "bit.cli.gen_reads:main"
 bit-mutate-seqs = "bit.cli.mutate_seqs:main"
 bit-add-insertion = "bit.cli.add_insertion:main"
@@ -50,9 +44,12 @@ bit-add-insertion = "bit.cli.add_insertion:main"
         # mutate-seqs
         # add-insertion
 
-bit-summarize-assembly = "bit.cli.summarize_assembly:main"
+
+## sequence searching ##
+bit-ez-screen = "bit.cli.ez_screen:main"
 
 
+## fasta utilities ##
 bit-fasta = "bit.cli.fasta:main"
     # subcommands:
         # calc-gc
@@ -68,6 +65,22 @@ bit-fasta = "bit.cli.fasta:main"
         # to-genbank
 
 
+## assembly ##
+bit-assemble = "bit.cli.assemble:main"
+bit-summarize-assembly = "bit.cli.summarize_assembly:main"
+
+
+## taxonomy and lineage ##
+bit-kraken2 = "bit.cli.kraken2:main"
+    # subcommands:
+        # tax-summary
+        # tax-plots
+bit-lineage = "bit.cli.lineage:main"
+    # subcommands:
+        # from-taxids
+        # to-tsv
+
+
 ## table utilities ##
 bit-table = "bit.cli.table:main"
     # subcommands:
@@ -77,37 +90,21 @@ bit-table = "bit.cli.table:main"
         # summarize-column
 
 
-## miscellaneous ##
-bit-filter-kofamscan-results = "bit.cli.filter_kofamscan_results:main"
-bit-assemble = "bit.cli.assemble:main"
-bit-ez-screen = "bit.cli.ez_screen:main"
-bit-get-test-data = "bit.cli.get_test_data:main" # maybe add this as a subcommand to bit-data
+## workflows ##
 bit-get-workflow = "bit.cli.get_workflow:main"
+    # genome-summarize
+    # metagenomics
+    # SRA download
 
 
-## kraken2/bracken helpers ##
-bit-kraken2 = "bit.cli.kraken2:main"
-    # subcommands:
-        # tax-summary
-        # tax-plots
-
-
-## Gene Ontology (GO) helpers ##
+## functional-annotation helpers ##
+bit-filter-kofamscan-results = "bit.cli.filter_kofamscan_results:main"
 bit-go = "bit.cli.go:main"
     # subcommands:
         # get-term-info
         # summarize-annotations
         # combine-summaries
         # slim-terms
-
-
-## iToL helpers ##
-bit-itol = "bit.cli.itol:main"
-    # subcommands:
-        # binary-dataset
-        # colorstrip
-        # map
-        # text-dataset
 
 
 ## genbank manipulations ##
@@ -119,7 +116,20 @@ bit-genbank = "bit.cli.genbank:main"
         # to-cds-seqs
 
 
-## Database related ##
+## iToL helpers ##
+bit-itol = "bit.cli.itol:main"
+    # subcommands:
+        # binary-dataset
+        # colorstrip
+        # map
+        # text-dataset
+
+
+## miscellaneous ##
+bit-get-test-data = "bit.cli.get_test_data:main" # maybe add this as a subcommand to bit-data
+
+
+## bit-database related ##
 bit-data = "bit.cli.data:main"
     # subcommands:
         # locations
