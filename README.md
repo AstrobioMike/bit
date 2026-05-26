@@ -6,28 +6,36 @@
 <br>
 <a href="https://twitter.com/AstrobioMike"><img align="right" alt="Twitter Follow" src="https://img.shields.io/twitter/follow/AstrobioMike?color=blue&style=social"></a>
 
-# Bioinformatics Tools (bit)
+# bit: a multipurpose collection of bioinformatics tools
 
 * [**Overview**](#overview)
-  * [Programs](#programs)
-  * [Workflows](#workflows)
+  * [**Programs**](#programs)
+    * [GTDB/NCBI-related](#gtdbncbi-related)
+    * [Coverage/mapping-related](#coveragemapping-related)
+    * [Sequence manipulation / read generation](#sequence-manipulation--read-generation)
+    * [Sequence searching](#sequence-searching)
+    * [Fasta utilities](#fasta-utilities)
+    * [Assembly-related](#assembly-related)
+    * [GenBank-format utilities](#genbank-format-utilities)
+    * [Taxonomy and lineage helpers](#taxonomy-and-lineage-helpers)
+    * [Table utilities](#table-utilities)
+    * [Functional-annotation helpers](#functional-annotation-helpers)
+    * [iToL helpers](#itol-helpers)
+    * [bit data management](#bit-data-management)
+  * [**Workflows**](#workflows)
+    * [SRA-download](workflows/sra-download-wf)
+    * [Genome-summarize](workflows/genome-summarize-wf)
+    * [Metagenomics](workflows/metagenomics-wf)
 * [**Conda install**](#conda-install)
 * [**Citation info**](#citation-info)
 * [**Shameless plug**](#shameless-plug)
 
 ---
 
-## NOTE
-**bit is undergoing some changes, and some programs are being renamed and/or grouped into single programs with subcommands for organizational purposes. If you can't find something you are looking for, check in the [CHANGELOG.md](CHANGELOG.md), or post an issue asking :)** 
-
-P.S. - Sorry for doing this without a major version increment. I started small and it kind of spiraled, and now I'm waiting until it's all done ¯\\\_(ツ)\_/¯
-
----
-
 ## Overview 
 There are of course several great and widely used packages of bioinformatics helper programs out there. Some of these include the likes of [seqkit](https://github.com/shenwei356/seqkit), [seqtk](https://github.com/lh3/seqtk), [fastX-toolkit](http://hannonlab.cshl.edu/fastx_toolkit/), and [bbtools](https://jgi.doe.gov/data-and-tools/bbtools/) – all of which I use regularly and have helped me do things I was trying to get done. But there are always more tasks that crop up that may not yet have a helper program or script already written that we can find.  
 
-[*bit*](https://doi.org/10.12688/f1000research.79530.1) is a collection of one-liners, short scripts, [programs](#programs) and [workflows](#workflows) that I have been adding to over the years. Anytime I need to write something to perform a task that has more than a one-off, ad hoc use, I consider adding it here. 
+[*bit*](https://doi.org/10.12688/f1000research.79530.1) is a collection of [programs](#programs) and [workflows](#workflows) that I have been adding to over the years. Anytime I need to write something to perform a task that has more than a one-off, ad hoc use, I consider adding it here. 
 
 *bit* runs in a Unix-like environment and is recommended to be installed with [conda](https://conda.io/docs/) as shown [below](#conda-install).  
 
@@ -42,7 +50,6 @@ conda activate bit
 ---
 
 ### Programs
-Some of the helper programs/scripts in _bit_ include:
 
 #### GTDB/NCBI-related
 
@@ -100,7 +107,7 @@ Some of the helper programs/scripts in _bit_ include:
 
 ---
 
-#### Assembly
+#### Assembly-related
 
 | Program | Purpose |
 | ------- | ------- |
@@ -122,7 +129,7 @@ Some of the helper programs/scripts in _bit_ include:
 
 ---
 
-#### Taxonomy & lineage
+#### Taxonomy and lineage helpers
 
 ##### Program: `bit-lineage`
 | Subcommand | Purpose |
@@ -167,7 +174,7 @@ Subcommand | Purpose |
 
 ---
 
-####  iTOL-helpers
+#### iTOL-helpers
 
 ##### Program: `bit-itol`
 | Subcommand | Purpose |
@@ -176,6 +183,17 @@ Subcommand | Purpose |
 | `colorstrip` | generate a color strip annotation file |
 | `map` | generate a mapping/connection file |
 | `text-dataset` | generate a text label dataset file |
+
+---
+
+#### bit data management
+
+##### Program: `bit-data`
+| Subcommand | Purpose |
+| ---------- | ------- |
+| `get` | download or update bit-utilized reference databases, or grab test data |
+| `locations` | check or set data-location environment variables |
+
 
 ---
 

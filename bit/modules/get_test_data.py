@@ -58,7 +58,7 @@ def dl_test_data(args):
     if args.datatype in ["metagenome"]:
         try:
             report_message("Unpacking data...")
-            subprocess.run(["unzip", "-qo", dest], check=True)
+            subprocess.run(["unzip", "-qoDD", dest], check=True)
             os.remove(dest)
         except subprocess.CalledProcessError:
             report_message("Failed to unzip the downloaded file for some reason :(", "red", trailing_newline=True)

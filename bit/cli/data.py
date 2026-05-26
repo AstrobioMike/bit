@@ -30,13 +30,13 @@ def build_parser():
     ############################################################################
 
     get_desc = """
-        This subcommand downloads or updates bit's required databases. All sub-subcommands accept
+        This subcommand downloads or updates bit's required databases. All sub-subcommands (except test-data) accept
         optional `-q/--quiet` and `-f/--force-update` flags.
         """
 
     get_parser = subparsers.add_parser(
         "get",
-        help="Download or update bit-utilized databases",
+        help="Download/update bit-utilized databases, or get test data",
         description=get_desc,
         epilog="Ex. usage: `bit-data get ncbi-assembly-data`",
         formatter_class=CustomRichHelpFormatter,
@@ -158,6 +158,37 @@ def build_parser():
     add_version_arg(get_ncbi_tax_parser)
 
     get_ncbi_tax_parser.set_defaults(func="get_ncbi_tax_data")
+
+
+    ### get test-data ###
+
+    get_test_data_desc = """
+        This subcommand downloads test-data files.
+        """
+
+    get_test_data_parser = get_subparsers.add_parser(
+        "test-data",
+        help="Download test data",
+        description=get_test_data_desc,
+        epilog="Ex. usage: `bit-data get test-data genome`",
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
+    )
+
+    get_test_data_required = get_test_data_parser.add_argument_group("Required Parameters")
+    get_test_data_optional = get_test_data_parser.add_argument_group("Optional Parameters")
+
+    get_test_data_required.add_argument(
+        "datatype",
+        choices=["genome", "metagenome"],
+        help="What type of test data you'd like to download",
+    )
+
+    add_help(get_test_data_optional)
+
+    add_version_arg(get_test_data_optional)
+
+    get_test_data_parser.set_defaults(func="get_test_data")
 
 
     ############################################################################
@@ -307,6 +338,7 @@ def main():
     from bit.modules.ncbi.get_ncbi_tax_data import get_ncbi_tax_data
     from bit.modules.go.get_go_dbs import get_go_data
     from bit.modules.gtdb.get_gtdb_data import get_gtdb_data
+    from bit.modules.get_test_data import dl_test_data
 
     func_map = {
         "locations_check"      : lambda a: check_and_report_env_variables(),
@@ -318,6 +350,7 @@ def main():
         "get_ncbi_tax_data"      : lambda a: get_ncbi_tax_data(force_update=a.force_update, quiet=a.quiet),
         "get_go_dbs"             : lambda a: get_go_data(force_update=a.force_update, quiet=a.quiet),
         "get_gtdb_data"          : lambda a: get_gtdb_data(force_update=a.force_update, quiet=a.quiet),
+        "get_test_data"          : lambda a: dl_test_data(a),
     }
 
     func_map[args.func](args)

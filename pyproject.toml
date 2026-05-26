@@ -125,10 +125,6 @@ bit-itol = "bit.cli.itol:main"
         # text-dataset
 
 
-## miscellaneous ##
-bit-get-test-data = "bit.cli.get_test_data:main" # maybe add this as a subcommand to bit-data
-
-
 ## bit-database related ##
 bit-data = "bit.cli.data:main"
     # subcommands:
@@ -140,3 +136,4 @@ bit-data = "bit.cli.data:main"
             # ncbi-tax-data
             # go-dbs
             # gtdb-data
+            # test-data

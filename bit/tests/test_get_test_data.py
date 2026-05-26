@@ -23,7 +23,7 @@ def test_dl_test_data_success_first_try(mock_sleep, mock_remove, mock_run, mock_
         "https://github.com/AstrobioMike/test-data/releases/download/test-metagenomics-reads-v1/test-metagenomics-reads.zip"
     ])
 
-    assert mock_run.call_args_list[1] == call(["unzip", "-qo", "test-metagenomics-reads.zip"], check=True)
+    assert mock_run.call_args_list[1] == call(["unzip", "-qoDD", "test-metagenomics-reads.zip"], check=True)
 
     mock_remove.assert_called_once_with("test-metagenomics-reads.zip")
 

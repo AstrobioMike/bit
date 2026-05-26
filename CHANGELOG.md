@@ -32,6 +32,7 @@ A lot of changes have been made recently to group and reorganize bit commands (a
       - `ncbi-tax-data`
       - `go-dbs`
       - `gtdb-data`
+      - `test-data`
 - `bit-fasta` which holds subcommands as listed below
 - `bit-lineage` which holds subcommands as listed below
 - `bit-kraken2` which holds subcommands as listed below
@@ -75,13 +76,14 @@ A lot of changes have been made recently to group and reorganize bit commands (a
   - `get-ncbi-tax-data` -> `bit-data get ncbi-tax-data`
   - `get-go-dbs` -> `bit-data get go-dbs`
   - `get-gtdb-data` -> `bit-data get gtdb-data`
+  - `bit-get-test-data` -> `bit-data get test-data`
 - lineage-related helpers have been reorganized
   - `bit-get-lineage-from-taxids` -> `bit-lineage from-taxids`
   - `bit-lineage-to-tsv` -> `bit-lineage to-tsv`
 
 
 ### Removed
-- `bit-version` has been removed, each program has its own `-v|--version` parameter now
+- `bit-version` has been removed, each program has its own `-v|--version` flag now
 - `bit-dedupe-fasta-headers` has been removed entirely, as it's purpose can be achieved with `bit-fasta modify-headers`
 - `bit-check-fastq-for-dup-headers` removed due to only super-niche utility
 - `bit-parse-fastq-by-headers` removed due to only niche utility, gist is here: https://gist.github.com/AstrobioMike/785265b43847e7cb10089d102573b575
