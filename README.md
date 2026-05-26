@@ -21,7 +21,7 @@
     * [Table utilities](#table-utilities)
     * [Functional-annotation helpers](#functional-annotation-helpers)
     * [iToL helpers](#itol-helpers)
-    * [bit data management](#bit-data-management)
+    * [bit-data management](#bit-data-management)
   * [**Workflows**](#workflows)
     * [SRA-download](workflows/sra-download-wf)
     * [Genome-summarize](workflows/genome-summarize-wf)
@@ -191,7 +191,7 @@ Subcommand | Purpose |
 
 ---
 
-#### bit data management
+#### bit-data management
 
 ##### Program: `bit-data`
 | Subcommand | Purpose |
