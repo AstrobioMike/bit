@@ -15,7 +15,7 @@
 -->
 
 
-## v2.0.0 (26-May-2026)
+## v2.0.0 (NOT YET RELEASED)
 
 A lot of changes have been made recently to group and reorganize bit commands (alongside a hefty python revamp). The changelog over several past versions should be able to help you find anything you might be looking for that's been moved. But if you're having trouble finding something you used to use, please reach out and let me know! You can post an issue on this repo or reach out to me however :)
 
