@@ -6,7 +6,6 @@ from pathlib import Path
 import pysam # type: ignore
 import pandas as pd # type: ignore
 import numpy as np # type: ignore
-from Bio import SeqIO # type: ignore
 from Bio.Seq import Seq # type: ignore
 from Bio.SeqRecord import SeqRecord # type: ignore
 import matplotlib.pyplot as plt # type: ignore
@@ -17,6 +16,7 @@ from bit.modules.general import (check_if_output_dir_exists,
                                  check_bam_file_is_indexed,
                                  notify_premature_exit,
                                  report_message,
+                                 report_failure,
                                  log_command_run,
                                  tee, spinner)
 
@@ -42,8 +42,8 @@ def run_cov_analyzer(
     full_cmd_executed: str = None
 ):
 
-    bam_file = preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs,
-                     force_overwrite, log_file, full_cmd_executed)
+    bam_file, reference_fasta = preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs,
+                                                 force_overwrite, log_file, full_cmd_executed)
 
     contig_lengths = get_contig_lengths(reference_fasta)
 
@@ -113,20 +113,50 @@ def preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs, for
     check_if_output_dir_exists(output_dir, force_overwrite)
     paths_list = [reference_fasta, bam_file]
     check_files_are_found(paths_list)
-    bam_file = check_bam_file_is_indexed(bam_file)
-    check_fasta_file_is_indexed(reference_fasta)
-    check_excluded_contigs(reference_fasta, exclude_contigs)
     os.makedirs(f"{output_dir}/mosdepth-files", exist_ok=True)
+    bam_file = check_bam_file_is_indexed(bam_file)
+    reference_fasta = check_fasta_file_is_indexed(reference_fasta, output_dir)
+    check_excluded_contigs(reference_fasta, exclude_contigs)
 
     log_command_run(full_cmd_executed, output_dir, log_file)
 
-    return bam_file
+    return bam_file, reference_fasta
 
 
-def check_fasta_file_is_indexed(reference_fasta):
-    if not Path(reference_fasta + ".fai").is_file():
-        cmd = f"samtools faidx {reference_fasta}"
-        subprocess.run(cmd, shell=True)
+def check_fasta_file_is_indexed(reference_fasta, output_dir):
+    if Path(reference_fasta + ".fai").is_file():
+        return reference_fasta
+
+    report_message("Indexing fasta file...")
+    with spinner("", ""):
+        try:
+            subprocess.run(["samtools", "faidx", reference_fasta], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return reference_fasta
+        except subprocess.CalledProcessError:
+            pass
+
+        symlink_fasta = Path(output_dir) / "mosdepth-files" / (Path(reference_fasta).name)
+        source_fasta = Path(reference_fasta).resolve()
+
+        try:
+            if symlink_fasta.exists() or symlink_fasta.is_symlink():
+                if symlink_fasta.is_symlink() and symlink_fasta.resolve() == source_fasta:
+                    pass
+                else:
+                    symlink_fasta.unlink()
+            if not symlink_fasta.exists():
+                os.symlink(source_fasta, symlink_fasta)
+        except OSError as e:
+            report_failure(f"Unable to create symlinked fasta for indexing at '{symlink_fasta}'.\n\nOriginal error: {e}")
+
+        try:
+            subprocess.run(["samtools", "faidx", str(symlink_fasta)], check=True,
+                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except subprocess.CalledProcessError as e:
+            report_failure(f"Unable to index fasta using symlink path '{symlink_fasta}'.\n\nOriginal error: {e}")
+
+        return str(symlink_fasta)
 
 
 def check_excluded_contigs(reference_fasta, exclude_contigs):

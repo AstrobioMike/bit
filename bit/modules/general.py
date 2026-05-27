@@ -261,7 +261,7 @@ def check_bam_file_is_indexed(bam_file):
         sorted_bam = stem + ".sorted.bam"
         report_message("Sorting BAM file...")
         with spinner("", ""):
-            subprocess.run(["samtools", "sort", "-o", sorted_bam, bam_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["samtools", "sort", "-@", "4", "-o", sorted_bam, bam_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         bam_file = sorted_bam
         sorted_for_you = True
 
@@ -276,6 +276,6 @@ def check_bam_file_is_indexed(bam_file):
 
         report_message("Indexing BAM file...")
         with spinner("", ""):
-            subprocess.run(["samtools", "index", bam_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            subprocess.run(["samtools", "index", "-@", "4", bam_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     return bam_file
