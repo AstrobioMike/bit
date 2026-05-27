@@ -15,13 +15,13 @@
 -->
 
 
-## v2.0.0 (26-May-2026)
+## v2.0.0 (27-May-2026)
 
-A lot of changes have been made recently to group and reorganize bit commands (alongside a hefty python revamp). The changelog over several past versions should be able to help you find anything you might be looking for that's been moved. But if you're having trouble finding something you used to use, please reach out and let me know! You can post an issue on this repo or reach out to me however :)
+A lot of changes have been made recently to group and reorganize bit commands (alongside a hefty python revamp). I've followed suit with the rest of the world and everything is a subcommand available under `bit`. Running `bit` by itself will print out an overview of all programs/subcommands grouped by general utility. If you're having trouble finding something you used to use, please reach out and let me know! You can post an issue on this repo or reach out to me however :)
 
 ### Added
-- `bit` by itself will print out an overview of available programs
-- `bit-data`
+- `bit` by itself will print out an overview of available programs, and is the sole entry point into everything now
+- `bit data`
   - this replaces `bit-data-locations` and all the database download programs with the following subcommands:
     - `locations`
       - `check`
@@ -32,60 +32,61 @@ A lot of changes have been made recently to group and reorganize bit commands (a
       - `go-dbs`
       - `gtdb-data`
       - `test-data`
-- `bit-fasta` which holds subcommands as listed below
-- `bit-lineage` which holds subcommands as listed below
-- `bit-kraken2` which holds subcommands as listed below
-- `bit-table` which holds subcommands as listed below
-- `bit-go` which holds subcommands as listed below
+- `bit fasta` which holds subcommands as listed below
+- `bit lineage` which holds subcommands as listed below
+- `bit kraken2` which holds subcommands as listed below
+- `bit table` which holds subcommands as listed below
+- `bit go` which holds subcommands as listed below
 
 
 ### Changed
-- several fasta-related programs have been placed as subcommands under `bit-fasta`
-  - `bit-calc-gc-per-seq` and `bit-calc-gc-sliding-window` -> `bit-fasta calc-gc`
-  - `bit-calc-variation-in-msa` -> `bit-fasta calc-var-in-msa`
-  - `bit-count-bases` -> `bit-fasta count`
-  - `bit-extract-seqs by-coords` -> `bit-fasta extract-by-coords`
-  - `bit-extract-seqs by-headers` -> `bit-fasta extract-by-headers`
-  - `bit-extract-seqs by-primers` -> `bit-fasta extract-by-primers`
-  - `bit-fasta-to-bed` -> `bit-fasta to-bed`
-  - `bit-fasta-to-genbank` -> `bit-fasta to-genbank`
-  - `bit-filter-fasta-by-length` -> `bit-fasta filter-by-length`
-  - `bit-rename-fasta-headers` -> `bit-fasta modify-headers`
-  - `bit-remove-wraps` -> `bit-fasta remove-wraps`
+- several fasta-related programs have been placed as subcommands under `bit fasta`
+  - `bit-calc-gc-per-seq` and `bit-calc-gc-sliding-window` -> `bit fasta calc-gc`
+  - `bit-calc-variation-in-msa` -> `bit fasta calc-var-in-msa`
+  - `bit-count-bases` -> `bit fasta count`
+  - `bit-extract-seqs by-coords` -> `bit fasta extract-by-coords`
+  - `bit-extract-seqs by-headers` -> `bit fasta extract-by-headers`
+  - `bit-extract-seqs by-primers` -> `bit fasta extract-by-primers`
+  - `bit-fasta-to-bed` -> `bit fasta to-bed`
+  - `bit-fasta-to-genbank` -> `bit fasta to-genbank`
+  - `bit-filter-fasta-by-length` -> `bit fasta filter-by-length`
+  - `bit-rename-fasta-headers` -> `bit fasta modify-headers`
+  - `bit-remove-wraps` -> `bit fasta remove-wraps`
     - this is moderately slower now since i took it out of shell and put in into python
     - if wanted, you can add the shell way as a function as found in this gist: https://gist.github.com/AstrobioMike/4054ce9ed84162f31c830bac03beda68
-- kraken2/bracken-related programs have been placed as subcommands under `bit-kraken2`
-  - `bit-kraken2-tax-summary` -> `bit-kraken2 tax-summary`
-  - `bit-kraken2-tax-plots` -> `bit-kraken2 tax-plots`
-- several table-related commands have been combined as subcommands under `bit-table`
-  - `bit-colnames` -> `bit-table colnames`
-  - `bit-filter-table` -> `bit-table filter`
-  - `bit-normalize-table` -> `bit-table normalize`
-  - `bit-summarize-column` -> `bit-table summarize-column`
-- GO-related commands have been placed as subcommands under `bit-go`
-  - `bit-get-go-term-info` -> `bit-go get-term-info`
-  - `bit-go-summarize-annotations` -> `bit-go summarize-annotations`
-  - `bit-combine-go-summaries` -> `bit-go combine-summaries`
-  - `bit-slim-down-go-terms` -> `bit-go slim-terms`
-  - `bit-update-GO-dbs` -> `get-go-dbs`
+- kraken2/bracken-related programs have been placed as subcommands under `bit kraken2`
+  - `bit-kraken2-tax-summary` -> `bit kraken2 tax-summary`
+  - `bit-kraken2-tax-plots` -> `bit kraken2 tax-plots`
+- several table-related commands have been combined as subcommands under `bit table`
+  - `bit-colnames` -> `bit table colnames`
+  - `bit-filter-table` -> `bit table filter`
+  - `bit-normalize-table` -> `bit table normalize`
+  - `bit-summarize-column` -> `bit table summarize-column`
+- GO-related commands have been placed as subcommands under `bit go`
+  - `bit-get-go-term-info` -> `bit go get-term-info`
+  - `bit-go-summarize-annotations` -> `bit go summarize-annotations`
+  - `bit-combine-go-summaries` -> `bit go combine-summaries`
+  - `bit-slim-down-go-terms` -> `bit go slim-terms`
 - database helpers for setting/checking locations has been reorganized
-  - `bit-data-locations` -> `bit-data locations`
+  - `bit-data-locations` -> `bit data locations`
 - database helpers for downloading/updating them have been reorganized
-  - `get-ncbi-assembly-data` -> `bit-data get ncbi-assembly-data`
-  - `get-ncbi-tax-data` -> `bit-data get ncbi-tax-data`
-  - `get-go-dbs` -> `bit-data get go-dbs`
-  - `get-gtdb-data` -> `bit-data get gtdb-data`
-  - `bit-get-test-data` -> `bit-data get test-data`
+  - `get-ncbi-assembly-data` -> `bit data get ncbi-assembly-data`
+  - `get-ncbi-tax-data` -> `bit data get ncbi-tax-data`
+  - `get-go-dbs` -> `bit data get go-dbs`
+  - `get-gtdb-data` -> `bit data get gtdb-data`
+  - `bit-update-GO-dbs` -> `bit data get-go-dbs`
+  - `bit-get-test-data` -> `bit data get test-data`
 - lineage-related helpers have been reorganized
-  - `bit-get-lineage-from-taxids` -> `bit-lineage from-taxids`
-  - `bit-lineage-to-tsv` -> `bit-lineage to-tsv`
-- `bit-filter-kofamscan-results` -> `bit-filter-ko-results`
-- `bit-get-accessions-from-gtdb` -> `bit-get-accs-from-gtdb`
+  - `bit-get-lineage-from-taxids` -> `bit lineage from-taxids`
+  - `bit-lineage-to-tsv` -> `bit lineage to-tsv`
+- `bit-filter-kofamscan-results` -> `bit filter-ko-results`
+- `bit-get-accessions-from-gtdb` -> `bit get-accs-from-gtdb`
+- there are more programs that used to be `bit-` something, but now are in subcommands under `bit`. Run `bit` by itself to find them
 
 
 ### Removed
 - `bit-version` has been removed, each program has its own `-v|--version` flag now
-- `bit-dedupe-fasta-headers` has been removed entirely, as it's purpose can be achieved with `bit-fasta modify-headers`
+- `bit-dedupe-fasta-headers` has been removed entirely, as it's purpose can be achieved with `bit fasta modify-headers`
 - `bit-check-fastq-for-dup-headers` removed due to only super-niche utility
 - `bit-parse-fastq-by-headers` removed due to only niche utility, gist is here: https://gist.github.com/AstrobioMike/785265b43847e7cb10089d102573b575
 
