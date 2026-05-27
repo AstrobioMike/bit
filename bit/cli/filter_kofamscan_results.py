@@ -25,7 +25,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit-filter-kofamscan-results -i initial-KOFamScan-results.txt -o KO-annotations.tsv`",
+            epilog="Ex. usage: `bit filter-kofamscan-results -i initial-KOFamScan-results.txt -o KO-annotations.tsv`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )

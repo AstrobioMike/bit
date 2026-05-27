@@ -15,7 +15,7 @@ def get_gtdb_data(force_update=False, quiet=False):
         if not quiet:
             report_message("GTDB data already present at:")
             print(f"        {GTDB_dir}")
-            report_message("Run `bit-data get gtdb-data -f` if you want to re-download/update it.")
+            report_message("Run `bit data get gtdb-data -f` if you want to re-download/update it.")
             print("")
             return GTDB_dir
         return GTDB_dir
@@ -29,7 +29,7 @@ def check_gtdb_location_var_is_set():
         gtdb_data_dir = os.environ['GTDB_DIR']
     except KeyError:
         wprint(color_text("The environment variable 'GTDB_DIR' does not seem to be set :(", "red"))
-        wprint("This shouldn't happen, check on things with `bit-data-locations check`.")
+        wprint("This shouldn't happen, check on things with `bit data-locations check`.")
         sys.exit(1)
     return gtdb_data_dir
 

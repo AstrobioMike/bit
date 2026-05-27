@@ -20,7 +20,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit-add-insertion -i input.fasta -I insertion-sequence.fasta -o output.fasta`",
+            epilog="Ex. usage: `bit add-insertion -i input.fasta -I insertion-sequence.fasta -o output.fasta`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )

@@ -46,7 +46,7 @@ def build_parser(parent_subparsers=None):
         "from-taxids",
         help="Get NCBI lineage info from taxids",
         description=from_taxids_desc,
-        epilog="Ex. usage: `bit-lineage from-taxids -i taxids.txt -o lineages.tsv`",
+        epilog="Ex. usage: `bit lineage from-taxids -i taxids.txt -o lineages.tsv`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -96,7 +96,7 @@ def build_parser(parent_subparsers=None):
         "to-tsv",
         help="Convert condensed lineages to TSV format",
         description=to_tsv_desc,
-        epilog="Ex. usage: `bit-lineage to-tsv -i input-lineages.tsv -o formatted-tax.tsv`",
+        epilog="Ex. usage: `bit lineage to-tsv -i input-lineages.tsv -o formatted-tax.tsv`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

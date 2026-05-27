@@ -21,7 +21,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit-get-workflow metagenomics`",
+            epilog="Ex. usage: `bit get-workflow metagenomics`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )

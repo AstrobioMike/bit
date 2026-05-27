@@ -12,7 +12,7 @@ def build_parser(parent_subparsers=None):
         based on edit distance (using the NM field) and total alignment length. By default,
         it just prints out some summary stats. Specify an output file if you also want it to write out the
         percent identities for each mapped read. [bold]TO ALSO GET[/bold] coverage and detection information, use
-        `bit-cov-stats` instead.
+        `bit cov-stats` instead.
         """
 
     if parent_subparsers is not None:
@@ -25,7 +25,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit-get-mapped-reads-pid input.bam`",
+            epilog="Ex. usage: `bit mapped-reads-pid input.bam`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )

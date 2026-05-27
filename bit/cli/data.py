@@ -46,7 +46,7 @@ def build_parser(parent_subparsers=None):
         "get",
         help="Download/update bit-utilized databases, or get test data",
         description=get_desc,
-        epilog="Ex. usage: `bit-data get ncbi-assembly-data`",
+        epilog="Ex. usage: `bit data get ncbi-assembly-data`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -82,7 +82,7 @@ def build_parser(parent_subparsers=None):
         "go-dbs",
         help="Download or update GO databases",
         description=get_go_dbs_desc,
-        epilog="Ex. usage: `bit-data get go-dbs`",
+        epilog="Ex. usage: `bit data get go-dbs`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -106,7 +106,7 @@ def build_parser(parent_subparsers=None):
         "gtdb-data",
         help="Download or update GTDB metadata",
         description=get_gtdb_data_desc,
-        epilog="Ex. usage: `bit-data get gtdb-data`",
+        epilog="Ex. usage: `bit data get gtdb-data`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -130,7 +130,7 @@ def build_parser(parent_subparsers=None):
         "ncbi-assembly-data",
         help="Download or update NCBI assembly-summary tables",
         description=get_ncbi_assembly_desc,
-        epilog="Ex. usage: `bit-data get ncbi-assembly-data`",
+        epilog="Ex. usage: `bit data get ncbi-assembly-data`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -154,7 +154,7 @@ def build_parser(parent_subparsers=None):
         "ncbi-tax-data",
         help="Download or update NCBI taxonomy data",
         description=get_ncbi_tax_desc,
-        epilog="Ex. usage: `bit-data get ncbi-tax-data`",
+        epilog="Ex. usage: `bit data get ncbi-tax-data`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -178,7 +178,7 @@ def build_parser(parent_subparsers=None):
         "test-data",
         help="Download test data",
         description=get_test_data_desc,
-        epilog="Ex. usage: `bit-data get test-data genome`",
+        epilog="Ex. usage: `bit data get test-data genome`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -211,7 +211,7 @@ def build_parser(parent_subparsers=None):
         "locations",
         help="Check or set data-location environment variables",
         description=locations_desc,
-        epilog="Ex. usage: `bit-data locations check`",
+        epilog="Ex. usage: `bit data locations check`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -235,7 +235,7 @@ def build_parser(parent_subparsers=None):
         "check",
         help="Report current data-location environment variables",
         description=locations_check_desc,
-        epilog="Ex. usage: `bit-data locations check`",
+        epilog="Ex. usage: `bit data locations check`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -257,7 +257,7 @@ def build_parser(parent_subparsers=None):
         "set",
         help="Interactively set data-location environment variables",
         description=locations_set_desc,
-        epilog="Ex. usage: `bit-data locations set`",
+        epilog="Ex. usage: `bit data locations set`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

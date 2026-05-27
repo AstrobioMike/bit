@@ -80,7 +80,7 @@ else:
 
     dirs_to_create = [config["outputs_dir"], fastqc_out_dir, filtered_reads_dir,
                         genes_dir, annotations_and_tax_dir, mapping_dir,
-                        combined_outputs_dir, logs_dir, config["REF_DB_ROOT_DIR"], 
+                        combined_outputs_dir, logs_dir, config["REF_DB_ROOT_DIR"],
                         benchmarks_dir]
 
 
@@ -153,7 +153,7 @@ rule summarize_MAG_KO_annots_with_KEGG_Decoder:
 
             # KEGGDecoder splits on the first underscore to identify unique genome/MAG IDs
                 # this can be problematic with how things are named, so we are swapping them all to not have
-                # any "_" first, then afterwards we are changing the output table back to the original names so 
+                # any "_" first, then afterwards we are changing the output table back to the original names so
                 # they match elsewhere (they will still be slightly different in the html output, but that is
                 # only manually explored anyway)
 
@@ -403,7 +403,7 @@ rule gtdbtk_on_MAGs:
 
 
 rule filter_checkm_results_and_copy_MAGs:
-    """ 
+    """
     Filters checkm results based on est. completion, redundancy, and strain heterogeneity set in 'config.yaml'
     Defaults are conservatively 90, 10, and 50
     """
@@ -421,7 +421,7 @@ rule filter_checkm_results_and_copy_MAGs:
     benchmark:
         benchmarks_dir + "filtering_checkm_results_and_copying_MAGs-benchmarks.tsv"
     shell:
-        """        
+        """
         # only running if there were bins recovered
         if [ $(find {params.bins_dir} -name "*.fasta" | wc -l | sed 's/^ *//') -gt 0 ]; then
 
@@ -597,7 +597,7 @@ rule metabat_binning:
             jgi_summarize_bam_contig_depths --outputDepth {output.depth_file} --percentIdentity 97 --minContigLength 1000 --minContigDepth 1.0  --referenceFasta {input.assembly} {input.bam} > {log} 2>&1
 
             # only running if there are contigs with coverage information in the coverage file we just generated
-            if [ $(wc -l {output.depth_file} | sed 's/^ *//' | cut -f 1 -d " ") -gt 1 ]; then 
+            if [ $(wc -l {output.depth_file} | sed 's/^ *//' | cut -f 1 -d " ") -gt 1 ]; then
                 metabat2  --inFile {input.assembly} --outFile {params.prefix} --abdFile {output.depth_file} -t {resources.cpus} >> {log} 2>&1
             else
                 printf "\n\nThere was no coverage info generated in {output.depth_file}, so no binning with metabat was performed.\n\n" >> {log}
@@ -605,7 +605,7 @@ rule metabat_binning:
 
             # changing extensions from .fa to .fasta to match nt fasta extension elsewhere in GeneLab
             find {params.bins_dir} -name {wildcards.ID}*.fa > {params.tmp_bins_file}
-            
+
             if [ -s {params.tmp_bins_file} ]; then
                 paste -d " " <( sed 's/^/mv /' {params.tmp_bins_file} ) <( sed 's/.fa/.fasta/' {params.tmp_bins_file} ) > {params.tmp_rename_script}
                 bash {params.tmp_rename_script}
@@ -662,7 +662,7 @@ rule make_combined_gene_level_tables:
 
 rule combine_contig_tax_and_coverage:
     """
-    This rule combines the contig-level taxonomic and coverage information for each individual sample. 
+    This rule combines the contig-level taxonomic and coverage information for each individual sample.
     """
     input:
         cov = mapping_dir + "{ID}-contig-coverages.tsv",
@@ -1058,7 +1058,7 @@ rule summarize_assemblies:
     conda:
         "envs/bit.yaml"
     input:
-        expand(assemblies_dir + "{ID}-assembly.fasta", ID = sample_ID_list)        
+        expand(assemblies_dir + "{ID}-assembly.fasta", ID = sample_ID_list)
     output:
         assemblies_dir + config["additional_filename_prefix"] + f"assembly-summaries.tsv"
     benchmark:
@@ -1284,14 +1284,14 @@ if config["single_end_data"] != "TRUE":
         shell:
             """
             multiqc -q -n {params.out_filename_prefix} --force --cl-config 'max_table_rows: 99999999' --interactive --config {params.config_file} {input} > /dev/null 2>&1
-            
+
             # removing the individual fastqc files
             rm -rf {params.reads_dir}*fastqc*
 
             # making an output report directory and moving things into it
             mkdir -p {params.int_out_dir}
             mv {params.int_html_file} {params.int_out_data_dir} {params.int_out_dir}
-            
+
             # zipping and removing unzipped dir
             zip -q -r {params.int_zip} {params.int_out_dir} && rm -rf {params.int_out_dir}
 
@@ -1377,14 +1377,14 @@ else:
         shell:
             """
             multiqc -q -n {params.out_filename_prefix} --force --cl-config 'max_table_rows: 99999999' --interactive --config {params.config_file} {input} > /dev/null 2>&1
-            
+
             # removing the individual fastqc files
             rm -rf {params.reads_dir}*fastqc*
 
             # making an output report directory and moving things into it
             mkdir -p {params.int_out_dir}
             mv {params.int_html_file} {params.int_out_data_dir} {params.int_out_dir}
-            
+
             # zipping and removing unzipped dir
             zip -q -r {params.int_zip} {params.int_out_dir} && rm -rf {params.int_out_dir}
 
@@ -1460,7 +1460,7 @@ rule setup_checkm2_db:
             # so will be set when the conda environment is started from now on
         mkdir -p ${{CONDA_PREFIX}}/etc/conda/activate.d/
         echo 'export CHECKM2DB={params.checkm2_db_dir}/{params.checkm2_db_filename}' >> ${{CONDA_PREFIX}}/etc/conda/activate.d/set_env_vars.sh
-        
+
         # downloading ref db (will move to where we want it next)
         checkm2 database --download > {log} 2>&1
 
@@ -1499,7 +1499,7 @@ rule setup_KOFamScan_db:
         mkdir -p {params.ko_db_dir}
 
         printf "### Setting up KOFamScan reference database ###\n\n" > {log} 2>&1
-        
+
         # using https instead of ftp for those whose systems that don't have access to the ftp servers
 
         printf "\n  Downloading ko_list file:\n\n" >> {log} 2>&1

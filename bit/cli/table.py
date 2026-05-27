@@ -44,7 +44,7 @@ def build_parser(parent_subparsers=None):
         "colnames",
         help="List column names of a delimited file",
         description=colnames_desc,
-        epilog="Ex. usage: `bit-table colnames input.tsv`",
+        epilog="Ex. usage: `bit table colnames input.tsv`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -76,7 +76,7 @@ def build_parser(parent_subparsers=None):
         "filter",
         help="Filter a table by values (strings) in a column",
         description=filter_desc,
-        epilog="Ex. usage: `bit-table filter -i input.tsv -w wanted-values.txt`",
+        epilog="Ex. usage: `bit table filter -i input.tsv -w wanted-values.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -155,7 +155,7 @@ def build_parser(parent_subparsers=None):
         "normalize",
         help="Normalize a table by CPM or median-ratio",
         description=normalize_desc,
-        epilog='Ex. usage: `bit-table normalize -i input-table.tsv -n CPM`',
+        epilog='Ex. usage: `bit table normalize -i input-table.tsv -n CPM`',
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -204,7 +204,7 @@ def build_parser(parent_subparsers=None):
         "summarize-column",
         help="Summarize stats of a numeric column",
         description=summarize_col_desc,
-        epilog="Ex. usage: `bit-table summarize-column data.tsv -c 2`",
+        epilog="Ex. usage: `bit table summarize-column data.tsv -c 2`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

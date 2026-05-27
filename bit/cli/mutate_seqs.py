@@ -23,7 +23,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit-mutate-seqs -i input.fasta`",
+            epilog="Ex. usage: `bit mutate-seqs -i input.fasta`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )

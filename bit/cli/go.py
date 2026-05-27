@@ -65,7 +65,7 @@ def build_parser(parent_subparsers=None):
         "get-term-info",
         help="Get information on individual GO terms",
         description=get_term_info_desc,
-        epilog="Ex. usage: `bit-go get-term-info GO:0004386`",
+        epilog="Ex. usage: `bit go get-term-info GO:0004386`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -105,7 +105,7 @@ def build_parser(parent_subparsers=None):
         "summarize-annotations",
         help="Summarize GO annotations",
         description=summarize_annotations_desc,
-        epilog="Ex. usage: `bit-go summarize-annotations -i GO-annotations.tsv`",
+        epilog="Ex. usage: `bit go summarize-annotations -i GO-annotations.tsv`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -145,14 +145,14 @@ def build_parser(parent_subparsers=None):
 
     ### subcommand cli for combining GO-annotation summaries ###
     combine_summaries_desc = """
-        This subcommand takes multiple GO summary tables produced by `bit-go summarize-annotations` and combines them into a single table.
+        This subcommand takes multiple GO summary tables produced by `bit go summarize-annotations` and combines them into a single table.
         """
 
     combine_summaries_parser = subparsers.add_parser(
         "combine-summaries",
         help="Combine GO summary tables",
         description=combine_summaries_desc,
-        epilog="Ex. usage: `bit-go combine-summaries -i sample-1-GO-summary.tsv sample-2-GO-summary.tsv`",
+        epilog="Ex. usage: `bit go combine-summaries -i sample-1-GO-summary.tsv sample-2-GO-summary.tsv`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -166,7 +166,7 @@ def build_parser(parent_subparsers=None):
         metavar="<FILE(s)>",
         nargs="+",
         type=str,
-        help="Space-delimited list of `bit-go summarize-annotations` output files",
+        help="Space-delimited list of `bit go summarize-annotations` output files",
         required=True
     )
 
@@ -199,14 +199,14 @@ def build_parser(parent_subparsers=None):
         This subcommand wraps the goatools `map_to_slim.py` program (github.com/tanghaibao/Goatools#map-go-terms-to-goslim-terms).
         See there for more details, and if you use it in your work, be sure to properly cite them :)
         https://www.nature.com/articles/s41598-018-28948-z. It is included here to streamline integration with
-        with the GO databases stored with `bit` and programs like `bit-go summarize-annotations`.
+        with the GO databases stored with `bit` and programs like `bit go summarize-annotations`.
         """
 
     slim_terms_parser = subparsers.add_parser(
         "slim-terms",
         help="Slim down GO annotations to a specified slim obo",
         description=slim_terms_desc,
-        epilog="Ex. usage: `bit-go slim-terms -i GO-annotations.tsv`",
+        epilog="Ex. usage: `bit go slim-terms -i GO-annotations.tsv`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

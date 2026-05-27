@@ -24,7 +24,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit-cov-stats -r reference.fasta -b mapping.bam` or `bit-cov-stats -r reference.fasta --bed per-base.bed.gz`",
+            epilog="Ex. usage: `bit cov-stats -r reference.fasta -b mapping.bam` or `bit cov-stats -r reference.fasta --bed per-base.bed.gz`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )

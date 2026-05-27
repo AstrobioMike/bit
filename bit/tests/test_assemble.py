@@ -17,7 +17,7 @@ def test_assemble(tmp_path):
     out_dir = tmp_path / "out"
 
     cmd = [
-        "bit-assemble",
+        "bit", "assemble",
         "-r", str(reads_dir),
         "-o", str(out_dir),
         "--run-fastp",

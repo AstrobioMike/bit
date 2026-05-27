@@ -347,7 +347,7 @@ class TestCLI:
         _write_fasta(ins, [("ins", "TTTT")])
 
         cmd = [
-            "bit-add-insertion",
+            "bit", "add-insertion",
             "-i", str(fa),
             "-I", str(ins),
             "-o", str(out),
@@ -364,7 +364,7 @@ class TestCLI:
     def test_cli_help_exits_zero(self):
         import subprocess
         result = subprocess.run(
-            ["bit-add-insertion", "-h"],
+            ["bit", "add-insertion", "-h"],
             capture_output=True, text=True,
         )
         assert result.returncode == 0
@@ -380,7 +380,7 @@ class TestCLI:
         _write_fasta(ins, [("ins", "TTTT")])
 
         cmd = [
-            "bit-add-insertion",
+            "bit", "add-insertion",
             "-i", str(fa),
             "-I", str(ins),
             "-o", str(out),

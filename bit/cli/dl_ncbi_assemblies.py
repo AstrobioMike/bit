@@ -22,7 +22,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit-dl-ncbi-assemblies -w wanted-accessions.txt`",
+            epilog="Ex. usage: `bit dl-ncbi-assemblies -w wanted-accessions.txt`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )

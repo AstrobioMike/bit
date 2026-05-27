@@ -29,7 +29,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit-cov-analyzer -r reference.fasta -b mapping.bam`",
+            epilog="Ex. usage: `bit cov-analyzer -r reference.fasta -b mapping.bam`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )

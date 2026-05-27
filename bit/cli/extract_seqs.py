@@ -54,7 +54,7 @@ def build_parser():
         "by-coords",
         help="Extract sequences based on coordinates provided in a bed file",
         description=by_coords_desc,
-        epilog="Ex. usage: `bit-extract-seqs by-coords -i input.fasta -b targets.bed`",
+        epilog="Ex. usage: `bit extract-seqs by-coords -i input.fasta -b targets.bed`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -89,7 +89,7 @@ def build_parser():
         "by-headers",
         help="Extract sequences based on specified headers",
         description=by_headers_desc,
-        epilog="Ex. usage: `bit-extract-seqs by-headers -i input.fasta -h contig-1 contig-2`",
+        epilog="Ex. usage: `bit extract-seqs by-headers -i input.fasta -h contig-1 contig-2`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -139,7 +139,7 @@ def build_parser():
         "by-primers",
         help="Extract sequences based on forward and reverse primer sequences",
         description=by_primers_desc,
-        epilog="Ex. usage: `bit-extract-seqs by-primers -i input.fasta -f ForwardPrimerSeq -r ReversePrimerSeq`",
+        epilog="Ex. usage: `bit extract-seqs by-primers -i input.fasta -f ForwardPrimerSeq -r ReversePrimerSeq`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

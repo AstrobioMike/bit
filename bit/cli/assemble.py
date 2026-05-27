@@ -32,7 +32,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit-assemble -1 R1.fastq.gz -2 R2.fastq.gz` or `bit-assemble -r reads-dir/`",
+            epilog="Ex. usage: `bit assemble -1 R1.fastq.gz -2 R2.fastq.gz` or `bit assemble -r reads-dir/`",
             formatter_class=RawTextRichHelpFormatter,
             add_help=False
         )

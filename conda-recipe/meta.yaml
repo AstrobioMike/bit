@@ -53,7 +53,7 @@ requirements:
 
 test:
   commands:
-    bit-cov-analyzer -v
+    bit -v
 
 about:
   home: https://github.com/AstrobioMike/bit

@@ -81,7 +81,7 @@ def build_parser(parent_subparsers=None):
         "assembly",
         help="Run BLAST-based screening of targets in assemblies",
         description=assembly_description,
-        epilog="Ex. usage: `bit-ez-screen assembly -a assembly.fasta -t targets.fasta`",
+        epilog="Ex. usage: `bit ez-screen assembly -a assembly.fasta -t targets.fasta`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -119,7 +119,7 @@ def build_parser(parent_subparsers=None):
         "reads",
         help="Run mapping-based screening of reads against targets",
         description=reads_description,
-        epilog="Ex. usage: `bit-ez-screen reads -t targets.fasta`",
+        epilog="Ex. usage: `bit ez-screen reads -t targets.fasta`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

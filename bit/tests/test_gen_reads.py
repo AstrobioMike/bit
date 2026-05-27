@@ -20,7 +20,7 @@ def test_gen_reads(tmp_path):
     shutil.copy(test_fasta, tmp_path / "input.fasta")
 
     cmd = [
-        "bit-gen-reads",
+        "bit", "gen-reads",
         "-i", str(tmp_path / "input.fasta"),
         "-o", str(tmp_path / "perfect-reads"),
         "-n", "2",
@@ -137,7 +137,7 @@ def test_gen_reads_single_end(tmp_path):
     shutil.copy(test_fasta, tmp_path / "input.fasta")
 
     cmd = [
-        "bit-gen-reads",
+        "bit", "gen-reads",
         "-i", str(tmp_path / "input.fasta"),
         "-o", str(tmp_path / "se-reads"),
         "-n", "1",
@@ -258,7 +258,7 @@ def test_long_reads_cli(tmp_path):
     shutil.copy(test_fasta, tmp_path / "input.fasta")
 
     cmd = [
-        "bit-gen-reads",
+        "bit", "gen-reads",
         "-i", str(tmp_path / "input.fasta"),
         "-o", str(tmp_path / "long-reads"),
         "-n", "10",
@@ -466,7 +466,7 @@ def test_coverage_cli_paired_end(tmp_path):
     shutil.copy(test_fasta, tmp_path / "input.fasta")
 
     cmd = [
-        "bit-gen-reads",
+        "bit", "gen-reads",
         "-i", str(tmp_path / "input.fasta"),
         "-o", str(tmp_path / "cov-reads"),
         "-c", "10",
@@ -488,7 +488,7 @@ def test_coverage_cli_single_end(tmp_path):
     shutil.copy(test_fasta, tmp_path / "input.fasta")
 
     cmd = [
-        "bit-gen-reads",
+        "bit", "gen-reads",
         "-i", str(tmp_path / "input.fasta"),
         "-o", str(tmp_path / "cov-se-reads"),
         "-c", "10",
@@ -511,7 +511,7 @@ def test_coverage_tsv_cli(tmp_path):
     cov_file.write_text(f"{str(tmp_path / 'input.fasta')}\t5\n")
 
     cmd = [
-        "bit-gen-reads",
+        "bit", "gen-reads",
         "-i", str(tmp_path / "input.fasta"),
         "-o", str(tmp_path / "cov-tsv-reads"),
         "-c", str(cov_file),

@@ -11,7 +11,7 @@ def build_parser(parent_subparsers=None):
 
     desc = """
         This script generates perfect (no error model) reads in FASTQ format from one or
-        multiple input FASTA files. See `bit-mutate-seqs` if wanting to introduce variation
+        multiple input FASTA files. See `bit mutate-seqs` if wanting to introduce variation
         to a fasta prior to read-generation.
         """
 
@@ -25,7 +25,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit-gen-reads -i genome.fasta`",
+            epilog="Ex. usage: `bit gen-reads -i genome.fasta`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )

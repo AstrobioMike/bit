@@ -9,7 +9,7 @@ def test_summarize_assembly(tmp_path):
     out_dir.mkdir()
 
     cmd = [
-        "bit-summarize-assembly",
+        "bit", "summarize-assembly",
         str(test_assembly),
         "-o", f"{out_dir}/test.tsv"
     ]

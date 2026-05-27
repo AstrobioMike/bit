@@ -69,7 +69,7 @@ def build_parser(parent_subparsers=None):
         "binary-dataset",
         help="Create an iToL binary-dataset file",
         description=binary_desc,
-        epilog="Ex. usage: `bit-itol binary-dataset -i genomes.txt`",
+        epilog="Ex. usage: `bit itol binary-dataset -i genomes.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -121,7 +121,7 @@ def build_parser(parent_subparsers=None):
         "colorstrip",
         help="Create an iToL colorstrip file",
         description=colorstrip_desc,
-        epilog="Ex. usage: `bit-itol colorstrip -i genomes.txt`",
+        epilog="Ex. usage: `bit itol colorstrip -i genomes.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -170,7 +170,7 @@ def build_parser(parent_subparsers=None):
         "map",
         help="Create an iToL map file for coloring labels and/or branches",
         description=map_desc,
-        epilog="Ex. usage: `bit-itol map -i genomes.txt`",
+        epilog="Ex. usage: `bit itol map -i genomes.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -213,7 +213,7 @@ def build_parser(parent_subparsers=None):
         "text-dataset",
         help="Create an iToL text-dataset file",
         description=text_desc,
-        epilog="Ex. usage: `bit-itol text-dataset -i genomes.txt`",
+        epilog="Ex. usage: `bit itol text-dataset -i genomes.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

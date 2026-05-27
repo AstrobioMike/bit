@@ -31,7 +31,7 @@ SUBCOMMAND_MAP = {
 
 PROGRAM_GROUPS = [
     {
-        "title": "GTDB/NCBI-related",
+        "title": "NCBI/GTDB-related",
         "programs": [
             {
                 "name": "dl-ncbi-assemblies",
@@ -236,6 +236,7 @@ PROGRAM_GROUPS = [
 
 
 def print_overview():
+
     from rich.console import Console # type: ignore
     from rich.table import Table # type: ignore
     from importlib.metadata import version
@@ -248,7 +249,7 @@ def print_overview():
     console.print(f"{'':>33}bit [green]{ver}[/green]")
     console.print(f"{'':>25}github.com/AstrobioMike/bit")
     console.print()
-    console.print(f"{'':>28}OVERVIEW OF PROGRAMS")
+    console.print(f"{'':>27}OVERVIEW OF SUBCOMMANDS")
     console.print()
 
     # global name-column width — keeps description column aligned across all groups
@@ -306,10 +307,12 @@ def print_overview():
 
 
 def _suppress_help_version_on_group_parsers(parser):
-    """Suppress -h/--help/-v/--version from argcomplete on parsers that have
-    subparsers (group-level commands), so TAB after a group shows only
-    subcommand names.  Leaf-level parsers are left untouched so their flags
-    still appear without requiring a '-' prefix."""
+    """
+    Suppress -h/--help/-v/--version from argcomplete on parsers that have
+    subparsers, so TAB after a group shows only subcommand names.
+    Leaf-level parsers are left untouched so their flags still appear
+    without requiring a '-' prefix.
+    """
     for action in parser._actions:
         if isinstance(action, argparse._SubParsersAction):
             for a in parser._actions:
@@ -372,7 +375,7 @@ def main():
     parser = build_parser()
 
     try:
-        import argcomplete
+        import argcomplete # type: ignore
         argcomplete.autocomplete(parser)
     except ImportError:
         pass
@@ -390,9 +393,10 @@ def main():
         return
 
     if subcommand not in SUBCOMMAND_MAP:
-        from rich.console import Console
-        Console(stderr=True).print(f"\n  [red]Unknown subcommand:[/red] [cyan]{subcommand}[/cyan]\n")
-        print_overview()
+        from rich.console import Console # type: ignore
+        Console(stderr=True).print(f"\n    [yellow]Unknown subcommand:[/yellow] [cyan]{subcommand}[/cyan]\n")
+        Console(stderr=True).print(f"  Run [cyan]bit[/cyan] by itself to see available subcommands.\n")
+        # print_overview()
         sys.exit(1)
 
     # rewrite argv so the target module's parser sees the right program name

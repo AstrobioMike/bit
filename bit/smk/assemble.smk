@@ -165,7 +165,7 @@ else:
             """
             printf "\nFiltering spades contigs for minimum length {params.min_contig_len}\n\n" >> {log}
 
-            bit-filter-fasta-by-length -i {input} --min-length {params.min_contig_len} -o {output} >> {log}
+            bit fasta filter-by-length -i {input} --min-length {params.min_contig_len} -o {output} >> {log}
             """
 
 
@@ -176,5 +176,5 @@ rule summarize_assemblies:
         output_dir + "/assembly-summaries.tsv"
     shell:
         """
-        bit-summarize-assembly {input} -o {output}
+        bit summarize-assembly {input} -o {output}
         """
