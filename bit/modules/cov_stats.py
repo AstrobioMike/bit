@@ -267,7 +267,7 @@ def run_mosdepth(bam_file, output_prefix, include_non_primary):
     print(f"\n  {Fore.YELLOW}Running mosdepth to generate per-base coverage data...")
 
     with spinner("mosdepthinitely in progress...", "mosdepthinitely done "):
-        subprocess.run(cmd, shell=True)
+        subprocess.run(cmd, shell=True, check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     bed_file = f"{mosdepth_prefix}.per-base.bed.gz"
 
