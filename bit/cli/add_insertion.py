@@ -4,18 +4,26 @@ from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg, a
 from bit.modules.general import check_files_are_found, report_message, notify_premature_exit
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This script is for adding an insertion sequence to an input fasta.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        epilog="Ex. usage: `bit-add-insertion -i input.fasta -I insertion-sequence.fasta -o output.fasta`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "add-insertion",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            epilog="Ex. usage: `bit-add-insertion -i input.fasta -I insertion-sequence.fasta -o output.fasta`",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     required = parser.add_argument_group('Required Parameters')
     optional = parser.add_argument_group('Optional Parameters')

@@ -5,7 +5,7 @@ from bit.modules.filter_kofamscan_results import filter_kofamscan_results
 from bit.modules.general import check_files_are_found
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This script filters the "detail-tsv"-formatted output file from KOFamScan to retain
@@ -15,12 +15,20 @@ def build_parser():
         with: gene_ID, KO_ID, and KO_annotation.
     """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        epilog="Ex. usage: `bit-filter-kofamscan-results -i initial-KOFamScan-results.txt -o KO-annotations.tsv`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "filter-ko-results",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            epilog="Ex. usage: `bit-filter-kofamscan-results -i initial-KOFamScan-results.txt -o KO-annotations.tsv`",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     required = parser.add_argument_group("Required Parameters")
     optional = parser.add_argument_group("Optional Parameters")

@@ -8,18 +8,26 @@ from bit.cli.common import (CustomRichHelpFormatter,
                             add_version_arg)
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This program helps detect target-genes/regions present in assemblies or reads. See subcommand-specific
         help menus for more info.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "ez-screen",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     add_help(parser)
     add_version_arg(parser)

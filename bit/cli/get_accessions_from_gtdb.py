@@ -4,7 +4,7 @@ from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help, add_ver
 from bit.modules.gtdb.get_accessions_from_gtdb import get_accessions_from_gtdb
 
 
-def main():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This is a helper program to facilitate using taxonomy and genomes from
@@ -17,12 +17,20 @@ def main():
         metadata tables, if you want to update them, run `bit-data get gtdb-data -f`.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        epilog="Ex. usage: bit-get-accessions-from-gtdb -t Archaea --gtdb-representatives-only",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "get-accs-from-gtdb",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            epilog="Ex. usage: bit-get-accessions-from-gtdb -t Archaea --gtdb-representatives-only",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     required = parser.add_argument_group("Required Parameters")
     optional = parser.add_argument_group("Optional Parameters")
@@ -85,8 +93,14 @@ def main():
     )
 
     add_help(optional)
-
     add_version_arg(optional)
+
+    return parser
+
+
+def main():
+
+    parser = build_parser()
 
     if len(sys.argv) == 1:  # pragma: no cover
         parser.print_help(sys.stderr)

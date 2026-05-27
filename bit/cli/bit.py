@@ -1,6 +1,32 @@
 import sys
 import argparse
+import importlib
 from bit.cli.common import add_help, add_version_arg, CustomRichHelpFormatter
+
+
+SUBCOMMAND_MAP = {
+    "dl-ncbi-assemblies":  "bit.cli.dl_ncbi_assemblies",
+    "get-accs-from-gtdb":  "bit.cli.get_accessions_from_gtdb",
+    "cov-analyzer":        "bit.cli.cov_analyzer",
+    "cov-stats":           "bit.cli.cov_stats",
+    "mapped-reads-pid":    "bit.cli.mapped_reads_pid",
+    "gen-reads":           "bit.cli.gen_reads",
+    "mutate-seqs":         "bit.cli.mutate_seqs",
+    "add-insertion":       "bit.cli.add_insertion",
+    "ez-screen":           "bit.cli.ez_screen",
+    "fasta":               "bit.cli.fasta",
+    "assemble":            "bit.cli.assemble",
+    "summarize-assembly":  "bit.cli.summarize_assembly",
+    "genbank":             "bit.cli.genbank",
+    "kraken2":             "bit.cli.kraken2",
+    "lineage":             "bit.cli.lineage",
+    "table":               "bit.cli.table",
+    "filter-ko-results":   "bit.cli.filter_kofamscan_results",
+    "go":                  "bit.cli.go",
+    "itol":                "bit.cli.itol",
+    "get-workflow":        "bit.cli.get_workflow",
+    "data":                "bit.cli.data",
+}
 
 
 PROGRAM_GROUPS = [
@@ -8,11 +34,11 @@ PROGRAM_GROUPS = [
         "title": "GTDB/NCBI-related",
         "programs": [
             {
-                "name": "bit-dl-ncbi-assemblies",
+                "name": "dl-ncbi-assemblies",
                 "desc": "download NCBI assemblies in different formats given input accessions",
             },
             {
-                "name": "bit-get-accs-from-gtdb",
+                "name": "get-accs-from-gtdb",
                 "desc": "search the GTDB by taxonomy and retrieve NCBI accessions",
             },
         ],
@@ -21,15 +47,15 @@ PROGRAM_GROUPS = [
         "title": "Coverage/mapping-related",
         "programs": [
             {
-                "name": "bit-cov-analyzer",
+                "name": "cov-analyzer",
                 "desc": "analyze coverage patterns from a bam + reference fasta to identify regions of relatively higher or lower coverage",
             },
             {
-                "name": "bit-cov-stats",
+                "name": "cov-stats",
                 "desc": "get detection, coverage, and mean percent ID for single or multiple references given fasta(s) and a bam file",
             },
             {
-                "name": "bit-mapped-reads-pid",
+                "name": "mapped-reads-pid",
                 "desc": "get percent ID information for mapped reads in a bam file",
             },
         ],
@@ -38,15 +64,15 @@ PROGRAM_GROUPS = [
         "title": "Sequence manipulation / read generation",
         "programs": [
             {
-                "name": "bit-gen-reads",
+                "name": "gen-reads",
                 "desc": "generate reads from fasta files",
             },
             {
-                "name": "bit-mutate-seqs",
+                "name": "mutate-seqs",
                 "desc": "introduce point mutations (substitutions/indels) into nucleotide or amino-acid fasta files",
             },
             {
-                "name": "bit-add-insertion",
+                "name": "add-insertion",
                 "desc": "add insertions into nucleotide or amino-acid fasta sequences",
             },
         ],
@@ -55,7 +81,7 @@ PROGRAM_GROUPS = [
         "title": "Sequence searching",
         "programs": [
             {
-                "name": "bit-ez-screen",
+                "name": "ez-screen",
                 "desc": "",
                 "subcommands": [
                     ("assembly",         "run blast-based screening of targets in assemblies"),
@@ -68,7 +94,7 @@ PROGRAM_GROUPS = [
         "title": "Fasta utilities",
         "programs": [
             {
-                "name": "bit-fasta",
+                "name": "fasta",
                 "desc": "",
                 "subcommands": [
                     ("calc-gc",           "calculate GC content per sequence or for the full file"),
@@ -90,11 +116,11 @@ PROGRAM_GROUPS = [
         "title": "Assembly-related",
         "programs": [
             {
-                "name": "bit-assemble",
+                "name": "assemble",
                 "desc": "simple wrapper for assembly with optional quality trimming and normalization",
             },
             {
-                "name": "bit-summarize-assembly",
+                "name": "summarize-assembly",
                 "desc": "quickly summarize nucleotide assemblies",
             },
         ],
@@ -103,13 +129,13 @@ PROGRAM_GROUPS = [
         "title": "GenBank-format utilities",
         "programs": [
             {
-                "name": "bit-genbank",
+                "name": "genbank",
                 "desc": "",
                 "subcommands": [
-                    ("to-fasta",   "extract nucleotide sequences"),
                     ("to-AA-seqs", "extract amino acid sequences"),
                     ("to-cds-tsv", "extract CDS info to a TSV"),
                     ("to-cds-seqs","extract CDS nucleotide sequences"),
+                    ("to-fasta",   "extract nucleotide sequences"),
                 ],
             },
         ],
@@ -118,7 +144,7 @@ PROGRAM_GROUPS = [
         "title": "Taxonomy and lineage helpers",
         "programs": [
             {
-                "name": "bit-kraken2",
+                "name": "kraken2",
                 "desc": "summarize and visualize kraken2/bracken outputs",
                 "subcommands": [
                     ("tax-summary","generate summary tables from kraken2/bracken outputs"),
@@ -126,7 +152,7 @@ PROGRAM_GROUPS = [
                 ],
             },
             {
-                "name": "bit-lineage",
+                "name": "lineage",
                 "desc": "",
                 "subcommands": [
                     ("from-taxids","get full lineage info from a list of NCBI taxon IDs"),
@@ -139,7 +165,7 @@ PROGRAM_GROUPS = [
         "title": "Table utilities",
         "programs": [
             {
-                "name": "bit-table",
+                "name": "table",
                 "desc": "",
                 "subcommands": [
                     ("colnames",         "print column names with numbers (handy for cut/awk)"),
@@ -154,11 +180,11 @@ PROGRAM_GROUPS = [
         "title": "Functional-annotation helpers",
         "programs": [
             {
-                "name": "bit-filter-ko-results",
+                "name": "filter-ko-results",
                 "desc": "filter KOFamScan results",
             },
             {
-                "name": "bit-go",
+                "name": "go",
                 "desc": "",
                 "subcommands": [
                     ("get-term-info",        "look up GO term info"),
@@ -173,7 +199,7 @@ PROGRAM_GROUPS = [
         "title": "iTOL helpers",
         "programs": [
             {
-                "name": "bit-itol",
+                "name": "itol",
                 "desc": "",
                 "subcommands": [
                     ("binary-dataset","generate a binary dataset annotation file"),
@@ -188,7 +214,7 @@ PROGRAM_GROUPS = [
         "title": "Workflows",
         "programs": [
             {
-                "name": "bit-get-workflow",
+                "name": "get-workflow",
                 "desc": "download a bit-packaged workflow (available: sra-download, genome-summarize, metagenomics)",
             },
         ],
@@ -197,7 +223,7 @@ PROGRAM_GROUPS = [
         "title": "bit-data management",
         "programs": [
             {
-                "name": "bit-data",
+                "name": "data",
                 "desc": "",
                 "subcommands": [
                     ("get",       "download/update bit-utilized databases or get test data"),
@@ -279,6 +305,24 @@ def print_overview():
 
 
 
+def _suppress_help_version_on_group_parsers(parser):
+    """Suppress -h/--help/-v/--version from argcomplete on parsers that have
+    subparsers (group-level commands), so TAB after a group shows only
+    subcommand names.  Leaf-level parsers are left untouched so their flags
+    still appear without requiring a '-' prefix."""
+    for action in parser._actions:
+        if isinstance(action, argparse._SubParsersAction):
+            for a in parser._actions:
+                if hasattr(a, 'option_strings') and any(
+                    s in ('-h', '--help', '-v', '--version')
+                    for s in a.option_strings
+                ):
+                    a.help = argparse.SUPPRESS
+            for sub_parser in action.choices.values():
+                _suppress_help_version_on_group_parsers(sub_parser)
+            break
+
+
 def build_parser():
 
     desc = """
@@ -294,6 +338,32 @@ def build_parser():
     add_help(parser)
     add_version_arg(parser)
 
+    subparsers = parser.add_subparsers(dest='subcommand')
+
+    # Lazy-load modules during tab completion so only the one relevant module
+    # is imported per keypress instead of all 21 at once.
+    import os
+    comp_line = os.environ.get('COMP_LINE', '')
+    if comp_line:
+        words = comp_line.split()
+        if len(words) >= 2 and words[1] in SUBCOMMAND_MAP:
+            # User is completing args/flags for a specific subcommand — only
+            # import that one module.
+            module = importlib.import_module(SUBCOMMAND_MAP[words[1]])
+            module.build_parser(parent_subparsers=subparsers)
+        else:
+            # User is still completing the subcommand name itself — lightweight
+            # stubs are all argcomplete needs to offer the names.
+            for name in SUBCOMMAND_MAP:
+                subparsers.add_parser(name, add_help=False)
+    else:
+        # Normal (non-completion) invocation — build the full tree.
+        for module_path in SUBCOMMAND_MAP.values():
+            module = importlib.import_module(module_path)
+            module.build_parser(parent_subparsers=subparsers)
+
+    _suppress_help_version_on_group_parsers(parser)
+
     return parser
 
 
@@ -301,9 +371,31 @@ def main():
 
     parser = build_parser()
 
+    try:
+        import argcomplete
+        argcomplete.autocomplete(parser)
+    except ImportError:
+        pass
+
     # print the overview when called with no arguments or with -h/--help
     if len(sys.argv) == 1 or sys.argv[1] in ("-h", "--help"):
         print_overview()
         sys.exit(0)
 
-    args = parser.parse_args()
+    subcommand = sys.argv[1]
+
+    # handle -v/--version before subcommand dispatch
+    if subcommand in ("-v", "--version"):
+        parser.parse_args()
+        return
+
+    if subcommand not in SUBCOMMAND_MAP:
+        from rich.console import Console
+        Console(stderr=True).print(f"\n  [red]Unknown subcommand:[/red] [cyan]{subcommand}[/cyan]\n")
+        print_overview()
+        sys.exit(1)
+
+    # rewrite argv so the target module's parser sees the right program name
+    sys.argv = [f"bit {subcommand}"] + sys.argv[2:]
+    module = importlib.import_module(SUBCOMMAND_MAP[subcommand])
+    module.main()

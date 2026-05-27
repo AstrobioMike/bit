@@ -3,7 +3,8 @@ import argparse
 from bit.cli.common import (CustomRichHelpFormatter, reconstruct_invocation,
                             add_help, add_version_arg, add_force)
 
-def main():
+
+def build_parser(parent_subparsers=None):
 
     desc = """
         This program analyzes coverage patterns given a reference fasta and a bam file as inputs.
@@ -18,12 +19,21 @@ def main():
         specifically want to investigate them too, you should probably use `--per-contig` mode).
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        epilog="Ex. usage: `bit-cov-analyzer -r reference.fasta -b mapping.bam`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "cov-analyzer",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            epilog="Ex. usage: `bit-cov-analyzer -r reference.fasta -b mapping.bam`",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
+
     required = parser.add_argument_group("Required Parameters")
     optional = parser.add_argument_group("Optional Parameters")
 
@@ -131,6 +141,13 @@ def main():
     add_force(optional)
     add_help(optional)
     add_version_arg(optional)
+
+    return parser
+
+
+def main():
+
+    parser = build_parser()
 
     if len(sys.argv) == 1:  # pragma: no cover
         parser.print_help(sys.stderr)

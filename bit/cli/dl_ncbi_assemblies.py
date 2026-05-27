@@ -3,7 +3,8 @@ import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 from bit.modules.dl_ncbi_assemblies import dl_ncbi_assemblies
 
-def main():
+
+def build_parser(parent_subparsers=None):
 
     desc = """
         This program downloads assembly files for NCBI genomes. It takes as input
@@ -11,12 +12,20 @@ def main():
         which format to download.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        epilog="Ex. usage: `bit-dl-ncbi-assemblies -w wanted-accessions.txt`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "dl-ncbi-assemblies",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            epilog="Ex. usage: `bit-dl-ncbi-assemblies -w wanted-accessions.txt`",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     required = parser.add_argument_group("Required Parameters")
     optional = parser.add_argument_group("Optional Parameters")
@@ -57,6 +66,13 @@ def main():
 
     add_help(optional)
     add_version_arg(optional)
+
+    return parser
+
+
+def main():
+
+    parser = build_parser()
 
     if len(sys.argv) == 1:  # pragma: no cover
         parser.print_help(sys.stderr)

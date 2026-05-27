@@ -5,7 +5,7 @@ from bit.cli.common import CustomRichHelpFormatter, add_force, add_help, add_ver
 from bit.modules.general import report_message, notify_premature_exit, is_gzipped
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This script generates whole-reference and contig-level detection and coverage info
@@ -14,12 +14,20 @@ def build_parser():
         each input reference and contig.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        epilog="Ex. usage: `bit-cov-stats -r reference.fasta -b mapping.bam` or `bit-cov-stats -r reference.fasta --bed per-base.bed.gz`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "cov-stats",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            epilog="Ex. usage: `bit-cov-stats -r reference.fasta -b mapping.bam` or `bit-cov-stats -r reference.fasta --bed per-base.bed.gz`",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     required = parser.add_argument_group("Required Parameters (choose one of `--reference-fastas` or `--reference-list` then `--bam` and/or `--bed`)")
     optional = parser.add_argument_group("Optional Parameters")

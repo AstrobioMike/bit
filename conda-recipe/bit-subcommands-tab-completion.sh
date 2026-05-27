@@ -1,32 +1,13 @@
 #!/usr/bin/env bash
 
-### handling setting up of argcomplete for bit commands with subcommands ###
+### tab completion for the `bit` command via argcomplete ###
 
-ARGCOMPLETE_COMMANDS=(
-    bit-data
-    bit-ez-screen
-    bit-fasta
-    bit-genbank
-    bit-go
-    bit-itol
-    bit-kraken2
-    bit-lineage
-    bit-table
-)
-
-# checking interactive shell
+# only activate in interactive shells
 case "$-" in
     *i*) ;;
     *) return 0 2>/dev/null || exit 0 ;;
 esac
 
-# checking for argcomplete helper
-if ! command -v register-python-argcomplete >/dev/null 2>&1; then
-    return 0 2>/dev/null || exit 0
+if command -v register-python-argcomplete >/dev/null 2>&1; then
+    eval "$(register-python-argcomplete bit)"
 fi
-
-for cmd in "${ARGCOMPLETE_COMMANDS[@]}"; do
-    if command -v "$cmd" >/dev/null 2>&1; then
-        eval "$(register-python-argcomplete "$cmd")"
-    fi
-done
