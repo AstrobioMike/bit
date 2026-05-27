@@ -15,14 +15,11 @@
 -->
 
 
-## v2.0.1 (NOT YET RELEASED)
-
-### Added
-
-### Changed
+## v2.0.1 (27-May-2026)
 
 ### Fixed
-- when we index a bam for a user, we now first check if it's sorted (e.g. in `bit cov-stats` and `bit cov-analyzer`)
+- when we index a bam for a user, we now first check if it's sorted (e.g. in `bit cov-stats` and `bit cov-analyzer`; thanks to @kdbrumfield for catching this!)
+- cov-analyzer will now symlink the ref fasta for purposes of making the fasta index when the ref fasta is in an unwritable location
 
 ---
 
