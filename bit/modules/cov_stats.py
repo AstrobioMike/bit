@@ -253,7 +253,7 @@ def parse_bed_file(refs, bed_file, contigs, header_to_ref_dict):
 
 def run_mosdepth(bam_file, output_prefix, include_non_primary):
 
-    check_bam_file_is_indexed(bam_file)
+    bam_file = check_bam_file_is_indexed(bam_file)
 
     mosdepth_output_dir = f"{output_prefix}-mosdepth-files"
     if Path(mosdepth_output_dir).is_dir():

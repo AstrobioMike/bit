@@ -14,6 +14,7 @@ from tqdm import tqdm # type: ignore
 from colorama import Fore, init # type: ignore
 from bit.modules.general import (check_if_output_dir_exists,
                                  check_files_are_found,
+                                 check_bam_file_is_indexed,
                                  notify_premature_exit,
                                  report_message,
                                  log_command_run,
@@ -41,7 +42,7 @@ def run_cov_analyzer(
     full_cmd_executed: str = None
 ):
 
-    preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs,
+    bam_file = preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs,
                      force_overwrite, log_file, full_cmd_executed)
 
     contig_lengths = get_contig_lengths(reference_fasta)
@@ -112,18 +113,14 @@ def preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs, for
     check_if_output_dir_exists(output_dir, force_overwrite)
     paths_list = [reference_fasta, bam_file]
     check_files_are_found(paths_list)
-    check_bam_file_is_indexed(bam_file)
+    bam_file = check_bam_file_is_indexed(bam_file)
     check_fasta_file_is_indexed(reference_fasta)
     check_excluded_contigs(reference_fasta, exclude_contigs)
     os.makedirs(f"{output_dir}/mosdepth-files", exist_ok=True)
 
     log_command_run(full_cmd_executed, output_dir, log_file)
 
-
-def check_bam_file_is_indexed(bam_file):
-    if not Path(bam_file + ".bai").is_file():
-        cmd = f"samtools index {bam_file}"
-        subprocess.run(cmd, shell=True)
+    return bam_file
 
 
 def check_fasta_file_is_indexed(reference_fasta):

@@ -236,11 +236,46 @@ def spinner(in_progress_msg, complete_msg):
 
 
 def check_bam_file_is_indexed(bam_file):
-    if not Path(bam_file + ".bai").is_file():
-        cmd = f"samtools index {bam_file}"
-        subprocess.run(cmd, shell=True)
+
+    header_result = subprocess.run(
+        ["samtools", "view", "-H", bam_file],
+        capture_output=True, text=True
+    )
+    is_sorted = any(
+        "SO:coordinate" in line
+        for line in header_result.stdout.splitlines()
+        if line.startswith("@HD")
+    )
+
+    sorted_for_you = False
+    if not is_sorted:
+
         message = """
-                  We indexed the BAM for you. Why? Because it's common courtesy.
-                  All the programs that don't do this for us when it's needed are just big jerks!
-                  """
+                    We're sorting and indexing the BAM for you. Why? Because it's common courtesy.
+                    All the programs that don't do this for us when it's needed are just big jerks!
+                    """
+
         report_message(message, color="orange", initial_indent="    ", subsequent_indent="    ")
+
+        stem = bam_file[:-4] if bam_file.endswith(".bam") else bam_file
+        sorted_bam = stem + ".sorted.bam"
+        report_message("Sorting BAM file...")
+        with spinner("", ""):
+            subprocess.run(["samtools", "sort", "-o", sorted_bam, bam_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        bam_file = sorted_bam
+        sorted_for_you = True
+
+    if not Path(bam_file + ".bai").is_file():
+        if not sorted_for_you:
+            message = """
+                      We're indexing the BAM for you. Why? Because it's common courtesy.
+                      All the programs that don't do this for us when it's needed are just big jerks!
+                      """
+
+            report_message(message, color="orange", initial_indent="    ", subsequent_indent="    ")
+
+        report_message("Indexing BAM file...")
+        with spinner("", ""):
+            subprocess.run(["samtools", "index", bam_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    return bam_file

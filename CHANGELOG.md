@@ -15,6 +15,17 @@
 -->
 
 
+## v2.0.1 (NOT YET RELEASED)
+
+### Added
+
+### Changed
+
+### Fixed
+- when we index a bam for a user, we now first check if it's sorted (e.g. in `bit cov-stats` and `bit cov-analyzer`)
+
+---
+
 ## v2.0.0 (27-May-2026)
 
 A lot of changes have been made recently to group and reorganize bit commands (alongside a hefty python revamp). I've followed suit with the rest of the world and everything is a subcommand available under `bit`. Running `bit` by itself will print out an overview of all programs/subcommands grouped by general utility. If you're having trouble finding something you used to use, please reach out and let me know! You can post an issue on this repo or reach out to me however :)
