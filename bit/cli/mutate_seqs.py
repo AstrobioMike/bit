@@ -6,19 +6,27 @@ from bit.cli.common import CustomRichHelpFormatter, add_help, reconstruct_invoca
 from bit.modules.general import check_files_are_found, report_message
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This script will mutate all sequences of a nucleotide or amino-acid multifasta with
         the specified mutation rate. By default it only swaps bases, but it can optionally introduce indels also.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        epilog="Ex. usage: `bit-mutate-seqs -i input.fasta`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "mutate-seqs",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            epilog="Ex. usage: `bit mutate-seqs -i input.fasta`",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     required = parser.add_argument_group("Required Parameters")
     optional = parser.add_argument_group("Optional Parameters")

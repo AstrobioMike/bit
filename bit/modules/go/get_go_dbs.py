@@ -11,7 +11,7 @@ def check_go_data_location_var_is_set():
         go_data_dir = os.environ['GO_DB_DIR']
     except:
         wprint(color_text("The environment variable 'GO_DB_DIR' does not seem to be set :(", "yellow"))
-        wprint("This shouldn't happen, check on things with `bit-data locations check`.")
+        wprint("This shouldn't happen, check on things with `bit data locations check`.")
         print("")
         sys.exit(0)
 
@@ -65,7 +65,7 @@ def get_go_data(force_update=False, quiet=False):
         if not quiet:
             report_message(f"GO data already present at:")
             print(f"        {go_db_dir}")
-            report_message(f"Run `bit-data get go-dbs -f` if you want to re-download/update it.")
+            report_message(f"Run `bit data get go-dbs -f` if you want to re-download/update it.")
             print()
             return
         return

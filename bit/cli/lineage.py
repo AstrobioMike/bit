@@ -5,18 +5,26 @@ from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 from bit.modules.general import check_files_are_found
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This program has helpers for getting lineages from taxids and working with lineages. See subcommand-specific
         help menus for more info.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "lineage",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     add_help(parser)
 
@@ -38,7 +46,7 @@ def build_parser():
         "from-taxids",
         help="Get NCBI lineage info from taxids",
         description=from_taxids_desc,
-        epilog="Ex. usage: `bit-lineage from-taxids -i taxids.txt -o lineages.tsv`",
+        epilog="Ex. usage: `bit lineage from-taxids -i taxids.txt -o lineages.tsv`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -88,7 +96,7 @@ def build_parser():
         "to-tsv",
         help="Convert condensed lineages to TSV format",
         description=to_tsv_desc,
-        epilog="Ex. usage: `bit-lineage to-tsv -i input-lineages.tsv -o formatted-tax.tsv`",
+        epilog="Ex. usage: `bit lineage to-tsv -i input-lineages.tsv -o formatted-tax.tsv`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

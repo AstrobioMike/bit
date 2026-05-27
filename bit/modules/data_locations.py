@@ -50,7 +50,7 @@ def check_and_report_env_variables():
         if not writable_dict[entry]:
 
             print()
-            wprint(color_text("The path set for the '" + str(entry) + "' variable is not writable. This may cause problems, so you might want to put it somewhere else (with `bit-data-locations set`).", "red"))
+            wprint(color_text("The path set for the '" + str(entry) + "' variable is not writable. This may cause problems, so you might want to put it somewhere else (with `bit data-locations set`).", "red"))
             print()
 
 
@@ -65,7 +65,7 @@ def check_location_var_is_set_and_writable(variable):
     except:
         print()
         wprint(color_text("The environment variable '" + str(variable) + "' does not seem to be set :(", "yellow"))
-        wprint("Try to set it with `bit-data-locations set`.")
+        wprint("Try to set it with `bit data-locations set`.")
         print("")
         sys.exit(1)
 
@@ -277,6 +277,6 @@ def notify_to_reactivate_conda():
     print(color_text("  --------------------------------------------------------------------------------", "green"))
     wprint(color_text("Environment variables have been updated. But for the changes to take effect, be sure to reactivate the conda environment, e.g.:", "yellow"))
     print(f"\n        `conda activate {curr_conda_name}`\n")
-    wprint(color_text("Then you can double-check with `bit-data-locations check`.", "yellow"))
+    wprint(color_text("Then you can double-check with `bit data-locations check`.", "yellow"))
     print(color_text("  --------------------------------------------------------------------------------", "green"))
     print(color_text("  --------------------------------------------------------------------------------\n", "green"))

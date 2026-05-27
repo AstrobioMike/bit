@@ -10,7 +10,7 @@ def check_tax_location_var_is_set():
         ncbi_tax_data_dir = os.environ['TAXONKIT_DB']
     except KeyError:
         wprint(color_text("The environment variable 'TAXONKIT_DB' does not seem to be set :(", "red"))
-        wprint("This shouldn't happen, check on things with `bit-data locations check`.")
+        wprint("This shouldn't happen, check on things with `bit data locations check`.")
         print("")
         sys.exit(1)
 
@@ -65,7 +65,7 @@ def get_ncbi_tax_data(force_update=False, quiet = False):
         if not quiet:
             report_message(f"Tax data already present at:")
             print(f"        {ncbi_data_dir}")
-            report_message(f"Run `bit-data get ncbi-tax-data -f` if you want to re-download/update it.")
+            report_message(f"Run `bit data get ncbi-tax-data -f` if you want to re-download/update it.")
             print()
             return
         return

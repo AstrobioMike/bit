@@ -6,18 +6,26 @@ import argcomplete # type: ignore
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This program provides subcommands for working with kraken2 (or bracken) output. See subcommand-specific
         help menus for more info.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "kraken2",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     add_help(parser)
 
@@ -38,7 +46,7 @@ def build_parser():
         "tax-plots",
         help="Generate taxonomy bar plots from a kraken2 report",
         description=tax_plots_desc,
-        epilog="Ex. usage: `bit-kraken2 tax-plots -i kraken2.report`",
+        epilog="Ex. usage: `bit kraken2 tax-plots -i kraken2.report`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -112,7 +120,7 @@ def build_parser():
         "tax-summary",
         help="Generate a taxonomy summary table from kraken2/bracken report(s)",
         description=tax_summary_desc,
-        epilog="Ex. usage: `bit-kraken2 tax-summary -i kraken2.report`",
+        epilog="Ex. usage: `bit kraken2 tax-summary -i kraken2.report`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -228,7 +236,7 @@ def check_and_setup_file_to_sample_map(input_reports, sample_names):
 
     if sample_names is not None and len(sample_names) != len(input_reports):
         report_message("\n    It seems the number of provided sample names doesn't match the number of provided input files :(")
-        report_message("\n    Check usage with `bit-kraken2-tax-summary -h`.\n")
+        report_message("\n    Check usage with `bit kraken2 tax-summary -h`.\n")
         notify_premature_exit()
 
     if sample_names is not None:

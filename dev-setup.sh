@@ -22,12 +22,12 @@ BIN_DIR=$(dirname $(which python))
 
 # removing stale symlinks that point into bit/scripts/
 # (these conflict with pyproject.toml entry points)
-for f in ${BIN_DIR}/*; do
-    target=$(readlink "$f" 2>/dev/null)
-    if [[ "$target" == *"bit/scripts"* ]]; then
-        rm -f "$f"
-    fi
-done
+# for f in ${BIN_DIR}/*; do
+#     target=$(readlink "$f" 2>/dev/null)
+#     if [[ "$target" == *"bit/scripts"* ]]; then
+#         rm -f "$f"
+#     fi
+# done
 
 pip install --no-build-isolation -e .
 
@@ -43,25 +43,28 @@ pip install --no-build-isolation -e .
 # done
 
 # setting up tab-completion for the bit commands with subcommands
-ARGCOMPLETE_COMMANDS=(
-    bit-data
-    bit-ez-screen
-    bit-fasta
-    bit-genbank
-    bit-go
-    bit-itol
-    bit-kraken2
-    bit-lineage
-    bit-table
-)
+# ARGCOMPLETE_COMMANDS=(
+#     bit
+#     bit-data
+#     bit-ez-screen
+#     bit-fasta
+#     bit-genbank
+#     bit-go
+#     bit-itol
+#     bit-kraken2
+#     bit-lineage
+#     bit-table
+# )
 
-for cmd in "${ARGCOMPLETE_COMMANDS[@]}"; do
-    if command -v "$cmd" >/dev/null 2>&1; then
-        eval "$(register-python-argcomplete "$cmd")"
-    fi
-done
+# for cmd in "${ARGCOMPLETE_COMMANDS[@]}"; do
+#     if command -v "$cmd" >/dev/null 2>&1; then
+#         eval "$(register-python-argcomplete "$cmd")"
+#     fi
+# done
 
-
+if command -v register-python-argcomplete >/dev/null 2>&1; then
+    eval "$(register-python-argcomplete bit)"
+fi
 
 ## if changing conda versions and wanting to install locally entirely (rather than using a prior official conda install of bit)
 # conda build -c conda-forge -c bioconda conda-recipe/

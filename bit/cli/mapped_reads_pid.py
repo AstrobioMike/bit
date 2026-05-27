@@ -5,22 +5,30 @@ from bit.modules.mapped_reads_pid import (get_mapped_reads_pids,
                                               get_summary_stats)
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This script takes an input bam file and generates percent-identity information for mapped reads
         based on edit distance (using the NM field) and total alignment length. By default,
         it just prints out some summary stats. Specify an output file if you also want it to write out the
         percent identities for each mapped read. [bold]TO ALSO GET[/bold] coverage and detection information, use
-        `bit-cov-stats` instead.
+        `bit cov-stats` instead.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        epilog="Ex. usage: `bit-get-mapped-reads-pid input.bam`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "mapped-reads-pid",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            epilog="Ex. usage: `bit mapped-reads-pid input.bam`",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     required = parser.add_argument_group("Required Parameters")
     optional = parser.add_argument_group("Optional Parameters")

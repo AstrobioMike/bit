@@ -115,7 +115,7 @@ def test_dl_wf_full_flow(mock_download, mock_check_dir, mock_get_versions):
         {"1.0.0": "metagenomics-wf-v1.0.0", "1.1.0": "metagenomics-wf-v1.1.0"}
     )
 
-    # simulating input args (e.g., bit-get-wf metagenomics)
+    # simulating input args (e.g., bit get-workflow metagenomics)
     args = Namespace(
         workflow="metagenomics",
         wanted_version=None,

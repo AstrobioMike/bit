@@ -13,7 +13,7 @@ from bit.modules.general import report_message, notify_premature_exit
 RawTextRichHelpFormatter.group_name_formatter = lambda name: "Usage" if name.lower() == "usage" else name
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     raw_desc = (
         "This program runs an assembly workflow with optional QC and digital normalization "
@@ -22,12 +22,20 @@ def build_parser():
 
     desc = wrap_help(raw_desc, 4)
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        epilog="Ex. usage: `bit-assemble -1 R1.fastq.gz -2 R2.fastq.gz` or `bit-assemble -r reads-dir/`",
-        formatter_class=RawTextRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "assemble",
+            description=desc,
+            formatter_class=RawTextRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            epilog="Ex. usage: `bit assemble -1 R1.fastq.gz -2 R2.fastq.gz` or `bit assemble -r reads-dir/`",
+            formatter_class=RawTextRichHelpFormatter,
+            add_help=False
+        )
 
     required = parser.add_argument_group("Required Parameters (choose one input method)")
     general = parser.add_argument_group("General Parameters")

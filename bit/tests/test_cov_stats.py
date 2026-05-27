@@ -12,7 +12,7 @@ def test_get_cov_stats(tmp_path):
     out_prefix = tmp_path / "cov-stats"
 
     cmd = [
-        "bit-cov-stats",
+        "bit", "cov-stats",
         "-r", str(test_fasta_path),
         "-b", str(test_bam_path),
         "-o", str(out_prefix),

@@ -5,18 +5,26 @@ import argcomplete # type: ignore
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This program has utilities for working with tabular data. See subcommand-specific
         help menus for more info..
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "table",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     add_help(parser)
     add_version_arg(parser)
@@ -36,7 +44,7 @@ def build_parser():
         "colnames",
         help="List column names of a delimited file",
         description=colnames_desc,
-        epilog="Ex. usage: `bit-table colnames input.tsv`",
+        epilog="Ex. usage: `bit table colnames input.tsv`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -68,7 +76,7 @@ def build_parser():
         "filter",
         help="Filter a table by values (strings) in a column",
         description=filter_desc,
-        epilog="Ex. usage: `bit-table filter -i input.tsv -w wanted-values.txt`",
+        epilog="Ex. usage: `bit table filter -i input.tsv -w wanted-values.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -147,7 +155,7 @@ def build_parser():
         "normalize",
         help="Normalize a table by CPM or median-ratio",
         description=normalize_desc,
-        epilog='Ex. usage: `bit-table normalize -i input-table.tsv -n CPM`',
+        epilog='Ex. usage: `bit table normalize -i input-table.tsv -n CPM`',
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -196,7 +204,7 @@ def build_parser():
         "summarize-column",
         help="Summarize stats of a numeric column",
         description=summarize_col_desc,
-        epilog="Ex. usage: `bit-table summarize-column data.tsv -c 2`",
+        epilog="Ex. usage: `bit table summarize-column data.tsv -c 2`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

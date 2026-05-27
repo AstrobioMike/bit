@@ -198,7 +198,7 @@ def combine_summaries(args):
         # checking if sample names provided the length equals the number of input files
         if len(args.sample_names) != len(args.input_files):
             print("\n    It seems the number of provided sample names doesn't match the number of provided input files :(")
-            print("\n    Check usage with `bit-go combine-summaries -h`.\n")
+            print("\n    Check usage with `bit go combine-summaries -h`.\n")
             sys.exit(0)
 
         for i, curr_sample in enumerate(args.sample_names):

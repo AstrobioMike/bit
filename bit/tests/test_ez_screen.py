@@ -12,7 +12,7 @@ test_assembly_fasta = get_package_path("tests/data/ez-screen-assembly.fasta")
 def test_ez_screen_assembly(tmp_path):
     out_prefix = tmp_path / "ez-screen"
     cmd = [
-        "bit-ez-screen",
+        "bit", "ez-screen",
         "assembly",
         "-a", str(test_assembly_fasta),
         "-t", str(test_targets_fasta),
@@ -43,7 +43,7 @@ def test_ez_screen_reads(tmp_path):
     shutil.copy(R2, reads_dir)
 
     cmd = [
-        "bit-ez-screen",
+        "bit", "ez-screen",
         "reads",
         "-t", str(test_targets_fasta),
         "-r", str(reads_dir),

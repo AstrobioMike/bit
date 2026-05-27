@@ -4,18 +4,26 @@ import argcomplete # type: ignore
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This program manages bit-utilized databases and their location settings. See subcommand-specific
         help menus for more info.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "data",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     add_help(parser)
 
@@ -38,7 +46,7 @@ def build_parser():
         "get",
         help="Download/update bit-utilized databases, or get test data",
         description=get_desc,
-        epilog="Ex. usage: `bit-data get ncbi-assembly-data`",
+        epilog="Ex. usage: `bit data get ncbi-assembly-data`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -74,7 +82,7 @@ def build_parser():
         "go-dbs",
         help="Download or update GO databases",
         description=get_go_dbs_desc,
-        epilog="Ex. usage: `bit-data get go-dbs`",
+        epilog="Ex. usage: `bit data get go-dbs`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -98,7 +106,7 @@ def build_parser():
         "gtdb-data",
         help="Download or update GTDB metadata",
         description=get_gtdb_data_desc,
-        epilog="Ex. usage: `bit-data get gtdb-data`",
+        epilog="Ex. usage: `bit data get gtdb-data`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -122,7 +130,7 @@ def build_parser():
         "ncbi-assembly-data",
         help="Download or update NCBI assembly-summary tables",
         description=get_ncbi_assembly_desc,
-        epilog="Ex. usage: `bit-data get ncbi-assembly-data`",
+        epilog="Ex. usage: `bit data get ncbi-assembly-data`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -146,7 +154,7 @@ def build_parser():
         "ncbi-tax-data",
         help="Download or update NCBI taxonomy data",
         description=get_ncbi_tax_desc,
-        epilog="Ex. usage: `bit-data get ncbi-tax-data`",
+        epilog="Ex. usage: `bit data get ncbi-tax-data`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -170,7 +178,7 @@ def build_parser():
         "test-data",
         help="Download test data",
         description=get_test_data_desc,
-        epilog="Ex. usage: `bit-data get test-data genome`",
+        epilog="Ex. usage: `bit data get test-data genome`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -203,7 +211,7 @@ def build_parser():
         "locations",
         help="Check or set data-location environment variables",
         description=locations_desc,
-        epilog="Ex. usage: `bit-data locations check`",
+        epilog="Ex. usage: `bit data locations check`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -227,7 +235,7 @@ def build_parser():
         "check",
         help="Report current data-location environment variables",
         description=locations_check_desc,
-        epilog="Ex. usage: `bit-data locations check`",
+        epilog="Ex. usage: `bit data locations check`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -249,7 +257,7 @@ def build_parser():
         "set",
         help="Interactively set data-location environment variables",
         description=locations_set_desc,
-        epilog="Ex. usage: `bit-data locations set`",
+        epilog="Ex. usage: `bit data locations set`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

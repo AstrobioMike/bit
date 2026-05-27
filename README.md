@@ -10,7 +10,7 @@
 
 * [**Overview**](#overview)
   * [**Programs**](#programs)
-    * [GTDB/NCBI-related](#gtdbncbi-related)
+    * [NCBI/GTDB-related](#ncbigtdb-related)
     * [Coverage/mapping-related](#coveragemapping-related)
     * [Sequence manipulation / read generation](#sequence-manipulation--read-generation)
     * [Sequence searching](#sequence-searching)
@@ -53,12 +53,12 @@ conda activate bit
 
 You can see an overview of available programs like below by running `bit` by itself at the command line once it's installed. 
 
-#### GTDB/NCBI-related
+#### NCBI/GTDB-related
 
 | Program | Purpose |
 | ------- | ------- |
-| `bit-dl-ncbi-assemblies` | download NCBI assemblies in different formats given input accessions |
-| `bit-get-accs-from-gtdb` | search the [GTDB](https://gtdb.ecogenomic.org/) by taxonomy and retrieve NCBI accessions |
+| `bit dl-ncbi-assemblies` | download NCBI assemblies in different formats given input accessions |
+| `bit get-accs-from-gtdb` | search the [GTDB](https://gtdb.ecogenomic.org/) by taxonomy and retrieve NCBI accessions |
 
 ---
 
@@ -66,9 +66,9 @@ You can see an overview of available programs like below by running `bit` by its
 
 | Program | Purpose |
 | ------- | ------- |
-| `bit-cov-analyzer` | analyze coverage patterns from a bam + reference fasta to identify regions of relatively higher or lower coverage |
-| `bit-cov-stats` | get detection, coverage, and mean percent ID for single or multiple references given fasta(s) and a bam file |
-| `bit-mapped-reads-pid` | get percent ID information for mapped reads in a bam file |
+| `bit cov-analyzer` | analyze coverage patterns from a bam + reference fasta to identify regions of relatively higher or lower coverage |
+| `bit cov-stats` | get detection, coverage, and mean percent ID for single or multiple references given fasta(s) and a bam file |
+| `bit mapped-reads-pid` | get percent ID information for mapped reads in a bam file |
 
 ---
 
@@ -76,15 +76,15 @@ You can see an overview of available programs like below by running `bit` by its
 
 | Program | Purpose |
 | ------- | ------- |
-| `bit-gen-reads` | generate reads from fasta files |
-| `bit-mutate-seqs` | introduce point mutations (substitutions/indels) into nucleotide or amino-acid fasta files |
-| `bit-add-insertion` | add insertions into nucleotide or amino-acid fasta sequences |
+| `bit gen-reads` | generate reads from fasta files |
+| `bit mutate-seqs` | introduce point mutations (substitutions/indels) into nucleotide or amino-acid fasta files |
+| `bit add-insertion` | add insertions into nucleotide or amino-acid fasta sequences |
 
 ---
 
 #### Sequence searching
 
-##### Program: `bit-ez-screen`
+##### Program: `bit ez-screen`
 | Subcommand | Purpose |
 | ------- | ------- |
 | `assembly` | runs blast-based screening of targets in assemblies |
@@ -94,7 +94,7 @@ You can see an overview of available programs like below by running `bit` by its
 
 #### Fasta utilities
 
-##### Program: `bit-fasta`
+##### Program: `bit fasta`
 | Subcommand | Purpose |
 | ---------- | ------- |
 | `calc-gc` | calculate GC content per sequence or for the full file |
@@ -115,15 +115,15 @@ You can see an overview of available programs like below by running `bit` by its
 
 | Program | Purpose |
 | ------- | ------- |
-| `bit-assemble` | simple wrapper for assembly with optional quality trimming and normalization |
-| `bit-summarize-assembly` | quickly summarize nucleotide assemblies |
+| `bit assemble` | simple wrapper for assembly with optional quality trimming and normalization |
+| `bit summarize-assembly` | quickly summarize nucleotide assemblies |
 
 ---
 
 
 #### GenBank-format utilities
 
-##### Program: `bit-genbank`
+##### Program: `bit genbank`
 | Subcommand | Purpose |
 | ---------- | ------- |
 | `to-AA-seqs` | extract amino acid sequences |
@@ -135,13 +135,13 @@ You can see an overview of available programs like below by running `bit` by its
 
 #### Taxonomy and lineage helpers
 
-##### Program: `bit-kraken2`
+##### Program: `bit kraken2`
 | Subcommand | Purpose |
 | ---------- | ------- |
 | `tax-plots` | generate standard taxonomy barplots from kraken2/bracken outputs |
 | `tax-summary` | generate summary tables from kraken2/bracken outputs |
 
-##### Program: `bit-lineage`
+##### Program: `bit lineage`
 | Subcommand | Purpose |
 | ---------- | ------- |
 | `from-taxids` | get full lineage info from a list of NCBI taxon IDs |
@@ -152,7 +152,7 @@ You can see an overview of available programs like below by running `bit` by its
 
 #### Table utilities
 
-##### Program: `bit-table`
+##### Program: `bit table`
 | Subcommand | Purpose |
 | ---------- | ------- |
 | `colnames` | print column names with numbers (handy for `cut`/`awk`) |
@@ -166,10 +166,10 @@ You can see an overview of available programs like below by running `bit` by its
 
 | Program | Purpose |
 | ------- | ------- |
-| `bit-filter-ko-results` | filter [KOFamScan](https://github.com/takaram/kofam_scan) results |
+| `bit filter-ko-results` | filter [KOFamScan](https://github.com/takaram/kofam_scan) results |
 
 
-##### Program: `bit-go`
+##### Program: `bit go`
 Subcommand | Purpose |
 | ---------- | ------- |
 | `get-term-info` | look up GO term info |
@@ -181,7 +181,7 @@ Subcommand | Purpose |
 
 #### iTOL-helpers
 
-##### Program: `bit-itol`
+##### Program: `bit itol`
 | Subcommand | Purpose |
 | ---------- | ------- |
 | `binary-dataset` | generate a binary dataset annotation file |
@@ -193,7 +193,7 @@ Subcommand | Purpose |
 
 #### bit-data management
 
-##### Program: `bit-data`
+##### Program: `bit data`
 | Subcommand | Purpose |
 | ---------- | ------- |
 | `get` | download or update bit-utilized reference databases, or grab test data |

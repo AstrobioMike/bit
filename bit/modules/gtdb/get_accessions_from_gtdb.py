@@ -19,7 +19,7 @@ def get_accessions_from_gtdb(args):
         print("")
         wprint(color_text("A specific taxon needs to also be provided to the `-t` flag in order to use `--get-taxon-counts`.", "yellow"))
         print("")
-        wprint("  E.g.: bit-get-accessions-from-gtdb --get-taxon-counts -t Alteromonas")
+        wprint("  E.g.: bit get-accs-from-gtdb --get-taxon-counts -t Alteromonas")
         print("")
         sys.exit(0)
 
@@ -195,7 +195,7 @@ def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representative
 
     # report results
     print("")
-    
+
     wprint(f"Wrote {len(target_accs):,} accession(s) to:")
     wprint("  " + color_text(acc_out_filename))
     print("")

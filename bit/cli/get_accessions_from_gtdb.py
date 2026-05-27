@@ -4,25 +4,33 @@ from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help, add_ver
 from bit.modules.gtdb.get_accessions_from_gtdb import get_accessions_from_gtdb
 
 
-def main():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This is a helper program to facilitate using taxonomy and genomes from
         the Genome Taxonomy Database (gtdb.ecogenomic.org). It primarily returns
         NCBI accessions and GTDB summary tables based on GTDB-taxonomy searches,
-        which could then be passed to, e.g., `bit-dl-ncbi-assemblies`. It also
+        which could then be passed to, e.g., `bit dl-ncbi-assemblies`. It also
         currently has filtering capabilities built-in for specifying only GTDB
         representative species or RefSeq reference genomes (see help menu
         and links therein for explanations of what these are). It will cache the GTDB
-        metadata tables, if you want to update them, run `bit-data get gtdb-data -f`.
+        metadata tables, if you want to update them, run `bit data get gtdb-data -f`.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        epilog="Ex. usage: bit-get-accessions-from-gtdb -t Archaea --gtdb-representatives-only",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "get-accs-from-gtdb",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            epilog="Ex. usage: bit get-accs-from-gtdb -t Archaea --gtdb-representatives-only",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     required = parser.add_argument_group("Required Parameters")
     optional = parser.add_argument_group("Optional Parameters")
@@ -85,8 +93,14 @@ def main():
     )
 
     add_help(optional)
-
     add_version_arg(optional)
+
+    return parser
+
+
+def main():
+
+    parser = build_parser()
 
     if len(sys.argv) == 1:  # pragma: no cover
         parser.print_help(sys.stderr)

@@ -25,7 +25,7 @@ _bit_ should be installed via conda as described [here](https://github.com/Astro
 ### Retrieving the worklfow
 
 ```bash
-bit-get-workflow sra-download
+bit get-workflow sra-download
 ```
 
 ### Creating the input file and modifying the config.yaml
@@ -81,6 +81,6 @@ Note that by default the original files will be removed after they are combined 
 ---
 
 ## Version info
-Note that the workflows are versioned independently of the _bit_ package. When you pull one with `bit-get-workflow`, the directory name will have the version, and it is also listed at the top of the Snakefile.
+Note that the workflows are versioned independently of the _bit_ package. When you pull one with `bit get-workflow`, the directory name will have the version, and it is also listed at the top of the Snakefile.
 
 All versions of programs used can be found in their corresponding conda yaml file in the envs/ directory. 

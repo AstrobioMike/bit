@@ -13,7 +13,7 @@ def check_ncbi_assembly_info_location_var_is_set():
         ncbi_assembly_data_dir = os.environ['NCBI_assembly_data_dir']
     except:
         wprint(color_text("The environment variable 'NCBI_assembly_data_dir' does not seem to be set :(", "yellow"))
-        wprint("This shouldn't happen, check on things with `bit-data locations check`.")
+        wprint("This shouldn't happen, check on things with `bit data locations check`.")
         print("")
         sys.exit(0)
 
@@ -86,7 +86,7 @@ def get_ncbi_assembly_data(force_update=False, quiet=False):
         if not quiet:
             report_message(f"Assembly data already present at:")
             print(f"        {ncbi_dir}")
-            report_message(f"Run `bit-data get ncbi-assembly-data -f` if you want to re-download/update it.")
+            report_message(f"Run `bit data get ncbi-assembly-data -f` if you want to re-download/update it.")
             print()
             return
         return

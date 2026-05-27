@@ -4,17 +4,25 @@ import argcomplete # type: ignore
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This program extracts different types of information and sequences from GenBank files.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "genbank",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     add_help(parser)
 
@@ -57,7 +65,7 @@ def build_parser():
         "to-AA-seqs",
         help="Extract amino-acid sequences for complete coding sequences",
         description=to_AA_seqs_desc,
-        epilog="Ex. usage: `bit-genbank to-AA-seqs -i input.gbff`",
+        epilog="Ex. usage: `bit genbank to-AA-seqs -i input.gbff`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -85,7 +93,7 @@ def build_parser():
         "to-cds-tsv",
         help="Extract CDS info to a tab-delimited file",
         description=to_cds_tsv_desc,
-        epilog="Ex. usage: `bit-genbank to-cds-tsv -i input.gbff`",
+        epilog="Ex. usage: `bit genbank to-cds-tsv -i input.gbff`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -120,7 +128,7 @@ def build_parser():
         "to-cds-seqs",
         help="Extract nucleotide sequences for CDS features",
         description=to_cds_seqs_desc,
-        epilog="Ex. usage: `bit-genbank to-cds-seqs -i input.gbff`",
+        epilog="Ex. usage: `bit genbank to-cds-seqs -i input.gbff`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -146,7 +154,7 @@ def build_parser():
         "to-fasta",
         help="Extract the full nucleotide fasta sequence",
         description=to_fasta_desc,
-        epilog="Ex. usage: `bit-genbank to-fasta -i input.gbff`",
+        epilog="Ex. usage: `bit genbank to-fasta -i input.gbff`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

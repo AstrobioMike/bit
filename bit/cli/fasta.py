@@ -3,18 +3,26 @@ import argparse
 import argcomplete # type: ignore
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This program performs various operations on fasta files. See subcommand-specific
         help menus for more info.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "fasta",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     add_help(parser)
 
@@ -45,7 +53,7 @@ def build_parser():
         "calc-gc",
         help="Calculate GC content (per seq or per sliding window)",
         description=calc_gc_desc,
-        epilog="Ex. usage: `bit-fasta calc-gc input.fasta`",
+        epilog="Ex. usage: `bit fasta calc-gc input.fasta`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -99,7 +107,7 @@ def build_parser():
         "calc-var-in-msa",
         help="Calculate variation in a multiple-sequence alignment",
         description=calc_var_desc,
-        epilog="Ex. usage: `bit-fasta calc-var-in-msa alignment.fasta -o variation.tsv`",
+        epilog="Ex. usage: `bit fasta calc-var-in-msa alignment.fasta -o variation.tsv`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -155,7 +163,7 @@ def build_parser():
         "count",
         help="Count number of seqs and characters",
         description=count_desc,
-        epilog="Ex. usage: `bit-fasta count input.fasta`",
+        epilog="Ex. usage: `bit fasta count input.fasta`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -189,7 +197,7 @@ def build_parser():
         "extract-by-coords",
         help="Extract sequences based on coordinates provided in a bed file",
         description=extract_by_coords_desc,
-        epilog="Ex. usage: `bit-fasta extract-by-coords -i input.fasta -b targets.bed`",
+        epilog="Ex. usage: `bit fasta extract-by-coords -i input.fasta -b targets.bed`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -238,7 +246,7 @@ def build_parser():
         "extract-by-headers",
         help="Extract sequences based on specified headers",
         description=extract_by_headers_desc,
-        epilog="Ex. usage: `bit-fasta extract-by-headers -i input.fasta -H contig-1 contig-2`",
+        epilog="Ex. usage: `bit fasta extract-by-headers -i input.fasta -H contig-1 contig-2`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -300,7 +308,7 @@ def build_parser():
         "extract-by-primers",
         help="Extract sequences based on forward and reverse primer sequences",
         description=extract_by_primers_desc,
-        epilog="Ex. usage: `bit-fasta extract-by-primers -i input.fasta -f ForwardPrimerSeq -r ReversePrimerSeq`",
+        epilog="Ex. usage: `bit fasta extract-by-primers -i input.fasta -f ForwardPrimerSeq -r ReversePrimerSeq`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -362,7 +370,7 @@ def build_parser():
         "filter-by-length",
         help="Filter sequences based on minimum/maximum length",
         description=filter_by_length_desc,
-        epilog="Ex. usage: `bit-fasta filter-by-length -i input.fasta -m 1000 -o filtered.fasta`",
+        epilog="Ex. usage: `bit fasta filter-by-length -i input.fasta -m 1000 -o filtered.fasta`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -419,7 +427,7 @@ def build_parser():
         "modify-headers",
         help="Modify or rename fasta headers",
         description=modify_headers_desc,
-        epilog="Ex. usage: `bit-fasta modify-headers -i input.fasta -w contig`",
+        epilog="Ex. usage: `bit fasta modify-headers -i input.fasta -w contig`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -484,7 +492,7 @@ def build_parser():
         "remove-wraps",
         help="Remove line wraps from a fasta file",
         description=remove_wraps_desc,
-        epilog="Ex. usage: `bit-fasta remove-wraps input.fasta > unwrapped.fasta`",
+        epilog="Ex. usage: `bit fasta remove-wraps input.fasta > unwrapped.fasta`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -519,7 +527,7 @@ def build_parser():
         "to-bed",
         help="Generate a bed file from a fasta",
         description=to_bed_desc,
-        epilog="Ex. usage: `bit-fasta to-bed input.fasta -o output.bed`",
+        epilog="Ex. usage: `bit fasta to-bed input.fasta -o output.bed`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -554,7 +562,7 @@ def build_parser():
         "to-genbank",
         help="Generate a genbank file from a nucleotide fasta",
         description=to_genbank_desc,
-        epilog="Ex. usage: `bit-fasta to-genbank input.fasta -o output.gb`",
+        epilog="Ex. usage: `bit fasta to-genbank input.fasta -o output.gb`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )

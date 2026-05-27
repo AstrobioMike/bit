@@ -4,19 +4,27 @@ from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 from bit.modules.get_workflow import dl_wf
 
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This is a helper program for downloading bit workflows.
         Workflow version is included with the downloaded workflow.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        epilog="Ex. usage: `bit-get-workflow metagenomics`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "get-workflow",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            epilog="Ex. usage: `bit get-workflow metagenomics`",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     required = parser.add_argument_group("Required Parameters")
     optional = parser.add_argument_group("Optional Parameters")

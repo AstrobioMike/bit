@@ -3,18 +3,26 @@ import argparse
 import argcomplete # type: ignore
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
-def build_parser():
+def build_parser(parent_subparsers=None):
 
     desc = """
         This program helps generate various Interacitve Tree of Life (iToL) files that can be dropped onto a
         tree on the website for visualization/annotation. See itol.embl.de/help.cgi for information on the different types.
         """
 
-    parser = argparse.ArgumentParser(
-        description=desc,
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
+    if parent_subparsers is not None:
+        parser = parent_subparsers.add_parser(
+            "itol",
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False,
+        )
+    else:
+        parser = argparse.ArgumentParser(
+            description=desc,
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
 
     add_help(parser)
 
@@ -61,7 +69,7 @@ def build_parser():
         "binary-dataset",
         help="Create an iToL binary-dataset file",
         description=binary_desc,
-        epilog="Ex. usage: `bit-itol binary-dataset -i genomes.txt`",
+        epilog="Ex. usage: `bit itol binary-dataset -i genomes.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -113,7 +121,7 @@ def build_parser():
         "colorstrip",
         help="Create an iToL colorstrip file",
         description=colorstrip_desc,
-        epilog="Ex. usage: `bit-itol colorstrip -i genomes.txt`",
+        epilog="Ex. usage: `bit itol colorstrip -i genomes.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -162,7 +170,7 @@ def build_parser():
         "map",
         help="Create an iToL map file for coloring labels and/or branches",
         description=map_desc,
-        epilog="Ex. usage: `bit-itol map -i genomes.txt`",
+        epilog="Ex. usage: `bit itol map -i genomes.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -205,7 +213,7 @@ def build_parser():
         "text-dataset",
         help="Create an iToL text-dataset file",
         description=text_desc,
-        epilog="Ex. usage: `bit-itol text-dataset -i genomes.txt`",
+        epilog="Ex. usage: `bit itol text-dataset -i genomes.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
