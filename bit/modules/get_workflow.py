@@ -11,8 +11,9 @@ releases_page_link = "https://api.github.com/repos/astrobiomike/bit/releases"
 html_releases_page = base_repo + "releases"
 
 workflow_dict = {
-    "metagenomics": { "basename": "metagenomics-wf" },
+    "amplicon": { "basename": "amplicon-wf" },
     "genome-summarize": { "basename": "genome-summarize-wf" },
+    "metagenomics": { "basename": "metagenomics-wf" },
     "sra-download": { "basename": "sra-download-wf" }
 }
 

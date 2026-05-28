@@ -36,12 +36,14 @@ def build_parser(parent_subparsers=None):
     )
 
     optional.add_argument(
+        "-l",
         "--list-available-versions",
         help="Provide this flag along with a specified workflow in order to get a printout of available versions",
         action="store_true"
     )
 
     optional.add_argument(
+        "-w",
         "--wanted-version",
         metavar="VERSION",
         help="Specify the workflow version you'd like to download (leaving out this argument will pull the latest by default)"
