@@ -215,7 +215,7 @@ PROGRAM_GROUPS = [
         "programs": [
             {
                 "name": "get-workflow",
-                "desc": "download a bit-packaged workflow (available: sra-download, genome-summarize, metagenomics)",
+                "desc": "download a bit-packaged workflow",
             },
         ],
     },
