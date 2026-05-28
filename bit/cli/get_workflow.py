@@ -31,7 +31,7 @@ def build_parser(parent_subparsers=None):
 
     required.add_argument(
         "workflow",
-        choices=["metagenomics", "genome-summarize", "sra-download"],
+        choices=["amplicon", "metagenomics", "genome-summarize", "sra-download"],
         help="The first positional argument should be which one of these workflows you'd like to download",
     )
 
