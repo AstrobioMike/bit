@@ -203,12 +203,12 @@ Subcommand | Purpose |
 
 ---
 
-Each command/subcommand has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. Once installed, you can see all available primary commands by entering `bit-` and pressing tab twice. And you can see an overview of all programs, like above, by running `bit` by itself.
+Each subcommand has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. You can see an overview of all available subcommands by running `bit` by itself. 
 
 ---
 
 ### Workflows
-The [snakemake](https://snakemake.github.io/) workflows packaged with _bit_ are retrievable with `bit-get-workflow` and currently include:
+The [snakemake](https://snakemake.github.io/) workflows packaged with _bit_ are retrievable with `bit get-workflow` and currently include:
 
 | Workflow | Purpose |  
 | ------- | ------- |  
@@ -234,7 +234,7 @@ conda create -n bit -c astrobiomike -c conda-forge -c bioconda -c defaults bit
 conda activate bit
 ```
 
-Each command has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. Once installed, you can see all available commands by entering `bit-` and pressing tab twice.
+Once installed, each subcommand has a help menu accessible by either entering the command alone or by providing `-h` as the only argument. You can see an overview of all available subcommands by running `bit` by itself.
 
 ---
 
