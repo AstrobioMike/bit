@@ -25,7 +25,6 @@ This workflow processes short-read amplicon data (16S/18S/ITS) through to ASVs, 
     - PR2 18S v4.13 for 18S
     - UNITE 2025 for ITS
 
-
 ---
 
 ## Usage
@@ -78,6 +77,8 @@ A primary output directory is produced called "workflow-outputs", with the follo
   - taxonomy-and-counts.biom
 
 Please feel free to post an issue or email with any confusion about any of the outputs produced!
+
+> If you'd like a small test dataset to run, you can run `bit data get test-data amplicon` to grab 2 small amplicon samples. 
 
 ### Other outputs
 A `benchmarks/` directory will hold time and resource utlization info (as described [here](https://stackoverflow.com/a/66872577) for most steps performed.
