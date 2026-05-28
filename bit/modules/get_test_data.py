@@ -26,6 +26,12 @@ def dl_test_data(args):
         start_message=("Downloading an E. coli genome (GCF_000005845.2) from here: ")
         end_message=("Successfully pulled in the E. coli genome (GCF_000005845.2.fasta).")
 
+    elif args.datatype == "amplicon":
+        page_url="https://github.com/AstrobioMike/test-data/releases/tag/test-amplicon-reads-v1"
+        data_url="https://github.com/AstrobioMike/test-data/releases/download/test-amplicon-reads-v1/test-amplicon-reads.zip"
+        dest="test-amplicon-reads.zip"
+        start_message=("Downloading and unpacking two tiny paired-end Illumina amplicon test samples (4 files, ~1 MB total) from here: ")
+        end_message=("Successfully pulled in two tiny amplicon test samples.")
 
     report_message(start_message, trailing_newline=True)
     print(f"    {page_url}\n\n")
@@ -55,7 +61,7 @@ def dl_test_data(args):
         report_message("Failed to download data after multiple attempts :( Maybe the connection is bad or the site is blocked for you?", "red", trailing_newline=True)
         sys.exit(1)
 
-    if args.datatype in ["metagenome"]:
+    if args.datatype in ["metagenome", "amplicon"]:
         try:
             report_message("Unpacking data...")
             subprocess.run(["unzip", "-qoDD", dest], check=True)

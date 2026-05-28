@@ -2,7 +2,7 @@
 
 <!-- 
 
-## vX.XX.X (NOT YET RELEASED)
+## v2.X.X (NOT YET RELEASED)
 
 ### Added
 
@@ -13,6 +13,13 @@
 ---
 
 -->
+
+## v2.0.2 (27-May-2026)
+
+### Added
+- my amplicon workflow to `bit get-workflow`
+
+---
 
 
 ## v2.0.1 (27-May-2026)

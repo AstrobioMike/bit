@@ -188,7 +188,7 @@ def build_parser(parent_subparsers=None):
 
     get_test_data_required.add_argument(
         "datatype",
-        choices=["genome", "metagenome"],
+        choices=["amplicon", "genome", "metagenome"],
         help="What type of test data you'd like to download",
     )
 
