@@ -145,10 +145,10 @@ PROGRAM_GROUPS = [
         "programs": [
             {
                 "name": "kraken2",
-                "desc": "summarize and visualize kraken2/bracken outputs",
+                "desc": "",
                 "subcommands": [
-                    ("tax-summary","generate summary tables from kraken2/bracken outputs"),
-                    ("tax-plots",  "generate standard taxonomy barplots from kraken2/bracken outputs"),
+                    ("tax-summary","generate summary tables from kraken2 or bracken outputs"),
+                    ("tax-plots",  "generate standard taxonomy barplots from kraken2 or bracken outputs"),
                 ],
             },
             {
