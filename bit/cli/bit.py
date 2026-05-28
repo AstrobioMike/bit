@@ -187,7 +187,7 @@ PROGRAM_GROUPS = [
                 "name": "go",
                 "desc": "",
                 "subcommands": [
-                    ("get-term-info",        "look up GO term info"),
+                    ("get-term-info",        "print out GO term info"),
                     ("summarize-annotations","summarize GO annotations"),
                     ("combine-summaries",    "combine GO summary outputs"),
                     ("slim-terms",           "slim GO terms to a specified ontology"),
