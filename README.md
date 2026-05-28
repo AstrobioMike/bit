@@ -26,6 +26,7 @@
     * [SRA-download](workflows/sra-download-wf)
     * [Genome-summarize](workflows/genome-summarize-wf)
     * [Metagenomics](workflows/metagenomics-wf)
+    * [Amplicon](workflows/amplicon-wf)
 * [**Conda install**](#conda-install)
 * [**Citation info**](#citation-info)
 * [**Shameless plug**](#shameless-plug)
@@ -214,10 +215,11 @@ The [snakemake](https://snakemake.github.io/) workflows packaged with _bit_ are 
 | [sra-download](workflows/sra-download-wf) | downloads sra reads via prefetch and fasterq-dump, with helper program for combining run accessions if needed (see [here](workflows/sra-download-wf) for usage details) |  
 | [genome-summarize](workflows/genome-summarize-wf) | generates genome assembly stats, quality estimates, and taxonomy info (see [here](workflows/genome-summarize-wf) for usage details and overview) |
 | [metagenomics](workflows/metagenomics-wf) | processes short-read metagenomics data via assembly through to merged taxonomy and KO coverage tables, and recovers and characterizes MAGs (see [here](workflows/metagenomics-wf) for usage details and overview)
+| [amplicon](workflows/amplicon-wf) | processes short-read amplicon data through to ASVs, a count table, and a taxonomy table largely with dada2 (see [here](workflows/amplicon-wf) for usage details and overview)
 
 For greater detail and usage information, see the pages linked above for each workflow.
 
-> Note that workflows are versioned independently of the _bit_ package. When you pull one with `bit-get-workflow`, the directory name will have the version, and it is also listed at the top of the Snakefile. 
+> Note that workflows are versioned independently of the _bit_ package. When you pull one with `bit get-workflow`, the directory name will have the version, and it is also listed at the top of the Snakefile. 
 
 ---
 
