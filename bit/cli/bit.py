@@ -169,7 +169,7 @@ PROGRAM_GROUPS = [
                 "desc": "",
                 "subcommands": [
                     ("colnames",         "print column names with numbers (handy for cut/awk)"),
-                    ("filter",           "filter a table based on wanted IDs"),
+                    ("filter",           "filter a table based on wanted strings"),
                     ("normalize",        "normalize to CPM or with the DESeq2 median-ratio method"),
                     ("summarize-column", "summarize a numeric column"),
                 ],
