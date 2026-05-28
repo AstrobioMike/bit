@@ -7,7 +7,7 @@ from bit.modules.general import check_files_are_found, report_message, notify_pr
 def build_parser(parent_subparsers=None):
 
     desc = """
-        This script is for adding an insertion sequence to an input fasta.
+        This program is for adding an insertion sequence to an input fasta.
         """
 
     if parent_subparsers is not None:

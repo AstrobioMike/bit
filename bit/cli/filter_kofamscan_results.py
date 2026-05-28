@@ -8,7 +8,7 @@ from bit.modules.general import check_files_are_found
 def build_parser(parent_subparsers=None):
 
     desc = """
-        This script filters the "detail-tsv"-formatted output file from KOFamScan to retain
+        This program filters the "detail-tsv"-formatted output file from KOFamScan to retain
         only those above the KO-specific score threshold, and retains only the hit with the
         lowest e-value for each gene if there are multiple (thereby simplifying things to one
         KO annotation per input gene). It outputs a 3-column tab-delimited file

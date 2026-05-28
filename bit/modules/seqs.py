@@ -381,3 +381,39 @@ def read_fasta(path):
 
         if header:
             yield header, "".join(seq_parts)
+
+
+def identify_seq_type(fasta_path):
+    """
+    this tries to detect if a fasta contains amino-acid or nucleotide sequences
+
+    it reads the first sequence in the file and applies two checks:
+      1. if any character is exclusive to amino acids (E, F, I, J, L, O, P, Q, Z),
+         it returns "aa".
+      2. elif ≥ 90 % of characters are valid IUPAC nucleotide codes,
+         returns "nt"
+      3. else returns "aa"
+    """
+    from bit.modules.general import report_message, notify_premature_exit
+
+    AA_EXCLUSIVE = frozenset("EFIJLOPQZ")
+    NT_CHARS = frozenset("ACGTUNRYSWKMBDHV")
+
+    seq = ""
+    with open(fasta_path, "r") as fh:
+        for record in SeqIO.parse(fh, "fasta"):
+            seq = str(record.seq)
+            break
+
+    clean_seq = seq.upper().replace("-", "").replace(".", "").replace("*", "")
+
+    if not clean_seq:
+        report_message(f"No sequence content found in '{fasta_path}' after removing '-', '.', and '*'.")
+        notify_premature_exit()
+
+    if any(c in AA_EXCLUSIVE for c in clean_seq):
+        return "aa"
+
+    nt_frac = sum(1 for c in clean_seq if c in NT_CHARS) / len(clean_seq)
+
+    return "nt" if nt_frac >= 0.9 else "aa"

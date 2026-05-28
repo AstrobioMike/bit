@@ -13,6 +13,7 @@ SUBCOMMAND_MAP = {
     "gen-reads":           "bit.cli.gen_reads",
     "mutate-seqs":         "bit.cli.mutate_seqs",
     "add-insertion":       "bit.cli.add_insertion",
+    "aa-diff":             "bit.cli.aa_diff",
     "ez-screen":           "bit.cli.ez_screen",
     "fasta":               "bit.cli.fasta",
     "assemble":            "bit.cli.assemble",
@@ -48,15 +49,15 @@ PROGRAM_GROUPS = [
         "programs": [
             {
                 "name": "cov-analyzer",
-                "desc": "analyze coverage patterns from a bam + reference fasta to identify regions of relatively higher or lower coverage",
+                "desc": "analyze coverage patterns from a bam and reference fasta to identify regions of relatively higher/lower coverage",
             },
             {
                 "name": "cov-stats",
-                "desc": "get detection, coverage, and mean percent ID for single or multiple references given fasta(s) and a bam file",
+                "desc": "get detection, coverage, and mean percent ID for single or multiple references given fasta(s) and a bam",
             },
             {
                 "name": "mapped-reads-pid",
-                "desc": "get percent ID information for mapped reads in a bam file",
+                "desc": "get percent ID information for mapped reads in a bam",
             },
         ],
     },
@@ -69,7 +70,7 @@ PROGRAM_GROUPS = [
             },
             {
                 "name": "mutate-seqs",
-                "desc": "introduce point mutations (substitutions/indels) into nucleotide or amino-acid fasta files",
+                "desc": "introduce point mutations into nucleotide or amino-acid fasta files",
             },
             {
                 "name": "add-insertion",
@@ -78,8 +79,12 @@ PROGRAM_GROUPS = [
         ],
     },
     {
-        "title": "Sequence searching",
+        "title": "Sequence searching/comparing",
         "programs": [
+            {
+                "name": "aa-diff",
+                "desc": "compare a query sequence to an amino-acid reference and report differences",
+            },
             {
                 "name": "ez-screen",
                 "desc": "",

@@ -10,7 +10,7 @@ from bit.cli.common import (CustomRichHelpFormatter,
 def build_parser(parent_subparsers=None):
 
     desc = """
-        This script generates perfect (no error model) reads in FASTQ format from one or
+        This program generates perfect (no error model) reads in FASTQ format from one or
         multiple input FASTA files. See `bit mutate-seqs` if wanting to introduce variation
         to a fasta prior to read-generation.
         """

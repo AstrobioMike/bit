@@ -9,7 +9,7 @@ from bit.modules.general import check_files_are_found, report_message
 def build_parser(parent_subparsers=None):
 
     desc = """
-        This script will mutate all sequences of a nucleotide or amino-acid multifasta with
+        This program will mutate all sequences of a nucleotide or amino-acid multifasta with
         the specified mutation rate. By default it only swaps bases, but it can optionally introduce indels also.
         """
 
