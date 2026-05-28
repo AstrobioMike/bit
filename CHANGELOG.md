@@ -18,6 +18,7 @@
 
 ### Added
 - my amplicon workflow to `bit get-workflow`
+- tiny amplicon test data available through bit data get test-data
 
 ---
 
