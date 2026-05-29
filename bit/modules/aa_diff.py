@@ -3,28 +3,190 @@ from Bio.Align import PairwiseAligner, substitution_matrices  # type: ignore
 
 
 def run_aa_diff(args):
-    """Align a query AA sequence to a reference AA sequence and report differences."""
+    """Align a query sequence (AA or NT) to a reference AA sequence and report differences."""
     ref_record, query_record = _load_sequences(args)
 
     ref_seq = str(ref_record.seq).upper().rstrip("*")
-    query_seq = str(query_record.seq).upper().rstrip("*")
+    frameshifts = []
+    translated_path = None
+    nt_query_len = None
+
+    cds_path = None
+    if args.type == "nt":
+        query_seq, frameshifts, translated_path, nt_query_len, cds_path = _run_miniprot_and_translate(
+            args.input_query_fa, args.ref_faa, ref_seq, args.output_prefix
+        )
+    else:
+        query_seq = str(query_record.seq).upper().rstrip("*")
 
     alignment = _align(ref_seq, query_seq)
     ref_gapped, qry_gapped = _get_gapped_seqs(alignment, ref_seq, query_seq)
     positions, insertions = _parse_alignment(ref_gapped, qry_gapped)
-    mutations = _collect_mutations(positions, insertions)
+    mutations = _collect_mutations(positions, insertions, frameshifts)
 
     prefix = args.output_prefix
     _write_tsv(positions, insertions, f"{prefix}-all-positions.tsv")
     _write_mutations(mutations, f"{prefix}-mutations.txt")
+    summary_text = _report_summary(positions, insertions, mutations, frameshifts, prefix, translated_path,
+                                     nt_query_len=nt_query_len, cds_path=cds_path)
+    _write_summary(summary_text, f"{prefix}-summary.txt")
     _write_alignment(ref_gapped, qry_gapped, ref_record.id, query_record.id, f"{prefix}-alignment.txt")
-    _report_summary(positions, insertions, mutations, prefix)
 
 
 def _load_sequences(args):
     ref_record = next(SeqIO.parse(args.ref_faa, "fasta"))
     query_record = next(SeqIO.parse(args.input_query_fa, "fasta"))
     return ref_record, query_record
+
+
+def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
+    """
+    Run miniprot to align a nucleotide query against the reference protein.
+    Parses the cs tag to reconstruct the translated query AA sequence and
+    capture frameshift events.
+
+    Returns (translated_aa_seq, frameshifts, translated_path) where frameshifts
+    is a list of dicts with keys ref_pos (1-based) and type ('+1' or '+2').
+    """
+    import re
+    import subprocess
+    from bit.modules.general import report_message, notify_premature_exit
+
+    result = subprocess.run(
+        ["miniprot", "--cs", "-N", "1", query_nt_path, ref_faa_path],
+        capture_output=True,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        report_message(f"miniprot exited with an error:\n{result.stderr.strip()}")
+        notify_premature_exit()
+
+    # Take the first non-comment PAF line (best hit with -N 1)
+    hit = None
+    for line in result.stdout.splitlines():
+        if not line.startswith("#") and line.strip():
+            hit = line.strip().split("\t")
+            break
+
+    if hit is None:
+        report_message(
+            f"miniprot found no alignment for '{query_nt_path}' against '{ref_faa_path}'."
+        )
+        notify_premature_exit()
+
+    # In miniprot PAF: protein is the query (cols 0-4), nucleotide is the target (cols 5-8).
+    # hit[2] is the protein start position (0-based); hit[7] is the nucleotide start.
+    ref_start = int(hit[2])   # 0-based start in reference protein
+
+    # Pull cs tag from optional fields
+    cs_string = None
+    for field in hit[12:]:
+        if field.startswith("cs:Z:"):
+            cs_string = field[5:]
+            break
+
+    if cs_string is None:
+        report_message(
+            "miniprot output did not contain a cs tag for some reason."
+        )
+        notify_premature_exit()
+
+    translated_aa, frameshifts = _parse_cs_tag(cs_string, ref_seq, ref_start)
+
+    nt_query_len = int(hit[6])   # nucleotide sequence length (PAF target length)
+    query_id = hit[0]
+
+    translated_path = f"{prefix}-inferred-protein.faa"
+    with open(translated_path, "w") as f:
+        f.write(f">{query_id} translated-by-miniprot\n")
+        f.write(translated_aa + "\n")
+
+    # Extract the coding nucleotide sequence using PAF target coordinates
+    target_name = hit[5]
+    target_start = int(hit[7])
+    target_end = int(hit[8])
+    strand = hit[4]
+    cds_path = None
+    for record in SeqIO.parse(query_nt_path, "fasta"):
+        if record.id == target_name:
+            from Bio.Seq import Seq as _Seq  # type: ignore
+            cds_raw = str(record.seq)[target_start:target_end]
+            cds_seq = str(_Seq(cds_raw).reverse_complement()) if strand == "-" else cds_raw
+            cds_path = f"{prefix}-inferred-CDS.fasta"
+            with open(cds_path, "w") as f:
+                f.write(f">{query_id} coding-seq-from-miniprot\n")
+                f.write(cds_seq + "\n")
+            break
+
+    return translated_aa, frameshifts, translated_path, nt_query_len, cds_path
+
+
+def _parse_cs_tag(cs_string, ref_seq, ref_start):
+    """
+    Parse a miniprot cs tag and reconstruct the translated query protein sequence.
+
+    miniprot cs tag operations (uppercase = AA level, lowercase = nucleotide level):
+      :N      N consecutive identical AA matches
+      *XY     AA substitution: ref has X, query has Y  (uppercase)
+      +SEQ    AA insertion in query                     (uppercase)
+      -SEQ    AA deletion from query                    (uppercase)
+      ~s_l_c  intron: strand s, nt length l, splice c  (no AA contribution)
+      fN      +1 frameshift: 1 extra nt N skipped       (lowercase nucleotide)
+      bNN     +2 frameshift: 2 extra nt NN skipped      (lowercase nucleotides)
+
+    Returns (translated_seq, frameshifts) where frameshifts is a list of dicts
+    with keys ref_pos (1-based) and type ('+1' or '+2').
+    """
+    import re
+
+    CS_OP = re.compile(
+        r":(\d+)"                    # :N  matches
+        r"|\*([acgt]{3})([A-Z])"     # *codon+qry_aa: 3-nt ref codon + 1-letter query AA
+        r"|\+([A-Z]+)"               # +SEQ AA insertion
+        r"|-([A-Z]+)"                # -SEQ AA deletion (uppercase = amino acids)
+        r"|-([acgt]+)"               # -nt(s) frameshift: lowercase nt(s) in nucleotide with no protein residue
+        r"|~[+\-]\d+[a-z]+"          # ~intron  (no capture needed)
+        r"|(f[acgt])"                # fN  +1 frameshift (alternative encoding)
+        r"|(b[acgt]{2})"             # bNN +2 frameshift (alternative encoding)
+    )
+
+    translated = []
+    frameshifts = []
+    ref_pos = ref_start  # 0-based index into ref_seq
+
+    for m in CS_OP.finditer(cs_string):
+
+        match_n, subst_codon, subst_aa, ins, deletion, fs_del, fs_f, fs_b = m.groups()
+
+        if match_n:
+            n = int(match_n)
+            translated.append(ref_seq[ref_pos:ref_pos + n].upper())
+            ref_pos += n
+        elif subst_codon:
+            # subst_codon is the 3-nt codon from the nucleotide (lowercase) — minimap2 cs convention:
+            # lowercase = target (nucleotide), uppercase = query (reference protein).
+            # Translate the codon to get what the nucleotide query actually encodes.
+            from Bio.Seq import Seq  # type: ignore
+            qry_aa = str(Seq(subst_codon.upper()).translate())
+            translated.append(qry_aa)
+            ref_pos += 1
+        elif ins:
+            translated.append(ins.upper())         # no ref advance
+        elif deletion:
+            ref_pos += len(deletion)               # no query AA output
+        elif fs_del:
+            # 1 or 2 lowercase nucleotides: extra nt(s) in nucleotide = frameshift
+            # ref_pos does NOT advance (no protein residue consumed)
+            fs_type = "+1" if len(fs_del) % 3 == 1 else "+2"
+            frameshifts.append({"ref_pos": ref_pos + 1, "type": fs_type})
+        elif fs_f:
+            frameshifts.append({"ref_pos": ref_pos + 1, "type": "+1"})
+        elif fs_b:
+            frameshifts.append({"ref_pos": ref_pos + 1, "type": "+2"})
+        # intron: matched by regex but no capture group fires → nothing to do
+
+    return "".join(translated), frameshifts
 
 
 def _align(ref_seq, query_seq):
@@ -117,8 +279,8 @@ def _parse_alignment(ref_gapped, qry_gapped):
     return positions, insertions
 
 
-def _collect_mutations(positions, insertions):
-    """Build mutation strings: substitutions as A210R, deletions as A210del, insertions as ins210:KL."""
+def _collect_mutations(positions, insertions, frameshifts=None):
+    """Build mutation strings: substitutions as A210R, deletions as A210del, insertions as ins210:KL, frameshifts as fs210+1."""
     mutations = []
 
     for p in positions:
@@ -129,6 +291,10 @@ def _collect_mutations(positions, insertions):
 
     for ins in insertions:
         mutations.append(f"ins{ins['after_ref_pos']}:{ins['inserted_seq']}")
+
+    if frameshifts:
+        for fs in frameshifts:
+            mutations.append(f"fs{fs['ref_pos']}{fs['type']}")
 
     return mutations
 
@@ -151,6 +317,11 @@ def _write_mutations(mutations, mut_path):
                 f.write(m + "\n")
         else:
             f.write("# No mutations detected\n")
+
+
+def _write_summary(stats_text, summary_path):
+    with open(summary_path, "w") as f:
+        f.write(stats_text + "\n")
 
 
 def _write_alignment(ref_gapped, qry_gapped, ref_id, query_id, aln_path, width=60):
@@ -221,11 +392,12 @@ def _write_alignment(ref_gapped, qry_gapped, ref_id, query_id, aln_path, width=6
             qry_pos = qry_end
 
 
-def _report_summary(positions, insertions, mutations, prefix):
+def _report_summary(positions, insertions, mutations, frameshifts, prefix, translated_path=None, nt_query_len=None, cds_path=None):
     from bit.modules.general import color_text
 
     n_sub = sum(1 for p in positions if p["change_type"] == "substitution")
     n_ins = len(insertions)
+    n_fs  = len(frameshifts)
     ref_len = len(positions)
 
     del_positions = [p["ref_pos"] for p in positions if p["change_type"] == "deletion"]
@@ -238,20 +410,55 @@ def _report_summary(positions, insertions, mutations, prefix):
                 n_del_runs += 1
 
     n_aligned_to_ref = sum(1 for p in positions if p["change_type"] != "deletion")
-
     n_inserted_total = sum(len(ins["inserted_seq"]) for ins in insertions)
     query_len = n_aligned_to_ref + n_inserted_total
 
+    mut_lines = [
+        f"  Total AA mutations:  {n_sub + n_del_runs + n_ins:,}",
+        f"    Substitutions:     {n_sub:,}",
+        f"    Deletions:         {n_del_runs:,} ({n_del_aa:,} AAs total)",
+        f"    Insertions:        {n_ins:,} ({n_inserted_total:,} AAs total)",
+    ]
+
+    if nt_query_len is not None:
+        # NT path — wider alignment column (value at col 31)
+        stats_lines = [
+            f"  Reference length:           {ref_len:,} AAs",
+            "",
+            f"  Query nt length:            {nt_query_len:,} NTs",
+            f"    Inferred protein length:  {query_len:,} AAs",
+            f"      Aligned to ref:         {n_aligned_to_ref:,} AAs",
+            "",
+        ] + mut_lines + [
+            "",
+            f"  Frameshifts (nt):    {n_fs:,}" + (" (ignored in inferred and aligned protein)" if n_fs > 0 else ""),
+        ]
+    else:
+        # AA path — standard alignment column (value at col 23)
+        stats_lines = [
+            f"  Reference length:    {ref_len:,} AAs",
+            "",
+            f"  Query length:        {query_len:,} AAs",
+            f"    Aligned to ref:    {n_aligned_to_ref:,} AAs",
+            "",
+        ] + mut_lines
+
+    stats_text = "\n".join(stats_lines)
+
     print("")
-    print(f"  Reference length:    {ref_len} AAs\n")
-    print(f"  Query length:        {query_len} AAs")
-    print(f"    Aligned to ref:    {n_aligned_to_ref} AAs\n")
-    print(f"  Total mutations:     {n_sub + n_del_runs + n_ins}")
-    print(f"    Substitutions:     {n_sub}")
-    print(f"    Deletions:         {n_del_runs} ({n_del_aa} AAs total)")
-    print(f"    Insertions:        {n_ins} ({n_inserted_total} AAs total)")
+    print(stats_text)
     print("")
+    if cds_path:
+        print(color_text(f"  Inferred CDS:         {cds_path}", "yellow"))
+    if translated_path:
+        print(color_text(f"  Inferred protein:     {translated_path}\n", "yellow"))
+    else:
+        if cds_path:
+            print("")
+    print(color_text(f"  Summary file:         {prefix}-summary.txt", "yellow"))
     print(color_text(f"  All-positions table:  {prefix}-all-positions.tsv", "yellow"))
     print(color_text(f"  Mutations file:       {prefix}-mutations.txt", "yellow"))
     print(color_text(f"  Alignment file:       {prefix}-alignment.txt", "yellow"))
     print("")
+
+    return stats_text
