@@ -14,6 +14,13 @@
 
 -->
 
+## v2.1.0 (NOT YET RELEASED)
+
+### Added
+- `bit aa-diff` for comparing an input nucleotide or protein sequence against a reference protein and calling amino-acid variants
+
+---
+
 ## v2.0.2 (27-May-2026)
 
 ### Added
