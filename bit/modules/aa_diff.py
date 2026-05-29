@@ -41,19 +41,19 @@ def _load_sequences(ref_faa, input_query_fa):
 
 def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
     """
-    Run miniprot to align a nucleotide query against the reference protein.
-    Parses the cs tag to reconstruct the translated query AA sequence and
-    capture frameshift events.
+    this runs miniprot to align a nucleotide query against the reference protein
 
-    Returns (translated_aa_seq, frameshifts, translated_path) where frameshifts
-    is a list of dicts with keys ref_pos (1-based) and type ('+1' or '+2').
+    it then parses the cs tag to reconstruct the translated query-AA sequence and
+    capture frameshift events
+
+    it returns (translated_aa_seq, frameshifts, translated_path) where 'frameshifts'
+    is a list of dicts with keys ref_pos (1-based) and type ('+1' or '+2')
     """
-    import re
     import subprocess
     from bit.modules.general import report_message, notify_premature_exit
 
     result = subprocess.run(
-        ["miniprot", "--cs", "-N", "1", query_nt_path, ref_faa_path],
+        ["miniprot", "--cs", "-N", "0", query_nt_path, ref_faa_path],
         capture_output=True,
         text=True,
     )
@@ -62,7 +62,7 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
         report_message(f"miniprot exited with an error:\n{result.stderr.strip()}")
         notify_premature_exit()
 
-    # Take the first non-comment PAF line (best hit with -N 1)
+    # getting the PAF line
     hit = None
     for line in result.stdout.splitlines():
         if not line.startswith("#") and line.strip():
@@ -71,15 +71,14 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
 
     if hit is None:
         report_message(
-            f"miniprot found no alignment for '{query_nt_path}' against '{ref_faa_path}'."
+            f"miniprot found no alignment between '{query_nt_path}' and '{ref_faa_path}'."
         )
         notify_premature_exit()
 
-    # In miniprot PAF: protein is the query (cols 0-4), nucleotide is the target (cols 5-8).
-    # hit[2] is the protein start position (0-based); hit[7] is the nucleotide start.
-    ref_start = int(hit[2])   # 0-based start in reference protein
+    # in miniprot PAF: protein is the query (cols 0-4), nucleotide is the target (cols 5-8)
+    # hit[2] is our ref protein start position (0-based); hit[7] is the nucleotide start
+    ref_start = int(hit[2])
 
-    # Pull cs tag from optional fields
     cs_string = None
     for field in hit[12:]:
         if field.startswith("cs:Z:"):
@@ -94,7 +93,7 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
 
     translated_aa, frameshifts = _parse_cs_tag(cs_string, ref_seq, ref_start)
 
-    nt_query_len = int(hit[6])   # nucleotide sequence length (PAF target length)
+    nt_query_len = int(hit[6])
     query_id = hit[0]
 
     translated_path = f"{prefix}-inferred-protein.faa"
@@ -102,7 +101,7 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
         f.write(f">{query_id} translated-by-miniprot\n")
         f.write(translated_aa + "\n")
 
-    # Extract the coding nucleotide sequence using PAF target coordinates
+    # extracting the inferred coding sequence from the nucleotide query
     target_name = hit[5]
     target_start = int(hit[7])
     target_end = int(hit[8])
@@ -124,25 +123,27 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
 
 def _parse_cs_tag(cs_string, ref_seq, ref_start):
     """
-    Parse a miniprot cs tag and reconstruct the translated query protein sequence.
+    this parses miniprot's cs tag and reconstructs the translated query-protein sequence
 
     miniprot cs tag operations (uppercase = AA level, lowercase = nucleotide level):
-      :N      N consecutive identical AA matches
-      *XY     AA substitution: ref has X, query has Y  (uppercase)
-      +SEQ    AA insertion in query                     (uppercase)
-      -SEQ    AA deletion from query                    (uppercase)
-      ~s_l_c  intron: strand s, nt length l, splice c  (no AA contribution)
-      fN      +1 frameshift: 1 extra nt N skipped       (lowercase nucleotide)
-      bNN     +2 frameshift: 2 extra nt NN skipped      (lowercase nucleotides)
+      :N        N consecutive identical AA matches
+      *cccX     AA substitution: ccc is the 3-nt codon from the input nt query (lowercase),
+                X is the ref protein AA (uppercase; miniprot uses our ref protein as its "query")
+      +SEQ      AA insertion in query                       (uppercase)
+      -SEQ      AA deletion from query                      (uppercase)
+      -nts      frameshift: 1-2 extra lowercase nts with no protein residue
+      ~s_l_c    intron: strand s, nt length l, splice c     (no AA contribution)
+      fN        +1 frameshift: 1 extra nt N skipped
+      bNN       +2 frameshift: 2 extra nts NN skipped
 
-    Returns (translated_seq, frameshifts) where frameshifts is a list of dicts
-    with keys ref_pos (1-based) and type ('+1' or '+2').
+    it returns (translated_seq, frameshifts) where 'frameshifts' is a list of dicts
+    with keys ref_pos (1-based) and type ('+1' or '+2')
     """
     import re
 
     CS_OP = re.compile(
         r":(\d+)"                    # :N  matches
-        r"|\*([acgt]{3})([A-Z])"     # *codon+qry_aa: 3-nt ref codon + 1-letter query AA
+        r"|\*([acgt]{3})([A-Z])"     # *cccX: 3-nt nt-query codon (lowercase) + ref protein AA (uppercase)
         r"|\+([A-Z]+)"               # +SEQ AA insertion
         r"|-([A-Z]+)"                # -SEQ AA deletion (uppercase = amino acids)
         r"|-([acgt]+)"               # -nt(s) frameshift: lowercase nt(s) in nucleotide with no protein residue
@@ -153,7 +154,7 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
 
     translated = []
     frameshifts = []
-    ref_pos = ref_start  # 0-based index into ref_seq
+    ref_pos = ref_start
 
     for m in CS_OP.finditer(cs_string):
 
@@ -164,27 +165,27 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
             translated.append(ref_seq[ref_pos:ref_pos + n].upper())
             ref_pos += n
         elif subst_codon:
-            # subst_codon is the 3-nt codon from the nucleotide (lowercase) — minimap2 cs convention:
-            # lowercase = target (nucleotide), uppercase = query (reference protein).
-            # Translate the codon to get what the nucleotide query actually encodes.
+            # subst_codon is the 3-nt codon from the nucleotide (lowercase); in our use here:
+            # lowercase = query nucleotide, uppercase = ref protein AA
+            # we translate the codon to get what the nucleotide query encodes
             from Bio.Seq import Seq  # type: ignore
             qry_aa = str(Seq(subst_codon.upper()).translate())
             translated.append(qry_aa)
             ref_pos += 1
         elif ins:
-            translated.append(ins.upper())         # no ref advance
+            translated.append(ins.upper()) # no ref advance
         elif deletion:
-            ref_pos += len(deletion)               # no query AA output
+            ref_pos += len(deletion) # no query AA output
         elif fs_del:
             # 1 or 2 lowercase nucleotides: extra nt(s) in nucleotide = frameshift
-            # ref_pos does NOT advance (no protein residue consumed)
+            # ref_pos doesn't advance
             fs_type = "+1" if len(fs_del) % 3 == 1 else "+2"
             frameshifts.append({"ref_pos": ref_pos + 1, "type": fs_type})
         elif fs_f:
             frameshifts.append({"ref_pos": ref_pos + 1, "type": "+1"})
         elif fs_b:
             frameshifts.append({"ref_pos": ref_pos + 1, "type": "+2"})
-        # intron: matched by regex but no capture group fires → nothing to do
+        # nothing to do for introns here
 
     return "".join(translated), frameshifts
 
@@ -200,7 +201,10 @@ def _align(ref_seq, query_seq):
 
 
 def _get_gapped_seqs(alignment, ref_seq, query_seq):
-    """Reconstruct gap-inserted strings from PairwiseAligner alignment coordinates."""
+    """
+    this reconstructs gap-inserted strings from the PairwiseAligner alignment coordinates
+    """
+
     ref_blocks = alignment.aligned[0]
     qry_blocks = alignment.aligned[1]
 
@@ -229,7 +233,7 @@ def _get_gapped_seqs(alignment, ref_seq, query_seq):
 
 def _parse_alignment(ref_gapped, qry_gapped):
     """
-    Walk gapped alignment strings and return:
+    this walks gapped-alignment strings and returns
       positions - one dict per ref residue: ref_pos, ref_aa, query_aa, change_type
       insertions - one dict per inserted run: after_ref_pos, inserted_seq
     """
@@ -241,7 +245,6 @@ def _parse_alignment(ref_gapped, qry_gapped):
 
     for ref_char, qry_char in zip(ref_gapped, qry_gapped):
         if ref_char == "-":
-            # query insertion relative to ref
             qry_pos += 1
             pending_ins.append(qry_char)
         else:
@@ -280,7 +283,14 @@ def _parse_alignment(ref_gapped, qry_gapped):
 
 
 def _collect_mutations(positions, insertions, frameshifts=None):
-    """Build mutation strings: substitutions as A210R, deletions as A210del, insertions as ins210:KL, frameshifts as fs210+1."""
+    """
+    this builds the mutation strings:
+        substitutions as A210R
+        deletions as A210del
+        insertions as ins210:KL
+        frameshifts as fs210+1
+    """
+
     mutations = []
 
     for p in positions:
@@ -325,7 +335,10 @@ def _write_summary(stats_text, summary_path):
 
 
 def _write_alignment(ref_gapped, qry_gapped, ref_id, query_id, aln_path, width=60):
-    """Write a BLAST-style pairwise alignment with per-block position markers."""
+    """
+    this writes a BLAST-style pairwise alignment with Mike's handy position markers
+    """
+
     blosum62 = substitution_matrices.load("BLOSUM62")
 
     match_chars = []
