@@ -80,7 +80,7 @@ def main():
     args = preflight_checks(args)
 
     from bit.modules.aa_diff import run_aa_diff
-    run_aa_diff(args)
+    run_aa_diff(args.input_query_fa, args.ref_faa, args.type, args.output_prefix)
 
 
 def preflight_checks(args):

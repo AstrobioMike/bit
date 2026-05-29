@@ -2,19 +2,19 @@ from Bio import SeqIO  # type: ignore
 from Bio.Align import PairwiseAligner, substitution_matrices  # type: ignore
 
 
-def run_aa_diff(args):
-    """Align a query sequence (AA or NT) to a reference AA sequence and report differences."""
-    ref_record, query_record = _load_sequences(args)
+def run_aa_diff(input_query_fa, ref_faa, seq_type, output_prefix):
+
+    ref_record, query_record = _load_sequences(ref_faa, input_query_fa)
 
     ref_seq = str(ref_record.seq).upper().rstrip("*")
     frameshifts = []
     translated_path = None
     nt_query_len = None
-
     cds_path = None
-    if args.type == "nt":
+
+    if seq_type == "nt":
         query_seq, frameshifts, translated_path, nt_query_len, cds_path = _run_miniprot_and_translate(
-            args.input_query_fa, args.ref_faa, ref_seq, args.output_prefix
+            input_query_fa, ref_faa, ref_seq, output_prefix
         )
     else:
         query_seq = str(query_record.seq).upper().rstrip("*")
@@ -24,7 +24,7 @@ def run_aa_diff(args):
     positions, insertions = _parse_alignment(ref_gapped, qry_gapped)
     mutations = _collect_mutations(positions, insertions, frameshifts)
 
-    prefix = args.output_prefix
+    prefix = output_prefix
     _write_tsv(positions, insertions, f"{prefix}-all-positions.tsv")
     _write_mutations(mutations, f"{prefix}-mutations.txt")
     summary_text = _report_summary(positions, insertions, mutations, frameshifts, prefix, translated_path,
@@ -33,9 +33,9 @@ def run_aa_diff(args):
     _write_alignment(ref_gapped, qry_gapped, ref_record.id, query_record.id, f"{prefix}-alignment.txt")
 
 
-def _load_sequences(args):
-    ref_record = next(SeqIO.parse(args.ref_faa, "fasta"))
-    query_record = next(SeqIO.parse(args.input_query_fa, "fasta"))
+def _load_sequences(ref_faa, input_query_fa):
+    ref_record = next(SeqIO.parse(ref_faa, "fasta"))
+    query_record = next(SeqIO.parse(input_query_fa, "fasta"))
     return ref_record, query_record
 
 
@@ -420,6 +420,7 @@ def _report_summary(positions, insertions, mutations, frameshifts, prefix, trans
         f"    Insertions:        {n_ins:,} ({n_inserted_total:,} AAs total)",
     ]
 
+
     if nt_query_len is not None:
         stats_lines = [
             f"  Reference length:           {ref_len:,} AAs",
@@ -443,20 +444,24 @@ def _report_summary(positions, insertions, mutations, frameshifts, prefix, trans
 
     stats_text = "\n".join(stats_lines)
 
-    print("")
+    print()
+    print(color_text("                      SUMMARY                      ", "yellow"))
+    print(color_text("---------------------------------------------------", "yellow"))
     print(stats_text)
-    print("")
+    print()
+    print(color_text("                      OUTPUTS                      ", "yellow"))
+    print(color_text("---------------------------------------------------", "yellow"))
     if cds_path:
-        print(color_text(f"  Inferred CDS:         {cds_path}", "yellow"))
+        print(f"  Inferred CDS:         {cds_path}")
     if translated_path:
-        print(color_text(f"  Inferred protein:     {translated_path}\n", "yellow"))
-    else:
-        if cds_path:
-            print("")
-    print(color_text(f"  Summary file:         {prefix}-summary.txt", "yellow"))
-    print(color_text(f"  All-positions table:  {prefix}-all-positions.tsv", "yellow"))
-    print(color_text(f"  Mutations file:       {prefix}-mutations.txt", "yellow"))
-    print(color_text(f"  Alignment file:       {prefix}-alignment.txt", "yellow"))
-    print("")
+        print(f"  Inferred protein:     {translated_path}")
+        print()
+    elif cds_path:
+        print()
+    print(f"  Summary file:         {prefix}-summary.txt")
+    print(f"  All-positions table:  {prefix}-all-positions.tsv")
+    print(f"  Mutations file:       {prefix}-mutations.txt")
+    print(f"  Alignment file:       {prefix}-alignment.txt")
+    print()
 
     return stats_text
