@@ -421,7 +421,6 @@ def _report_summary(positions, insertions, mutations, frameshifts, prefix, trans
     ]
 
     if nt_query_len is not None:
-        # NT path — wider alignment column (value at col 31)
         stats_lines = [
             f"  Reference length:           {ref_len:,} AAs",
             "",
@@ -434,7 +433,6 @@ def _report_summary(positions, insertions, mutations, frameshifts, prefix, trans
             f"  Frameshifts (nt):    {n_fs:,}" + (" (ignored in inferred and aligned protein)" if n_fs > 0 else ""),
         ]
     else:
-        # AA path — standard alignment column (value at col 23)
         stats_lines = [
             f"  Reference length:    {ref_len:,} AAs",
             "",
