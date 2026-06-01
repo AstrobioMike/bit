@@ -497,7 +497,7 @@ class TestRunAaDiffNtMode:
         assert (tmp_path / "out-summary.txt").exists()
         assert (tmp_path / "out-alignment.txt").exists()
         assert (tmp_path / "out-inferred-protein.faa").exists()
-        assert (tmp_path / "out-inferred-CDS.fasta").exists()
+        assert (tmp_path / "out-inferred-cds.fasta").exists()
 
     def test_expected_substitutions_detected(self, tmp_path):
         ref, qry = self._write_fastas(tmp_path)

@@ -17,7 +17,7 @@
 ## v2.1.0 (NOT YET RELEASED)
 
 ### Added
-- `bit aa-diff` for comparing an input nucleotide or protein sequence against a reference protein and calling amino-acid variants
+- `bit aa-diff` for comparing an input nucleotide or protein sequence against a reference protein and identifying amino-acid mutations
 
 ---
 
