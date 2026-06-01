@@ -2,7 +2,7 @@ from Bio import SeqIO  # type: ignore
 from Bio.Align import PairwiseAligner, substitution_matrices  # type: ignore
 
 
-def run_aa_diff(input_query_fa, ref_faa, seq_type, output_prefix):
+def run_aa_diff(input_query_fa, ref_faa, seq_type, output_prefix, min_perc_id=30, min_perc_ref_cov=25):
 
     ref_record, query_record = _load_sequences(ref_faa, input_query_fa)
 
@@ -22,13 +22,15 @@ def run_aa_diff(input_query_fa, ref_faa, seq_type, output_prefix):
     alignment = _align(ref_seq, query_seq)
     ref_gapped, qry_gapped = _get_gapped_seqs(alignment, ref_seq, query_seq)
     positions, insertions = _parse_alignment(ref_gapped, qry_gapped)
+    _check_alignment_thresholds(positions, min_perc_id, min_perc_ref_cov)
     mutations = _collect_mutations(positions, insertions, frameshifts)
 
     prefix = output_prefix
     _write_tsv(positions, insertions, f"{prefix}-all-positions.tsv")
     _write_mutations(mutations, f"{prefix}-mutations.txt")
+    n_stops = query_seq.count("*") if seq_type == "nt" else 0
     summary_text = _report_summary(positions, insertions, mutations, frameshifts, prefix, translated_path,
-                                     nt_query_len=nt_query_len, cds_path=cds_path)
+                                     nt_query_len=nt_query_len, cds_path=cds_path, n_stops=n_stops)
     _write_summary(summary_text, f"{prefix}-summary.txt")
     _write_alignment(ref_gapped, qry_gapped, ref_record.id, query_record.id, f"{prefix}-alignment.txt")
 
@@ -53,7 +55,7 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
     from bit.modules.general import report_message, notify_premature_exit
 
     result = subprocess.run(
-        ["miniprot", "--cs", "-N", "0", query_nt_path, ref_faa_path],
+        ["miniprot", "-L", "6", "--outc", "0", query_nt_path, ref_faa_path],
         capture_output=True,
         text=True,
     )
@@ -62,36 +64,47 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
         report_message(f"miniprot exited with an error:\n{result.stderr.strip()}")
         notify_premature_exit()
 
-    # getting the PAF line
-    hit = None
+    # collect all PAF hits
+    all_hits = []
     for line in result.stdout.splitlines():
         if not line.startswith("#") and line.strip():
-            hit = line.strip().split("\t")
-            break
+            all_hits.append(line.strip().split("\t"))
 
-    if hit is None:
+    if not all_hits:
         report_message(
             f"miniprot found no alignment between '{query_nt_path}' and '{ref_faa_path}'."
         )
         notify_premature_exit()
 
-    # in miniprot PAF: protein is the query (cols 0-4), nucleotide is the target (cols 5-8)
-    # hit[2] is our ref protein start position (0-based); hit[7] is the nucleotide start
-    ref_start = int(hit[2])
+    # parse each hit and compute stats
+    parsed_hits = []
+    for h in all_hits:
+        parsed = _parse_hit_stats(h, ref_seq)
+        if parsed is not None:
+            parsed_hits.append(parsed)
 
-    cs_string = None
-    for field in hit[12:]:
-        if field.startswith("cs:Z:"):
-            cs_string = field[5:]
-            break
-
-    if cs_string is None:
+    if not parsed_hits:
         report_message(
-            "miniprot output did not contain a cs tag for some reason."
+            "miniprot output did not contain a cs tag for any hit."
         )
         notify_premature_exit()
 
-    translated_aa, frameshifts = _parse_cs_tag(cs_string, ref_seq, ref_start)
+    # write alignment summary table only when multiple hits are found
+    if len(parsed_hits) > 1:
+        # enrich each hit with its CDS nucleotide sequence before writing
+        from Bio.Seq import Seq as _Seq  # type: ignore
+        _nt_seqs = {record.id: str(record.seq) for record in SeqIO.parse(query_nt_path, "fasta")}
+        for ph in parsed_hits:
+            cds_raw = _nt_seqs.get(ph["hit"][5], "")[ph["nt_start"]:ph["nt_end"]]
+            ph["cds_seq"] = str(_Seq(cds_raw).reverse_complement()) if ph["strand"] == "-" else cds_raw
+        hits_table_path = f"{prefix}-alignment-summaries.tsv"
+        _write_miniprot_hits_table(parsed_hits, hits_table_path)
+
+    # use the top-ranked hit for the analysis
+    top = parsed_hits[0]
+    hit = top["hit"]
+    translated_aa = top["translated_aa"]
+    frameshifts = top["frameshifts"]
 
     nt_query_len = int(hit[6])
     query_id = hit[0]
@@ -105,13 +118,13 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
     target_name = hit[5]
     target_start = int(hit[7])
     target_end = int(hit[8])
-    strand = hit[4]
+    cds_strand = hit[4]
     cds_path = None
     for record in SeqIO.parse(query_nt_path, "fasta"):
         if record.id == target_name:
             from Bio.Seq import Seq as _Seq  # type: ignore
             cds_raw = str(record.seq)[target_start:target_end]
-            cds_seq = str(_Seq(cds_raw).reverse_complement()) if strand == "-" else cds_raw
+            cds_seq = str(_Seq(cds_raw).reverse_complement()) if cds_strand == "-" else cds_raw
             cds_path = f"{prefix}-inferred-CDS.fasta"
             with open(cds_path, "w") as f:
                 f.write(f">{query_id} coding-seq-from-miniprot\n")
@@ -119,6 +132,129 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
             break
 
     return translated_aa, frameshifts, translated_path, nt_query_len, cds_path
+
+
+def _parse_hit_stats(hit, ref_seq):
+    """
+    this extracts alignment statistics from a single miniprot PAF hit line
+
+    in miniprot PAF: protein is the "query" (our ref; cols 0-4), nucleotide is the "target" (our query; cols 5-8):
+      hit[0]  protein name (our ref)
+      hit[2]  protein alignment start (0-based, AA units)
+      hit[3]  protein alignment end (AA units)
+      hit[4]  strand on the nucleotide
+      hit[5]  nucleotide sequence name (our query)
+      hit[6]  nucleotide length
+      hit[7]  nucleotide alignment start
+      hit[8]  nucleotide alignment end
+      hit[9]  number of matching nucleotide bases (NOT AA matches — 3x AA count)
+      hit[11] mapping quality
+      AS:i:   alignment score (optional tag)
+
+    returns None if the hit has no cs tag
+    """
+    cs_string = None
+    score = None
+    for field in hit[12:]:
+        if field.startswith("cs:Z:"):
+            cs_string = field[5:]
+        elif field.startswith("AS:i:"):
+            score = int(field[5:])
+
+    if cs_string is None:
+        return None
+
+    ref_start = int(hit[2])
+    translated_aa, frameshifts = _parse_cs_tag(cs_string, ref_seq, ref_start)
+
+    ref_aa_span = int(hit[3]) - int(hit[2])
+
+    # run the same alignment pipeline the main flow uses so perc_id/perc_ref_cov
+    # are computed identically to what _check_alignment_thresholds sees
+    alignment = _align(ref_seq, translated_aa)
+    ref_gapped, qry_gapped = _get_gapped_seqs(alignment, ref_seq, translated_aa)
+    positions, aln_insertions = _parse_alignment(ref_gapped, qry_gapped)
+    stats = _calc_stats_from_positions(positions)
+
+    n_sub = sum(1 for p in positions if p["change_type"] == "substitution")
+    del_pos_list = [p["ref_pos"] for p in positions if p["change_type"] == "deletion"]
+    n_del_aa = len(del_pos_list)
+    n_del_runs = 0
+    if del_pos_list:
+        n_del_runs = 1
+        for i in range(1, len(del_pos_list)):
+            if del_pos_list[i] != del_pos_list[i - 1] + 1:
+                n_del_runs += 1
+    n_ins = len(aln_insertions)
+    n_ins_aa = sum(len(ins["inserted_seq"]) for ins in aln_insertions)
+
+    return {
+        "hit": hit,
+        "query_seq": hit[5],
+        "nt_start": int(hit[7]),
+        "nt_end": int(hit[8]),
+        "strand": hit[4],
+        "score": score if score is not None else stats["n_match"],
+        "aln_aa_len": ref_aa_span,
+        "perc_id": stats["perc_id"],
+        "perc_ref_cov": stats["perc_ref_cov"],
+        "n_frameshifts": len(frameshifts),
+        "n_stops": translated_aa.count("*"),
+        "n_total_mut": n_sub + n_del_runs + n_ins,
+        "n_sub": n_sub,
+        "n_del_runs": n_del_runs,
+        "n_del_aa": n_del_aa,
+        "n_ins": n_ins,
+        "n_ins_aa": n_ins_aa,
+        "translated_aa": translated_aa,
+        "frameshifts": frameshifts,
+    }
+
+
+def _write_miniprot_hits_table(parsed_hits, tsv_path):
+    """
+    this writes a ranked summary table of all miniprot alignments to a TSV file
+    and prints a brief notice to stdout
+    """
+    from bit.modules.general import color_text
+
+    headers = ["score_rank", "query_seq", "nt_start", "nt_end", "strand", "score",
+               "aln_aa_len", "perc_id", "perc_ref_cov", "total_mutations", "substitutions",
+               "deletions", "insertions", "frameshifts", "stops",
+               "inferred_cds", "inferred_protein"]
+
+    with open(tsv_path, "w") as f:
+        f.write("\t".join(headers) + "\n")
+        for i, h in enumerate(parsed_hits, 1):
+            row = [
+                str(i),
+                h["query_seq"],
+                str(h["nt_start"]),
+                str(h["nt_end"]),
+                h["strand"],
+                str(h["score"]),
+                str(h["aln_aa_len"]),
+                f"{h['perc_id']:.1f}",
+                f"{h['perc_ref_cov']:.1f}",
+                str(h["n_total_mut"]),
+                str(h["n_sub"]),
+                f"{h['n_del_runs']} ({h['n_del_aa']} AAs total)",
+                f"{h['n_ins']} ({h['n_ins_aa']} AAs total)",
+                str(h["n_frameshifts"]),
+                str(h["n_stops"]),
+                h.get("cds_seq", ""),
+                h["translated_aa"],
+            ]
+            f.write("\t".join(row) + "\n")
+
+    n = len(parsed_hits)
+    print()
+    print(color_text("----------------------------------- NOTICE -----------------------------------", "yellow"))
+    print(color_text(f"  {n} miniprot alignments found", "yellow"))
+    print(color_text("  The primary outputs and summary are for the highest-scoring alignment only", "yellow"))
+    print(color_text(f"  All alignment summaries written to: {tsv_path}", "yellow"))
+    print(color_text("------------------------------------------------------------------------------", "yellow"))
+    print()
 
 
 def _parse_cs_tag(cs_string, ref_seq, ref_start):
@@ -282,6 +418,45 @@ def _parse_alignment(ref_gapped, qry_gapped):
     return positions, insertions
 
 
+def _calc_stats_from_positions(positions):
+    """
+    this computes percent identity and percent reference coverage from parsed alignment positions
+    """
+    ref_len = len(positions)
+    n_match = sum(1 for p in positions if p["change_type"] == "match")
+    n_aligned_to_ref = sum(1 for p in positions if p["change_type"] != "deletion")
+    return {
+        "ref_len": ref_len,
+        "n_match": n_match,
+        "n_aligned_to_ref": n_aligned_to_ref,
+        "perc_id": n_match / ref_len * 100 if ref_len > 0 else 0.0,
+        "perc_ref_cov": n_aligned_to_ref / ref_len * 100 if ref_len > 0 else 0.0,
+    }
+
+
+def _check_alignment_thresholds(positions, min_perc_id, min_perc_ref_cov):
+    """
+    this checks that the alignment meets minimum percent identity and percent reference
+    coverage thresholds, and exits with a helpful message if not
+    """
+    from bit.modules.general import report_message, notify_premature_exit
+
+    if not positions:
+        report_message("No alignment positions were found.")
+        notify_premature_exit()
+
+    stats = _calc_stats_from_positions(positions)
+    pct_id = stats["perc_id"]
+    pct_ref_cov = stats["perc_ref_cov"]
+
+    if pct_id < min_perc_id or pct_ref_cov < min_perc_ref_cov:
+        report_message("No found alignment passed the minimum thresholds:")
+        report_message(f"Percent identity:       {pct_id:.1f}%  (min: {min_perc_id}%)", initial_indent="    ", color="none")
+        report_message(f"Percent ref covered:    {pct_ref_cov:.1f}%  (min: {min_perc_ref_cov}%)", initial_indent="    ", leading_newline=False, color="none")
+        report_message("The sequences may be unrelated or highly divergent. If wanted, thresholds can be adjusted with the '--min-perc-id' and '--min-perc-ref-cov' parameters.", color="none")
+        notify_premature_exit()
+
+
 def _collect_mutations(positions, insertions, frameshifts=None):
     """
     this builds the mutation strings:
@@ -405,7 +580,7 @@ def _write_alignment(ref_gapped, qry_gapped, ref_id, query_id, aln_path, width=6
             qry_pos = qry_end
 
 
-def _report_summary(positions, insertions, mutations, frameshifts, prefix, translated_path=None, nt_query_len=None, cds_path=None):
+def _report_summary(positions, insertions, mutations, frameshifts, prefix, translated_path=None, nt_query_len=None, cds_path=None, n_stops=0):
     from bit.modules.general import color_text
 
     n_sub = sum(1 for p in positions if p["change_type"] == "substitution")
@@ -426,13 +601,21 @@ def _report_summary(positions, insertions, mutations, frameshifts, prefix, trans
     n_inserted_total = sum(len(ins["inserted_seq"]) for ins in insertions)
     query_len = n_aligned_to_ref + n_inserted_total
 
+    stats = _calc_stats_from_positions(positions)
+    perc_id = stats["perc_id"]
+    perc_ref_cov = stats["perc_ref_cov"]
+
     mut_lines = [
         f"  Total AA mutations:  {n_sub + n_del_runs + n_ins:,}",
         f"    Substitutions:     {n_sub:,}",
         f"    Deletions:         {n_del_runs:,} ({n_del_aa:,} AAs total)",
         f"    Insertions:        {n_ins:,} ({n_inserted_total:,} AAs total)",
     ]
+    if n_stops > 0:
+        mut_lines.append(f"    Stop codons:       {n_stops:,}")
 
+
+    fs_line = f"  Frameshifts (nt):    {n_fs:,}" + (" (ignored in inferred and aligned protein)" if n_fs > 0 else "")
 
     if nt_query_len is not None:
         stats_lines = [
@@ -441,28 +624,35 @@ def _report_summary(positions, insertions, mutations, frameshifts, prefix, trans
             f"  Query nt length:            {nt_query_len:,} NTs",
             f"    Inferred protein length:  {query_len:,} AAs",
             f"      Aligned to ref:         {n_aligned_to_ref:,} AAs",
+            f"        Percent identity:     {perc_id:.1f}%",
+            f"        Percent ref covered:  {perc_ref_cov:.1f}%",
             "",
         ] + mut_lines + [
             "",
-            f"  Frameshifts (nt):    {n_fs:,}" + (" (ignored in inferred and aligned protein)" if n_fs > 0 else ""),
+            fs_line,
         ]
+        print_lines = stats_lines[:-1] + [color_text(fs_line, "orange") if n_fs > 0 else fs_line]
     else:
         stats_lines = [
-            f"  Reference length:    {ref_len:,} AAs",
+            f"  Reference length:         {ref_len:,} AAs",
             "",
-            f"  Query length:        {query_len:,} AAs",
-            f"    Aligned to ref:    {n_aligned_to_ref:,} AAs",
+            f"  Query length:             {query_len:,} AAs",
+            f"    Aligned to ref:         {n_aligned_to_ref:,} AAs",
+            f"      Percent identity:     {perc_id:.1f}%",
+            f"      Percent ref covered:  {perc_ref_cov:.1f}%",
             "",
         ] + mut_lines
+        print_lines = stats_lines
 
     stats_text = "\n".join(stats_lines)
+    print_text = "\n".join(print_lines)
 
     print()
     print(color_text("                      SUMMARY                      ", "yellow"))
     print(color_text("---------------------------------------------------", "yellow"))
-    print(stats_text)
-    print()
-    print(color_text("                      OUTPUTS                      ", "yellow"))
+    print(print_text)
+    print("\n")
+    print(color_text("                  PRIMARY OUTPUTS                  ", "yellow"))
     print(color_text("---------------------------------------------------", "yellow"))
     if cds_path:
         print(f"  Inferred CDS:         {cds_path}")

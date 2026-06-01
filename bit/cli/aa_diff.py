@@ -7,8 +7,8 @@ def build_parser(parent_subparsers=None):
 
     desc = """
         This program compares an input query sequence (AA or nt) to a reference AA sequence
-        and reports the differences relative to the reference. It expects them in single fasta format,
-        no multifastas currently accepted.
+        and reports the differences relative to the reference. It expects them in single-fasta format,
+        no multifastas will be accepted!
         """
 
     if parent_subparsers is not None:
@@ -61,6 +61,22 @@ def build_parser(parent_subparsers=None):
         default="auto-detect",
     )
 
+    optional.add_argument(
+        "--min-perc-id",
+        metavar="<NUM>",
+        help="Minimum percent identity to reference to proceed (default: 30)",
+        type=float,
+        default=30,
+    )
+
+    optional.add_argument(
+        "--min-perc-ref-cov",
+        metavar="<NUM>",
+        help="Minimum percent of reference covered by aligned query residues to proceed (default: 25)",
+        type=float,
+        default=25,
+    )
+
     add_help(optional)
     add_version_arg(optional)
 
@@ -80,7 +96,8 @@ def main():
     args = preflight_checks(args)
 
     from bit.modules.aa_diff import run_aa_diff
-    run_aa_diff(args.input_query_fa, args.ref_faa, args.type, args.output_prefix)
+    run_aa_diff(args.input_query_fa, args.ref_faa, args.type, args.output_prefix,
+                min_perc_id=args.min_perc_id, min_perc_ref_cov=args.min_perc_ref_cov)
 
 
 def preflight_checks(args):
