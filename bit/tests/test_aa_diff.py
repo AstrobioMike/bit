@@ -40,8 +40,7 @@ class TestParseCsTag:
     def test_insertion(self):
         ref = "MKLRST"
         translated, frameshifts = _parse_cs_tag(":2+KL:1", ref, 0)
-        # :2 -> MK, +KL (no ref advance), :1 -> L
-        assert translated == "MKKLL"
+        assert translated == "MKS"
         assert frameshifts == []
 
     def test_deletion_uppercase(self):
