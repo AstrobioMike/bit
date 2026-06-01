@@ -55,7 +55,7 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
     from bit.modules.general import report_message, notify_premature_exit
 
     result = subprocess.run(
-        ["miniprot", "-L", "6", "--outc", "0", query_nt_path, ref_faa_path],
+        ["miniprot", "-L", "30", "--outc", "0", query_nt_path, ref_faa_path],
         capture_output=True,
         text=True,
     )
@@ -106,6 +106,16 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
     translated_aa = top["translated_aa"]
     frameshifts = top["frameshifts"]
 
+    # query nt seq, used for clip-extension and CDS extraction below
+    target_name = hit[5]
+    query_nt_seq = next(
+        (str(r.seq) for r in SeqIO.parse(query_nt_path, "fasta") if r.id == target_name),
+        "",
+    )
+
+    # recover residues miniprot soft-clipped past a terminal indel
+    translated_aa, cds_seq = _extend_over_clips(translated_aa, hit, len(ref_seq), query_nt_seq)
+
     nt_query_len = int(hit[6])
     query_id = hit[0]
 
@@ -114,22 +124,10 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
         f.write(f">{query_id} translated-by-miniprot\n")
         f.write(translated_aa + "\n")
 
-    # extracting the inferred coding sequence from the nucleotide query
-    target_name = hit[5]
-    target_start = int(hit[7])
-    target_end = int(hit[8])
-    cds_strand = hit[4]
-    cds_path = None
-    for record in SeqIO.parse(query_nt_path, "fasta"):
-        if record.id == target_name:
-            from Bio.Seq import Seq as _Seq  # type: ignore
-            cds_raw = str(record.seq)[target_start:target_end]
-            cds_seq = str(_Seq(cds_raw).reverse_complement()) if cds_strand == "-" else cds_raw
-            cds_path = f"{prefix}-inferred-CDS.fasta"
-            with open(cds_path, "w") as f:
-                f.write(f">{query_id} coding-seq-from-miniprot\n")
-                f.write(cds_seq + "\n")
-            break
+    cds_path = f"{prefix}-inferred-cds.fasta"
+    with open(cds_path, "w") as f:
+        f.write(f">{query_id} coding-seq-from-miniprot\n")
+        f.write(cds_seq + "\n")
 
     return translated_aa, frameshifts, translated_path, nt_query_len, cds_path
 
@@ -149,7 +147,7 @@ def _parse_hit_stats(hit, ref_seq):
       hit[8]  nucleotide alignment end
       hit[9]  number of matching nucleotide bases (NOT AA matches — 3x AA count)
       hit[11] mapping quality
-      AS:i:   alignment score (optional tag)
+      AS:i:   alignment score
 
     returns None if the hit has no cs tag
     """
@@ -257,6 +255,62 @@ def _write_miniprot_hits_table(parsed_hits, tsv_path):
     print()
 
 
+def _extend_over_clips(translated_aa, hit, ref_len, query_nt_seq):
+    """
+    miniprot soft-clips the alignment when extending past a terminal indel costs
+    more than it gains, so terminal reference residues never appear in the cs tag
+    and the clipped query residues are missing from the reconstruction
+
+    here we translate the query nucleotides flanking the aligned region (in frame,
+    up to the next stop codon or the end of the sequence) and prepend/append them
+    to both the protein and the inferred CDS, so the two stay in sync and the
+    downstream re-alignment resolves terminal indels instead of inventing them.
+
+    returns (extended_aa, extended_cds), both in the protein's coding orientation.
+    """
+
+    from Bio.Seq import Seq  # type: ignore
+
+    prot_start, prot_end = int(hit[2]), int(hit[3])
+    strand = hit[4]
+    nt_start, nt_end = int(hit[7]), int(hit[8])
+
+    if strand == "-":
+        coding = str(Seq(query_nt_seq).reverse_complement())
+        L = len(query_nt_seq)
+        a, b = L - nt_end, L - nt_start
+    else:
+        coding = query_nt_seq
+        a, b = nt_start, nt_end
+
+    n_ext = c_ext = n_ext_nt = c_ext_nt = ""
+
+    if prot_end < ref_len:                     # C-terminal clip
+        tail = coding[b:]
+        tail = tail[: len(tail) // 3 * 3]       # whole codons only
+        c_ext = str(Seq(tail).translate()).split("*")[0]
+        c_ext_nt = tail[: 3 * len(c_ext)]
+
+    if prot_start > 0:                         # N-terminal clip
+        head = coding[a % 3 : a]                # keep frame so codons end at `a`
+        head = head[: len(head) // 3 * 3]
+        n_ext = str(Seq(head).translate()).split("*")[-1]
+        n_ext_nt = head[len(head) - 3 * len(n_ext):]
+
+    extended_aa  = n_ext + translated_aa + c_ext
+    extended_cds = n_ext_nt + coding[a:b] + c_ext_nt
+
+    # include the terminating stop codon if the query has one immediately after
+    # the CDS (the protein deliberately stops before it). this also adds the stop
+    # in the no-clip case, where the CDS otherwise ends at the last aligned codon.
+    cds_end = b + len(c_ext_nt)
+    next_codon = coding[cds_end : cds_end + 3]
+    if len(next_codon) == 3 and str(Seq(next_codon).translate()) == "*":
+        extended_cds += next_codon
+
+    return extended_aa, extended_cds
+
+
 def _parse_cs_tag(cs_string, ref_seq, ref_start):
     """
     this parses miniprot's cs tag and reconstructs the translated query-protein sequence
@@ -264,10 +318,11 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
     miniprot cs tag operations (uppercase = AA level, lowercase = nucleotide level):
       :N        N consecutive identical AA matches
       *cccX     AA substitution: ccc is the 3-nt codon from the input nt query (lowercase),
-                X is the ref protein AA (uppercase; miniprot uses our ref protein as its "query")
-      +SEQ      AA insertion in query                       (uppercase)
-      -SEQ      AA deletion from query                      (uppercase)
-      -nts      frameshift: 1-2 extra lowercase nts with no protein residue
+                X is the ref protein AA (uppercase)
+      +SEQ      ref residues absent from the query = DELETION (uppercase amino acids)
+      -SEQ      uppercase form: not emitted by miniprot in practice
+      -nts      query nucleotides absent from the ref = INSERTION (lowercase);
+                a 1-2 nt remainder with no protein residue is a frameshift
       ~s_l_c    intron: strand s, nt length l, splice c     (no AA contribution)
       fN        +1 frameshift: 1 extra nt N skipped
       bNN       +2 frameshift: 2 extra nts NN skipped
@@ -275,14 +330,16 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
     it returns (translated_seq, frameshifts) where 'frameshifts' is a list of dicts
     with keys ref_pos (1-based) and type ('+1' or '+2')
     """
+
     import re
+    from Bio.Seq import Seq  # type: ignore
 
     CS_OP = re.compile(
         r":(\d+)"                    # :N  matches
         r"|\*([acgt]{3})([A-Z])"     # *cccX: 3-nt nt-query codon (lowercase) + ref protein AA (uppercase)
-        r"|\+([A-Z]+)"               # +SEQ AA insertion
-        r"|-([A-Z]+)"                # -SEQ AA deletion (uppercase = amino acids)
-        r"|-([acgt]+)"               # -nt(s) frameshift: lowercase nt(s) in nucleotide with no protein residue
+        r"|\+([A-Z]+)"               # +SEQ: uppercase ref AA(s) absent from query = DELETION
+        r"|-([A-Z]+)"                # -SEQ: uppercase form, not emitted by miniprot in practice
+        r"|-([acgt]+)"               # -nt(s): lowercase query nt absent from ref = INSERTION (+ frameshift remainder)
         r"|~[+\-]\d+[a-z]+"          # ~intron  (no capture needed)
         r"|(f[acgt])"                # fN  +1 frameshift (alternative encoding)
         r"|(b[acgt]{2})"             # bNN +2 frameshift (alternative encoding)
@@ -294,7 +351,7 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
 
     for m in CS_OP.finditer(cs_string):
 
-        match_n, subst_codon, subst_aa, ins, deletion, fs_del, fs_f, fs_b = m.groups()
+        match_n, subst_codon, subst_aa, plus_del, minus_seq, fs_del, fs_f, fs_b = m.groups()
 
         if match_n:
             n = int(match_n)
@@ -304,19 +361,25 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
             # subst_codon is the 3-nt codon from the nucleotide (lowercase); in our use here:
             # lowercase = query nucleotide, uppercase = ref protein AA
             # we translate the codon to get what the nucleotide query encodes
-            from Bio.Seq import Seq  # type: ignore
             qry_aa = str(Seq(subst_codon.upper()).translate())
             translated.append(qry_aa)
             ref_pos += 1
-        elif ins:
-            translated.append(ins.upper()) # no ref advance
-        elif deletion:
-            ref_pos += len(deletion) # no query AA output
-        elif fs_del:
-            # 1 or 2 lowercase nucleotides: extra nt(s) in nucleotide = frameshift
-            # ref_pos doesn't advance
-            fs_type = "+1" if len(fs_del) % 3 == 1 else "+2"
-            frameshifts.append({"ref_pos": ref_pos + 1, "type": fs_type})
+        elif plus_del:
+            # '+' + uppercase ref AA(s) = residues missing from the query = deletion
+            ref_pos += len(plus_del)        # skip the deleted ref residues, emit nothing
+        elif minus_seq:
+            # '-' + uppercase: not emitted by miniprot in practice; advance to be safe
+            ref_pos += len(minus_seq)
+
+        elif fs_del:  # '-' + lowercase nt = query sequence absent from ref = insertion
+            nt = fs_del
+            n_codons = len(nt) // 3
+            if n_codons:
+                translated.append(str(Seq(nt[:n_codons * 3].upper()).translate()))
+            rem = len(nt) % 3
+            if rem:
+                frameshifts.append({"ref_pos": ref_pos + 1, "type": f"+{rem}"})
+            # no ref advance — an insertion doesn't consume the reference
         elif fs_f:
             frameshifts.append({"ref_pos": ref_pos + 1, "type": "+1"})
         elif fs_b:
@@ -363,6 +426,14 @@ def _get_gapped_seqs(alignment, ref_seq, query_seq):
         qry_parts.append(query_seq[q_start:q_end])
         ref_pos = r_end
         qry_pos = q_end
+
+    # append any trailing portions of either sequence not covered by the last block
+    if ref_pos < len(ref_seq):
+        ref_parts.append(ref_seq[ref_pos:])
+        qry_parts.append("-" * (len(ref_seq) - ref_pos))
+    if qry_pos < len(query_seq):
+        ref_parts.append("-" * (len(query_seq) - qry_pos))
+        qry_parts.append(query_seq[qry_pos:])
 
     return "".join(ref_parts), "".join(qry_parts)
 
