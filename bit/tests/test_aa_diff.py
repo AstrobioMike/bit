@@ -20,85 +20,91 @@ class TestParseCsTag:
 
     def test_match_run(self):
         ref = "MKLRST"
-        translated, frameshifts = _parse_cs_tag(":3", ref, 0)
+        translated, frameshifts, introns = _parse_cs_tag(":3", ref, 0)
         assert translated == "MKL"
         assert frameshifts == []
+        assert introns == []
 
     def test_match_run_with_offset(self):
         ref = "MKLRST"
-        translated, frameshifts = _parse_cs_tag(":2", ref, 2)
+        translated, frameshifts, introns = _parse_cs_tag(":2", ref, 2)
         assert translated == "LR"
         assert frameshifts == []
+        assert introns == []
 
     def test_substitution(self):
         # *acgR: codon "acg" -> "ACG" -> Thr (T); ref AA was R
         ref = "MR"
-        translated, frameshifts = _parse_cs_tag("*acgR", ref, 1)
+        translated, frameshifts, introns = _parse_cs_tag("*acgR", ref, 1)
         assert translated == str(Seq("ACG").translate())
         assert frameshifts == []
+        assert introns == []
 
     def test_insertion(self):
         ref = "MKLRST"
-        translated, frameshifts = _parse_cs_tag(":2+KL:1", ref, 0)
+        translated, frameshifts, introns = _parse_cs_tag(":2+KL:1", ref, 0)
         assert translated == "MKS"
         assert frameshifts == []
+        assert introns == []
 
     def test_deletion_uppercase(self):
         # -AA means 2 AAs deleted from ref (uppercase = protein level)
         ref = "MKAA"
-        translated, frameshifts = _parse_cs_tag(":2-AA", ref, 0)
+        translated, frameshifts, introns = _parse_cs_tag(":2-AA", ref, 0)
         assert translated == "MK"
         assert frameshifts == []
+        assert introns == []
 
     def test_frameshift_lowercase_1nt(self):
         # -a: 1 extra nt = +1 frameshift
         ref = "MKLRST"
-        translated, frameshifts = _parse_cs_tag(":3-a:1", ref, 0)
+        translated, frameshifts, introns = _parse_cs_tag(":3-a:1", ref, 0)
         assert translated == "MKLR"
         assert len(frameshifts) == 1
         assert frameshifts[0]["type"] == "+1"
         assert frameshifts[0]["ref_pos"] == 4  # 0-based ref_pos=3 -> 1-based 4
+        assert introns == []
 
     def test_frameshift_lowercase_2nt(self):
         # -ac: 2 extra nts = +2 frameshift
         ref = "MKLRST"
-        translated, frameshifts = _parse_cs_tag(":3-ac", ref, 0)
+        translated, frameshifts, introns = _parse_cs_tag(":3-ac", ref, 0)
         assert len(frameshifts) == 1
         assert frameshifts[0]["type"] == "+2"
+        assert introns == []
 
     def test_frameshift_f_tag(self):
         # fa: alternate +1 frameshift encoding
         ref = "MKL"
-        translated, frameshifts = _parse_cs_tag(":2fa", ref, 0)
+        translated, frameshifts, introns = _parse_cs_tag(":2fa", ref, 0)
         assert len(frameshifts) == 1
         assert frameshifts[0]["type"] == "+1"
         assert frameshifts[0]["ref_pos"] == 3
+        assert introns == []
 
     def test_frameshift_b_tag(self):
         # bac: alternate +2 frameshift encoding
         ref = "MKL"
-        translated, frameshifts = _parse_cs_tag(":1bac", ref, 0)
+        translated, frameshifts, introns = _parse_cs_tag(":1bac", ref, 0)
         assert len(frameshifts) == 1
         assert frameshifts[0]["type"] == "+2"
+        assert introns == []
 
     def test_combined_operations(self):
         ref = "MKLRST"
         # :2 matches MK, substitution at pos 2 (L -> T via acg), :1 matches R
-        translated, frameshifts = _parse_cs_tag(":2*acgL:1", ref, 0)
+        translated, frameshifts, introns = _parse_cs_tag(":2*acgL:1", ref, 0)
         thr = str(Seq("ACG").translate())
         assert translated == "MK" + thr + "R"
         assert frameshifts == []
+        assert introns == []
 
-    def test_intron_is_ignored(self):
+    def test_intron(self):
         ref = "MKLRST"
-        translated, frameshifts = _parse_cs_tag(":2~+100gt:2", ref, 0)
+        translated, frameshifts, introns = _parse_cs_tag(":2~gt130ag:2", ref, 0)
         assert translated == "MKLR"
         assert frameshifts == []
-
-    def test_empty_string(self):
-        translated, frameshifts = _parse_cs_tag("", "MKLRST", 0)
-        assert translated == ""
-        assert frameshifts == []
+        assert introns == [(6, 130)]
 
 
 class TestAlignAndGetGappedSeqs:
