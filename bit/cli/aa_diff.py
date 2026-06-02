@@ -1,7 +1,9 @@
 import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
-from bit.modules.general import check_files_are_found, report_message, notify_premature_exit
+from bit.modules.general import (check_files_are_found, report_message,
+                                 notify_premature_exit, attempt_to_make_dir)
+
 
 def build_parser(parent_subparsers=None):
 
@@ -47,10 +49,18 @@ def build_parser(parent_subparsers=None):
 
     optional.add_argument(
         "-o",
+        "--output-dir",
+        metavar="<DIR>",
+        help="Directory for output files (default: 'aa-diff/')",
+        default="aa-diff/",
+    )
+
+    optional.add_argument(
+        "-O",
         "--output-prefix",
         metavar="<STR>",
-        help="Prefix for output files (default: 'aa-diff')",
-        default="aa-diff",
+        help="String to be prepended to output files (including separator if wanted, e.g., 'sample-1-'; default: '')",
+        default="",
     )
 
     optional.add_argument(
@@ -64,7 +74,7 @@ def build_parser(parent_subparsers=None):
     optional.add_argument(
         "--min-perc-id",
         metavar="<NUM>",
-        help="Minimum percent identity to reference to proceed (default: 30)",
+        help="Minimum percent identity of aligned residues to reference to proceed (default: 30)",
         type=float,
         default=30,
     )
@@ -96,13 +106,16 @@ def main():
     args = preflight_checks(args)
 
     from bit.modules.aa_diff import run_aa_diff
-    run_aa_diff(args.input_query_fa, args.ref_faa, args.type, args.output_prefix,
-                min_perc_id=args.min_perc_id, min_perc_ref_cov=args.min_perc_ref_cov)
+    run_aa_diff(args.input_query_fa, args.ref_faa, args.type, args.output_dir,
+                min_perc_id=args.min_perc_id, min_perc_ref_cov=args.min_perc_ref_cov,
+                output_prefix=args.output_prefix)
 
 
 def preflight_checks(args):
 
     check_files_are_found([args.ref_faa, args.input_query_fa])
+
+    attempt_to_make_dir(args.output_dir)
 
     for fasta_path in [args.ref_faa, args.input_query_fa]:
         check_fasta_has_single_seq(fasta_path)

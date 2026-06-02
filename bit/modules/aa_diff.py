@@ -1,8 +1,9 @@
+import os
 from Bio import SeqIO  # type: ignore
 from Bio.Align import PairwiseAligner, substitution_matrices  # type: ignore
 
 
-def run_aa_diff(input_query_fa, ref_faa, seq_type, output_prefix, min_perc_id=30, min_perc_ref_cov=25):
+def run_aa_diff(input_query_fa, ref_faa, seq_type, output_dir, min_perc_id=30, min_perc_ref_cov=25, output_prefix=""):
 
     ref_record, query_record = _load_sequences(ref_faa, input_query_fa)
 
@@ -15,7 +16,7 @@ def run_aa_diff(input_query_fa, ref_faa, seq_type, output_prefix, min_perc_id=30
 
     if seq_type == "nt":
         query_seq, frameshifts, translated_path, nt_query_len, cds_path, introns = _run_miniprot_and_translate(
-            input_query_fa, ref_faa, ref_seq, output_prefix
+            input_query_fa, ref_faa, ref_seq, output_dir, output_prefix
         )
     else:
         query_seq = str(query_record.seq).upper().rstrip("*")
@@ -26,14 +27,13 @@ def run_aa_diff(input_query_fa, ref_faa, seq_type, output_prefix, min_perc_id=30
     _check_alignment_thresholds(positions, min_perc_id, min_perc_ref_cov)
     mutations = _collect_mutations(positions, insertions, frameshifts)
 
-    prefix = output_prefix
-    _write_tsv(positions, insertions, f"{prefix}-all-positions.tsv")
-    _write_mutations(mutations, f"{prefix}-mutations.txt")
+    _write_tsv(positions, insertions, os.path.join(output_dir, f"{output_prefix}all-positions.tsv"))
+    _write_mutations(mutations, os.path.join(output_dir, f"{output_prefix}mutations.txt"))
     n_stops = query_seq.count("*") if seq_type == "nt" else 0
-    summary_text = _report_summary(positions, insertions, mutations, frameshifts, prefix, translated_path,
-                                     nt_query_len=nt_query_len, cds_path=cds_path, n_stops=n_stops, introns=introns)
-    _write_summary(summary_text, f"{prefix}-summary.txt")
-    _write_alignment(ref_gapped, qry_gapped, ref_record.id, query_record.id, f"{prefix}-alignment.txt")
+    summary_text = _report_summary(positions, insertions, mutations, frameshifts, output_dir, translated_path,
+                                     nt_query_len=nt_query_len, cds_path=cds_path, n_stops=n_stops, introns=introns, output_prefix=output_prefix)
+    _write_summary(summary_text, os.path.join(output_dir, f"{output_prefix}summary.txt"))
+    _write_alignment(ref_gapped, qry_gapped, ref_record.id, query_record.id, os.path.join(output_dir, f"{output_prefix}alignment.txt"))
 
 
 def _load_sequences(ref_faa, input_query_fa):
@@ -42,7 +42,7 @@ def _load_sequences(ref_faa, input_query_fa):
     return ref_record, query_record
 
 
-def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
+def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, output_dir, output_prefix=""):
     """
     this runs miniprot to align a nucleotide query against the reference protein
 
@@ -101,7 +101,7 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
         for ph in parsed_hits:
             cds_raw = _nt_seqs.get(ph["hit"][5], "")[ph["nt_start"]:ph["nt_end"]]
             ph["cds_seq"] = str(_Seq(cds_raw).reverse_complement()) if ph["strand"] == "-" else cds_raw
-        hits_table_path = f"{prefix}-alignment-summaries.tsv"
+        hits_table_path = os.path.join(output_dir, f"{output_prefix}alignment-summaries.tsv")
         _write_miniprot_hits_table(parsed_hits, hits_table_path)
 
     # use the top-ranked hit for the primary analysis and outputs
@@ -126,12 +126,12 @@ def _run_miniprot_and_translate(query_nt_path, ref_faa_path, ref_seq, prefix):
     nt_query_len = int(hit[6])
     query_id = hit[0]
 
-    translated_path = f"{prefix}-inferred-protein.faa"
+    translated_path = os.path.join(output_dir, f"{output_prefix}inferred-protein.faa")
     with open(translated_path, "w") as f:
         f.write(f">{query_id} translated-by-miniprot\n")
         f.write(translated_aa + "\n")
 
-    cds_path = f"{prefix}-inferred-cds.fasta"
+    cds_path = os.path.join(output_dir, f"{output_prefix}inferred-cds.fna")
     with open(cds_path, "w") as f:
         f.write(f">{query_id} coding-seq-from-miniprot\n")
         f.write(cds_seq + "\n")
@@ -352,30 +352,28 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
       :N        N consecutive identical AA matches
       *cccX     AA substitution: ccc is the 3-nt codon from the input nt query (lowercase),
                 X is the ref protein AA (uppercase)
+      *ccX/*cX  G-op frameshift: a codon left with only 2 or 1 nt in the query (a 1- or
+                2-nt deletion); X is the ref AA. used as a placeholder so the protein
+                stays in register, with the frameshift reported separately
       +SEQ      ref residues absent from the query = DELETION (uppercase amino acids)
       -SEQ      uppercase form: not emitted by miniprot in practice
-      -nts      query nucleotides absent from the ref = INSERTION (lowercase);
-                a 1-2 nt remainder with no protein residue is a frameshift
-      ~ddNNNaa  intron: donor dinucleotide (lowercase) + length + acceptor dinucleotide
-                (lowercase), e.g. ~gt130ag; contributes no AA and is excised from the CDS
-      fN        +1 frameshift: 1 extra nt N skipped
-      bNN       +2 frameshift: 2 extra nts NN skipped
+      -nts      query nucleotides absent from the ref = INSERTION (lowercase, multiple of
+                3); a 1-2 nt token is an F-op frameshift (extra nt that restores frame)
+      ~ddNNNaa  intron between codons (phase-0): donor + length + acceptor, e.g. ~gt130ag;
+                contributes no AA and is excised from the CDS
 
-    an intron can also fall *inside* a codon (miniprot's phase-1/phase-2 introns), in
-    which case the single residue's codon is split across the intron and written as
-    three tokens in a row:
+    an intron can also fall *inside* a codon (miniprot's phase-1/phase-2 introns), written
+    as one combined construct:
       *<head>X ~ddNNNaa -<tail>
-    where <head> is the 1-2 lowercase nt before the intron, X is the ref AA, and <tail>
-    is the remaining 2-1 lowercase nt after it. head + tail is the full codon, so here
-    the leading '*' is NOT a 3-nt substitution and the trailing '-<tail>' is NOT an
-    insertion -- they are the two halves of one split codon (phase-1: 1 nt + 2 nt,
-    phase-2: 2 nt + 1 nt)
+    where head (1-2 nt) + tail (2-1 nt) is the full codon split across the intron. this is
+    matched as a single token so it is never confused with a 3-nt substitution, a G-op
+    frameshift, or a standalone insertion
 
     it returns (translated_seq, frameshifts, introns) where:
-      - 'frameshifts' is a list of dicts with keys ref_pos (1-based) and type ('+1'/'+2')
+      - 'frameshifts' is a list of dicts with keys ref_pos (1-based) and type:
+        '+1'/'+2' for extra query nt (F-op), '-1'/'-2' for missing query nt (G-op)
       - 'introns' is a list of (offset, length) tuples giving each intron's start (in
-        query-nt, relative to the start of the aligned region) and length, used
-        downstream to splice the inferred CDS
+        query-nt, relative to the start of the aligned region) and length, for splicing
 
     the parser also fails annoyingly if any part of the cs tag is not recognized (as a failsafe)
     """
@@ -385,14 +383,13 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
     from bit.modules.general import report_message, notify_premature_exit
 
     CS_OP = re.compile(
-        r":(\d+)"                       # :N  matches
-        r"|\*([acgt]{1,3})([A-Z])"      # *cccX sub (3 nt), or 1-2 nt = head of an intron-split codon
-        r"|\+([A-Z]+)"                  # +SEQ: uppercase ref AA(s) absent from query = DELETION
-        r"|-([A-Z]+)"                   # -SEQ: uppercase form, not emitted by miniprot in practice
-        r"|-([acgt]+)"                  # -nt(s): lowercase = INSERTION, or the tail of a split codon
-        r"|~[acgt]{2}(\d+)[acgt]{2}"    # ~ddNNNaa intron: donor + length + acceptor, e.g. ~gt130ag
-        r"|(f[acgt])"                   # fN  +1 frameshift
-        r"|(b[acgt]{2})"                # bNN +2 frameshift
+        r":(\d+)"                                                     # 1  :N matches
+        r"|\*([acgt]{1,2})([A-Z])~[acgt]{2}(\d+)[acgt]{2}-([acgt]+)"  # 2-5 codon split by an intron: head, refAA, intron-len, tail
+        r"|\*([acgt]+)([A-Z])"                                        # 6,7 *cccX substitution (3 nt) OR G-op frameshift (1-2 nt)
+        r"|\+([A-Z]+)"                                                # 8  +SEQ: ref AA(s) absent from query = DELETION
+        r"|-([A-Z]+)"                                                 # 9  -SEQ: uppercase form, not emitted in practice
+        r"|-([acgt]+)"                                                # 10 -nts: INSERTION, or F-op frameshift (1-2 nt remainder)
+        r"|~[acgt]{2}(\d+)[acgt]{2}"                                  # 11 ~ddNNNaa: phase-0 intron between codons
     )
 
     translated = []
@@ -401,7 +398,6 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
     ref_pos = ref_start
     qry_nt = 0 # query-nt cursor within the aligned region (for intron offsets)
     pos = 0 # cs-string cursor, for the coverage check
-    pending_split = None # lowercase head nt when a codon is split by an intron
 
     for m in CS_OP.finditer(cs_string):
 
@@ -413,57 +409,57 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
             notify_premature_exit()
         pos = m.end()
 
-        match_n, subst_codon, subst_aa, plus_del, minus_seq, fs_del, intron_len, fs_f, fs_b = m.groups()
+        (match_n,
+         split_head, split_aa, split_intron_len, split_tail,
+         subst_codon, subst_aa,
+         plus_del, minus_seq, fs_del, intron_len) = m.groups()
 
-        if match_n:
+        if match_n is not None:
             n = int(match_n)
             translated.append(ref_seq[ref_pos:ref_pos + n].upper())
             ref_pos += n
             qry_nt += 3 * n
-        elif subst_codon:
+        elif split_head is not None:
+            # codon split across an intron: head + tail is the full codon
+            translated.append(str(Seq((split_head + split_tail).upper()).translate()))
+            ref_pos += 1
+            introns.append((qry_nt + len(split_head), int(split_intron_len)))
+            qry_nt += len(split_head) + int(split_intron_len) + len(split_tail)
+        elif subst_codon is not None:
             if len(subst_codon) == 3:
-                # normal substitution: translate the query codon to get its AA
+                # normal substitution: translating the query codon to get its AA
                 translated.append(str(Seq(subst_codon.upper()).translate()))
                 ref_pos += 1
                 qry_nt += 3
             else:
-                # 1-2 nt = head of a codon split by an intron; defer until we see the tail
-                pending_split = subst_codon
+                # G-op: codon left with 1-2 nt (a 1- or 2-nt deletion = frameshift)
+                # keeping the ref AA as a placeholder so the protein stays in register;
+                # the frameshift itself is reported separately
+                translated.append(subst_aa)
+                frameshifts.append({"ref_pos": ref_pos + 1, "type": f"-{3 - len(subst_codon)}"})
+                ref_pos += 1
                 qry_nt += len(subst_codon)
-        elif plus_del:
+        elif plus_del is not None:
             # '+' + uppercase ref AA(s) = residues missing from the query = deletion
             ref_pos += len(plus_del) # consumes ref residues, but no query advance
-        elif minus_seq:
-            # '-' + uppercase: not emitted by miniprot in practice; advance to be safe
+        elif minus_seq is not None:
+            # '-' + uppercase: not emitted by miniprot in practice; advancing to be safe
             ref_pos += len(minus_seq)
-        elif fs_del:
-            if pending_split is not None:
-                # second half of an intron-split codon: head + tail is the full codon
-                codon = (pending_split + fs_del).upper()
-                translated.append(str(Seq(codon).translate()))
-                ref_pos += 1
-                qry_nt += len(fs_del)
-                pending_split = None
-            else:
-                # '-' + lowercase nt = query sequence absent from ref = insertion (+ fs remainder)
-                nt = fs_del
-                n_codons = len(nt) // 3
-                if n_codons:
-                    translated.append(str(Seq(nt[:n_codons * 3].upper()).translate()))
-                rem = len(nt) % 3
-                if rem:
-                    frameshifts.append({"ref_pos": ref_pos + 1, "type": f"+{rem}"})
-                qry_nt += len(nt) # an insertion consumes query nts, but no ref advance
-        elif intron_len:
-            # intron: no residue and no ref advance; recording so the inferred CDS can be spliced
+        elif fs_del is not None:
+            # '-' + lowercase nt = query sequence absent from ref = insertion;
+            # a 1-2 nt remainder is an F-op frameshift (extra nt that restores frame)
+            nt = fs_del
+            n_codons = len(nt) // 3
+            if n_codons:
+                translated.append(str(Seq(nt[:n_codons * 3].upper()).translate()))
+            rem = len(nt) % 3
+            if rem:
+                frameshifts.append({"ref_pos": ref_pos + 1, "type": f"+{rem}"})
+            qry_nt += len(nt) # an insertion consumes query nts, but no ref advance
+        elif intron_len is not None:
+            # phase-0 intron: no residue and no ref advance; recorded so the CDS can be spliced
             introns.append((qry_nt, int(intron_len)))
             qry_nt += int(intron_len)
-        elif fs_f:
-            frameshifts.append({"ref_pos": ref_pos + 1, "type": "+1"})
-            qry_nt += 1
-        elif fs_b:
-            frameshifts.append({"ref_pos": ref_pos + 1, "type": "+2"})
-            qry_nt += 2
 
     if pos != len(cs_string):
         report_message(
@@ -737,7 +733,7 @@ def _write_alignment(ref_gapped, qry_gapped, ref_id, query_id, aln_path, width=6
             qry_pos = qry_end
 
 
-def _report_summary(positions, insertions, mutations, frameshifts, prefix, translated_path=None, nt_query_len=None, cds_path=None, n_stops=0, introns=None):
+def _report_summary(positions, insertions, mutations, frameshifts, output_dir, translated_path=None, nt_query_len=None, cds_path=None, n_stops=0, introns=None, output_prefix=""):
     from bit.modules.general import color_text
 
     n_sub = sum(1 for p in positions if p["change_type"] == "substitution")
@@ -827,10 +823,10 @@ def _report_summary(positions, insertions, mutations, frameshifts, prefix, trans
         print()
     elif cds_path:
         print()
-    print(f"  Summary file:         {prefix}-summary.txt")
-    print(f"  All-positions table:  {prefix}-all-positions.tsv")
-    print(f"  Mutations file:       {prefix}-mutations.txt")
-    print(f"  Alignment file:       {prefix}-alignment.txt")
+    print(f"  Summary file:         {os.path.join(output_dir, f'{output_prefix}summary.txt')}")
+    print(f"  All-positions table:  {os.path.join(output_dir, f'{output_prefix}all-positions.tsv')}")
+    print(f"  Mutations file:       {os.path.join(output_dir, f'{output_prefix}mutations.txt')}")
+    print(f"  Alignment file:       {os.path.join(output_dir, f'{output_prefix}alignment.txt')}")
     print()
 
     return stats_text

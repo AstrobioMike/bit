@@ -1,514 +1,477 @@
-from unittest import mock
-from Bio.Seq import Seq  # type: ignore
+import os
+import shutil
+import pytest # type: ignore
+from Bio.Seq import Seq # type: ignore
+from bit.modules import aa_diff
+from bit.modules import general
 
-from bit.modules.aa_diff import (
-    run_aa_diff,
-    _parse_cs_tag,
-    _align,
-    _get_gapped_seqs,
-    _parse_alignment,
-    _collect_mutations,
-    _write_tsv,
-    _write_mutations,
-    _write_summary,
-    _write_alignment,
-    _report_summary,
-)
 
+# ---------------------------------------------------------------------------
+# helpers / fixtures
+# ---------------------------------------------------------------------------
+
+# one fixed codon per residue, for building queries whose translation is known
+_CODON = {
+    "A": "GCT", "R": "CGT", "N": "AAT", "D": "GAT", "C": "TGT", "Q": "CAA",
+    "E": "GAA", "G": "GGT", "H": "CAT", "I": "ATT", "L": "CTT", "K": "AAA",
+    "M": "ATG", "F": "TTT", "P": "CCT", "S": "TCT", "T": "ACT", "W": "TGG",
+    "Y": "TAT", "V": "GTT", "*": "TAA",
+}
+
+
+def cds_of(protein):
+    """deterministic coding sequence for a protein string"""
+    return "".join(_CODON[a] for a in protein)
+
+
+def make_hit(prot_start, prot_end, strand, nt_start, nt_end, nt_len=None, name="q"):
+    """
+    build a minimal miniprot PAF row for _extend_over_clips, which only reads
+    indices 2,3,4,5,6,7,8. other columns are placeholders.
+    """
+    if nt_len is None:
+        nt_len = nt_end
+    row = ["ref", "0", str(prot_start), str(prot_end), strand,
+           name, str(nt_len), str(nt_start), str(nt_end)]
+    return row
+
+
+@pytest.fixture
+def fail_loud(monkeypatch):
+    """
+    redirect the module's report_message / notify_premature_exit so the
+    'fail-loud' paths raise a catchable exception instead of exiting the process.
+    returns (ExceptionType, captured_messages_list).
+    """
+    class PrematureExit(Exception):
+        pass
+
+    messages = []
+
+    def fake_report(msg, **kwargs):
+        messages.append(msg)
+
+    def fake_exit(*args, **kwargs):
+        raise PrematureExit()
+
+    monkeypatch.setattr(general, "report_message", fake_report)
+    monkeypatch.setattr(general, "notify_premature_exit", fake_exit)
+    return PrematureExit, messages
+
+
+# ---------------------------------------------------------------------------
+# _parse_cs_tag  -- the core, where all the hard-won bugs lived
+# ---------------------------------------------------------------------------
 
 class TestParseCsTag:
 
-    def test_match_run(self):
-        ref = "MKLRST"
-        translated, frameshifts, introns = _parse_cs_tag(":3", ref, 0)
-        assert translated == "MKL"
-        assert frameshifts == []
+    REF = "ACDEFG"
+
+    def test_all_matches(self):
+        seq, fs, introns = aa_diff._parse_cs_tag(":6", self.REF, 0)
+        assert seq == "ACDEFG"
+        assert fs == []
         assert introns == []
 
-    def test_match_run_with_offset(self):
-        ref = "MKLRST"
-        translated, frameshifts, introns = _parse_cs_tag(":2", ref, 2)
-        assert translated == "LR"
-        assert frameshifts == []
+    def test_substitution_translates_query_codon(self):
+        # :2 (AC) then a sub at ref position 3 whose query codon GTT -> V, then :3 (EFG)
+        seq, fs, introns = aa_diff._parse_cs_tag(":2*gttD:3", self.REF, 0)
+        assert seq == "ACVEFG"          # the D is replaced by the translated query codon V
+        assert fs == []
         assert introns == []
 
-    def test_substitution(self):
-        # *acgR: codon "acg" -> "ACG" -> Thr (T); ref AA was R
-        ref = "MR"
-        translated, frameshifts, introns = _parse_cs_tag("*acgR", ref, 1)
-        assert translated == str(Seq("ACG").translate())
-        assert frameshifts == []
+    def test_deletion_skips_ref_residues(self):
+        # +DE removes ref residues D and E from the query
+        seq, fs, introns = aa_diff._parse_cs_tag(":2+DE:2", self.REF, 0)
+        assert seq == "ACFG"
+        assert fs == []
         assert introns == []
 
-    def test_insertion(self):
-        ref = "MKLRST"
-        translated, frameshifts, introns = _parse_cs_tag(":2+KL:1", ref, 0)
-        assert translated == "MKS"
-        assert frameshifts == []
+    def test_insertion_whole_codon(self):
+        # -gtt inserts one codon (V) that has no counterpart in the reference
+        seq, fs, introns = aa_diff._parse_cs_tag(":3-gtt:3", self.REF, 0)
+        assert seq == "ACDVEFG"
+        assert fs == []
         assert introns == []
 
-    def test_deletion_uppercase(self):
-        # -AA means 2 AAs deleted from ref (uppercase = protein level)
-        ref = "MKAA"
-        translated, frameshifts, introns = _parse_cs_tag(":2-AA", ref, 0)
-        assert translated == "MK"
-        assert frameshifts == []
+    def test_frameshift_plus_one_F_op(self):
+        seq, fs, introns = aa_diff._parse_cs_tag(":3-g:3", self.REF, 0)
+        assert seq == "ACDEFG"          # extra nt restores frame; no residue emitted
+        assert fs == [{"ref_pos": 4, "type": "+1"}]
         assert introns == []
 
-    def test_frameshift_lowercase_1nt(self):
-        # -a: 1 extra nt = +1 frameshift
-        ref = "MKLRST"
-        translated, frameshifts, introns = _parse_cs_tag(":3-a:1", ref, 0)
-        assert translated == "MKLR"
-        assert len(frameshifts) == 1
-        assert frameshifts[0]["type"] == "+1"
-        assert frameshifts[0]["ref_pos"] == 4  # 0-based ref_pos=3 -> 1-based 4
+    def test_frameshift_plus_two_F_op(self):
+        seq, fs, introns = aa_diff._parse_cs_tag(":3-gc:3", self.REF, 0)
+        assert seq == "ACDEFG"
+        assert fs == [{"ref_pos": 4, "type": "+2"}]
+
+    def test_frameshift_minus_one_G_op(self):
+        # *atE -> 2-nt codon (1-nt deletion); ref AA E kept as placeholder, fs -1
+        seq, fs, introns = aa_diff._parse_cs_tag(":3*atE:2", self.REF, 0)
+        assert seq == "ACDEFG"
+        assert fs == [{"ref_pos": 4, "type": "-1"}]
         assert introns == []
 
-    def test_frameshift_lowercase_2nt(self):
-        # -ac: 2 extra nts = +2 frameshift
-        ref = "MKLRST"
-        translated, frameshifts, introns = _parse_cs_tag(":3-ac", ref, 0)
-        assert len(frameshifts) == 1
-        assert frameshifts[0]["type"] == "+2"
+    def test_frameshift_minus_two_G_op(self):
+        # *aE -> 1-nt codon (2-nt deletion); fs -2
+        seq, fs, introns = aa_diff._parse_cs_tag(":3*aE:2", self.REF, 0)
+        assert seq == "ACDEFG"
+        assert fs == [{"ref_pos": 4, "type": "-2"}]
+
+    def test_phase0_intron_between_codons(self):
+        seq, fs, introns = aa_diff._parse_cs_tag(":3~gt50ag:3", self.REF, 0)
+        assert seq == "ACDEFG"
+        assert fs == []
+        assert introns == [(9, 50)]      # offset = 3 codons * 3 nt; length 50
+
+    def test_phase2_split_codon(self):
+        # codon split 2|1 across an intron: head 'gt' + tail 't' -> GTT -> V
+        seq, fs, introns = aa_diff._parse_cs_tag(":3*gtE~gt50ag-t:2", self.REF, 0)
+        assert seq == "ACDVFG"
+        assert fs == []
+        assert introns == [(11, 50)]     # offset = 9 (matches) + 2 (head)
+
+    def test_phase1_split_codon(self):
+        # codon split 1|2 across an intron: head 'g' + tail 'tt' -> GTT -> V
+        seq, fs, introns = aa_diff._parse_cs_tag(":3*gE~gt50ag-tt:2", self.REF, 0)
+        assert seq == "ACDVFG"
+        assert fs == []
+        assert introns == [(10, 50)]     # offset = 9 (matches) + 1 (head)
+
+    def test_ref_start_offset_is_respected(self):
+        # a hit that starts partway into the reference (prot_start > 0)
+        seq, fs, introns = aa_diff._parse_cs_tag(":3", self.REF, 3)
+        assert seq == "EFG"             # ref[3:6]
         assert introns == []
 
-    def test_frameshift_f_tag(self):
-        # fa: alternate +1 frameshift encoding
-        ref = "MKL"
-        translated, frameshifts, introns = _parse_cs_tag(":2fa", ref, 0)
-        assert len(frameshifts) == 1
-        assert frameshifts[0]["type"] == "+1"
-        assert frameshifts[0]["ref_pos"] == 3
-        assert introns == []
+    def test_fail_loud_on_internal_garbage(self, fail_loud):
+        PrematureExit, messages = fail_loud
+        with pytest.raises(PrematureExit):
+            aa_diff._parse_cs_tag(":3ZZZ:3", self.REF, 0)
+        assert messages and "unrecognized token" in messages[0]
 
-    def test_frameshift_b_tag(self):
-        # bac: alternate +2 frameshift encoding
-        ref = "MKL"
-        translated, frameshifts, introns = _parse_cs_tag(":1bac", ref, 0)
-        assert len(frameshifts) == 1
-        assert frameshifts[0]["type"] == "+2"
-        assert introns == []
-
-    def test_combined_operations(self):
-        ref = "MKLRST"
-        # :2 matches MK, substitution at pos 2 (L -> T via acg), :1 matches R
-        translated, frameshifts, introns = _parse_cs_tag(":2*acgL:1", ref, 0)
-        thr = str(Seq("ACG").translate())
-        assert translated == "MK" + thr + "R"
-        assert frameshifts == []
-        assert introns == []
-
-    def test_intron(self):
-        ref = "MKLRST"
-        translated, frameshifts, introns = _parse_cs_tag(":2~gt130ag:2", ref, 0)
-        assert translated == "MKLR"
-        assert frameshifts == []
-        assert introns == [(6, 130)]
+    def test_fail_loud_on_trailing_garbage(self, fail_loud):
+        PrematureExit, _ = fail_loud
+        with pytest.raises(PrematureExit):
+            aa_diff._parse_cs_tag(":6XYZ", self.REF, 0)
 
 
-class TestAlignAndGetGappedSeqs:
+# A real miniprot cs for TP53 genomic vs its protein: phase-0/1/2 introns all
+# present, no frameshifts. The whole 393-aa protein must reconstruct exactly.
+TP53 = (
+    "MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGPDEAPRMPEAA"
+    "PPVAPAPAAPTPAAPAPAPSWPLSSSVPSQKTYQGSYGFRLGFLHSGTAKSVTCTYSPALNKMFCQLAKT"
+    "CPVQLWVDSTPPPGTRVRAMAIYKQSQHMTEVVRRCPHHERCSDSDGLAPPQHLIRVEGNLRVEYLDDRN"
+    "TFRHSVVVPYEPPEVGSDCTTIHYNYMCNSSCMGGMNRRPILTIITLEDSSGNLLGRNSFEVRVCACPGR"
+    "DRRTEEENLRKKGEPHHELPPGSTKRALPNNTSSSPQPKKKPLDGEYFTLQIRGRERFEMFRELNEALEL"
+    "KDAQAGKEPGGSRAHSSHLKSKKGQSTSRHKKLMFKTEGPDSD"
+)
+TP53_CS = (
+    ":24*ctL~gt117ag-a:7~gt109ag:93~gt757ag:61*gG~gt81ag-gt:37~gt568ag:36"
+    "*agS~gt343ag-t:45*gA~gt92ag-ca:24~gt2819ag:35*agS~gt918ag-c:26"
+)
 
-    def test_identical_sequences(self):
-        seq = "MKLRST"
-        alignment = _align(seq, seq)
-        ref_gapped, qry_gapped = _get_gapped_seqs(alignment, seq, seq)
-        assert ref_gapped == seq
-        assert qry_gapped == seq
 
-    def test_deletion_in_query(self):
-        ref = "MKLRST"
-        qry = "MKRST"   # L is deleted
-        alignment = _align(ref, qry)
-        ref_gapped, qry_gapped = _get_gapped_seqs(alignment, ref, qry)
-        assert len(ref_gapped) == len(qry_gapped)
-        # the gapped query must contain a '-' where the ref has L
-        assert "-" in qry_gapped
+def test_parse_cs_tag_real_tp53():
+    seq, fs, introns = aa_diff._parse_cs_tag(TP53_CS, TP53, 0)
+    assert seq == TP53          # all three intron phases reconstruct the full protein
+    assert fs == []
+    assert len(introns) == 9
 
-    def test_insertion_in_query(self):
-        ref = "MKRST"
-        qry = "MKLRST"   # L is inserted
-        alignment = _align(ref, qry)
-        ref_gapped, qry_gapped = _get_gapped_seqs(alignment, ref, qry)
-        assert len(ref_gapped) == len(qry_gapped)
-        assert "-" in ref_gapped
 
-    def test_gapped_seqs_same_length(self):
-        ref = "MAAAKRST"
-        qry = "MKLRST"
-        alignment = _align(ref, qry)
-        ref_gapped, qry_gapped = _get_gapped_seqs(alignment, ref, qry)
-        assert len(ref_gapped) == len(qry_gapped)
-
+# ---------------------------------------------------------------------------
+# _parse_alignment
+# ---------------------------------------------------------------------------
 
 class TestParseAlignment:
 
-    def test_all_matches(self):
-        positions, insertions = _parse_alignment("MKLRS", "MKLRS")
+    def test_all_match(self):
+        positions, insertions = aa_diff._parse_alignment("ACDEF", "ACDEF")
+        assert insertions == []
         assert len(positions) == 5
         assert all(p["change_type"] == "match" for p in positions)
-        assert insertions == []
-
-    def test_positions_numbered_from_1(self):
-        positions, _ = _parse_alignment("MK", "MK")
-        assert positions[0]["ref_pos"] == 1
-        assert positions[1]["ref_pos"] == 2
+        assert positions[0] == {"ref_pos": 1, "ref_aa": "A", "query_pos": 1,
+                                "query_aa": "A", "change_type": "match"}
 
     def test_substitution(self):
-        positions, insertions = _parse_alignment("MKL", "MRL")
-        assert positions[1]["change_type"] == "substitution"
-        assert positions[1]["ref_aa"] == "K"
-        assert positions[1]["query_aa"] == "R"
-        assert insertions == []
+        positions, _ = aa_diff._parse_alignment("ACDEF", "AGDEF")
+        sub = positions[1]
+        assert sub["change_type"] == "substitution"
+        assert sub["ref_aa"] == "C" and sub["query_aa"] == "G" and sub["ref_pos"] == 2
 
-    def test_deletion_in_query(self):
-        # ref has 3 residues, query has a '-' at position 2
-        positions, insertions = _parse_alignment("MKL", "M-L")
-        assert positions[1]["change_type"] == "deletion"
-        assert positions[1]["query_aa"] == "-"
-        assert positions[1]["query_pos"] is None
+    def test_deletion(self):
+        positions, _ = aa_diff._parse_alignment("ACDEF", "A-DEF")
+        deln = positions[1]
+        assert deln["change_type"] == "deletion"
+        assert deln["query_aa"] == "-"
+        assert deln["query_pos"] is None
 
-    def test_insertion_in_query(self):
-        # ref has '-' at col 1 (insertion in query)
-        positions, insertions = _parse_alignment("M-L", "MKL")
-        assert len(insertions) == 1
-        assert insertions[0]["after_ref_pos"] == 1
-        assert insertions[0]["inserted_seq"] == "K"
-        # only 2 ref residues (M and L)
-        assert len(positions) == 2
+    def test_internal_insertion(self):
+        positions, insertions = aa_diff._parse_alignment("ACD-EF", "ACDGEF")
+        assert insertions == [{"after_ref_pos": 3, "inserted_seq": "G"}]
+        assert len(positions) == 5
 
-    def test_insertion_at_end(self):
-        positions, insertions = _parse_alignment("MK--", "MKXY")
-        assert len(positions) == 2
-        assert len(insertions) == 1
-        assert insertions[0]["after_ref_pos"] == 2
-        assert insertions[0]["inserted_seq"] == "XY"
+    def test_leading_insertion(self):
+        _, insertions = aa_diff._parse_alignment("-ACDEF", "GACDEF")
+        assert insertions == [{"after_ref_pos": 0, "inserted_seq": "G"}]
 
-    def test_query_position_tracking(self):
-        positions, _ = _parse_alignment("MKL", "MRL")
-        assert positions[0]["query_pos"] == 1
-        assert positions[1]["query_pos"] == 2
-        assert positions[2]["query_pos"] == 3
+    def test_trailing_insertion(self):
+        _, insertions = aa_diff._parse_alignment("ACDEF-", "ACDEFG")
+        assert insertions == [{"after_ref_pos": 5, "inserted_seq": "G"}]
 
-    def test_query_position_skips_deletion(self):
-        # query position should not increment for a deletion
-        positions, _ = _parse_alignment("MKL", "M-L")
-        assert positions[0]["query_pos"] == 1
-        assert positions[1]["query_pos"] is None
-        assert positions[2]["query_pos"] == 2
 
+# ---------------------------------------------------------------------------
+# _align + _get_gapped_seqs (tested together on clear-cut cases)
+# ---------------------------------------------------------------------------
+
+class TestGappedSeqs:
+
+    def _gapped(self, ref, query):
+        aln = aa_diff._align(ref, query)
+        return aa_diff._get_gapped_seqs(aln, ref, query)
+
+    def test_identical(self):
+        r, q = self._gapped("ACDEFGHIK", "ACDEFGHIK")
+        assert r == "ACDEFGHIK"
+        assert q == "ACDEFGHIK"
+
+    def test_terminal_deletion_keeps_trailing_ref(self):
+        # query missing the last two residues -> ref's tail must still appear,
+        # opposite gaps in the query (regression for the trailing-portion handling)
+        r, q = self._gapped("ACDEFGHIK", "ACDEFGH")
+        assert r == "ACDEFGHIK"
+        assert q == "ACDEFGH--"
+
+    def test_terminal_insertion_keeps_trailing_query(self):
+        r, q = self._gapped("ACDEFG", "ACDEFGHI")
+        assert r == "ACDEFG--"
+        assert q == "ACDEFGHI"
+
+
+# ---------------------------------------------------------------------------
+# _calc_stats_from_positions
+# ---------------------------------------------------------------------------
+
+def _positions(change_types):
+    out = []
+    for i, ct in enumerate(change_types, 1):
+        out.append({"ref_pos": i, "ref_aa": "A",
+                    "query_pos": None if ct == "deletion" else i,
+                    "query_aa": "-" if ct == "deletion" else "A",
+                    "change_type": ct})
+    return out
+
+
+class TestCalcStats:
+
+    def test_all_match(self):
+        s = aa_diff._calc_stats_from_positions(_positions(["match"] * 5))
+        assert s["perc_id"] == 100.0
+        assert s["perc_ref_cov"] == 100.0
+        assert s["n_match"] == 5
+
+    def test_one_substitution(self):
+        s = aa_diff._calc_stats_from_positions(_positions(["match", "substitution", "match", "match", "match"]))
+        assert s["perc_id"] == 80.0
+        assert s["perc_ref_cov"] == 100.0
+
+    def test_one_deletion_lowers_coverage(self):
+        s = aa_diff._calc_stats_from_positions(_positions(["match", "deletion", "match", "match", "match"]))
+        assert s["perc_id"] == 80.0
+        assert s["perc_ref_cov"] == 80.0
+
+    def test_empty_is_zero_not_error(self):
+        s = aa_diff._calc_stats_from_positions([])
+        assert s["perc_id"] == 0.0
+        assert s["perc_ref_cov"] == 0.0
+
+
+# ---------------------------------------------------------------------------
+# _check_alignment_thresholds
+# ---------------------------------------------------------------------------
+
+class TestThresholds:
+
+    def test_passes_when_above_thresholds(self, fail_loud):
+        # should NOT raise
+        aa_diff._check_alignment_thresholds(_positions(["match"] * 10), 30, 25)
+
+    def test_fails_on_low_identity(self, fail_loud):
+        PrematureExit, _ = fail_loud
+        positions = _positions(["substitution"] * 9 + ["match"])   # 10% id
+        with pytest.raises(PrematureExit):
+            aa_diff._check_alignment_thresholds(positions, 30, 25)
+
+    def test_fails_on_empty(self, fail_loud):
+        PrematureExit, _ = fail_loud
+        with pytest.raises(PrematureExit):
+            aa_diff._check_alignment_thresholds([], 30, 25)
+
+
+# ---------------------------------------------------------------------------
+# _collect_mutations
+# ---------------------------------------------------------------------------
 
 class TestCollectMutations:
 
-    def test_no_mutations(self):
-        positions = [
-            {"ref_pos": 1, "ref_aa": "M", "query_aa": "M", "change_type": "match"},
-            {"ref_pos": 2, "ref_aa": "K", "query_aa": "K", "change_type": "match"},
+    def test_substitution_string(self):
+        pos = [{"change_type": "substitution", "ref_aa": "C", "ref_pos": 2, "query_aa": "G"}]
+        assert aa_diff._collect_mutations(pos, []) == ["C2G"]
+
+    def test_deletion_string(self):
+        pos = [{"change_type": "deletion", "ref_aa": "D", "ref_pos": 4, "query_aa": "-"}]
+        assert aa_diff._collect_mutations(pos, []) == ["D4del"]
+
+    def test_insertion_string(self):
+        ins = [{"after_ref_pos": 2, "inserted_seq": "KL"}]
+        assert aa_diff._collect_mutations([], ins) == ["ins2:KL"]
+
+    def test_frameshift_strings_both_signs(self):
+        fs = [{"ref_pos": 10, "type": "+1"}, {"ref_pos": 20, "type": "-2"}]
+        assert aa_diff._collect_mutations([], [], fs) == ["fs10+1", "fs20-2"]
+
+    def test_ordering_subs_dels_then_ins_then_fs(self):
+        pos = [
+            {"change_type": "substitution", "ref_aa": "C", "ref_pos": 2, "query_aa": "G"},
+            {"change_type": "deletion", "ref_aa": "D", "ref_pos": 4, "query_aa": "-"},
         ]
-        assert _collect_mutations(positions, []) == []
-
-    def test_substitution(self):
-        positions = [
-            {"ref_pos": 1, "ref_aa": "M", "query_aa": "M", "change_type": "match"},
-            {"ref_pos": 2, "ref_aa": "K", "query_aa": "R", "change_type": "substitution"},
-        ]
-        mutations = _collect_mutations(positions, [])
-        assert mutations == ["K2R"]
-
-    def test_deletion(self):
-        positions = [
-            {"ref_pos": 1, "ref_aa": "M", "query_aa": "-", "change_type": "deletion"},
-        ]
-        mutations = _collect_mutations(positions, [])
-        assert mutations == ["M1del"]
-
-    def test_insertion(self):
-        mutations = _collect_mutations([], [{"after_ref_pos": 5, "inserted_seq": "KL"}])
-        assert mutations == ["ins5:KL"]
-
-    def test_frameshift(self):
-        mutations = _collect_mutations([], [], [{"ref_pos": 10, "type": "+1"}])
-        assert mutations == ["fs10+1"]
-
-    def test_frameshift_none(self):
-        # frameshifts=None should be treated the same as empty list
-        mutations = _collect_mutations([], [], None)
-        assert mutations == []
-
-    def test_combined(self):
-        positions = [
-            {"ref_pos": 1, "ref_aa": "M", "query_aa": "V", "change_type": "substitution"},
-            {"ref_pos": 2, "ref_aa": "K", "query_aa": "-", "change_type": "deletion"},
-        ]
-        insertions = [{"after_ref_pos": 2, "inserted_seq": "XY"}]
-        frameshifts = [{"ref_pos": 5, "type": "+2"}]
-        mutations = _collect_mutations(positions, insertions, frameshifts)
-        assert "M1V" in mutations
-        assert "K2del" in mutations
-        assert "ins2:XY" in mutations
-        assert "fs5+2" in mutations
+        ins = [{"after_ref_pos": 5, "inserted_seq": "K"}]
+        fs = [{"ref_pos": 8, "type": "+1"}]
+        assert aa_diff._collect_mutations(pos, ins, fs) == ["C2G", "D4del", "ins5:K", "fs8+1"]
 
 
-class TestWriteTsv:
+# ---------------------------------------------------------------------------
+# _extend_over_clips
+# ---------------------------------------------------------------------------
 
-    def test_header_row(self, tmp_path):
-        path = tmp_path / "out.tsv"
-        _write_tsv([], [], str(path))
-        header = path.read_text().splitlines()[0]
-        assert header == "ref_pos\tref_aa\tquery_aa\tquery_pos\tchange_type\tinserted_before"
+class TestExtendOverClips:
 
-    def test_match_row(self, tmp_path):
-        positions = [{"ref_pos": 1, "ref_aa": "M", "query_aa": "M", "query_pos": 1, "change_type": "match"}]
-        path = tmp_path / "out.tsv"
-        _write_tsv(positions, [], str(path))
-        rows = path.read_text().splitlines()
-        assert rows[1] == "1\tM\tM\t1\tmatch\t-"
+    def test_no_clip_appends_stop_codon(self):
+        prot = "MKLAV"
+        coding = cds_of(prot)
+        query_nt = coding + "TAA"
+        hit = make_hit(0, 5, "+", 0, 15)
+        aa, cds = aa_diff._extend_over_clips(prot, hit, 5, query_nt, [])
+        assert aa == "MKLAV"
+        assert cds == coding + "TAA"
 
-    def test_deletion_row_uses_dash_for_query_pos(self, tmp_path):
-        positions = [{"ref_pos": 1, "ref_aa": "M", "query_aa": "-", "query_pos": None, "change_type": "deletion"}]
-        path = tmp_path / "out.tsv"
-        _write_tsv(positions, [], str(path))
-        rows = path.read_text().splitlines()
-        assert rows[1].split("\t")[3] == "-"
+    def test_intron_is_spliced_out_of_cds(self):
+        prot = "MKLAV"
+        coding = cds_of(prot)                      # 15 nt
+        intron = "GTAAAAAAG"                        # 9 nt, arbitrary content
+        query_nt = coding[:6] + intron + coding[6:] + "TAA"
+        hit = make_hit(0, 5, "+", 0, 6 + 9 + 9)     # nt_end = 24
+        aa, cds = aa_diff._extend_over_clips(prot, hit, 5, query_nt, [(6, 9)])
+        assert aa == "MKLAV"
+        assert cds == coding + "TAA"                # intron gone, stop appended
+        assert str(Seq(cds).translate()).rstrip("*") == prot
 
-    def test_insertion_recorded_in_inserted_before_column(self, tmp_path):
-        positions = [
-            {"ref_pos": 1, "ref_aa": "M", "query_aa": "M", "query_pos": 1, "change_type": "match"},
-            {"ref_pos": 2, "ref_aa": "K", "query_aa": "K", "query_pos": 2, "change_type": "match"},
-        ]
-        insertions = [{"after_ref_pos": 1, "inserted_seq": "XY"}]
-        path = tmp_path / "out.tsv"
-        _write_tsv(positions, insertions, str(path))
-        rows = path.read_text().splitlines()
-        # row for ref_pos 2 should show the insertion that came after ref_pos 1
-        assert rows[2].split("\t")[5] == "XY"
+    def test_cterminal_clip_is_recovered(self):
+        # reference has 6 residues; miniprot only aligned the first 5
+        full = "MKLAVF"
+        coding = cds_of(full)                       # 18 nt
+        query_nt = coding + "TAA"
+        hit = make_hit(0, 5, "+", 0, 15)            # prot_end 5 < ref_len 6
+        aa, cds = aa_diff._extend_over_clips("MKLAV", hit, 6, query_nt, [])
+        assert aa == "MKLAVF"
+        assert cds == coding + "TAA"
 
-    def test_row_count_matches_positions(self, tmp_path):
-        positions = [
-            {"ref_pos": i + 1, "ref_aa": "M", "query_aa": "M", "query_pos": i + 1, "change_type": "match"}
-            for i in range(5)
-        ]
-        path = tmp_path / "out.tsv"
-        _write_tsv(positions, [], str(path))
-        lines = path.read_text().splitlines()
-        assert len(lines) == 6  # 1 header + 5 rows
-
-
-class TestWriteMutations:
-
-    def test_writes_each_mutation(self, tmp_path):
-        path = tmp_path / "mutations.txt"
-        _write_mutations(["K2R", "M1del"], str(path))
-        content = path.read_text()
-        assert "K2R\n" in content
-        assert "M1del\n" in content
-
-    def test_empty_mutations_writes_comment(self, tmp_path):
-        path = tmp_path / "mutations.txt"
-        _write_mutations([], str(path))
-        assert "# No mutations detected" in path.read_text()
+    def test_reverse_strand_returns_coding_orientation(self):
+        coding = cds_of("MKLAV") + "TAA"            # protein-orientation CDS, 18 nt
+        query_nt = str(Seq(coding).reverse_complement())
+        # aligned region (5 codons) maps to [3, 18] on the forward query
+        hit = make_hit(0, 5, "-", 3, 18, nt_len=len(query_nt))
+        aa, cds = aa_diff._extend_over_clips("MKLAV", hit, 5, query_nt, [])
+        assert aa == "MKLAV"
+        assert cds == coding
 
 
-class TestWriteSummary:
+# ---------------------------------------------------------------------------
+# run_aa_diff end-to-end with a protein query (no miniprot needed)
+# ---------------------------------------------------------------------------
 
-    def test_content_written(self, tmp_path):
-        path = tmp_path / "summary.txt"
-        _write_summary("some stats text", str(path))
-        assert path.read_text() == "some stats text\n"
+class TestRunAaDiffProtein:
 
+    def _write_fasta(self, path, seq_id, seq):
+        with open(path, "w") as f:
+            f.write(f">{seq_id}\n{seq}\n")
 
-class TestWriteAlignment:
+    def test_writes_outputs_and_finds_substitution(self, tmp_path):
+        ref = "ACDEFGHIKLMNPQRSTVWY"
+        query = ref[:4] + "K" + ref[5:]      # single substitution at position 5 (G->K)
+        ref_fa = tmp_path / "ref.faa"
+        qry_fa = tmp_path / "query.faa"
+        self._write_fasta(str(ref_fa), "ref", ref)
+        self._write_fasta(str(qry_fa), "query", query)
 
-    def test_creates_file(self, tmp_path):
-        path = tmp_path / "aln.txt"
-        _write_alignment("MKL", "MKL", "ref_id", "query_id", str(path))
-        assert path.exists()
+        aa_diff.run_aa_diff(str(qry_fa), str(ref_fa), "prot", str(tmp_path))
 
-    def test_contains_seq_labels(self, tmp_path):
-        path = tmp_path / "aln.txt"
-        _write_alignment("MKLRST", "MKLRST", "ref_id", "query_id", str(path))
-        content = path.read_text()
-        assert "ref_id" in content
-        assert "query_id" in content
+        for name in ("all-positions.tsv", "mutations.txt", "summary.txt", "alignment.txt"):
+            assert (tmp_path / name).exists()
 
-    def test_contains_sequence_data(self, tmp_path):
-        path = tmp_path / "aln.txt"
-        _write_alignment("MKLRST", "MKXRST", "ref1", "qry1", str(path))
-        content = path.read_text()
-        assert "MKLRST" in content
-        assert "MKXRST" in content
+        muts = (tmp_path / "mutations.txt").read_text().split()
+        assert muts == [f"{ref[4]}5{query[4]}"]   # e.g. F5K (exact letters depend on ref)
 
-    def test_match_line_pipes_for_identical(self, tmp_path):
-        path = tmp_path / "aln.txt"
-        _write_alignment("MKLRST", "MKLRST", "ref1", "qry1", str(path))
-        content = path.read_text()
-        # all positions match, so the match line should be all pipes
-        assert "||||||" in content
+    def test_output_prefix_is_applied(self, tmp_path):
+        ref = "ACDEFGHIKLMNPQRSTVWY"
+        ref_fa = tmp_path / "ref.faa"
+        qry_fa = tmp_path / "query.faa"
+        self._write_fasta(str(ref_fa), "ref", ref)
+        self._write_fasta(str(qry_fa), "query", ref)   # identical -> no mutations
 
-    def test_width_parameter_splits_output(self, tmp_path):
-        # with width=3 and a 6-residue sequence there should be 2 blocks
-        path = tmp_path / "aln.txt"
-        _write_alignment("MKLRST", "MKLRST", "ref1", "qry1", str(path), width=3)
-        # each block writes 5 lines plus a blank line = 6 lines per block, 2 blocks
-        non_empty = [l for l in path.read_text().splitlines() if l.strip()]
-        # at least two separate sequence lines each containing "MKL" and "RST"
-        seq_lines = [l for l in path.read_text().splitlines() if "MKL" in l or "RST" in l]
-        assert len(seq_lines) >= 2
+        aa_diff.run_aa_diff(str(qry_fa), str(ref_fa), "prot", str(tmp_path), output_prefix="sample1-")
+
+        assert (tmp_path / "sample1-summary.txt").exists()
+        assert (tmp_path / "sample1-mutations.txt").read_text().startswith("# No mutations")
 
 
-class TestReportSummary:
+# ---------------------------------------------------------------------------
+# miniprot-backed integration (skips if the binary isn't installed)
+# ---------------------------------------------------------------------------
 
-    def _make_positions(self, n_match=3, n_sub=1, n_del=1):
-        positions = []
-        ref_pos = 0
-        qry_pos = 0
-        for _ in range(n_match):
-            ref_pos += 1
-            qry_pos += 1
-            positions.append({"ref_pos": ref_pos, "ref_aa": "M", "query_aa": "M",
-                               "query_pos": qry_pos, "change_type": "match"})
-        for _ in range(n_sub):
-            ref_pos += 1
-            qry_pos += 1
-            positions.append({"ref_pos": ref_pos, "ref_aa": "K", "query_aa": "R",
-                               "query_pos": qry_pos, "change_type": "substitution"})
-        for _ in range(n_del):
-            ref_pos += 1
-            positions.append({"ref_pos": ref_pos, "ref_aa": "L", "query_aa": "-",
-                               "query_pos": None, "change_type": "deletion"})
-        return positions
+@pytest.mark.skipif(shutil.which("miniprot") is None, reason="miniprot not on PATH")
+class TestMiniprotIntegration:
 
-    def test_aa_mode_returns_text(self, capsys):
-        positions = self._make_positions()
-        mutations = ["K4R", "L5del"]
-        with mock.patch("bit.modules.general.color_text", side_effect=lambda t, _c: t):
-            text = _report_summary(positions, [], mutations, [], "test-prefix")
-        assert isinstance(text, str)
-        assert len(text) > 0
+    REF = (
+        "MSEPLDLNQLAQKIKQWGLELGFQQVGITDTDLSESEPKLQAWLDKQYHGEMDWMARHGMLRARPHELL"
+        "PGTLRVISVRMNYLPANAAFASTLKNPKLGYVSRYALGRDYHKLLRNRLKKLGEMIQQHCVSLNFRPFV"
+        "DSAPILERPLAAKAGLGWTGKHSLILNREAGSFFFLGELLVDIPLPVDQPVEEGCGKCIACMTICPTGA"
+        "IVEPYTVDARRCISYLTIELEGAIPEELRPLMGNRIYGCDDCQLICPWNRYSQLTTEDDFSPRKPLHAP"
+        "ELIELFAWSEEKFLKVTEGSAIRRIGHLRWLRNIAVALGNAPWDETILAALESRKGEHPLLDEHIAWAM"
+        "AQQIERRNACIVEVQLPKKQRLVRVIEKGLPRDA"
+    )
 
-    def test_aa_mode_contains_ref_length(self, capsys):
-        positions = self._make_positions(n_match=3, n_sub=0, n_del=0)
-        with mock.patch("bit.modules.general.color_text", side_effect=lambda t, _c: t):
-            text = _report_summary(positions, [], [], [], "test-prefix")
-        assert "Reference length" in text
-        assert "3" in text
+    def _write(self, path, seq_id, seq):
+        with open(path, "w") as f:
+            f.write(f">{seq_id}\n{seq}\n")
 
-    def test_nt_mode_shows_nt_query_len(self, capsys):
-        positions = self._make_positions(n_match=5, n_sub=0, n_del=0)
-        with mock.patch("bit.modules.general.color_text", side_effect=lambda t, _c: t):
-            text = _report_summary(positions, [], [], [], "test-prefix",
-                                   translated_path="test-inferred-protein.faa",
-                                   nt_query_len=1500)
-        assert "Query nt length" in text
-        assert "1,500" in text
+    def test_clean_nt_query_reconstructs_protein(self, tmp_path):
+        ref_fa = tmp_path / "ref.faa"
+        qry_fa = tmp_path / "query.fna"
+        self._write(str(ref_fa), "ref", self.REF)
+        self._write(str(qry_fa), "q", cds_of(self.REF) + "TAA")
 
-    def test_frameshifts_reported_in_nt_mode(self, capsys):
-        positions = self._make_positions(n_match=5, n_sub=0, n_del=0)
-        frameshifts = [{"ref_pos": 3, "type": "+1"}]
-        with mock.patch("bit.modules.general.color_text", side_effect=lambda t, _c: t):
-            text = _report_summary(positions, [], [], frameshifts, "test-prefix",
-                                   translated_path="test-inferred-protein.faa",
-                                   nt_query_len=1500)
-        assert "Frameshifts" in text
+        aa_diff.run_aa_diff(str(qry_fa), str(ref_fa), "nt", str(tmp_path))
 
-    def test_substitution_count(self, capsys):
-        positions = self._make_positions(n_match=3, n_sub=2, n_del=0)
-        mutations = ["K4R", "K5R"]
-        with mock.patch("bit.modules.general.color_text", side_effect=lambda t, _c: t):
-            text = _report_summary(positions, [], mutations, [], "test-prefix")
-        assert "Substitutions" in text
-        assert "2" in text
+        inferred = (tmp_path / "inferred-protein.faa").read_text().splitlines()[1]
+        assert inferred == self.REF
+        cds = (tmp_path / "inferred-cds.fna").read_text().splitlines()[1]
+        assert str(Seq(cds).translate()).rstrip("*") == self.REF
 
+    def test_intron_query_splices_and_reports(self, tmp_path):
+        coding = cds_of(self.REF)
+        intron = "GT" + "TAATAGTGA" * 14 + "AG"     # 128 nt, canonical GT..AG
+        cut = (len(self.REF) // 2) * 3              # splice at a codon boundary
+        query = coding[:cut] + intron + coding[cut:] + "TAA"
+        ref_fa = tmp_path / "ref.faa"
+        qry_fa = tmp_path / "query.fna"
+        self._write(str(ref_fa), "ref", self.REF)
+        self._write(str(qry_fa), "q", query)
 
-# 30-AA test protein and a query with two substitutions (L3V, G9S).
-# The NT sequence encodes the same query protein (30 codons + stop = 93 nt).
-_REF_PROTEIN = "MKLRSTAEGVDNPQHCWFYIAKLTPFWGRD"
-_QUERY_AA    = "MKVRSTAESVDNPQHCWFYIAKLTPFWGRD"   # L3V, G9S vs ref
-_QUERY_NT    = (                                    # encodes _QUERY_AA
-    "ATGAAAGTTCGTTCTACCGCTGAAAGTGTTGATAATCCTCAACATTGTTGGTTTTATATT"
-    "GCTAAACTGACCCCTTTTTGGGGTCGTGATTAA"
-)
+        aa_diff.run_aa_diff(str(qry_fa), str(ref_fa), "nt", str(tmp_path))
 
-class TestRunAaDiffAaMode:
-
-    def _write_fastas(self, tmp_path, ref_seq=_REF_PROTEIN, qry_seq=_QUERY_AA,
-                     ref_id="ref", qry_id="query"):
-        ref = tmp_path / "ref.faa"
-        ref.write_text(f">{ref_id}\n{ref_seq}\n")
-        qry = tmp_path / "query.faa"
-        qry.write_text(f">{qry_id}\n{qry_seq}\n")
-        return str(ref), str(qry)
-
-    def test_all_output_files_created(self, tmp_path):
-        ref, qry = self._write_fastas(tmp_path)
-        prefix = str(tmp_path / "out")
-        run_aa_diff(qry, ref, "aa", prefix)
-        assert (tmp_path / "out-all-positions.tsv").exists()
-        assert (tmp_path / "out-mutations.txt").exists()
-        assert (tmp_path / "out-summary.txt").exists()
-        assert (tmp_path / "out-alignment.txt").exists()
-
-    def test_expected_substitutions_detected(self, tmp_path):
-        ref, qry = self._write_fastas(tmp_path)
-        prefix = str(tmp_path / "out")
-        run_aa_diff(qry, ref, "aa", prefix)
-        mutations = (tmp_path / "out-mutations.txt").read_text().splitlines()
-        assert "L3V" in mutations
-        assert "G9S" in mutations
-
-    def test_no_mutations_for_identical_seqs(self, tmp_path):
-        ref, qry = self._write_fastas(tmp_path, qry_seq=_REF_PROTEIN)
-        prefix = str(tmp_path / "out")
-        run_aa_diff(qry, ref, "aa", prefix)
-        assert "# No mutations detected" in (tmp_path / "out-mutations.txt").read_text()
-
-    def test_tsv_row_count_equals_ref_length(self, tmp_path):
-        ref, qry = self._write_fastas(tmp_path)
-        prefix = str(tmp_path / "out")
-        run_aa_diff(qry, ref, "aa", prefix)
-        lines = (tmp_path / "out-all-positions.tsv").read_text().splitlines()
-        assert len(lines) == len(_REF_PROTEIN) + 1  # header + one row per ref residue
-
-    def test_summary_reports_ref_length(self, tmp_path):
-        ref, qry = self._write_fastas(tmp_path)
-        prefix = str(tmp_path / "out")
-        run_aa_diff(qry, ref, "aa", prefix)
-        summary = (tmp_path / "out-summary.txt").read_text()
-        assert "Reference length" in summary
-        assert str(len(_REF_PROTEIN)) in summary
-
-    def test_only_substitutions_no_indels(self, tmp_path):
-        ref, qry = self._write_fastas(tmp_path)
-        prefix = str(tmp_path / "out")
-        run_aa_diff(qry, ref, "aa", prefix)
-        mutations = (tmp_path / "out-mutations.txt").read_text().splitlines()
-        assert not any("del" in m or m.startswith("ins") for m in mutations)
-
-
-class TestRunAaDiffNtMode:
-
-    def _write_fastas(self, tmp_path):
-        ref = tmp_path / "ref.faa"
-        ref.write_text(f">ref\n{_REF_PROTEIN}\n")
-        qry = tmp_path / "query.fna"
-        qry.write_text(f">query_nt\n{_QUERY_NT}\n")
-        return str(ref), str(qry)
-
-    def test_all_output_files_created(self, tmp_path):
-        ref, qry = self._write_fastas(tmp_path)
-        prefix = str(tmp_path / "out")
-        run_aa_diff(qry, ref, "nt", prefix)
-        assert (tmp_path / "out-all-positions.tsv").exists()
-        assert (tmp_path / "out-mutations.txt").exists()
-        assert (tmp_path / "out-summary.txt").exists()
-        assert (tmp_path / "out-alignment.txt").exists()
-        assert (tmp_path / "out-inferred-protein.faa").exists()
-        assert (tmp_path / "out-inferred-cds.fasta").exists()
-
-    def test_expected_substitutions_detected(self, tmp_path):
-        ref, qry = self._write_fastas(tmp_path)
-        prefix = str(tmp_path / "out")
-        run_aa_diff(qry, ref, "nt", prefix)
-        mutations = (tmp_path / "out-mutations.txt").read_text().splitlines()
-        assert "L3V" in mutations
-        assert "G9S" in mutations
+        inferred = (tmp_path / "inferred-protein.faa").read_text().splitlines()[1]
+        assert inferred == self.REF
+        cds = (tmp_path / "inferred-cds.fna").read_text().splitlines()[1]
+        assert len(cds) == len(self.REF) * 3 + 3   # spliced CDS + stop, intron removed
+        assert "Spliced-out introns" in (tmp_path / "summary.txt").read_text()
