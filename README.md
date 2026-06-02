@@ -13,7 +13,7 @@
     * [NCBI/GTDB-related](#ncbigtdb-related)
     * [Coverage/mapping-related](#coveragemapping-related)
     * [Sequence manipulation / read generation](#sequence-manipulation--read-generation)
-    * [Sequence searching](#sequence-searching)
+    * [Sequence searching/comparing](#sequence-searchingcomparing)
     * [Fasta utilities](#fasta-utilities)
     * [Assembly-related](#assembly-related)
     * [GenBank-format utilities](#genbank-format-utilities)
