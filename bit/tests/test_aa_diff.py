@@ -6,11 +6,7 @@ from bit.modules import aa_diff
 from bit.modules import general
 
 
-# ---------------------------------------------------------------------------
-# helpers / fixtures
-# ---------------------------------------------------------------------------
-
-# one fixed codon per residue, for building queries whose translation is known
+# one fixed codon per residue, so we can build queries whose translation is known
 _CODON = {
     "A": "GCT", "R": "CGT", "N": "AAT", "D": "GAT", "C": "TGT", "Q": "CAA",
     "E": "GAA", "G": "GGT", "H": "CAT", "I": "ATT", "L": "CTT", "K": "AAA",
@@ -58,10 +54,6 @@ def fail_loud(monkeypatch):
     monkeypatch.setattr(general, "notify_premature_exit", fake_exit)
     return PrematureExit, messages
 
-
-# ---------------------------------------------------------------------------
-# _parse_cs_tag  -- the core, where all the hard-won bugs lived
-# ---------------------------------------------------------------------------
 
 class TestParseCsTag:
 
@@ -156,7 +148,7 @@ class TestParseCsTag:
             aa_diff._parse_cs_tag(":6XYZ", self.REF, 0)
 
 
-# A real miniprot cs for TP53 genomic vs its protein: phase-0/1/2 introns all
+# a real miniprot cs for TP53 genomic vs its protein: phase-0/1/2 introns all
 # present, no frameshifts. The whole 393-aa protein must reconstruct exactly.
 TP53 = (
     "MEEPQSDPSVEPPLSQETFSDLWKLLPENNVLSPLPSQAMDDLMLSPDDIEQWFTEDPGPDEAPRMPEAA"
@@ -178,10 +170,6 @@ def test_parse_cs_tag_real_tp53():
     assert fs == []
     assert len(introns) == 9
 
-
-# ---------------------------------------------------------------------------
-# _parse_alignment
-# ---------------------------------------------------------------------------
 
 class TestParseAlignment:
 
@@ -220,10 +208,6 @@ class TestParseAlignment:
         assert insertions == [{"after_ref_pos": 5, "inserted_seq": "G"}]
 
 
-# ---------------------------------------------------------------------------
-# _align + _get_gapped_seqs (tested together on clear-cut cases)
-# ---------------------------------------------------------------------------
-
 class TestGappedSeqs:
 
     def _gapped(self, ref, query):
@@ -247,10 +231,6 @@ class TestGappedSeqs:
         assert r == "ACDEFG--"
         assert q == "ACDEFGHI"
 
-
-# ---------------------------------------------------------------------------
-# _calc_stats_from_positions
-# ---------------------------------------------------------------------------
 
 def _positions(change_types):
     out = []
@@ -286,10 +266,6 @@ class TestCalcStats:
         assert s["perc_ref_cov"] == 0.0
 
 
-# ---------------------------------------------------------------------------
-# _check_alignment_thresholds
-# ---------------------------------------------------------------------------
-
 class TestThresholds:
 
     def test_passes_when_above_thresholds(self, fail_loud):
@@ -307,10 +283,6 @@ class TestThresholds:
         with pytest.raises(PrematureExit):
             aa_diff._check_alignment_thresholds([], 30, 25)
 
-
-# ---------------------------------------------------------------------------
-# _collect_mutations
-# ---------------------------------------------------------------------------
 
 class TestCollectMutations:
 
@@ -339,10 +311,6 @@ class TestCollectMutations:
         fs = [{"ref_pos": 8, "type": "+1"}]
         assert aa_diff._collect_mutations(pos, ins, fs) == ["C2G", "D4del", "ins5:K", "fs8+1"]
 
-
-# ---------------------------------------------------------------------------
-# _extend_over_clips
-# ---------------------------------------------------------------------------
 
 class TestExtendOverClips:
 
@@ -386,9 +354,67 @@ class TestExtendOverClips:
         assert cds == coding
 
 
-# ---------------------------------------------------------------------------
-# run_aa_diff end-to-end with a protein query (no miniprot needed)
-# ---------------------------------------------------------------------------
+def _hit_dict(**over):
+    """a parsed-hit dict with sensible defaults for exercising the table writer"""
+    h = {
+        "query_seq": "q", "nt_start": 0, "nt_end": 1137, "strand": "+",
+        "score": 700, "aln_aa_len": 379, "perc_id": 100.0, "perc_ref_cov": 100.0,
+        "n_total_mut": 0, "n_sub": 0, "n_del_runs": 0, "n_del_aa": 0,
+        "n_ins": 0, "n_ins_aa": 0, "n_frameshifts": 0, "n_stops": 0,
+        "introns": [], "cds_seq": "ATGAAA", "translated_aa": "MK",
+    }
+    h.update(over)
+    return h
+
+
+class TestWriteMiniprotHitsTable:
+
+    def _read(self, path):
+        rows = [line.split("\t") for line in path.read_text().splitlines()]
+        header = rows[0]
+        return header, [dict(zip(header, r)) for r in rows[1:]]
+
+    def test_header_and_row_count(self, tmp_path, capsys):
+        hits = [_hit_dict(), _hit_dict(strand="-", score=300)]
+        out = tmp_path / "alignment-summaries.tsv"
+        aa_diff._write_miniprot_hits_table(hits, str(out))
+
+        header, data = self._read(out)
+        assert header == ["score_rank", "query_seq", "nt_start", "nt_end", "strand",
+                          "score", "aln_aa_len", "perc_id", "perc_ref_cov",
+                          "total_mutations", "substitutions", "deletions", "insertions",
+                          "frameshifts", "introns", "stops", "inferred_cds", "inferred_protein"]
+        assert len(data) == 2
+        # the writer enumerates in the order it's given (ranking happens upstream)
+        assert [d["score_rank"] for d in data] == ["1", "2"]
+        # and prints a notice naming the count
+        assert "2 miniprot alignments found" in capsys.readouterr().out
+
+    def test_compound_columns_are_formatted(self, tmp_path):
+        hits = [_hit_dict(
+            n_del_runs=1, n_del_aa=2, n_ins=1, n_ins_aa=3, n_frameshifts=2,
+            introns=[(570, 130), (900, 88)], perc_id=98.7, perc_ref_cov=95.4,
+            cds_seq="ATGAAACTT", translated_aa="MKL",
+        )]
+        out = tmp_path / "tbl.tsv"
+        aa_diff._write_miniprot_hits_table(hits, str(out))
+        _, data = self._read(out)
+        row = data[0]
+        assert row["deletions"] == "1 (2 AAs total)"
+        assert row["insertions"] == "1 (3 AAs total)"
+        assert row["introns"] == "2 (218 NTs total)"      # 130 + 88
+        assert row["frameshifts"] == "2"
+        assert row["perc_id"] == "98.7"
+        assert row["perc_ref_cov"] == "95.4"
+        assert row["inferred_cds"] == "ATGAAACTT"
+        assert row["inferred_protein"] == "MKL"
+
+    def test_no_introns_renders_zero(self, tmp_path):
+        out = tmp_path / "tbl.tsv"
+        aa_diff._write_miniprot_hits_table([_hit_dict(introns=[])], str(out))
+        _, data = self._read(out)
+        assert data[0]["introns"] == "0 (0 NTs total)"
+
 
 class TestRunAaDiffProtein:
 
@@ -424,10 +450,6 @@ class TestRunAaDiffProtein:
         assert (tmp_path / "sample1-summary.txt").exists()
         assert (tmp_path / "sample1-mutations.txt").read_text().startswith("# No mutations")
 
-
-# ---------------------------------------------------------------------------
-# miniprot-backed integration (skips if the binary isn't installed)
-# ---------------------------------------------------------------------------
 
 @pytest.mark.skipif(shutil.which("miniprot") is None, reason="miniprot not on PATH")
 class TestMiniprotIntegration:
@@ -475,3 +497,49 @@ class TestMiniprotIntegration:
         cds = (tmp_path / "inferred-cds.fna").read_text().splitlines()[1]
         assert len(cds) == len(self.REF) * 3 + 3   # spliced CDS + stop, intron removed
         assert "Spliced-out introns" in (tmp_path / "summary.txt").read_text()
+
+    def test_multi_hit_writes_summaries_table(self, tmp_path):
+        coding = cds_of(self.REF)
+        # two copies of the CDS -> two loci -> two hits -> a summaries table
+        query = coding + "TAA" + "N" * 60 + coding + "TAA"
+        ref_fa = tmp_path / "ref.faa"
+        qry_fa = tmp_path / "query.fna"
+        self._write(str(ref_fa), "ref", self.REF)
+        self._write(str(qry_fa), "q", query)
+
+        aa_diff.run_aa_diff(str(qry_fa), str(ref_fa), "nt", str(tmp_path))
+
+        table = tmp_path / "alignment-summaries.tsv"
+        assert table.exists()
+        rows = [line.split("\t") for line in table.read_text().splitlines()]
+        assert len(rows) == 3                       # header + 2 hits
+        assert [r[0] for r in rows[1:]] == ["1", "2"]
+        # the primary outputs for the top hit are still produced
+        assert (tmp_path / "inferred-protein.faa").exists()
+        assert (tmp_path / "summary.txt").exists()
+
+
+class TestWriteTsv:
+
+    def _rows(self, path):
+        lines = path.read_text().splitlines()
+        header = lines[0].split("\t")
+        return header, [dict(zip(header, ln.split("\t"))) for ln in lines[1:]]
+
+    def test_insertion_anchor_matches_mutations_file(self, tmp_path):
+        # insertion after ref residue 3 -> mutations.txt writes ins3, so TSV row 3
+        positions, insertions = aa_diff._parse_alignment("ACD--EFG", "ACDMMEFG")
+        out = tmp_path / "all-positions.tsv"
+        aa_diff._write_tsv(positions, insertions, str(out))
+        header, rows = self._rows(out)
+        assert "inserted_after" in header
+        by_pos = {r["ref_pos"]: r["inserted_after"] for r in rows}
+        assert by_pos["3"] == "MM"      # same anchor number as ins3:MM
+        assert by_pos["4"] == "-"
+
+    def test_trailing_insertion_is_visible(self, tmp_path):
+        positions, insertions = aa_diff._parse_alignment("ACDEFG--", "ACDEFGMM")
+        out = tmp_path / "all-positions.tsv"
+        aa_diff._write_tsv(positions, insertions, str(out))
+        _, rows = self._rows(out)
+        assert rows[-1]["inserted_after"] == "MM"   # after the last residue (ins6)

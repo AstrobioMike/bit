@@ -641,11 +641,11 @@ def _write_tsv(positions, insertions, tsv_path):
     ins_lookup = {ins["after_ref_pos"]: ins["inserted_seq"] for ins in insertions}
 
     with open(tsv_path, "w") as f:
-        f.write("ref_pos\tref_aa\tquery_aa\tquery_pos\tchange_type\tinserted_before\n")
+        f.write("ref_pos\tref_aa\tquery_aa\tquery_pos\tchange_type\tinserted_after\n")
         for p in positions:
             qpos_str = str(p["query_pos"]) if p["query_pos"] is not None else "-"
-            ins_before = ins_lookup.get(p["ref_pos"] - 1, "-")
-            f.write(f"{p['ref_pos']}\t{p['ref_aa']}\t{p['query_aa']}\t{qpos_str}\t{p['change_type']}\t{ins_before}\n")
+            ins_after = ins_lookup.get(p["ref_pos"], "-")
+            f.write(f"{p['ref_pos']}\t{p['ref_aa']}\t{p['query_aa']}\t{qpos_str}\t{p['change_type']}\t{ins_after}\n")
 
 
 def _write_mutations(mutations, mut_path):
