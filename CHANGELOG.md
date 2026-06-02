@@ -14,7 +14,7 @@
 
 -->
 
-## v2.1.0 (NOT YET RELEASED)
+## v2.1.0 (02-Jun-2026)
 
 ### Added
 - `bit aa-diff` for comparing an input nucleotide or protein sequence against a reference protein and identifying amino-acid mutations
