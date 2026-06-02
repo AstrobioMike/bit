@@ -227,12 +227,14 @@ def _write_miniprot_hits_table(parsed_hits, tsv_path):
 
     headers = ["score_rank", "query_seq", "nt_start", "nt_end", "strand", "score",
                "aln_aa_len", "perc_id", "perc_ref_cov", "total_mutations", "substitutions",
-               "deletions", "insertions", "frameshifts", "stops",
+               "deletions", "insertions", "frameshifts", "introns", "stops",
                "inferred_cds", "inferred_protein"]
 
     with open(tsv_path, "w") as f:
         f.write("\t".join(headers) + "\n")
         for i, h in enumerate(parsed_hits, 1):
+            n_introns = len(h["introns"])
+            intron_nt = sum(length for _, length in h["introns"])
             row = [
                 str(i),
                 h["query_seq"],
@@ -248,6 +250,7 @@ def _write_miniprot_hits_table(parsed_hits, tsv_path):
                 f"{h['n_del_runs']} ({h['n_del_aa']} AAs total)",
                 f"{h['n_ins']} ({h['n_ins_aa']} AAs total)",
                 str(h["n_frameshifts"]),
+                f"{n_introns} ({intron_nt} NTs total)",
                 str(h["n_stops"]),
                 h.get("cds_seq", ""),
                 h["translated_aa"],
@@ -331,7 +334,7 @@ def _extend_over_clips(translated_aa, hit, ref_len, query_nt_seq, introns):
 
     # including the terminating stop codon if the query has one immediately after
         # the CDS (the protein deliberately stops before it)
-    # this also adds the stop in the no-clip case, where the CDS otherwise ends 
+    # this also adds the stop in the no-clip case, where the CDS otherwise ends
         # at the last aligned codon
     cds_end = b + len(c_ext_nt)
     next_codon = coding[cds_end : cds_end + 3]
@@ -358,13 +361,23 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
       fN        +1 frameshift: 1 extra nt N skipped
       bNN       +2 frameshift: 2 extra nts NN skipped
 
+    an intron can also fall *inside* a codon (miniprot's phase-1/phase-2 introns), in
+    which case the single residue's codon is split across the intron and written as
+    three tokens in a row:
+      *<head>X ~ddNNNaa -<tail>
+    where <head> is the 1-2 lowercase nt before the intron, X is the ref AA, and <tail>
+    is the remaining 2-1 lowercase nt after it. head + tail is the full codon, so here
+    the leading '*' is NOT a 3-nt substitution and the trailing '-<tail>' is NOT an
+    insertion -- they are the two halves of one split codon (phase-1: 1 nt + 2 nt,
+    phase-2: 2 nt + 1 nt)
+
     it returns (translated_seq, frameshifts, introns) where:
       - 'frameshifts' is a list of dicts with keys ref_pos (1-based) and type ('+1'/'+2')
       - 'introns' is a list of (offset, length) tuples giving each intron's start (in
         query-nt, relative to the start of the aligned region) and length, used
         downstream to splice the inferred CDS
 
-    the parser also fails annoyingly if any part of the cs tag is not recognized (as a sort of failsafe)
+    the parser also fails annoyingly if any part of the cs tag is not recognized (as a failsafe)
     """
 
     import re
@@ -373,13 +386,13 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
 
     CS_OP = re.compile(
         r":(\d+)"                       # :N  matches
-        r"|\*([acgt]{3})([A-Z])"        # *cccX: 3-nt nt-query codon (lowercase) + ref protein AA (uppercase)
+        r"|\*([acgt]{1,3})([A-Z])"      # *cccX sub (3 nt), or 1-2 nt = head of an intron-split codon
         r"|\+([A-Z]+)"                  # +SEQ: uppercase ref AA(s) absent from query = DELETION
         r"|-([A-Z]+)"                   # -SEQ: uppercase form, not emitted by miniprot in practice
-        r"|-([acgt]+)"                  # -nt(s): lowercase query nt absent from ref = INSERTION (+ fs remainder)
+        r"|-([acgt]+)"                  # -nt(s): lowercase = INSERTION, or the tail of a split codon
         r"|~[acgt]{2}(\d+)[acgt]{2}"    # ~ddNNNaa intron: donor + length + acceptor, e.g. ~gt130ag
-        r"|(f[acgt])"                   # fN  +1 frameshift (alternative encoding)
-        r"|(b[acgt]{2})"                # bNN +2 frameshift (alternative encoding)
+        r"|(f[acgt])"                   # fN  +1 frameshift
+        r"|(b[acgt]{2})"                # bNN +2 frameshift
     )
 
     translated = []
@@ -388,6 +401,7 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
     ref_pos = ref_start
     qry_nt = 0 # query-nt cursor within the aligned region (for intron offsets)
     pos = 0 # cs-string cursor, for the coverage check
+    pending_split = None # lowercase head nt when a codon is split by an intron
 
     for m in CS_OP.finditer(cs_string):
 
@@ -407,11 +421,15 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
             ref_pos += n
             qry_nt += 3 * n
         elif subst_codon:
-            # translating the query codon to get what the nucleotide query encodes
-            qry_aa = str(Seq(subst_codon.upper()).translate())
-            translated.append(qry_aa)
-            ref_pos += 1
-            qry_nt += 3
+            if len(subst_codon) == 3:
+                # normal substitution: translate the query codon to get its AA
+                translated.append(str(Seq(subst_codon.upper()).translate()))
+                ref_pos += 1
+                qry_nt += 3
+            else:
+                # 1-2 nt = head of a codon split by an intron; defer until we see the tail
+                pending_split = subst_codon
+                qry_nt += len(subst_codon)
         elif plus_del:
             # '+' + uppercase ref AA(s) = residues missing from the query = deletion
             ref_pos += len(plus_del) # consumes ref residues, but no query advance
@@ -419,15 +437,23 @@ def _parse_cs_tag(cs_string, ref_seq, ref_start):
             # '-' + uppercase: not emitted by miniprot in practice; advance to be safe
             ref_pos += len(minus_seq)
         elif fs_del:
-            # '-' + lowercase nt = query sequence absent from ref = insertion (+ fs remainder)
-            nt = fs_del
-            n_codons = len(nt) // 3
-            if n_codons:
-                translated.append(str(Seq(nt[:n_codons * 3].upper()).translate()))
-            rem = len(nt) % 3
-            if rem:
-                frameshifts.append({"ref_pos": ref_pos + 1, "type": f"+{rem}"})
-            qry_nt += len(nt) # an insertion consumes query nts, but no ref advance
+            if pending_split is not None:
+                # second half of an intron-split codon: head + tail is the full codon
+                codon = (pending_split + fs_del).upper()
+                translated.append(str(Seq(codon).translate()))
+                ref_pos += 1
+                qry_nt += len(fs_del)
+                pending_split = None
+            else:
+                # '-' + lowercase nt = query sequence absent from ref = insertion (+ fs remainder)
+                nt = fs_del
+                n_codons = len(nt) // 3
+                if n_codons:
+                    translated.append(str(Seq(nt[:n_codons * 3].upper()).translate()))
+                rem = len(nt) % 3
+                if rem:
+                    frameshifts.append({"ref_pos": ref_pos + 1, "type": f"+{rem}"})
+                qry_nt += len(nt) # an insertion consumes query nts, but no ref advance
         elif intron_len:
             # intron: no residue and no ref advance; recording so the inferred CDS can be spliced
             introns.append((qry_nt, int(intron_len)))
