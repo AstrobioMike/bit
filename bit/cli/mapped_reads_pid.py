@@ -8,7 +8,7 @@ from bit.modules.mapped_reads_pid import (get_mapped_reads_pids,
 def build_parser(parent_subparsers=None):
 
     desc = """
-        This script takes an input bam file and generates percent-identity information for mapped reads
+        This program takes an input bam file and generates percent-identity information for mapped reads
         based on edit distance (using the NM field) and total alignment length. By default,
         it just prints out some summary stats. Specify an output file if you also want it to write out the
         percent identities for each mapped read. [bold]TO ALSO GET[/bold] coverage and detection information, use

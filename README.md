@@ -83,7 +83,11 @@ You can see an overview of available programs like below by running `bit` by its
 
 ---
 
-#### Sequence searching
+#### Sequence searching/comparing
+
+| Program | Purpose |
+| ------- | ------- |
+| `bit aa-diff` | compare a query sequence to an amino-acid reference and report differences |
 
 ##### Program: `bit ez-screen`
 | Subcommand | Purpose |

@@ -8,7 +8,7 @@ from bit.modules.general import report_message, notify_premature_exit, is_gzippe
 def build_parser(parent_subparsers=None):
 
     desc = """
-        This script generates whole-reference and contig-level detection and coverage info
+        This program generates whole-reference and contig-level detection and coverage info
         given the input reference fasta(s) and a bam file AND/OR a mosdepth-produced per-base.bed.gz file.
         If providing a bam file, it will also report mean and median percent ID values of mapped reads to
         each input reference and contig.

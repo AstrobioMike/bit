@@ -9,7 +9,7 @@ from bit.cli.common import (CustomRichHelpFormatter,
 def build_parser(parent_subparsers=None):
 
     desc = """
-        This script outputs general summary stats for assemblies provided in fasta
+        This program outputs general summary stats for assemblies provided in fasta
         format. If an output file is specified, it writes the results there as a tsv.
         Otherwise it prints the results to the screen. "Ambiguous characters" reports
         total counts of any letter that is not "A", "T", "C", or "G"..
