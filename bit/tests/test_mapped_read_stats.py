@@ -1,5 +1,5 @@
 import pysam # type: ignore
-from bit.modules.mapped_reads_pid import (get_mapped_reads_pids,
+from bit.modules.mapped_read_stats import (get_mapped_reads_pids,
                                               get_summary_stats,
                                               PidStats)
 

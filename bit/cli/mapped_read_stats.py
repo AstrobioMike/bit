@@ -1,23 +1,21 @@
 import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
-from bit.modules.mapped_reads_pid import (get_mapped_reads_pids,
+from bit.modules.mapped_read_stats import (get_mapped_reads_pids,
                                               get_summary_stats)
 
 
 def build_parser(parent_subparsers=None):
 
     desc = """
-        This program takes an input bam file and generates percent-identity information for mapped reads
-        based on edit distance (using the NM field) and total alignment length. By default,
-        it just prints out some summary stats. Specify an output file if you also want it to write out the
-        percent identities for each mapped read. [bold]TO ALSO GET[/bold] coverage and detection information, use
-        `bit cov-stats` instead.
+        This program takes an input bam file and generates percent-identity and clipping information for
+        mapped reads. By default, it just prints out some summary stats. Specify an output file if you also want it
+        to write out per-read info. [bold]TO GET[/bold] coverage and detection information, use `bit cov-stats` instead.
         """
 
     if parent_subparsers is not None:
         parser = parent_subparsers.add_parser(
-            "mapped-reads-pid",
+            "mapped-read-stats",
             description=desc,
             formatter_class=CustomRichHelpFormatter,
             add_help=False,
@@ -25,7 +23,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit mapped-reads-pid input.bam`",
+            epilog="Ex. usage: `bit mapped-read-stats input.bam`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )
@@ -43,7 +41,7 @@ def build_parser(parent_subparsers=None):
         "-o",
         "--output-tsv",
         metavar="<FILE>",
-        help='Name of output tsv if wanting per-read percent identities written out',
+        help='Name of output tsv if wanting per-read info written out',
     )
 
     optional.add_argument(
@@ -51,7 +49,6 @@ def build_parser(parent_subparsers=None):
         action="store_true",
         help="Also calculate percent identities for secondary and supplementary (non-primary) alignments",
     )
-
 
     add_help(optional)
 
@@ -70,38 +67,44 @@ def main():
     args = parser.parse_args()
 
     store_reads = bool(args.output_tsv)
-    ref_read_pids, pid_stats = get_mapped_reads_pids(args.input_bam, include_non_primary=args.include_non_primary, store_read_pids=store_reads)
 
-    print_summary_stats(pid_stats)
+    ref_read_pids, pid_stats, clip_agg = get_mapped_reads_pids(
+        args.input_bam, include_non_primary=args.include_non_primary,
+        store_read_pids=store_reads)
+
+    print_summary_stats(pid_stats, clip_agg)
 
     if args.output_tsv:
-        write_out_read_pids(args.output_tsv, ref_read_pids)
+        write_out_read_stats(args.output_tsv, ref_read_pids)
 
 
-def print_summary_stats(pid_stats):
+def print_summary_stats(pid_stats, clip_agg=None):
 
-    mean, summary_stats = get_summary_stats(pid_stats)
+    summary_stats = get_summary_stats(pid_stats, clip_agg)
 
     def fmt(val):
         s = f"{val:.2f}"
         return s.rstrip("0").rstrip(".")
 
-    print(f"\n    Mean percent identity of mapped reads: {fmt(mean)}%\n")
+    print()
 
     for name, val in summary_stats:
         value = val if isinstance(val, str) else fmt(val)
-
-        print(f"        {name:<{20}}{value}")
+        print(f"        {name:<{24}}{value}")
 
     print()
 
 
-def write_out_read_pids(output_tsv, ref_read_pids):
+def write_out_read_stats(output_tsv, ref_read_pids):
 
     with open(output_tsv, "w") as output:
-        output.write("contig\tread_ID\tpercent_identity\n")
-        for refname, data_list in ref_read_pids.items():
-            for read_id, pid in data_list:
-                output.write(f"{refname}\t{read_id}\t{pid:.2f}\n")
 
-    print(f"    Per-read percent identities were written to: '{output_tsv}'\n")
+        output.write("contig\tread_ID\tread_length\taligned_bases\t"
+                     "soft_clipped\thard_clipped\tclipped_percent\tpercent_identity\n")
+
+        for refname, data_list in ref_read_pids.items():
+            for read_id, pid, aln, total_len, soft, hard, frac in data_list:
+                output.write(f"{refname}\t{read_id}\t{total_len}\t{aln}\t"
+                             f"{soft}\t{hard}\t{frac * 100:.2f}\t{pid:.2f}\n")
+
+    print(f"    Per-read stats were written to: '{output_tsv}'\n")

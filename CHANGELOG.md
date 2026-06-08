@@ -14,6 +14,14 @@
 
 -->
 
+## v2.2.0 (NOT RELEASED YET)
+
+### Changed
+- `bit mapped-reads-pid` -> `bit mapped-read-stats` 
+  - now also outputs read length, alignment, and clipping information in the summary and per-read tsv
+
+---
+
 ## v2.1.0 (02-Jun-2026)
 
 ### Added
