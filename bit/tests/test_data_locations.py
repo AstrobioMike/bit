@@ -1,6 +1,6 @@
 import os
 from unittest import mock
-import pytest
+import pytest # type: ignore
 
 import bit.modules.data_locations as mod
 from bit.modules.data_locations import (
