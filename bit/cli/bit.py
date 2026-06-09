@@ -49,11 +49,11 @@ PROGRAM_GROUPS = [
         "programs": [
             {
                 "name": "cov-analyzer",
-                "desc": "analyze coverage patterns from a bam and reference fasta to identify regions of relatively higher/lower coverage",
+                "desc": "analyze coverage patterns to identify regions of relatively higher/lower coverage",
             },
             {
                 "name": "cov-stats",
-                "desc": "get detection, coverage, and mean percent ID for single or multiple references given fasta(s) and a bam",
+                "desc": "get detection, coverage, and mean percent ID for references given fasta(s) and a bam",
             },
             {
                 "name": "mapped-read-stats",
