@@ -102,14 +102,15 @@ def write_out_read_stats(output_tsv, ref_read_pids):
 
     with open(output_tsv, "w") as output:
 
-        output.write("contig\tread_ID\tread_length\tread_aligned_bases\t"
-                     "soft_clipped\thard_clipped\tclipped_percent\t"
+        output.write("contig\tread_ID\tread_length\tread_aligned_bases\tref_start\t"
+                     "ref_end\tsoft_clipped\thard_clipped\tclipped_percent\t"
                      "percent_identity_gap_aware\tpercent_identity_gap_compressed\n")
 
         for refname, data_list in ref_read_pids.items():
-            for read_id, pid, gc_pid, aln, total_len, soft, hard, frac in data_list:
-                output.write(f"{refname}\t{read_id}\t{total_len}\t{aln}\t"
-                             f"{soft}\t{hard}\t{frac * 100:.2f}\t"
+            for (read_id, pid, gc_pid, aln, total_len, soft, hard, frac,
+                 ref_start, ref_end) in data_list:
+                output.write(f"{refname}\t{read_id}\t{total_len}\t{aln}\t{ref_start}\t"
+                             f"{ref_end}\t{soft}\t{hard}\t{frac * 100:.2f}\t"
                              f"{pid:.2f}\t{gc_pid:.2f}\n")
 
     print(f"    Per-read stats were written to: '{output_tsv}'\n")

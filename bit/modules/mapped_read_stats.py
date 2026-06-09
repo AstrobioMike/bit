@@ -249,9 +249,13 @@ def get_mapped_reads_pids(input_bam, include_non_primary=False, store_read_pids=
                 clipped_frac = (b["clipped"] / b["full_read_length"]
                                 if b["full_read_length"] else 0.0)
 
+                ref_start = read.reference_start + 1 # 1-based inclusive
+                ref_end = read.reference_end
+
                 ref_read_pids[ref_name_map[read.reference_id]].append(
                     (read_id, pid, gc_pid, b["query_aligned"], b["full_read_length"],
-                     b["soft_clipped"], b["hard_clipped"], clipped_frac)
+                     b["soft_clipped"], b["hard_clipped"], clipped_frac,
+                     ref_start, ref_end)
                 )
 
         return ref_read_pids, pid_stats, pid_gc_stats, clip_agg
