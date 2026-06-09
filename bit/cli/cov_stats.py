@@ -10,8 +10,8 @@ def build_parser(parent_subparsers=None):
     desc = """
         This program generates whole-reference and contig-level detection and coverage info
         given the input reference fasta(s) and a bam file AND/OR a mosdepth-produced per-base.bed.gz file.
-        If providing a bam file, it will also report mean and median percent ID values of mapped reads to
-        each input reference and contig.
+        If providing a bam file, it will also report mean and median percent ID values (gap-compressed) of
+        mapped reads to each input reference and contig.
         """
 
     if parent_subparsers is not None:

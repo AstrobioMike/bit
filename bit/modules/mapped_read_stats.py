@@ -87,23 +87,21 @@ class ClipAggregate:
     """Primary-only running totals for clip/alignment reporting."""
 
     __slots__ = ("n_reads", "total_aligned", "total_soft", "total_hard",
-                 "total_read_len", "clip_frac_sum", "length_stats")
+                 "clip_frac_sum", "length_stats")
 
     def __init__(self):
         self.n_reads = 0
         self.total_aligned = 0
         self.total_soft = 0
         self.total_hard = 0
-        self.total_read_len = 0
         self.clip_frac_sum = 0.0
         self.length_stats = PidStats()
 
     def add(self, b):
         self.n_reads += 1
-        self.total_aligned += b["aligned_cols"]
+        self.total_aligned += b["query_aligned"]
         self.total_soft += b["soft_clipped"]
         self.total_hard += b["hard_clipped"]
-        self.total_read_len += b["full_read_length"]
         self.length_stats.add(b["full_read_length"])
         if b["full_read_length"]:
             self.clip_frac_sum += b["clipped"] / b["full_read_length"]
@@ -142,7 +140,6 @@ class ClipAggregate:
         self.total_aligned += other.total_aligned
         self.total_soft += other.total_soft
         self.total_hard += other.total_hard
-        self.total_read_len += other.total_read_len
         self.clip_frac_sum += other.clip_frac_sum
         self.length_stats.merge(other.length_stats)
 
@@ -152,13 +149,22 @@ def parse_cigar_breakdown(cigartuples):
     Base counts by category from a CIGAR.
     Ops: 0=M, 1=I, 2=D, 3=N, 4=S, 5=H, 6=P, 7=(=), 8=X
 
-    aligned_cols == full_aligned_length used as the PID denominator (M+I+D).
-    full_read_length counts query bases incl. hard-clips (deletions are
-    reference-side and excluded).
+    aligned_cols (M+I+D) is the gap-aware PID denominator. matches_mismatches
+    (M+=+X) and gap_events (count of I-runs + D-runs) feed the gap-compressed PID
+    denominator. query_aligned (M+I) is query-consumed bases and sums with the
+    clips to full_read_length. full_read_length counts query bases incl. hard-clips
+    (deletions are reference-side and excluded).
     """
+
     counts = defaultdict(int)
+    ins_events = 0
+    del_events = 0
     for op, length in cigartuples:
         counts[op] += length
+        if op == 1:
+            ins_events += 1
+        elif op == 2:
+            del_events += 1
 
     matches_mismatches = counts[0] + counts[7] + counts[8]
     insertions = counts[1]
@@ -167,11 +173,15 @@ def parse_cigar_breakdown(cigartuples):
     hard_clipped = counts[5]
 
     aligned_cols = matches_mismatches + insertions + deletions
+    query_aligned = matches_mismatches + insertions
     clipped = soft_clipped + hard_clipped
     full_read_length = matches_mismatches + insertions + soft_clipped + hard_clipped
 
     return {
         "aligned_cols": aligned_cols,
+        "query_aligned": query_aligned,
+        "matches_mismatches": matches_mismatches,
+        "gap_events": ins_events + del_events,
         "soft_clipped": soft_clipped,
         "hard_clipped": hard_clipped,
         "clipped": clipped,
@@ -181,16 +191,21 @@ def parse_cigar_breakdown(cigartuples):
 
 def get_mapped_reads_pids(input_bam, include_non_primary=False, store_read_pids=True):
     """
-    The calculation is alignment-centric:
-        PID = (full_aligned_length - NM) / full_aligned_length * 100
-        where full_aligned_length = Matches + Mismatches + Insertions + Deletions
+    Computes two percent-identity flavors per alignment from the NM tag and CIGAR:
+        gap-aware       = matches / (M + I + D) * 100
+        gap-compressed  = matches / (matches + mismatches + gap_events) * 100
+        where matches = (M + I + D) - NM   (see compute_pids)
 
-    When store_read_pids is False, per-read data is not kept in memory
-    and only summary statistics (via PidStats / ClipAggregate) are tracked.
+    Returns (ref_read_pids, pid_stats, pid_gc_stats, clip_agg)
 
-    Clip/length metrics in ClipAggregate are gathered on primary alignments
-    only, so they stay meaningful even when include_non_primary is set.
+    When store_read_pids is False, per-read data is not kept in memory and only
+    summary statistics (via PidStats / ClipAggregate) are tracked
+
+    PID stats honor include_non_primary. Clip/length metrics in ClipAggregate are
+    gathered on primary alignments only, so they stay meaningful even when
+    include_non_primary is set.
     """
+
     decompression_threads = min(4, os.cpu_count() or 1)
 
     with pysam.AlignmentFile(input_bam, "rb", threads=decompression_threads) as bam:
@@ -199,6 +214,7 @@ def get_mapped_reads_pids(input_bam, include_non_primary=False, store_read_pids=
 
         ref_read_pids = defaultdict(list) if store_read_pids else None
         pid_stats = PidStats()
+        pid_gc_stats = PidStats()
         clip_agg = ClipAggregate()
 
         for read in bam.fetch(until_eof=True):
@@ -212,10 +228,11 @@ def get_mapped_reads_pids(input_bam, include_non_primary=False, store_read_pids=
             nm = read.get_tag("NM")
 
             b = parse_cigar_breakdown(read.cigartuples)
-            full_aligned_length = b["aligned_cols"]
 
-            pid = (full_aligned_length - nm) / full_aligned_length * 100
+            pid, gc_pid = compute_pids(b, nm)
+
             pid_stats.add(pid)
+            pid_gc_stats.add(gc_pid)
 
             # clip/length metrics are per-read; only meaningful on primary
             if not is_non_primary:
@@ -233,18 +250,34 @@ def get_mapped_reads_pids(input_bam, include_non_primary=False, store_read_pids=
                                 if b["full_read_length"] else 0.0)
 
                 ref_read_pids[ref_name_map[read.reference_id]].append(
-                    (read_id, pid, b["aligned_cols"], b["full_read_length"],
+                    (read_id, pid, gc_pid, b["query_aligned"], b["full_read_length"],
                      b["soft_clipped"], b["hard_clipped"], clipped_frac)
                 )
 
-        return ref_read_pids, pid_stats, clip_agg
+        return ref_read_pids, pid_stats, pid_gc_stats, clip_agg
 
 
-def get_per_contig_pid_stats(input_bam, include_non_primary=False):
+def compute_pids(b, nm):
+    """
+    Given a parse_cigar_breakdown dict and the read's NM tag, return
+    (gap_aware_pid, gap_compressed_pid).
+    """
+    aligned_cols = b["aligned_cols"]
+    matches = aligned_cols - nm
+    gap_aware = matches / aligned_cols * 100 if aligned_cols else 0.0
+    gc_denom = b["matches_mismatches"] + b["gap_events"]
+    gap_compressed = matches / gc_denom * 100 if gc_denom else 0.0
+    return gap_aware, gap_compressed
+
+
+def get_per_contig_pid_stats(input_bam, include_non_primary=False, pid_metric="gap_compressed"):
     """
     Single-pass BAM scan that builds a PidStats object per contig (reference name).
     Returns a dict of {contig_name: PidStats}. No per-read data is stored.
     Used by get_cov_stats where read IDs are not needed.
+
+    pid_metric selects which percent identity is accumulated:
+        "gap_compressed" (default) or "gap_aware".
     """
     decompression_threads = min(4, os.cpu_count() or 1)
 
@@ -262,22 +295,28 @@ def get_per_contig_pid_stats(input_bam, include_non_primary=False):
                 continue
             nm = read.get_tag("NM")
 
-            full_aligned_length = sum(
-                length for op, length in read.cigartuples
-                if op in {0, 1, 2, 7, 8}
-            )
+            b = parse_cigar_breakdown(read.cigartuples)
+            gap_aware, gap_compressed = compute_pids(b, nm)
+            pid = gap_compressed if pid_metric == "gap_compressed" else gap_aware
 
-            pid = (full_aligned_length - nm) / full_aligned_length * 100
             contig_pid_stats[ref_name_map[read.reference_id]].add(pid)
 
         return dict(contig_pid_stats)
 
 
-def get_summary_stats(pid_stats, clip_agg=None):
+def get_summary_stats(pid_stats, pid_gc_stats=None, clip_agg=None, include_non_primary=False):
 
-    summary_stats = [
-        ("Num mapped reads:", f"{pid_stats.count:,}"),
-    ]
+    n_reads = clip_agg.n_reads if (clip_agg is not None and clip_agg.n_reads) else None
+
+    if include_non_primary and n_reads is not None:
+        summary_stats = [
+            ("Num mapped reads:", f"{n_reads:,}"),
+            ("Num alignments:", f"{pid_stats.count:,}"),
+        ]
+    else:
+        summary_stats = [
+            ("Num mapped reads:", f"{pid_stats.count:,}"),
+        ]
 
     if clip_agg is not None and clip_agg.n_reads:
         ls = clip_agg.length_stats
@@ -287,8 +326,9 @@ def get_summary_stats(pid_stats, clip_agg=None):
             ("Median read-length:", f"{ls.median:,.2f}"),
             ("Min read-length:", f"{ls.min_val:,}"),
             ("Max read-length:", f"{ls.max_val:,}"),
+            ("StDev read-length:", f"{ls.stdev:,.2f}"),
             ("", ""),
-            ("Mean aligned-bases:", f"{clip_agg.mean_aligned:,.2f}"),
+            ("Mean read-aligned bases:", f"{clip_agg.mean_aligned:,.2f}"),
             ("Mean soft-clipped:", f"{clip_agg.mean_soft:,.2f}"),
             ("Mean hard-clipped:", f"{clip_agg.mean_hard:,.2f}"),
             ("Mean clipped:", f"{clip_agg.mean_clipped:,.2f}"),
@@ -297,11 +337,21 @@ def get_summary_stats(pid_stats, clip_agg=None):
 
     summary_stats += [
         ("", ""),
-        ("Mean percent ID:", f"{pid_stats.mean:,.2f}"),
-        ("Median percent ID:", f"{pid_stats.median:,.2f}"),
-        ("Min percent ID:", f"{pid_stats.min_val:,.2f}"),
-        ("Max percent ID:", f"{pid_stats.max_val:,.2f}"),
-        ("StDev of percent ID:", f"{pid_stats.stdev:,.2f}"),
+        ("Mean gap-aware PID:", f"{pid_stats.mean:,.2f}"),
+        ("Median gap-aware PID:", f"{pid_stats.median:,.2f}"),
+        ("Min gap-aware PID:", f"{pid_stats.min_val:,.2f}"),
+        ("Max gap-aware PID:", f"{pid_stats.max_val:,.2f}"),
+        ("StDev gap-aware PID:", f"{pid_stats.stdev:,.2f}"),
     ]
+
+    if pid_gc_stats is not None and pid_gc_stats.count:
+        summary_stats += [
+            ("", ""),
+            ("Mean gap-compressed PID:", f"{pid_gc_stats.mean:,.2f}"),
+            ("Median gap-compressed PID:", f"{pid_gc_stats.median:,.2f}"),
+            ("Min gap-compressed PID:", f"{pid_gc_stats.min_val:,.2f}"),
+            ("Max gap-compressed PID:", f"{pid_gc_stats.max_val:,.2f}"),
+            ("StDev gap-compressed PID:", f"{pid_gc_stats.stdev:,.2f}"),
+        ]
 
     return summary_stats

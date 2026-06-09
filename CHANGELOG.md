@@ -19,6 +19,7 @@
 ### Changed
 - `bit mapped-reads-pid` -> `bit mapped-read-stats` 
   - now also outputs read length, alignment, and clipping information in the summary and per-read tsv
+- `bit cov-stats` now reports gap-compressed percent ID values (instead of gap-aware)
 
 ---
 
