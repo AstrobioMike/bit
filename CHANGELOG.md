@@ -14,7 +14,7 @@
 
 -->
 
-## v2.2.0 (NOT RELEASED YET)
+## v2.2.0 (09-Jun-2026)
 
 ### Changed
 - `bit mapped-reads-pid` -> `bit mapped-read-stats` 
