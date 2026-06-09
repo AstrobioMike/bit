@@ -110,10 +110,15 @@ def test_get_mapped_reads_pids(tmp_path):
     assert clip_agg.total_hard == 0
     assert clip_agg.mean_aligned == 50.0
 
-    # per-read tuple is now 8 fields
-    assert all(len(row) == 8 for row in ref_read_pids["ref"])
-    read_ids = [row[0] for row in ref_read_pids["ref"]]
-    assert set(read_ids) == {"read1/1", "read1/2"}
+    # per-read tuple is now 10 fields:
+    # read_id, pid, gc_pid, q_aln, read_len, soft, hard, clipped_frac, ref_start, ref_end
+    assert all(len(row) == 10 for row in ref_read_pids["ref"])
+
+    rows_by_id = {row[0]: row for row in ref_read_pids["ref"]}
+    assert set(rows_by_id) == {"read1/1", "read1/2"}
+
+    assert rows_by_id["read1/1"][8:] == (1, 50)
+    assert rows_by_id["read1/2"][8:] == (101, 150)
 
 
 def test_clip_indel_metrics(tmp_path):
@@ -121,18 +126,35 @@ def test_clip_indel_metrics(tmp_path):
     bam = create_clip_indel_bam(tmp_path)
     ref_read_pids, pid_stats, pid_gc_stats, clip_agg = get_mapped_reads_pids(bam)
 
-    read_id, pid, gc_pid, q_aln, read_len, soft, hard, clipped_frac = ref_read_pids["ref"][0]
+    (
+        read_id,
+        pid,
+        gc_pid,
+        q_aln,
+        read_len,
+        soft,
+        hard,
+        clipped_frac,
+        ref_start,
+        ref_end,
+    ) = ref_read_pids["ref"][0]
 
     assert read_id == "read_ci"
     assert q_aln == 73          # M(70) + I(3)
     assert soft == 5
     assert hard == 0
     assert read_len == 78
-    assert q_aln + soft + hard == read_len   # the reconciling identity
+    assert q_aln + soft + hard == read_len
 
-    assert abs(pid - 92.0) < 1e-9            # gap-aware:  69/75
-    assert abs(gc_pid - 95.8333333) < 1e-6   # gap-compressed: 69/72
+    assert ref_start == 1
+    assert ref_end == 72        # M(70) + D(2), 1-based inclusive coordinate
+
+    assert abs(pid - 92.0) < 1e-9
+    assert abs(gc_pid - 95.8333333) < 1e-6
     assert abs(clipped_frac - 5 / 78) < 1e-9
+
+    assert pid_stats.count == 1
+    assert pid_gc_stats.count == 1
 
     assert clip_agg.n_reads == 1
     assert clip_agg.mean_aligned == 73.0
