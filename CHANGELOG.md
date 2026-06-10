@@ -14,6 +14,16 @@
 
 -->
 
+## v2.2.1 (NOT YET RELEASED)
+
+### Added
+- more outputs to `bit ez-screen assembly`
+  - *-filtered-blast-results.tsv holding just the hits that resulted in targets being counted
+  - *-hit-contig-summary.tsv holding summary info for each contig that had a hit to a target
+
+
+---
+
 ## v2.2.0 (09-Jun-2026)
 
 ### Changed

@@ -1,4 +1,5 @@
 import os
+import shutil
 import pandas as pd # type: ignore
 import subprocess
 from io import StringIO
@@ -20,11 +21,11 @@ from bit.modules.general import (report_message,
 
 
 def run_assembly(args, full_cmd_executed):
-    blast_results_dir = args.output_prefix + "-blast-results"
-    assembly_path_dict = assembly_preflight(args, blast_results_dir)
-    run_assembly_screen(args, assembly_path_dict, blast_results_dir)
-    report_assembly_screen_finished(args, blast_results_dir)
-    log_command_run(full_cmd_executed, blast_results_dir)
+    outputs_dir = args.output_prefix + "-outputs"
+    assembly_path_dict = assembly_preflight(args, outputs_dir)
+    run_assembly_screen(args, assembly_path_dict, outputs_dir)
+    report_assembly_screen_finished(args, outputs_dir)
+    log_command_run(full_cmd_executed, outputs_dir)
 
 
 def run_reads(args, full_cmd_executed):
@@ -35,12 +36,13 @@ def run_reads(args, full_cmd_executed):
     log_command_run(full_cmd_executed, reads_config.log_files_dir)
 
 
-def assembly_preflight(args, blast_results_dir):
+def assembly_preflight(args, outputs_dir):
 
     check_assembly_inputs(args.assemblies, args.targets)
 
-    if not os.path.exists(blast_results_dir):
-        os.makedirs(blast_results_dir)
+    if os.path.exists(outputs_dir):
+        shutil.rmtree(outputs_dir)
+    os.makedirs(outputs_dir)
 
     # checking if there'd be any duplicates with just basenames (like same filename from different path),
     # and retaining input path info if so
@@ -71,7 +73,7 @@ def check_assembly_inputs(assemblies, targets):
 
 
 
-def run_assembly_screen(args, assembly_path_dict, blast_results_dir):
+def run_assembly_screen(args, assembly_path_dict, outputs_dir):
 
     targets_dict = get_targets(args.targets)
     summary_df = pd.DataFrame()
@@ -83,13 +85,26 @@ def run_assembly_screen(args, assembly_path_dict, blast_results_dir):
                                       desc = "Processing assemblies", unit = "assembly", ncols=76,
                                       bar_format="    {l_bar}{bar} | {n_fmt}/{total_fmt} processed, {remaining} remaining")):
 
-        blast_df = run_blast(assembly, args.targets, blast_results_dir)
-        filtered_blast_df, long_targets_results_dict = filter_blast_results(blast_df, targets_dict,
-                                                                            args.min_perc_id,
-                                                                            args.min_perc_cov)
-
         unique_assembly_name = assembly_path_dict[assembly]
-        summary_df = update_assembly_summary_table(filtered_blast_df,
+        out_base = safe_name(unique_assembly_name)
+
+        blast_df = run_blast(assembly, args.targets, outputs_dir, out_base)
+        filtered_short_blast_df, filtered_long_blast_df, long_targets_results_dict = filter_blast_results(
+            blast_df, targets_dict, args.min_perc_id, args.min_perc_cov)
+
+        # combining short + passing long hits for the per-assembly outputs
+        filtered_hits_df = pd.concat([filtered_short_blast_df, filtered_long_blast_df], ignore_index=True)
+
+        # per-assembly filtered BLAST table
+        filtered_hits_df.to_csv(f"{outputs_dir}/{out_base}-filtered-blast-results.tsv",
+                                sep="\t", index=False)
+
+        # per-assembly contig summary table
+        contig_df = gen_contig_summary_table(filtered_hits_df)
+        contig_df.to_csv(f"{outputs_dir}/{out_base}-hit-contig-summary.tsv",
+                         sep="\t", index=False)
+
+        summary_df = update_assembly_summary_table(filtered_short_blast_df,
                                           long_targets_results_dict,
                                           targets_dict,
                                           unique_assembly_name,
@@ -98,7 +113,7 @@ def run_assembly_screen(args, assembly_path_dict, blast_results_dir):
     if args.filter_if_not_detected:
         summary_df = filter_undetected_assembly_targets(summary_df)
 
-    output_tsv = args.output_prefix + "-assembly-summary.tsv"
+    output_tsv = args.output_prefix + "-summary.tsv"
     if args.transpose_output_tsv:
         summary_df = summary_df.T
         summary_df.to_csv(output_tsv, sep = "\t", index_label = "target")
@@ -117,7 +132,7 @@ def get_targets(targets):
     return targets_dict
 
 
-def run_blast(assembly, targets, blast_results_dir):
+def run_blast(assembly, targets, outputs_dir, out_base):
     """ runs BLAST to search for targets in assembly """
 
     blast_command = [
@@ -140,12 +155,10 @@ def run_blast(assembly, targets, blast_results_dir):
         "send", "length", "qcovs", "qcovhsp", "qcovus", "pident", "evalue", "bitscore"
     ])
 
-    assembly_base = os.path.splitext(os.path.basename(assembly))[0]
-
     # adding percent of subject covered by alignment
     blast_df["perc-subj-cov"] = round((blast_df["length"] / blast_df["slen"]) * 100, 1)
 
-    blast_df.to_csv(f"{blast_results_dir}/{assembly_base}-blast-results.tsv", sep = "\t", index = False)
+    blast_df.to_csv(f"{outputs_dir}/{out_base}-blast-results.tsv", sep = "\t", index = False)
 
     return blast_df
 
@@ -171,14 +184,20 @@ def filter_blast_results(blast_df, targets_dict, min_perc_id, min_perc_cov):
                                                                            long_target_length_cutoff,
                                                                            min_perc_cov)
 
+        # keeping only the long-target hits whose target was ultimately DETECTED,
+        # so the filtered output reflects what passed coverage too (not just pident)
+        detected_long_ids = {ID for ID, status in long_targets_results_dict.items() if status == "DETECTED"}
+        filtered_long_blast_df = filtered_long_blast_df[filtered_long_blast_df["sseqid"].isin(detected_long_ids)]
+
     else:
         long_targets_results_dict = None
+        filtered_long_blast_df = long_targets_df.iloc[0:0]  # empty, same columns
 
-    return filtered_short_blast_df, long_targets_results_dict
+    return filtered_short_blast_df, filtered_long_blast_df, long_targets_results_dict
 
 
 def update_assembly_summary_table(filtered_short_blast_df, long_targets_detected_dict, targets_dict, unique_assembly_name, summary_df):
-    """ Update the summary table with results from the current assembly """
+    """ updates the summary table with results from the current assembly """
 
     target_counts = filtered_short_blast_df["sseqid"].value_counts()
 
@@ -204,6 +223,33 @@ def filter_undetected_assembly_targets(summary_df):
     ]
 
     return summary_df.drop(columns=cols_to_drop)
+
+
+def write_combined_assembly_tables(all_filtered_hits, output_prefix):
+    """ writes combined (across all assemblies) filtered BLAST and contig summary tables """
+
+    combined_filtered_tsv = output_prefix + "-filtered-blast-results.tsv"
+    combined_contig_tsv = output_prefix + "-contig-summary.tsv"
+
+    if not all_filtered_hits:
+        with open(combined_filtered_tsv, "w") as f:
+            f.write("No hits passed the set thresholds in any input assembly.\n")
+        with open(combined_contig_tsv, "w") as f:
+            f.write("No hits passed the set thresholds in any input assembly.\n")
+        return
+
+    combined_hits = pd.concat(all_filtered_hits, ignore_index=True)
+    combined_hits.to_csv(combined_filtered_tsv, sep="\t", index=False)
+
+    # contig table keeps the assembly name so contigs from different assemblies stay distinct
+    grouped = combined_hits.groupby(["input-assembly", "qseqid"])
+    combined_contig_df = pd.DataFrame({
+        "num_unique_hits": grouped["sseqid"].nunique(),
+        "num_total_hits": grouped.size(),
+    }).reset_index().rename(columns={"qseqid": "contig"})
+    combined_contig_df = combined_contig_df.sort_values(
+        ["input-assembly", "num_total_hits"], ascending=[True, False])
+    combined_contig_df.to_csv(combined_contig_tsv, sep="\t", index=False)
 
 
 def gen_long_targets_assembly_results_dict(filtered_long_blast_df, targets_dict, long_target_length_cutoff, min_perc_cov):
@@ -254,13 +300,13 @@ def gen_long_targets_assembly_results_dict(filtered_long_blast_df, targets_dict,
 
 
 border = "-" * 80
-def report_assembly_screen_finished(args, blast_results_dir):
+def report_assembly_screen_finished(args, outputs_dir):
     print(f"\n{border}")
     report_message("DONE!", color = "green")
-    out_file = f"{args.output_prefix}-assembly-summary.tsv"
-    out_dir = f"{blast_results_dir}/"
+    out_file = f"{args.output_prefix}-summary.tsv"
+    out_dir = f"{outputs_dir}/"
     print(f"    Summary table written to: {color_text(out_file, 'green')}")
-    print(f"    Full and filtered BLAST results written in subdirectory: {color_text(out_dir, 'green')}\n")
+    print(f"    Additional outputs written in subdirectory: {color_text(out_dir, 'green')}\n")
     print(f"{border}\n")
 
 
@@ -449,3 +495,101 @@ def combine_reads_summary_outputs(samples_output_summaries_dict, output_tsv):
         # no valid data
         with open(output_tsv, 'w') as f:
             f.write("No valid read-mappings were found to any targets.\n")
+
+
+def safe_name(name):
+    return name.replace("/", "_").replace("\\", "_")
+
+
+def gen_contig_summary_table(filtered_hits_df):
+    """ builds a per-contig (qseqid) table with contig length, bases of the
+        contig covered by alignments (overlaps merged), number of unique
+        targets hit, and total number of passing hits """
+
+    cols = ["contig", "length", "bases_aligned", "perc_contig_aligned",
+            "num_unique_hits", "num_total_hits"]
+
+    if filtered_hits_df.empty:
+        return pd.DataFrame(columns=cols)
+
+    df = filtered_hits_df.copy()
+    df["q_low"] = df[["qstart", "qend"]].min(axis=1)
+    df["q_high"] = df[["qstart", "qend"]].max(axis=1)
+
+    grouped = df.groupby("qseqid")
+
+    bases_aligned = {
+        contig: merge_intervals(list(zip(g["q_low"], g["q_high"])))
+        for contig, g in grouped
+    }
+    bases_aligned = pd.Series(bases_aligned)
+
+    # count merged regions per (contig, target), then sum per contig
+    total_hits = {
+        contig: sum(
+            count_merged_blocks(list(zip(sub["q_low"], sub["q_high"])))
+            for _, sub in g.groupby("sseqid")
+        )
+        for contig, g in grouped
+    }
+    total_hits = pd.Series(total_hits)
+
+    contig_df = pd.DataFrame({
+        "length": grouped["qlen"].first(),
+        "bases_aligned_to_targets": bases_aligned,
+        "num_unique_hits": grouped["sseqid"].nunique(),
+        "num_total_hits": total_hits,
+    })
+
+    contig_df["perc_contig_aligned_to_targets"] = round(
+        contig_df["bases_aligned_to_targets"] / contig_df["length"] * 100, 1)
+
+    # reordering so perc sits next to its inputs
+    contig_df = contig_df[["length", "bases_aligned_to_targets", "perc_contig_aligned_to_targets",
+                           "num_unique_hits", "num_total_hits"]]
+
+    contig_df = contig_df.sort_values("perc_contig_aligned_to_targets", ascending=False)
+    contig_df = contig_df.reset_index().rename(columns={"qseqid": "contig"})
+
+    return contig_df
+
+
+def merge_intervals(intervals):
+    """ given a list of (start, end) tuples, returns total length covered
+        after merging overlaps (1-based inclusive coordinates) """
+
+    if not intervals:
+        return 0
+
+    intervals = sorted(intervals)
+    merged = []
+
+    for start, end in intervals:
+        if not merged or start > merged[-1][1]:
+            merged.append([start, end])
+        else:
+            merged[-1][1] = max(merged[-1][1], end)
+
+    return sum(end - start + 1 for start, end in merged)
+
+
+def count_merged_blocks(intervals, gap_tolerance=200):
+    """ given a list of (start, end) tuples, returns the NUMBER of blocks
+        after merging overlaps and gaps up to gap_tolerance bp apart
+        (vs merge_intervals which returns total length) """
+
+    if not intervals:
+        return 0
+
+    intervals = sorted(intervals)
+    n_blocks = 1
+    cur_end = intervals[0][1]
+
+    for start, end in intervals[1:]:
+        if start > cur_end + gap_tolerance: # gap bigger than tolerance -> new block
+            n_blocks += 1
+            cur_end = end
+        else: # within tolerance -> extend current block
+            cur_end = max(cur_end, end)
+
+    return n_blocks

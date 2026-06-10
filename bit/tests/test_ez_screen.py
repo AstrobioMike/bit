@@ -22,7 +22,7 @@ def test_ez_screen_assembly(tmp_path):
 
     run_cli(cmd)
 
-    summary_tsv = Path(f"{out_prefix}-assembly-summary.tsv")
+    summary_tsv = Path(f"{out_prefix}-summary.tsv")
 
     observed = summary_tsv.read_text().splitlines()
     expected = [
