@@ -52,7 +52,7 @@ def build_parser(parent_subparsers=None):
         "-b",
         "--bam",
         metavar="<PATH>",
-        help="Path to bam file (which will allow reporting of mean percent ID per input reference) AND/OR",
+        help="Path to bam file (which will allow reporting of percent ID and number of mapped readsper input reference) AND/OR",
     )
 
     required.add_argument(

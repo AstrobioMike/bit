@@ -2,7 +2,7 @@ from bit.modules.general import get_package_path
 from bit.tests.utils import run_cli
 from pathlib import Path
 import shutil
-import pandas as pd
+import pandas as pd # type: ignore
 import pytest # type: ignore
 from bit.modules import ez_screen as ez
 
@@ -23,7 +23,6 @@ def test_ez_screen_assembly(tmp_path):
         "-a", str(test_assembly_fasta),
         "-t", str(test_targets_fasta),
         "-o", str(out_prefix),
-        "--filter-if-not-detected"
     ]
 
     run_cli(cmd)
@@ -47,7 +46,6 @@ def test_ez_screen_assembly_assemblies_as_rows(tmp_path):
         "-a", str(test_assembly_fasta),
         "-t", str(test_targets_fasta),
         "-o", str(out_prefix),
-        "--filter-if-not-detected",
         "--assemblies-as-rows"
     ]
 
@@ -518,7 +516,7 @@ def test_contig_summary_columns_without_regions():
     cd = ez.gen_contig_summary_table(_multi_contig_loci(), _contig_lengths())
     assert list(cd.columns) == [
         "contig", "length", "bases_aligned_to_targets",
-        "perc_contig_aligned_to_targets", "num_unique_hits", "num_total_hits",
+        "perc_contig_aligned_to_targets", "num_unique_target_hits", "num_total_target_hits",
     ]
 
 
@@ -528,15 +526,15 @@ def test_contig_summary_with_regions_adds_column():
     cd = ez.gen_contig_summary_table(loci, _contig_lengths(), num_regions)
     assert list(cd.columns) == [
         "contig", "length", "bases_aligned_to_targets",
-        "perc_contig_aligned_to_targets", "num_unique_hits",
-        "num_regions", "num_total_hits",
+        "perc_contig_aligned_to_targets", "num_regions",
+        "num_unique_target_hits", "num_total_target_hits",
     ]
     assert dict(zip(cd["contig"], cd["num_regions"])) == num_regions
 
 
 def test_contig_summary_num_total_hits_counts_loci():
     cd = ez.gen_contig_summary_table(_multi_contig_loci(), _contig_lengths())
-    by_contig = dict(zip(cd["contig"], cd["num_total_hits"]))
+    by_contig = dict(zip(cd["contig"], cd["num_total_target_hits"]))
     assert by_contig["cA"] == 3
     assert by_contig["cB"] == 2
 
@@ -546,7 +544,7 @@ def test_contig_summary_num_unique_can_exceed_num_regions():
     region_df, num_regions = ez.gen_region_calls_table(loci)
     cd = ez.gen_contig_summary_table(loci, _contig_lengths(), num_regions)
     ca = cd[cd["contig"] == "cA"].iloc[0]
-    assert ca["num_unique_hits"] == 3
+    assert ca["num_unique_target_hits"] == 3
     assert ca["num_regions"] == 2
 
 
@@ -557,8 +555,8 @@ def test_contig_summary_integer_columns_stay_integer():
     lengths = dict(_contig_lengths())
     lengths["cEMPTY"] = 50000  # extra contig with no loci -> the NaN trigger
     cd = ez.gen_contig_summary_table(loci, lengths)
-    for col in ("length", "bases_aligned_to_targets", "num_unique_hits",
-                "num_total_hits"):
+    for col in ("length", "bases_aligned_to_targets", "num_unique_target_hits",
+                "num_total_target_hits"):
         assert str(cd[col].dtype) == "int64", f"{col} should be int, got {cd[col].dtype}"
     assert "cEMPTY" not in set(cd["contig"])
 
@@ -647,7 +645,7 @@ def test_summary_count_matches_contig_num_total_hits():
     summary_count = out.loc["asmX", "tgt"]
 
     contig_df = ez.gen_contig_summary_table(loci, {"c1": 15000, "c2": 15000})
-    contig_total = contig_df["num_total_hits"].sum()
+    contig_total = contig_df["num_total_target_hits"].sum()
 
     assert summary_count == contig_total == 3
 
@@ -664,48 +662,3 @@ def test_filter_undetected_drops_all_zero_columns():
     assert "yopK" not in out.columns
     assert "yopE" in out.columns
     assert "bigT" in out.columns
-
-
-# =========================================================================== #
-# write_combined_assembly_tables
-# =========================================================================== #
-
-def test_write_combined_empty_writes_fallback(tmp_path):
-    prefix = str(tmp_path / "comb")
-    ez.write_combined_assembly_tables([], prefix)
-    assert "No hits passed the set thresholds" in Path(f"{prefix}-filtered-blast-results.tsv").read_text()
-    assert "No hits passed the set thresholds" in Path(f"{prefix}-contig-summary.tsv").read_text()
-
-
-def test_write_combined_populated_rollup(tmp_path):
-    prefix = str(tmp_path / "comb")
-    h1 = pd.DataFrame([{
-        "input-assembly": "asmA", "qseqid": "c1", "sseqid": "t1",
-        "qlen": 5000, "qstart": 1, "qend": 100, "pident": 99.0,
-        "bitscore": 200, "length": 100,
-    }])
-    h2 = pd.DataFrame([
-        {"input-assembly": "asmB", "qseqid": "c9", "sseqid": "t1",
-         "qlen": 5000, "qstart": 1, "qend": 100, "pident": 99.0,
-         "bitscore": 200, "length": 100},
-        {"input-assembly": "asmB", "qseqid": "c9", "sseqid": "t2",
-         "qlen": 5000, "qstart": 1, "qend": 100, "pident": 99.0,
-         "bitscore": 200, "length": 100},
-    ])
-    ez.write_combined_assembly_tables([h1, h2], prefix)
-
-    contig_df = pd.read_csv(f"{prefix}-contig-summary.tsv", sep="\t")
-    assert contig_df.columns.tolist() == [
-        "input-assembly", "contig", "num_unique_hits", "num_total_hits"]
-    b_row = contig_df[contig_df["input-assembly"] == "asmB"].iloc[0]
-    assert b_row["contig"] == "c9"
-    assert b_row["num_unique_hits"] == 2
-    assert b_row["num_total_hits"] == 2
-
-    a_row = contig_df[contig_df["input-assembly"] == "asmA"].iloc[0]
-    assert a_row["num_unique_hits"] == 1
-    assert a_row["num_total_hits"] == 1
-
-    filtered_df = pd.read_csv(f"{prefix}-filtered-blast-results.tsv", sep="\t")
-    assert len(filtered_df) == 3
-    assert set(filtered_df["input-assembly"]) == {"asmA", "asmB"}

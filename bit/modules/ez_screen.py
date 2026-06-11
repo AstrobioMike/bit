@@ -12,6 +12,7 @@ from subprocess import run
 import pysam # type: ignore
 from collections import defaultdict
 import numpy as np # type: ignore
+from natsort import natsort_keygen # type: ignore
 from bit.modules.input_parsing import get_input_reads_dict_from_dir
 from bit.modules.general import (report_message,
                        report_failure,
@@ -22,8 +23,8 @@ from bit.modules.general import (report_message,
 
 def run_assembly(args, full_cmd_executed):
     outputs_dir = args.output_prefix + "-outputs"
-    assembly_path_dict = assembly_preflight(args, outputs_dir)
-    run_assembly_screen(args, assembly_path_dict, outputs_dir)
+    assembly_path_dict, targets_type = assembly_preflight(args, outputs_dir)
+    run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_type)
     report_assembly_screen_finished(args, outputs_dir)
     log_command_run(full_cmd_executed, outputs_dir)
 
@@ -38,14 +39,13 @@ def run_reads(args, full_cmd_executed):
 
 def assembly_preflight(args, outputs_dir):
 
-    check_assembly_inputs(args.assemblies, args.targets)
+    targets_type = detect_targets_type(args.targets)
+    check_assembly_inputs(args.assemblies, args.targets, targets_type)
 
     if os.path.exists(outputs_dir):
         shutil.rmtree(outputs_dir)
     os.makedirs(outputs_dir)
 
-    # checking if there'd be any duplicates with just basenames (like same filename from different path),
-    # and retaining input path info if so
     assembly_basenames = [os.path.splitext(os.path.basename(assembly))[0] for assembly in args.assemblies]
     basename_counts = {basename: assembly_basenames.count(basename) for basename in assembly_basenames}
 
@@ -54,10 +54,46 @@ def assembly_preflight(args, outputs_dir):
     else:
         assembly_path_dict = {assembly: os.path.splitext(os.path.basename(assembly))[0] for assembly in args.assemblies}
 
-    return assembly_path_dict
+    return assembly_path_dict, targets_type
 
 
-def check_assembly_inputs(assemblies, targets):
+def detect_targets_type(targets):
+    """
+    determines whether --targets points to a nucleotide fasta or a BLAST db
+
+    a BLAST db is given as a path PREFIX (no single file at that exact path),
+    with sibling index files alongside it. a fasta is a normal readable file.
+
+    returns "db" or "fasta"; calls report_failure if it's a db that isn't
+    readable, or neither
+    """
+
+    # an existing regular file that isn't a db prefix -> treat as fasta
+    if os.path.isfile(targets):
+        return "fasta"
+
+    # otherwise it may be a db prefix; confirm by asking BLAST
+    if blast_db_is_readable(targets):
+        return "db"
+
+    report_failure(
+        f"Specified --targets is neither a readable fasta file nor a valid BLAST "
+        f"database: {targets}")
+
+
+def blast_db_is_readable(db_prefix):
+    """ returns True if blastdbcmd can open the nucleotide db at db_prefix """
+
+    try:
+        subprocess.run(
+            ["blastdbcmd", "-db", db_prefix, "-dbtype", "nucl", "-info"],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+
+def check_assembly_inputs(assemblies, targets, targets_type):
     """ checks that input files exist """
 
     for assembly in assemblies:
@@ -66,16 +102,18 @@ def check_assembly_inputs(assemblies, targets):
         if os.path.isdir(assembly):
             report_failure(f"Specified input assembly is a directory, but needs to be a file or files: {assembly}")
 
-    if not os.path.exists(targets):
-        report_failure(f"Specified input targets file not found: {targets}")
-    if os.path.isdir(targets):
-        report_failure(f"Specified input targets is a directory, but needs to be a file: {targets}")
+    # a db prefix was already validated in detect_targets_type; only fasta needs
+    # the file/dir checks here
+    if targets_type == "fasta":
+        if not os.path.exists(targets):
+            report_failure(f"Specified input targets file not found: {targets}")
+        if os.path.isdir(targets):
+            report_failure(f"Specified input targets is a directory, but needs to be a file: {targets}")
 
 
+def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_type):
 
-def run_assembly_screen(args, assembly_path_dict, outputs_dir):
-
-    targets_dict = get_targets(args.targets)
+    targets_dict = get_targets(args.targets, targets_type)
     summary_df = pd.DataFrame()
     total_assemblies = len(args.assemblies)
 
@@ -88,7 +126,10 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir):
         unique_assembly_name = assembly_path_dict[assembly]
         out_base = safe_name(unique_assembly_name)
 
-        blast_df = run_blast(assembly, args.targets, outputs_dir, out_base)
+        blast_df = run_blast(assembly, args.targets, targets_type, outputs_dir, out_base, args.num_threads)
+
+        # safeguard that ids pulled from blast db match the hits' sseqids
+        check_sseqid_target_match(blast_df, targets_dict)
 
         # pident hard filter (coverage gating now happens per-locus, below)
         filtered_hits_df = filter_blast_results(blast_df, args.min_perc_id)
@@ -133,7 +174,7 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir):
                                           unique_assembly_name,
                                           summary_df)
 
-    if args.filter_if_not_detected:
+    if not args.report_all_targets:
         summary_df = filter_undetected_assembly_targets(summary_df)
 
     output_tsv = args.output_prefix + "-summary.tsv"
@@ -149,44 +190,64 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir):
         summary_df.to_csv(output_tsv, sep = "\t", index_label = "target")
 
 
-def get_targets(targets):
-    """ creates a dictionary of the targets based on input fasta headers as keys and lengths as values"""
+def get_targets(targets, targets_type):
+    """
+    returns {target_id: length}
+
+    for a fasta, parses the file
+
+    for a BLAST db, pulls every entry's accession and length via blastdbcmd
+    """
+
+    if targets_type == "fasta":
+        return {record.id: len(record.seq) for record in SeqIO.parse(targets, "fasta")}
+
+    # db: one "<accession> <length>" line per sequence
+    result = subprocess.run(
+        ["blastdbcmd", "-db", targets, "-dbtype", "nucl",
+         "-entry", "all", "-outfmt", "%a %l"],
+        check=True, capture_output=True, text=True)
 
     targets_dict = {}
-
-    for record in SeqIO.parse(targets, "fasta"):
-        targets_dict[record.id] = len(record.seq)
+    for line in result.stdout.splitlines():
+        if not line.strip():
+            continue
+        acc, length = line.rsplit(" ", 1)
+        targets_dict[acc] = int(length)
 
     return targets_dict
 
 
-def run_blast(assembly, targets, outputs_dir, out_base):
-    """ runs BLAST to search for targets in assembly """
+def run_blast(assembly, targets, targets_type, outputs_dir, out_base, num_threads):
+    """ runs BLAST to search for targets in assembly. targets is either a fasta
+        (passed as -subject) or a BLAST db prefix (passed as -db, which also
+        enables -num_threads). """
 
-    blast_command = [
-        "blastn",
-        "-task", "blastn",
-        "-query", assembly,
-        "-subject", targets,
-        "-outfmt", "6 qseqid qlen sseqid slen qstart qend sstart send length qcovs qcovhsp qcovus pident evalue bitscore",
-    ]
+    outfmt = ("6 qseqid qlen sseqid slen qstart qend sstart send length "
+              "qcovs qcovhsp qcovus pident evalue bitscore")
+
+    blast_command = ["blastn", "-task", "blastn", "-query", assembly, "-outfmt", outfmt]
+
+    if targets_type == "db":
+        blast_command += ["-db", targets, "-num_threads", str(num_threads)]
+    else:
+        blast_command += ["-subject", targets]
 
     try:
-        blast_results = subprocess.check_output(blast_command, stderr = subprocess.STDOUT, text = True)
+        blast_results = subprocess.check_output(blast_command, stderr=subprocess.STDOUT, text=True)
     except subprocess.CalledProcessError as e:
         report_failure("BLAST failed with the following error:  \n" + e.output)
 
     blast_results = StringIO(blast_results)
 
-    blast_df = pd.read_csv(blast_results, sep = "\t", header = None, names = [
+    blast_df = pd.read_csv(blast_results, sep="\t", header=None, names=[
         "qseqid", "qlen", "sseqid", "slen", "qstart", "qend", "sstart",
         "send", "length", "qcovs", "qcovhsp", "qcovus", "pident", "evalue", "bitscore"
     ])
 
-    # adding percent of subject covered by alignment
     blast_df["perc-subj-cov"] = round((blast_df["length"] / blast_df["slen"]) * 100, 1)
 
-    blast_df.to_csv(f"{outputs_dir}/{out_base}-blast-results.tsv", sep = "\t", index = False)
+    blast_df.to_csv(f"{outputs_dir}/{out_base}-blast-results.tsv", sep="\t", index=False)
 
     return blast_df
 
@@ -238,31 +299,31 @@ def filter_undetected_assembly_targets(summary_df):
     return summary_df.drop(columns=cols_to_drop)
 
 
-def write_combined_assembly_tables(all_filtered_hits, output_prefix):
-    """ writes combined (across all assemblies) filtered BLAST and contig summary tables """
+# def write_combined_assembly_tables(all_filtered_hits, output_prefix):
+#     """ writes combined (across all assemblies) filtered BLAST and contig summary tables """
 
-    combined_filtered_tsv = output_prefix + "-filtered-blast-results.tsv"
-    combined_contig_tsv = output_prefix + "-contig-summary.tsv"
+#     combined_filtered_tsv = output_prefix + "-filtered-blast-results.tsv"
+#     combined_contig_tsv = output_prefix + "-contig-summary.tsv"
 
-    if not all_filtered_hits:
-        with open(combined_filtered_tsv, "w") as f:
-            f.write("No hits passed the set thresholds in any input assembly.\n")
-        with open(combined_contig_tsv, "w") as f:
-            f.write("No hits passed the set thresholds in any input assembly.\n")
-        return
+#     if not all_filtered_hits:
+#         with open(combined_filtered_tsv, "w") as f:
+#             f.write("No hits passed the set thresholds in any input assembly.\n")
+#         with open(combined_contig_tsv, "w") as f:
+#             f.write("No hits passed the set thresholds in any input assembly.\n")
+#         return
 
-    combined_hits = pd.concat(all_filtered_hits, ignore_index=True)
-    combined_hits.to_csv(combined_filtered_tsv, sep="\t", index=False)
+#     combined_hits = pd.concat(all_filtered_hits, ignore_index=True)
+#     combined_hits.to_csv(combined_filtered_tsv, sep="\t", index=False)
 
-    # contig table keeps the assembly name so contigs from different assemblies stay distinct
-    grouped = combined_hits.groupby(["input-assembly", "qseqid"])
-    combined_contig_df = pd.DataFrame({
-        "num_unique_hits": grouped["sseqid"].nunique(),
-        "num_total_hits": grouped.size(),
-    }).reset_index().rename(columns={"qseqid": "contig"})
-    combined_contig_df = combined_contig_df.sort_values(
-        ["input-assembly", "num_total_hits"], ascending=[True, False])
-    combined_contig_df.to_csv(combined_contig_tsv, sep="\t", index=False)
+#     # contig table keeps the assembly name so contigs from different assemblies stay distinct
+#     grouped = combined_hits.groupby(["input-assembly", "qseqid"])
+#     combined_contig_df = pd.DataFrame({
+#         "num_unique_hits": grouped["sseqid"].nunique(),
+#         "num_total_hits": grouped.size(),
+#     }).reset_index().rename(columns={"qseqid": "contig"})
+#     combined_contig_df = combined_contig_df.sort_values(
+#         ["input-assembly", "num_total_hits"], ascending=[True, False])
+#     combined_contig_df.to_csv(combined_contig_tsv, sep="\t", index=False)
 
 
 border = "-" * 80
@@ -483,7 +544,7 @@ def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None
         number of resolved regions after collapsing overlapping targets. """
 
     cols = ["contig", "length", "bases_aligned_to_targets",
-            "perc_contig_aligned_to_targets", "num_unique_hits", "num_total_hits"]
+            "perc_contig_aligned_to_targets", "num_unique_target_hits", "num_total_target_hits"]
 
     if loci_df.empty:
         if num_regions_by_contig is not None:
@@ -505,27 +566,27 @@ def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None
     contig_df = pd.DataFrame({
         "length": lengths,
         "bases_aligned_to_targets": bases_aligned,
-        "num_unique_hits": grouped["target"].nunique(),
-        "num_total_hits": grouped.size(),
+        "num_unique_target_hits": grouped["target"].nunique(),
+        "num_total_target_hits": grouped.size(),
     })
 
     # guard the integer columns explicitly (a stray NaN anywhere would otherwise
     # silently promote them to float in the output)
-    for int_col in ("length", "bases_aligned_to_targets", "num_unique_hits",
-                    "num_total_hits"):
+    for int_col in ("length", "bases_aligned_to_targets", "num_unique_target_hits",
+                    "num_total_target_hits"):
         contig_df[int_col] = contig_df[int_col].astype(int)
 
     contig_df["perc_contig_aligned_to_targets"] = round(
         contig_df["bases_aligned_to_targets"] / contig_df["length"] * 100, 1)
 
     ordered_cols = ["length", "bases_aligned_to_targets", "perc_contig_aligned_to_targets",
-                    "num_unique_hits", "num_total_hits"]
+                    "num_unique_target_hits", "num_total_target_hits"]
 
     if num_regions_by_contig is not None:
         contig_df["num_regions"] = pd.Series(num_regions_by_contig)
         contig_df["num_regions"] = contig_df["num_regions"].fillna(0).astype(int)
         ordered_cols = ["length", "bases_aligned_to_targets", "perc_contig_aligned_to_targets",
-                        "num_unique_hits", "num_regions", "num_total_hits"]
+                        "num_regions", "num_unique_target_hits", "num_total_target_hits"]
 
     contig_df = contig_df[ordered_cols]
 
@@ -748,6 +809,8 @@ def resolve_contig_regions(contig_loci_df, overlap_frac=0.5):
     return regions
 
 
+natural_sort_key = natsort_keygen()
+
 def gen_region_calls_table(loci_df, overlap_frac=0.5):
     """ builds a per-resolved-region table across all contigs from the resolved
         loci (resolve_assembly_loci): one row per region, with the chosen (best)
@@ -801,6 +864,45 @@ def gen_region_calls_table(loci_df, overlap_frac=0.5):
 
     region_df = pd.DataFrame(region_rows, columns=cols)
     region_df = region_df.sort_values(
-        ["contig", "region_start"]).reset_index(drop=True)
+        ["contig", "region_start"],
+        key=lambda col: col.map(natural_sort_key) if col.name == "contig" else col
+    ).reset_index(drop=True)
 
     return region_df, num_regions_by_contig
+
+
+def check_sseqid_target_match(blast_df, targets_dict):
+    """
+    guards against the silent-empty-output failure where BLAST sseqids don't
+    match any targets_dict key (e.g. a db built without -parse_seqids might have
+    been provided to --targets). In that case every coverage lookup would miss
+    and all loci would get dropped, producing an empty run with no error
+    """
+
+    if blast_df.empty:
+        return  # genuine no-hits; nothing to diagnose
+
+    blast_sseqids = set(blast_df["sseqid"].unique())
+    target_keys = set(targets_dict.keys())
+
+    if blast_sseqids & target_keys:
+        return  # at least some overlap; ids line up
+
+    # no overlap at all -> guaranteed every locus would be dropped
+    example_sseqid = next(iter(blast_sseqids))
+    example_target = next(iter(target_keys))
+
+    msg = (
+        "BLAST returned hits, but none of the subject IDs match the target IDs "
+        "used for coverage gating, so every hit would be silently dropped.\n\n"
+        f"    Example subject ID from BLAST:  {example_sseqid}\n"
+        f"    Example target ID expected:     {example_target}\n"
+    )
+
+    msg += (
+        "\n  This usually means the BLAST database was built without "
+        "'-parse_seqids'. Rebuild the db with '-parse_seqids', "
+        "or pass the original fasta to --targets instead."
+    )
+
+    report_failure(msg)

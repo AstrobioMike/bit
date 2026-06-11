@@ -35,16 +35,6 @@ def build_parser(parent_subparsers=None):
     subparsers = parser.add_subparsers(dest="subcommand", required=True, metavar='')
     parser.subparsers = subparsers
 
-    ### shared args ###
-    def add_common_required_arguments(group):
-        group.add_argument(
-            "-t",
-            "--targets",
-            help = "Targets you want to search for, e.g. genes/regions (as nucleotide fasta)",
-            metavar = "<FILE>",
-            required = True
-        )
-
     def add_common_optional_arguments(group):
         group.add_argument(
             "-o",
@@ -71,17 +61,18 @@ def build_parser(parent_subparsers=None):
         )
 
     ### subcommand cli for assembly screening ###
-    assembly_description = ("This subcommand takes a set of target genes or regions to find (in nucleotide format) "
-                            "and searches for them in input assemblies with blastn. It generates the general BLAST outputs "
-                            "as well as simplified summary tables that report how many times each target was "
-                            "found in each input assembly (if the target was < 10,000 bases), or if the target was "
-                            "detected at all (if the target was >= 10,000 bases), based on tunable minimum target "
-                            "coverage and percent-identity thresholds.")
+    assembly_description = ("This subcommand searches input assemblies for a set of target genes or regions "
+                            "(given as a nucleotide fasta or a nucleotide BLAST database) using blastn. "
+                            "It generates summary tables of identified targets overall, and per contig, and it "
+                            "produces a region-based output that cleans up redundancies of multiple targets "
+                            "hitting the same loci.")
+
     assembly_parser = subparsers.add_parser(
         "assembly",
         help="Run BLAST-based screening of targets in assemblies",
         description=assembly_description,
-        epilog="Ex. usage: `bit ez-screen assembly -a assembly.fasta -t targets.fasta`",
+        epilog="Ex. usage: `bit ez-screen assembly -a assembly.fasta -t targets.fasta` "
+               "OR `bit ez-screen assembly -a assembly.fasta -t targets-blastdb`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -90,56 +81,69 @@ def build_parser(parent_subparsers=None):
     assembly_optional = assembly_parser.add_argument_group('Optional Parameters')
 
     assembly_required.add_argument(
-        "-a", 
-        "--assemblies", 
-        help = "Assembly files in fasta format", 
-        metavar = "<FILE>", 
+        "-a",
+        "--assemblies",
+        help = "Assembly files in fasta format",
+        metavar = "<FILE>",
         required = True,
         nargs = '+')
 
-    add_common_required_arguments(assembly_required)
+
+    assembly_required.add_argument(
+        "-t",
+        "--targets",
+        help = "Targets you want to search for, e.g. genes/regions as either a nucleotide fasta or "
+               "or nucleotide BLAST db",
+        metavar = "<FILE> or <PREFIX>",
+        required = True
+    )
+
     add_common_optional_arguments(assembly_optional)
 
     assembly_optional.add_argument(
-        "-f", 
-        "--filter-if-not-detected",
-        help = "By default, all targets are included in the output table, even if they weren't detected "
-               "in any input assemblies. Add this flag if you'd like to filter them out of the final output table.",
-        action = "store_true")
-    
+        "-n",
+        "--num-threads",
+        help = "Number of threads to use during BLAST search (only when a BLAST db is passed to --targets; default: 5)",
+        metavar = "<INT>",
+        default = 5,
+        type = int
+    )
+
     assembly_optional.add_argument(
         "--hit-merge-gap",
         help="When counting hits per contig, multiple alignments (HSPs) of the same "
              "target separated by up to this many bp are counted as one hit "
              "(one locus), so fragmented alignments don't inflate 'num_total_hits' "
              "(default: 200)",
-        metavar="<INT>", 
-        default=200, 
+        metavar="<INT>",
+        default=200,
         type=int)
 
     assembly_optional.add_argument(
         "--dont-resolve-regions",
-        help="By default, hits from different targets that pile onto the same contig "
+        help="By default, hits from different targets at the same contig "
              "locus are collapsed into a single called region, keeping the best hit "
-             "and folding the rest into a '-region-calls.tsv' file, with a 'num_regions' "
-             "column added to the contig summary. Add this flag to disable that and skip "
-             "the region-calls output.",
-        dest="resolve_regions", 
+             "and reporting things in a '-region-calls.tsv' file. Add this flag to "
+             "disable that",
+        dest="resolve_regions",
         action="store_false")
 
     assembly_optional.add_argument(
         "--region-overlap-frac",
         help="Two hits at the same contig locus are treated as the same region when they "
              "overlap by at least this fraction of the shorter hit's span (default: 0.5)",
-        metavar="<FLOAT>", 
-        default=0.5, 
+        metavar="<FLOAT>",
+        default=0.5,
         type=float)
-    
+
     assembly_optional.add_argument(
         "--assemblies-as-rows",
-        help = 'By default the summary table has targets as rows and assemblies as '
-               'columns (more readable when targets greatly outnumber assemblies). Set this '
-               'flag to instead have assemblies as rows and targets as columns.',
+        help = 'Add this flag to have the summary table have assemblies as rows and targets as columns',
+        action = "store_true")
+
+    assembly_optional.add_argument(
+        "--report-all-targets",
+        help = "Add this flag to report all targets in the output summary table (even those with 0 hits detected)",
         action = "store_true")
 
     add_help(assembly_optional)
@@ -167,7 +171,13 @@ def build_parser(parent_subparsers=None):
     reads_optional = reads_parser.add_argument_group('Optional Parameters')
     reads_snakemake = reads_parser.add_argument_group('Snakemake Parameters')
 
-    add_common_required_arguments(reads_required)
+    reads_required.add_argument(
+        "-t",
+        "--targets",
+        help = "Targets you want to search for, e.g. genes/regions (as nucleotide fasta)",
+        metavar = "<FILE>",
+        required = True
+    )
 
     reads_optional.add_argument(
         "-r",

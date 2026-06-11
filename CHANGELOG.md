@@ -14,7 +14,7 @@
 
 -->
 
-## v2.2.1 (NOT YET RELEASED)
+## v2.3.0 (NOT YET RELEASED)
 
 ### Added
 - more outputs to `bit ez-screen assembly`
@@ -24,11 +24,14 @@
 
 ### Changed
 - `bit ez-screen assembly` 
+  - can now take a blast db as `--targets` input parameter (and therefore can use `--num-threads` for the blast when that's the case)
   - tweaks to handling of HSPs to the same target with gaps between them (will be combined now if within `--hit-merge-gap` bases)
     - this applies to all targets now (no longer a 10-kb cutoff for "long" targets)
     - as a consequence of this, long targets are not reported just as DETECTED/NOT-DETECTED anymore, but are reported as counts
   - now defaults to the orientation of targets are rows and assemblies are columns for the main output summary.tsv
     - the `--assemblies-as-rows` flag will give the former output, and the `--transpose-output-tsv` flag is gone
+  - now defaults to only reporting hit targets
+    - the `--report-all-targets` flag will give the former output, and the `--filter-if-not-detected` flag is gone
 
 
 ---
