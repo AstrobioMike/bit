@@ -299,33 +299,6 @@ def filter_undetected_assembly_targets(summary_df):
     return summary_df.drop(columns=cols_to_drop)
 
 
-# def write_combined_assembly_tables(all_filtered_hits, output_prefix):
-#     """ writes combined (across all assemblies) filtered BLAST and contig summary tables """
-
-#     combined_filtered_tsv = output_prefix + "-filtered-blast-results.tsv"
-#     combined_contig_tsv = output_prefix + "-contig-summary.tsv"
-
-#     if not all_filtered_hits:
-#         with open(combined_filtered_tsv, "w") as f:
-#             f.write("No hits passed the set thresholds in any input assembly.\n")
-#         with open(combined_contig_tsv, "w") as f:
-#             f.write("No hits passed the set thresholds in any input assembly.\n")
-#         return
-
-#     combined_hits = pd.concat(all_filtered_hits, ignore_index=True)
-#     combined_hits.to_csv(combined_filtered_tsv, sep="\t", index=False)
-
-#     # contig table keeps the assembly name so contigs from different assemblies stay distinct
-#     grouped = combined_hits.groupby(["input-assembly", "qseqid"])
-#     combined_contig_df = pd.DataFrame({
-#         "num_unique_hits": grouped["sseqid"].nunique(),
-#         "num_total_hits": grouped.size(),
-#     }).reset_index().rename(columns={"qseqid": "contig"})
-#     combined_contig_df = combined_contig_df.sort_values(
-#         ["input-assembly", "num_total_hits"], ascending=[True, False])
-#     combined_contig_df.to_csv(combined_contig_tsv, sep="\t", index=False)
-
-
 border = "-" * 80
 def report_assembly_screen_finished(args, outputs_dir):
     print(f"\n{border}")

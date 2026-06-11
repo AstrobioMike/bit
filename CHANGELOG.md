@@ -14,7 +14,7 @@
 
 -->
 
-## v2.3.0 (NOT YET RELEASED)
+## v2.3.0 (11-Jun-2026)
 
 ### Added
 - more outputs to `bit ez-screen assembly`
