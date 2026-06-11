@@ -89,19 +89,58 @@ def build_parser(parent_subparsers=None):
     assembly_required = assembly_parser.add_argument_group('Required Parameters')
     assembly_optional = assembly_parser.add_argument_group('Optional Parameters')
 
-    assembly_required.add_argument("-a", "--assemblies", help = "Assembly files in fasta format", metavar = "<FILE>", required = True,
-                        nargs = '+')
+    assembly_required.add_argument(
+        "-a", 
+        "--assemblies", 
+        help = "Assembly files in fasta format", 
+        metavar = "<FILE>", 
+        required = True,
+        nargs = '+')
 
     add_common_required_arguments(assembly_required)
     add_common_optional_arguments(assembly_optional)
 
+    assembly_optional.add_argument(
+        "-f", 
+        "--filter-if-not-detected",
+        help = "By default, all targets are included in the output table, even if they weren't detected "
+               "in any input assemblies. Add this flag if you'd like to filter them out of the final output table.",
+        action = "store_true")
+    
+    assembly_optional.add_argument(
+        "--hit-merge-gap",
+        help="When counting hits per contig, multiple alignments (HSPs) of the same "
+             "target separated by up to this many bp are counted as one hit "
+             "(one locus), so fragmented alignments don't inflate 'num_total_hits' "
+             "(default: 200)",
+        metavar="<INT>", 
+        default=200, 
+        type=int)
 
-    assembly_optional.add_argument("-T", "--transpose-output-tsv", help = 'Set this flag if we want to have the output table have targets as rows rather than columns.', action = "store_true")
+    assembly_optional.add_argument(
+        "--dont-resolve-regions",
+        help="By default, hits from different targets that pile onto the same contig "
+             "locus are collapsed into a single called region, keeping the best hit "
+             "and folding the rest into a '-region-calls.tsv' file, with a 'num_regions' "
+             "column added to the contig summary. Add this flag to disable that and skip "
+             "the region-calls output.",
+        dest="resolve_regions", 
+        action="store_false")
 
-    assembly_optional.add_argument("-f", "--filter-if-not-detected",
-                        help = "By default, all targets are included in the output table, even if they weren't detected \
-                                in any input assemblies. Add this flag if you'd like to filter them out of the final output table.",
-                        action = "store_true")
+    assembly_optional.add_argument(
+        "--region-overlap-frac",
+        help="Two hits at the same contig locus are treated as the same region when they "
+             "overlap by at least this fraction of the shorter hit's span (default: 0.5)",
+        metavar="<FLOAT>", 
+        default=0.5, 
+        type=float)
+    
+    assembly_optional.add_argument(
+        "--assemblies-as-rows",
+        help = 'By default the summary table has targets as rows and assemblies as '
+               'columns (more readable when targets greatly outnumber assemblies). Set this '
+               'flag to instead have assemblies as rows and targets as columns.',
+        action = "store_true")
 
     add_help(assembly_optional)
 

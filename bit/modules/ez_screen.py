@@ -89,23 +89,46 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir):
         out_base = safe_name(unique_assembly_name)
 
         blast_df = run_blast(assembly, args.targets, outputs_dir, out_base)
-        filtered_short_blast_df, filtered_long_blast_df, long_targets_results_dict = filter_blast_results(
-            blast_df, targets_dict, args.min_perc_id, args.min_perc_cov)
 
-        # combining short + passing long hits for the per-assembly outputs
-        filtered_hits_df = pd.concat([filtered_short_blast_df, filtered_long_blast_df], ignore_index=True)
+        # pident hard filter (coverage gating now happens per-locus, below)
+        filtered_hits_df = filter_blast_results(blast_df, args.min_perc_id)
 
-        # per-assembly filtered BLAST table
+        # per-assembly filtered BLAST table (pident-passing HSPs)
         filtered_hits_df.to_csv(f"{outputs_dir}/{out_base}-filtered-blast-results.tsv",
                                 sep="\t", index=False)
 
+        # THE single resolution: gap-join HSPs into loci, gate on per-locus
+        # subject coverage. every output below draws from this so they agree.
+        loci_df = resolve_assembly_loci(filtered_hits_df, targets_dict,
+                                        gap_tolerance=args.hit_merge_gap,
+                                        min_perc_cov=args.min_perc_cov)
+
+        # contig lengths (not carried on loci_df) for the contig summary
+        if filtered_hits_df.empty:
+            contig_lengths = {}
+        else:
+            contig_lengths = (filtered_hits_df.drop_duplicates("qseqid")
+                              .set_index("qseqid")["qlen"].to_dict())
+
+        # optional across-target region resolution: collapse loci from different
+        # (often near-identical) targets that pile onto the same contig locus
+        # into a single called region, keeping the best and folding the rest
+        # into 'other_targets'. on by default; disabled with --no-resolve-regions.
+        if args.resolve_regions:
+            region_df, num_regions_by_contig = gen_region_calls_table(
+                loci_df, overlap_frac=args.region_overlap_frac)
+            region_df.to_csv(f"{outputs_dir}/{out_base}-region-calls.tsv",
+                             sep="\t", index=False)
+        else:
+            num_regions_by_contig = None
+
         # per-assembly contig summary table
-        contig_df = gen_contig_summary_table(filtered_hits_df)
+        contig_df = gen_contig_summary_table(loci_df, contig_lengths,
+                                             num_regions_by_contig)
         contig_df.to_csv(f"{outputs_dir}/{out_base}-hit-contig-summary.tsv",
                          sep="\t", index=False)
 
-        summary_df = update_assembly_summary_table(filtered_short_blast_df,
-                                          long_targets_results_dict,
+        summary_df = update_assembly_summary_table(loci_df,
                                           targets_dict,
                                           unique_assembly_name,
                                           summary_df)
@@ -114,11 +137,16 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir):
         summary_df = filter_undetected_assembly_targets(summary_df)
 
     output_tsv = args.output_prefix + "-summary.tsv"
-    if args.transpose_output_tsv:
+    # internally summary_df is built assemblies-as-rows (one row appended per
+    # assembly). the default OUTPUT orientation is targets-as-rows, which stays
+    # readable when targets greatly outnumber assemblies (e.g. vector screening)
+    # and matches the feature-as-row convention of presence/absence tables.
+    # --assemblies-as-rows restores the older assemblies-as-rows orientation.
+    if args.assemblies_as_rows:
+        summary_df.to_csv(output_tsv, sep = "\t", index_label = "input-assembly")
+    else:
         summary_df = summary_df.T
         summary_df.to_csv(output_tsv, sep = "\t", index_label = "target")
-    else:
-        summary_df.to_csv(output_tsv, sep = "\t", index_label = "input-assembly")
 
 
 def get_targets(targets):
@@ -163,52 +191,37 @@ def run_blast(assembly, targets, outputs_dir, out_base):
     return blast_df
 
 
-def filter_blast_results(blast_df, targets_dict, min_perc_id, min_perc_cov):
-    """ Filter BLAST results based on user-specified thresholds """
+def filter_blast_results(blast_df, min_perc_id):
+    """ apply the pident hard filter. coverage gating no longer happens here:
+        it is applied per-locus in resolve_assembly_loci after HSPs are
+        gap-joined, so that coverage split across adjacent HSPs is measured on
+        the merged occurrence rather than per individual HSP. there is no longer
+        a short/long target split or length cutoff -- all targets go through the
+        same locus resolution. """
 
-    long_target_length_cutoff = 10000
+    return blast_df[blast_df["pident"] >= min_perc_id].copy()
 
-    # if query is targets and subject is assembly
-    # short_targets_df, long_targets_df = blast_df[blast_df["qlen"] < long_target_length_cutoff], blast_df[blast_df["qlen"] >= long_target_length_cutoff]
 
-    # if query is assembly and subject is targets
-    short_targets_df, long_targets_df = blast_df[blast_df["slen"] < long_target_length_cutoff], blast_df[blast_df["slen"] >= long_target_length_cutoff]
+def update_assembly_summary_table(loci_df, targets_dict, unique_assembly_name,
+                                  summary_df):
+    """ updates the summary table with results from the current assembly.
 
-    filtered_short_blast_df = short_targets_df[(short_targets_df["pident"] >= min_perc_id) & (short_targets_df["perc-subj-cov"] >= min_perc_cov)]
+        every target cell is a count of passing loci -- distinct occurrences of
+        that target that cleared the coverage gate. short and long targets are
+        treated identically (no DETECTED/NOT-DETECTED strings, no length cutoff):
+        the value is the number of rows for that target in the resolved loci.
+        the count therefore matches num_total_hits in the contig table and the
+        row count in region-calls, since all three draw from the same loci. """
 
-    if not long_targets_df.empty:
-
-        filtered_long_blast_df = long_targets_df[(long_targets_df["pident"] >= min_perc_id)]
-        long_targets_results_dict = gen_long_targets_assembly_results_dict(filtered_long_blast_df,
-                                                                           targets_dict,
-                                                                           long_target_length_cutoff,
-                                                                           min_perc_cov)
-
-        # keeping only the long-target hits whose target was ultimately DETECTED,
-        # so the filtered output reflects what passed coverage too (not just pident)
-        detected_long_ids = {ID for ID, status in long_targets_results_dict.items() if status == "DETECTED"}
-        filtered_long_blast_df = filtered_long_blast_df[filtered_long_blast_df["sseqid"].isin(detected_long_ids)]
-
+    if loci_df.empty:
+        target_counts = {}
     else:
-        long_targets_results_dict = None
-        filtered_long_blast_df = long_targets_df.iloc[0:0]  # empty, same columns
-
-    return filtered_short_blast_df, filtered_long_blast_df, long_targets_results_dict
-
-
-def update_assembly_summary_table(filtered_short_blast_df, long_targets_detected_dict, targets_dict, unique_assembly_name, summary_df):
-    """ updates the summary table with results from the current assembly """
-
-    target_counts = filtered_short_blast_df["sseqid"].value_counts()
+        target_counts = loci_df["target"].value_counts().to_dict()
 
     new_row = pd.DataFrame(columns=targets_dict.keys(), index=[unique_assembly_name])
 
     for target in targets_dict.keys():
         new_row.at[unique_assembly_name, target] = target_counts.get(target, 0)
-
-    if long_targets_detected_dict:
-        for col, new_value in long_targets_detected_dict.items():
-            new_row.at[unique_assembly_name, col] = new_value
 
     summary_df = pd.concat([summary_df, new_row])
 
@@ -216,10 +229,10 @@ def update_assembly_summary_table(filtered_short_blast_df, long_targets_detected
 
 
 def filter_undetected_assembly_targets(summary_df):
-    """ filters out targets that weren't detected in any input assemblies """
+    """ filters out targets that were not found (count 0) in any assembly """
 
     cols_to_drop = summary_df.columns[
-        summary_df.apply(lambda col: set(col.astype(str)) <= {"0", "NOT-DETECTED"})
+        summary_df.apply(lambda col: set(col.astype(str)) <= {"0"})
     ]
 
     return summary_df.drop(columns=cols_to_drop)
@@ -250,53 +263,6 @@ def write_combined_assembly_tables(all_filtered_hits, output_prefix):
     combined_contig_df = combined_contig_df.sort_values(
         ["input-assembly", "num_total_hits"], ascending=[True, False])
     combined_contig_df.to_csv(combined_contig_tsv, sep="\t", index=False)
-
-
-def gen_long_targets_assembly_results_dict(filtered_long_blast_df, targets_dict, long_target_length_cutoff, min_perc_cov):
-    """ remove overlapping alignments and calculate total percent of subject covered by alignment """
-
-    # the sstart and sstop positions aren't necessarily in order from lowest to highest,
-    # which is needed for how we merge the covered regions below
-    # so here was are making new columns that are the min and max of the two
-    filtered_long_blast_df = filtered_long_blast_df.copy() # make a copy to avoid SettingWithCopyWarning
-    filtered_long_blast_df["mod_sstart"] = filtered_long_blast_df[["sstart", "send"]].min(axis = 1)
-    filtered_long_blast_df["mod_send"] = filtered_long_blast_df[["sstart", "send"]].max(axis = 1)
-
-    long_subject_ids = [key for key, value in targets_dict.items() if value >= long_target_length_cutoff]
-
-    long_targets_detected_dict = {}
-
-    for ID in long_subject_ids:
-
-        sub_df = filtered_long_blast_df[filtered_long_blast_df["sseqid"] == ID]
-
-        if sub_df.empty:
-            long_targets_detected_dict[ID] = "NOT-DETECTED"
-            continue
-
-        sub_df = sub_df.sort_values(by = ["mod_sstart"])
-
-        merged_regions = []
-
-        for index, row in sub_df.iterrows():
-
-            start, end = row['mod_sstart'], row['mod_send']
-
-            # if this is the first region or no overlap, adding the region
-            if not merged_regions or start > merged_regions[-1][1]:
-                merged_regions.append([start, end])
-            else:
-                # otherwise, merging the current region with the previous one
-                merged_regions[-1][1] = max(merged_regions[-1][1], end)
-
-        total_subject_bases_covered = sum(end - start + 1 for start, end in merged_regions)
-
-        if total_subject_bases_covered >= min_perc_cov * targets_dict[ID] / 100:
-            long_targets_detected_dict[ID] = "DETECTED"
-        else:
-            long_targets_detected_dict[ID] = "NOT-DETECTED"
-
-    return long_targets_detected_dict
 
 
 border = "-" * 80
@@ -501,22 +467,30 @@ def safe_name(name):
     return name.replace("/", "_").replace("\\", "_")
 
 
-def gen_contig_summary_table(filtered_hits_df):
-    """ builds a per-contig (qseqid) table with contig length, bases of the
-        contig covered by alignments (overlaps merged), number of unique
-        targets hit, and total number of passing hits """
+def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None):
+    """ builds a per-contig table from the resolved loci (resolve_assembly_loci):
+        contig length, bases of the contig covered by passing loci (overlaps
+        merged), number of unique targets found, and number of passing loci.
 
-    cols = ["contig", "length", "bases_aligned", "perc_contig_aligned",
-            "num_unique_hits", "num_total_hits"]
+        contig_lengths is a {contig: length} dict (contig lengths aren't carried
+        on loci_df, so they're passed in).
 
-    if filtered_hits_df.empty:
+        num_total_hits counts passing loci, so it matches the per-target summary
+        counts and the region-calls rows -- all three draw from the same loci.
+
+        if num_regions_by_contig is provided (a {contig: count} dict from
+        gen_region_calls_table), a 'num_regions' column is added reporting the
+        number of resolved regions after collapsing overlapping targets. """
+
+    cols = ["contig", "length", "bases_aligned_to_targets",
+            "perc_contig_aligned_to_targets", "num_unique_hits", "num_total_hits"]
+
+    if loci_df.empty:
+        if num_regions_by_contig is not None:
+            cols.insert(5, "num_regions")
         return pd.DataFrame(columns=cols)
 
-    df = filtered_hits_df.copy()
-    df["q_low"] = df[["qstart", "qend"]].min(axis=1)
-    df["q_high"] = df[["qstart", "qend"]].max(axis=1)
-
-    grouped = df.groupby("qseqid")
+    grouped = loci_df.groupby("contig")
 
     bases_aligned = {
         contig: merge_intervals(list(zip(g["q_low"], g["q_high"])))
@@ -524,32 +498,40 @@ def gen_contig_summary_table(filtered_hits_df):
     }
     bases_aligned = pd.Series(bases_aligned)
 
-    # count merged regions per (contig, target), then sum per contig
-    total_hits = {
-        contig: sum(
-            count_merged_blocks(list(zip(sub["q_low"], sub["q_high"])))
-            for _, sub in g.groupby("sseqid")
-        )
-        for contig, g in grouped
-    }
-    total_hits = pd.Series(total_hits)
+    # length only for contigs that actually have passing loci, so no NaN rows
+    # sneak in and float-ify the integer columns
+    lengths = pd.Series({c: contig_lengths[c] for c in bases_aligned.index})
 
     contig_df = pd.DataFrame({
-        "length": grouped["qlen"].first(),
+        "length": lengths,
         "bases_aligned_to_targets": bases_aligned,
-        "num_unique_hits": grouped["sseqid"].nunique(),
-        "num_total_hits": total_hits,
+        "num_unique_hits": grouped["target"].nunique(),
+        "num_total_hits": grouped.size(),
     })
+
+    # guard the integer columns explicitly (a stray NaN anywhere would otherwise
+    # silently promote them to float in the output)
+    for int_col in ("length", "bases_aligned_to_targets", "num_unique_hits",
+                    "num_total_hits"):
+        contig_df[int_col] = contig_df[int_col].astype(int)
 
     contig_df["perc_contig_aligned_to_targets"] = round(
         contig_df["bases_aligned_to_targets"] / contig_df["length"] * 100, 1)
 
-    # reordering so perc sits next to its inputs
-    contig_df = contig_df[["length", "bases_aligned_to_targets", "perc_contig_aligned_to_targets",
-                           "num_unique_hits", "num_total_hits"]]
+    ordered_cols = ["length", "bases_aligned_to_targets", "perc_contig_aligned_to_targets",
+                    "num_unique_hits", "num_total_hits"]
+
+    if num_regions_by_contig is not None:
+        contig_df["num_regions"] = pd.Series(num_regions_by_contig)
+        contig_df["num_regions"] = contig_df["num_regions"].fillna(0).astype(int)
+        ordered_cols = ["length", "bases_aligned_to_targets", "perc_contig_aligned_to_targets",
+                        "num_unique_hits", "num_regions", "num_total_hits"]
+
+    contig_df = contig_df[ordered_cols]
 
     contig_df = contig_df.sort_values("perc_contig_aligned_to_targets", ascending=False)
-    contig_df = contig_df.reset_index().rename(columns={"qseqid": "contig"})
+    contig_df.index.name = "contig"
+    contig_df = contig_df.reset_index()
 
     return contig_df
 
@@ -573,23 +555,252 @@ def merge_intervals(intervals):
     return sum(end - start + 1 for start, end in merged)
 
 
-def count_merged_blocks(intervals, gap_tolerance=200):
-    """ given a list of (start, end) tuples, returns the NUMBER of blocks
-        after merging overlaps and gaps up to gap_tolerance bp apart
-        (vs merge_intervals which returns total length) """
+def resolve_assembly_loci(filtered_hits_df, targets_dict, gap_tolerance=200,
+                          min_perc_cov=80.0):
+    """ THE unified locus engine. given pident-passing BLAST HSPs for one
+        assembly, resolve them into distinct target occurrences ("loci") and
+        keep only those that clear the coverage gate. every downstream output
+        (summary counts, contig table, region-calls) draws from this single
+        resolution so they cannot disagree.
 
-    if not intervals:
-        return 0
+        per (target, contig):
+          1. gap-join HSPs into loci in CONTIG space (two HSPs share a locus if
+             they are within gap_tolerance bp on the contig)
+          2. for each locus, merge the SUBJECT intervals (sstart..send) and
+             divide by the target length -> perc_target_cov at that locus
+          3. keep the locus only if perc_target_cov >= min_perc_cov
 
-    intervals = sorted(intervals)
-    n_blocks = 1
-    cur_end = intervals[0][1]
+        pident filtering is assumed already applied upstream (filter_blast_results),
+        consistent with how the coverage gate and pident gate are both hard
+        filters: HSPs/loci below threshold simply don't appear.
 
-    for start, end in intervals[1:]:
-        if start > cur_end + gap_tolerance: # gap bigger than tolerance -> new block
-            n_blocks += 1
-            cur_end = end
-        else: # within tolerance -> extend current block
-            cur_end = max(cur_end, end)
+        returns a DataFrame with one row per PASSING locus, columns:
+          contig, target, q_low, q_high, perc_target_cov, pident, bitscore,
+          length, slen
+        where q_low/q_high are the locus' span on the contig, and pident /
+        bitscore / length are taken from the locus' single best HSP (highest
+        bitscore) so the region-resolution downstream has a representative hit
+        to rank. """
 
-    return n_blocks
+    cols = ["contig", "target", "q_low", "q_high", "perc_target_cov",
+            "pident", "bitscore", "length", "slen"]
+
+    if filtered_hits_df.empty:
+        return pd.DataFrame(columns=cols)
+
+    df = filtered_hits_df.copy()
+    df["q_low"] = df[["qstart", "qend"]].min(axis=1)
+    df["q_high"] = df[["qstart", "qend"]].max(axis=1)
+    df["s_low"] = df[["sstart", "send"]].min(axis=1)
+    df["s_high"] = df[["sstart", "send"]].max(axis=1)
+
+    locus_rows = []
+
+    for (target, contig), g in df.groupby(["sseqid", "qseqid"]):
+
+        target_length = targets_dict.get(target)
+        if not target_length:
+            continue
+
+        # order HSPs along the contig, then gap-join into loci
+        hsps = g.sort_values(["q_low", "q_high"]).to_dict("records")
+
+        current = [hsps[0]]
+        cur_qhigh = hsps[0]["q_high"]
+        groups = []
+
+        for h in hsps[1:]:
+            if h["q_low"] > cur_qhigh + gap_tolerance:
+                groups.append(current)
+                current = [h]
+                cur_qhigh = h["q_high"]
+            else:
+                current.append(h)
+                cur_qhigh = max(cur_qhigh, h["q_high"])
+        groups.append(current)
+
+        for locus in groups:
+            # merged subject coverage of the target at this locus
+            subj_bases = merge_intervals([(h["s_low"], h["s_high"]) for h in locus])
+            perc_target_cov = round(subj_bases / target_length * 100, 1)
+
+            if perc_target_cov < min_perc_cov:
+                continue  # hard coverage gate, same treatment as pident filter
+
+            # representative HSP for the locus = highest bitscore
+            best = max(locus, key=lambda h: h["bitscore"])
+
+            locus_rows.append({
+                "contig": contig,
+                "target": target,
+                "q_low": min(h["q_low"] for h in locus),
+                "q_high": max(h["q_high"] for h in locus),
+                "perc_target_cov": perc_target_cov,
+                "pident": best["pident"],
+                "bitscore": best["bitscore"],
+                "length": best["length"],
+                "slen": best["slen"],
+            })
+
+    if not locus_rows:
+        return pd.DataFrame(columns=cols)
+
+    return pd.DataFrame(locus_rows, columns=cols)
+
+
+def _reciprocal_overlap_frac(a_low, a_high, b_low, b_high):
+    """ fraction of the SHORTER of the two spans that is covered by their
+        overlap (1-based inclusive coordinates). returns 0.0 if they don't
+        overlap """
+
+    overlap = min(a_high, b_high) - max(a_low, b_low) + 1
+    if overlap <= 0:
+        return 0.0
+
+    len_a = a_high - a_low + 1
+    len_b = b_high - b_low + 1
+
+    return overlap / min(len_a, len_b)
+
+
+def resolve_contig_regions(contig_loci_df, overlap_frac=0.5):
+    """ given the passing LOCI for a SINGLE contig (a DataFrame with at least
+        q_low, q_high, target, bitscore, pident, length, slen, perc_target_cov
+        columns -- as produced by resolve_assembly_loci), cluster loci that
+        reciprocal-overlap by >= overlap_frac of the shorter span, pick a winner
+        per cluster (by bitscore, tie-broken by pident*length), and return one
+        region record per cluster.
+
+        a locus joins the current cluster if it reciprocal-overlaps ANY locus
+        already in that cluster by >= overlap_frac (single left-to-right sweep
+        over loci sorted by q_low, then q_high). region coordinates are the
+        WINNER's span; target_length is the WINNER's subject length (slen);
+        perc_target_cov is the WINNER's coverage (winner-only, by design).
+
+        returns a list of dicts, one per resolved region, ordered by
+        region_start. """
+
+    if contig_loci_df.empty:
+        return []
+
+    # work with lightweight tuples so we don't lug the whole frame through the sweep
+    # tuple layout: (q_low, q_high, target, bitscore, pident, length, slen, perc_target_cov)
+    rows = list(
+        contig_loci_df[["q_low", "q_high", "target", "bitscore", "pident",
+                        "length", "slen", "perc_target_cov"]]
+        .itertuples(index=False, name=None)
+    )
+
+    # sort by start, then end
+    rows.sort(key=lambda r: (r[0], r[1]))
+
+    def is_better(r, best):
+        # winner = highest bitscore, tie-break by pident*length
+        r_key = (r[3], r[4] * r[5])
+        best_key = (best[3], best[4] * best[5])
+        return r_key > best_key
+
+    clusters = []
+    current = [rows[0]]
+
+    for r in rows[1:]:
+        q_low, q_high = r[0], r[1]
+        joins = any(
+            _reciprocal_overlap_frac(q_low, q_high, m[0], m[1]) >= overlap_frac
+            for m in current
+        )
+        if joins:
+            current.append(r)
+        else:
+            clusters.append(current)
+            current = [r]
+    clusters.append(current)
+
+    regions = []
+    for cluster in clusters:
+        winner = cluster[0]
+        for r in cluster[1:]:
+            if is_better(r, winner):
+                winner = r
+
+        # alternates, best-first, excluding the winner (by identity)
+        alternates = [r for r in cluster if r is not winner]
+        alternates.sort(key=lambda r: (r[3], r[4] * r[5]), reverse=True)
+
+        region_start = int(winner[0])
+        region_end = int(winner[1])
+
+        regions.append({
+            "region_start": region_start,
+            "region_end": region_end,
+            "region_length": region_end - region_start + 1,
+            "aligned_target": winner[2],
+            "target_length": int(winner[6]),
+            "pident": float(winner[4]),
+            "perc_target_cov": float(winner[7]),
+            "bitscore": float(winner[3]),
+            "n_overlapping_targets": len(cluster),
+            "other_targets": [r[2] for r in alternates],
+        })
+
+    regions.sort(key=lambda d: d["region_start"])
+
+    return regions
+
+
+def gen_region_calls_table(loci_df, overlap_frac=0.5):
+    """ builds a per-resolved-region table across all contigs from the resolved
+        loci (resolve_assembly_loci): one row per region, with the chosen (best)
+        target reported as 'aligned_target', the region's coordinates and length
+        on the contig, the aligned target's length, its pident, its per-locus
+        coverage (perc_target_cov), bitscore, and any other targets that
+        overlapped the same region folded into 'other_targets'
+        (semicolon-delimited; "NA" if none).
+
+        perc_target_cov is the WINNER's coverage only -- a quality signal among
+        regions that already cleared the coverage gate.
+
+        columns: contig, region_start, region_end, region_length,
+        aligned_target, target_length, pident, perc_target_cov, bitscore,
+        n_overlapping_targets, other_targets.
+
+        also returns a {contig: num_regions} dict so the contig summary can
+        report a region count sourced from the exact same resolution, keeping
+        the two outputs from drifting. """
+
+    cols = ["contig", "region_start", "region_end", "region_length",
+            "aligned_target", "target_length", "pident", "perc_target_cov",
+            "bitscore", "n_overlapping_targets", "other_targets"]
+
+    if loci_df.empty:
+        return pd.DataFrame(columns=cols), {}
+
+    region_rows = []
+    num_regions_by_contig = {}
+
+    for contig, g in loci_df.groupby("contig"):
+        regions = resolve_contig_regions(g, overlap_frac=overlap_frac)
+        num_regions_by_contig[contig] = len(regions)
+        for r in regions:
+            region_rows.append({
+                "contig": contig,
+                "region_start": r["region_start"],
+                "region_end": r["region_end"],
+                "region_length": r["region_length"],
+                "aligned_target": r["aligned_target"],
+                "target_length": r["target_length"],
+                "pident": round(r["pident"], 1),
+                "perc_target_cov": r["perc_target_cov"],
+                "bitscore": r["bitscore"],
+                "n_overlapping_targets": r["n_overlapping_targets"],
+                "other_targets": ";".join(r["other_targets"]) if r["other_targets"] else "none",
+            })
+
+    if not region_rows:
+        return pd.DataFrame(columns=cols), num_regions_by_contig
+
+    region_df = pd.DataFrame(region_rows, columns=cols)
+    region_df = region_df.sort_values(
+        ["contig", "region_start"]).reset_index(drop=True)
+
+    return region_df, num_regions_by_contig

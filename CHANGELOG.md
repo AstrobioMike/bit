@@ -20,6 +20,15 @@
 - more outputs to `bit ez-screen assembly`
   - *-filtered-blast-results.tsv holding just the hits that resulted in targets being counted
   - *-hit-contig-summary.tsv holding summary info for each contig that had a hit to a target
+  - *-region-calls.tsv holding best-hit selections for contig-regions with overlapping hits
+
+### Changed
+- `bit ez-screen assembly` 
+  - tweaks to handling of HSPs to the same target with gaps between them (will be combined now if within `--hit-merge-gap` bases)
+    - this applies to all targets now (no longer a 10-kb cutoff for "long" targets)
+    - as a consequence of this, long targets are not reported just as DETECTED/NOT-DETECTED anymore, but are reported as counts
+  - now defaults to the orientation of targets are rows and assemblies are columns for the main output summary.tsv
+    - the `--assemblies-as-rows` flag will give the former output, and the `--transpose-output-tsv` flag is gone
 
 
 ---
