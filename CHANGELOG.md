@@ -14,6 +14,13 @@
 
 -->
 
+## v2.3.1 (NOT YET RELEASED)
+
+### Added
+- `bit ez-screen assembly` can now take multiple nucleotide (as fasta or blast db) and/or amino-acid (as fasta or diamond db) inputs for targets
+
+---
+
 ## v2.3.0 (11-Jun-2026)
 
 ### Added

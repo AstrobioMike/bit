@@ -251,8 +251,9 @@ LOCI_COLS = ["contig", "target", "q_low", "q_high", "perc_target_cov",
              "pident", "bitscore", "length", "slen"]
 
 REGION_COLS = ["contig", "region_start", "region_end", "region_length",
-               "aligned_target", "target_length", "pident", "perc_target_cov",
-               "bitscore", "n_overlapping_targets", "other_targets"]
+               "aligned_target", "target_type", "target_length", "pident",
+               "perc_target_cov", "bitscore", "n_overlapping_targets",
+               "other_targets"]
 
 
 # =========================================================================== #
@@ -662,3 +663,177 @@ def test_filter_undetected_drops_all_zero_columns():
     assert "yopK" not in out.columns
     assert "yopE" in out.columns
     assert "bigT" in out.columns
+
+
+# =========================================================================== #
+# multi-targets classification, planning, and collision handling
+# =========================================================================== #
+
+def _write_fasta(path, seqs):
+    with open(path, "w") as f:
+        for name, s in seqs.items():
+            f.write(f">{name}\n{s}\n")
+    return str(path)
+
+
+# ---- classify_targets_entry (fasta paths are testable without external tools) ----
+
+def test_classify_nt_fasta(tmp_path):
+    p = _write_fasta(tmp_path / "nt.fasta", {"oriC": "ACGTACGTACGTACGTACGT"})
+    assert ez.classify_targets_entry(p) == ("fasta", "nt")
+
+
+def test_classify_aa_fasta(tmp_path):
+    p = _write_fasta(tmp_path / "aa.fasta", {"kanR": "MKLPQEFILVNHYWRSTDEAA"})
+    assert ez.classify_targets_entry(p) == ("fasta", "aa")
+
+
+def test_classify_db_aa_via_diamond(tmp_path, monkeypatch):
+    # a path that isn't a fasta but answers to `diamond dbinfo`
+    fake = str(tmp_path / "prot_db")  # no file -> not a fasta
+    monkeypatch.setattr(ez, "diamond_db_is_readable", lambda p: True)
+    monkeypatch.setattr(ez, "blast_db_is_readable", lambda p, t: False)
+    assert ez.classify_targets_entry(fake) == ("db", "aa")
+
+
+def test_classify_db_nt_via_blast(tmp_path, monkeypatch):
+    fake = str(tmp_path / "nucl_db")
+    monkeypatch.setattr(ez, "diamond_db_is_readable", lambda p: False)
+    monkeypatch.setattr(ez, "blast_db_is_readable", lambda p, t: t == "nucl")
+    assert ez.classify_targets_entry(fake) == ("db", "nt")
+
+
+def test_classify_protein_blast_db_rejected(tmp_path, monkeypatch):
+    fake = str(tmp_path / "prot_blast_db")
+    monkeypatch.setattr(ez, "diamond_db_is_readable", lambda p: False)
+    monkeypatch.setattr(ez, "blast_db_is_readable", lambda p, t: t == "prot")
+    with pytest.raises(SystemExit):
+        ez.classify_targets_entry(fake)
+
+
+def test_classify_unrecognizable_rejected(tmp_path, monkeypatch):
+    fake = str(tmp_path / "mystery")
+    monkeypatch.setattr(ez, "diamond_db_is_readable", lambda p: False)
+    monkeypatch.setattr(ez, "blast_db_is_readable", lambda p, t: False)
+    with pytest.raises(SystemExit):
+        ez.classify_targets_entry(fake)
+
+
+# ---- build_targets_plan : merge + collision suffixing ----
+
+def test_build_targets_plan_no_collision(monkeypatch):
+    monkeypatch.setattr(ez, "classify_targets_entry",
+                        lambda e: ("fasta", "nt") if "nt" in e else ("fasta", "aa"))
+    monkeypatch.setattr(ez, "get_targets",
+                        lambda e, m, s: {"oriC": 600, "kanR": 800} if s == "nt"
+                        else {"AmpR": 286, "TetA": 401})
+    monkeypatch.setattr(ez.shutil, "which", lambda x: "/usr/bin/diamond")
+
+    plan = ez.build_targets_plan(["nt_t.fa", "aa_t.fa"], "/tmp")
+    assert set(plan["lengths"]) == {"oriC", "kanR", "AmpR", "TetA"}
+    assert plan["types"]["oriC"] == "nt"
+    assert plan["types"]["AmpR"] == "aa"
+    # no suffixes when no cross-type collision
+    assert not any("__" in k for k in plan["lengths"])
+
+
+def test_build_targets_plan_cross_type_collision_suffixed(monkeypatch):
+    monkeypatch.setattr(ez, "classify_targets_entry",
+                        lambda e: ("fasta", "nt") if "nt" in e else ("fasta", "aa"))
+    monkeypatch.setattr(ez, "get_targets",
+                        lambda e, m, s: {"dfrA": 474, "oriC": 600} if s == "nt"
+                        else {"dfrA": 158, "AmpR": 286})
+    monkeypatch.setattr(ez.shutil, "which", lambda x: "/usr/bin/diamond")
+
+    plan = ez.build_targets_plan(["nt_t.fa", "aa_t.fa"], "/tmp")
+    # only the colliding name is suffixed; others pristine
+    assert plan["lengths"]["dfrA__nt"] == 474
+    assert plan["lengths"]["dfrA__aa"] == 158
+    assert "dfrA" not in plan["lengths"]
+    assert "oriC" in plan["lengths"] and "AmpR" in plan["lengths"]
+    assert plan["types"]["dfrA__nt"] == "nt" and plan["types"]["dfrA__aa"] == "aa"
+    # entries carry the colliding raw names for sseqid remapping
+    nt_entry = [e for e in plan["entries"] if e["seqtype"] == "nt"][0]
+    assert nt_entry["colliding_raw"] == {"dfrA"}
+
+
+# ---- apply_collision_suffix ----
+
+def test_apply_collision_suffix_only_colliding():
+    entry_info = {"seqtype": "nt", "colliding_raw": {"dfrA"}}
+    bdf = pd.DataFrame({"sseqid": ["oriC", "dfrA", "dfrA"],
+                        "qseqid": ["c1", "c1", "c2"]})
+    out = ez.apply_collision_suffix(bdf, entry_info)
+    assert out["sseqid"].tolist() == ["oriC", "dfrA__nt", "dfrA__nt"]
+
+
+def test_apply_collision_suffix_noop_when_no_collisions():
+    entry_info = {"seqtype": "aa", "colliding_raw": set()}
+    bdf = pd.DataFrame({"sseqid": ["AmpR"], "qseqid": ["c1"]})
+    out = ez.apply_collision_suffix(bdf, entry_info)
+    assert out["sseqid"].tolist() == ["AmpR"]
+
+
+# ---- get_targets per modality (fasta path testable directly) ----
+
+def test_get_targets_fasta_lengths(tmp_path):
+    p = _write_fasta(tmp_path / "t.fasta", {"a": "ACGTACGT", "b": "MKLPQEFIL"})
+    out = ez.get_targets(p, "fasta", "nt")
+    assert out == {"a": 8, "b": 9}
+
+
+# ---- target_type propagation through region-calls ----
+
+def _typed_loci():
+    # one nt locus and one aa locus on different contigs; plus a mixed-type
+    # overlap on a third contig (nt wins by bitscore)
+    return pd.DataFrame([
+        {"contig": "cN", "target": "oriC", "q_low": 100, "q_high": 700,
+         "perc_target_cov": 99.0, "pident": 99.0, "bitscore": 1100,
+         "length": 601, "slen": 600, "target_type": "nt"},
+        {"contig": "cA", "target": "AmpR", "q_low": 100, "q_high": 960,
+         "perc_target_cov": 95.0, "pident": 99.0, "bitscore": 1400,
+         "length": 287, "slen": 286, "target_type": "aa"},
+        # mixed overlap on cM: nt oriC2 (bitscore 1200) vs aa kanR (900)
+        {"contig": "cM", "target": "oriC2", "q_low": 100, "q_high": 700,
+         "perc_target_cov": 98.0, "pident": 99.0, "bitscore": 1200,
+         "length": 601, "slen": 600, "target_type": "nt"},
+        {"contig": "cM", "target": "kanR", "q_low": 110, "q_high": 690,
+         "perc_target_cov": 92.0, "pident": 98.0, "bitscore": 900,
+         "length": 580, "slen": 286, "target_type": "aa"},
+    ])
+
+
+def test_region_calls_carries_target_type():
+    loci = _typed_loci()
+    region_df, _ = ez.gen_region_calls_table(loci, overlap_frac=0.5)
+    assert "target_type" in region_df.columns
+    nt_row = region_df[region_df["aligned_target"] == "oriC"].iloc[0]
+    aa_row = region_df[region_df["aligned_target"] == "AmpR"].iloc[0]
+    assert nt_row["target_type"] == "nt"
+    assert aa_row["target_type"] == "aa"
+    # AA target_length stays in amino acids
+    assert aa_row["target_length"] == 286
+
+
+def test_region_calls_mixed_type_region_resolved_by_bitscore():
+    loci = _typed_loci()
+    region_df, _ = ez.gen_region_calls_table(loci, overlap_frac=0.5)
+    cm = region_df[region_df["contig"] == "cM"].iloc[0]
+    # nt oriC2 wins on bitscore; aa kanR folded into other_targets
+    assert cm["aligned_target"] == "oriC2"
+    assert cm["target_type"] == "nt"
+    assert cm["other_targets"] == "kanR"
+    assert cm["n_overlapping_targets"] == 2
+
+
+def test_region_calls_default_target_type_when_column_absent():
+    # loci frames built without a target_type column (e.g. older callers / the
+    # engine's own output before tagging) default to 'nt'
+    loci = pd.DataFrame([
+        {"contig": "c", "target": "t", "q_low": 100, "q_high": 700,
+         "perc_target_cov": 99.0, "pident": 99.0, "bitscore": 1000,
+         "length": 601, "slen": 600},
+    ])
+    region_df, _ = ez.gen_region_calls_table(loci)
+    assert region_df.iloc[0]["target_type"] == "nt"

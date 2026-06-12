@@ -44,14 +44,6 @@ def build_parser(parent_subparsers=None):
             default = "ez-screen", type = str
         )
         group.add_argument(
-            "-m",
-            "--min-perc-id",
-            help = 'Minimum percent ID for a hit to be counted (default: 80)',
-            metavar = "<INT>",
-            default = 80,
-            type = float
-        )
-        group.add_argument(
             "-M",
             "--min-perc-cov",
             help = 'Minimum percent coverage of a target to be counted (default: 80)',
@@ -61,18 +53,17 @@ def build_parser(parent_subparsers=None):
         )
 
     ### subcommand cli for assembly screening ###
-    assembly_description = ("This subcommand searches input assemblies for a set of target genes or regions "
-                            "(given as a nucleotide fasta or a nucleotide BLAST database) using blastn. "
-                            "It generates summary tables of identified targets overall, and per contig, and it "
-                            "produces a region-based output that cleans up redundancies of multiple targets "
-                            "hitting the same loci.")
+    assembly_description = ("This subcommand searches input assemblies for a set of target genes or regions. "
+                            "It generates summary tables of identified targets overall, and per contig, and "
+                            "a region-based output that cleans up redundancies of multiple targets hitting "
+                            "the same loci.")
 
     assembly_parser = subparsers.add_parser(
         "assembly",
-        help="Run BLAST-based screening of targets in assemblies",
+        help="Run BLAST/DIAMOND-based screening of targets in assemblies",
         description=assembly_description,
         epilog="Ex. usage: `bit ez-screen assembly -a assembly.fasta -t targets.fasta` "
-               "OR `bit ez-screen assembly -a assembly.fasta -t targets-blastdb`",
+               "OR `bit ez-screen assembly -a assembly.fasta -t nt-targets.fasta prot-targets.faa`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -92,18 +83,33 @@ def build_parser(parent_subparsers=None):
     assembly_required.add_argument(
         "-t",
         "--targets",
-        help = "Targets you want to search for, e.g. genes/regions as either a nucleotide fasta or "
-               "or nucleotide BLAST db",
-        metavar = "<FILE> or <PREFIX>",
-        required = True
-    )
+        help = "Nucleotide targets (fasta or BLAST db) and/or protein targets (fasta or DIAMOND db) to search for",
+        metavar = "<FILE/PREFIX>",
+        required = True,
+        nargs = '+')
 
     add_common_optional_arguments(assembly_optional)
 
     assembly_optional.add_argument(
+        "--min-nt-perc-id",
+        help = 'Minimum percent ID for a nucleotide hit to be counted (blastn; default: 80)',
+        metavar = "<INT>",
+        default = 80,
+        type = float
+    )
+
+    assembly_optional.add_argument(
+        "--min-aa-perc-id",
+        help = 'Minimum percent ID for a protein hit to be counted (DIAMOND blastx; default: 70)',
+        metavar = "<INT>",
+        default = 70,
+        type = float
+    )
+
+    assembly_optional.add_argument(
         "-n",
         "--num-threads",
-        help = "Number of threads to use during BLAST search (only when a BLAST db is passed to --targets; default: 5)",
+        help = "Number of threads to use during search (other than nt fasta input targets; default: 5)",
         metavar = "<INT>",
         default = 5,
         type = int
@@ -187,6 +193,15 @@ def build_parser(parent_subparsers=None):
         action = "store",
         default = ".",
         type = str
+    )
+
+    reads_optional.add_argument(
+        "-m",
+        "--min-perc-id",
+        help = 'Minimum percent ID for a hit to be counted (default: 80)',
+        metavar = "<INT>",
+        default = 80,
+        type = float
     )
 
     add_common_optional_arguments(reads_optional)
