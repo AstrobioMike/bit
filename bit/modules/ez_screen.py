@@ -139,14 +139,17 @@ def classify_targets_entry(entry):
         return ("db", "nt")
 
     if blast_db_is_readable(entry, "prot"):
-        report_failure(
-            f"--targets entry looks like a protein BLAST database, which isn't "
-            f"supported:\n    {entry}\n\n  Pass a protein fasta or a DIAMOND "
-            f"database (built with `diamond makedb`) instead.")
+        report_message(
+            f"The follwing `--targets` entry looks like a protein BLAST database, which isn't "
+            f"supported. Pass a protein fasta or a DIAMOND database (built with `diamond makedb`) instead.")
+        report_message(f"    {entry}", join = False, color = "none")
+        report_failure()
 
-    report_failure(
-        f"--targets entry is neither a readable fasta nor a recognized BLAST or "
-        f"DIAMOND database:\n    {entry}")
+    report_message(
+        f"The following `--targets` entry is neither a readable fasta nor a recognized BLAST or "
+        f"DIAMOND database:")
+    report_message(f"    {entry}", join = False, color = "none")
+    report_failure()
 
 
 def build_targets_plan(targets_entries, outputs_dir):
@@ -415,7 +418,10 @@ def run_blastn(assembly, targets, modality, outputs_dir, out_base, num_threads):
     try:
         blast_results = subprocess.check_output(blast_command, stderr=subprocess.STDOUT, text=True)
     except subprocess.CalledProcessError as e:
-        report_failure("BLAST failed with the following error:  \n" + e.output)
+        print()
+        report_message("BLAST failed with the following error:")
+        report_message(f"{e.output}", join = False, color = "none", initial_indent = "      ", subsequent_indent = "      ")
+        report_failure("")
 
     cols = ["qseqid", "qlen", "sseqid", "slen", "qstart", "qend", "sstart",
             "send", "length", "qcovs", "qcovhsp", "qcovus", "pident", "evalue", "bitscore"]
@@ -438,7 +444,10 @@ def build_diamond_db(protein_fasta, db_path):
     try:
         subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
     except subprocess.CalledProcessError as e:
-        report_failure("DIAMOND makedb failed with the following error:  \n" + e.output)
+        print()
+        report_message("DIAMOND makedb failed with the following error:")
+        report_message(f"{e.output}", join = False, color = "none", initial_indent = "      ", subsequent_indent = "      ")
+        report_failure("")
 
 
 def run_diamond_blastx(assembly, db_path, outputs_dir, out_base, num_threads):
@@ -458,7 +467,10 @@ def run_diamond_blastx(assembly, db_path, outputs_dir, out_base, num_threads):
     try:
         results = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
     except subprocess.CalledProcessError as e:
-        report_failure("DIAMOND blastx failed with the following error:  \n" + e.output)
+        print()
+        report_message("DIAMOND blastx failed with the following error:")
+        report_message(f"{e.output}", join = False, color = "none", initial_indent = "      ", subsequent_indent = "      ")
+        report_failure("")
 
     if results.strip() == "":
         blast_df = pd.DataFrame(columns=fields)
@@ -1074,17 +1086,25 @@ def check_sseqid_target_match(blast_df, target_names):
     example_target = next(iter(target_keys)) if target_keys else "(none)"
 
     msg = (
-        "A targets-search returned hits, but none of the subject IDs match the "
-        "target IDs used for coverage gating, so every hit would be silently "
-        "dropped.\n\n"
-        f"    Example subject ID from search:  {example_sseqid}\n"
-        f"    Example target ID expected:      {example_target}\n"
-    )
+        "A target search returned hits, but none of the subject IDs don't match the headers "
+        "pulled out in fasta form from the database. (This won't work for us...)")
 
-    msg += (
-        "\n  For a BLAST db this usually means it was built without "
+    print()
+    report_message(msg)
+
+    report_message(f"Example subject ID from search:  {example_sseqid}",
+                   initial_indent = "      ", subsequent_indent = "      ",
+                   color = "none")
+    report_message(f"Example header pulled out:       {example_target}",
+                   initial_indent = "      ", subsequent_indent = "      ",
+                   color = "none", leading_newline = False, join = False)
+
+    msg = (
+        "For a BLAST db this usually means it was built without "
         "'-parse_seqids'. Rebuild with '-parse_seqids', or pass the original "
-        "fasta to --targets instead."
+        "fasta to `--targets` instead."
     )
 
-    report_failure(msg)
+    report_message(msg)
+
+    report_failure()

@@ -65,9 +65,12 @@ def report_message(message, color = "yellow", width = 80,
         print("")
 
 
-def report_failure(message, color = "red"):
-    print("")
-    wprint(color_text(message, color))
+def report_failure(message="", color = "red"):
+    if message:
+        print("")
+        wprint(color_text(message, color))
+    else:
+        print("")
     print("\nExiting for now :(\n")
     sys.exit(1)
 
