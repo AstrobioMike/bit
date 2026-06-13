@@ -837,3 +837,131 @@ def test_region_calls_default_target_type_when_column_absent():
     ])
     region_df, _ = ez.gen_region_calls_table(loci)
     assert region_df.iloc[0]["target_type"] == "nt"
+
+
+# =========================================================================== #
+# island clustering + extraction
+# =========================================================================== #
+
+def _regions_df(specs):
+    # specs: list of (contig, start, end); index is 0..n like real region-calls
+    return pd.DataFrame(
+        [{"contig": c, "region_start": s, "region_end": e} for c, s, e in specs])
+
+
+def test_cluster_single_tight_island():
+    df = _regions_df([("c", 1000, 1500), ("c", 2000, 2500), ("c", 3000, 4000)])
+    islands = ez.cluster_regions_into_islands(df, island_gap=2500)
+    assert len(islands) == 1
+    assert islands[0]["island_start"] == 1000
+    assert islands[0]["island_end"] == 4000
+    assert islands[0]["num_regions"] == 3
+
+
+def test_cluster_gap_splits_islands():
+    df = _regions_df([("c", 1000, 1500), ("c", 2000, 2500),
+                      ("c", 20000, 20500), ("c", 21000, 21500)])
+    islands = ez.cluster_regions_into_islands(df, island_gap=2500)
+    assert len(islands) == 2
+    assert islands[0]["num_regions"] == 2
+    assert islands[1]["num_regions"] == 2
+
+
+def test_cluster_gap_boundary_joins_and_splits():
+    joined = ez.cluster_regions_into_islands(
+        _regions_df([("c", 1000, 1500), ("c", 4000, 4500)]), island_gap=2500)
+    assert len(joined) == 1
+    split = ez.cluster_regions_into_islands(
+        _regions_df([("c", 1000, 1500), ("c", 4001, 4500)]), island_gap=2500)
+    assert len(split) == 2
+
+
+def test_island_passes_all_conditions():
+    island = {"island_start": 1000, "island_end": 4000, "num_regions": 3}
+    assert ez.island_passes_extraction(island, 30000)
+
+
+def test_island_fails_below_contig_floor():
+    island = {"island_start": 1000, "island_end": 4000, "num_regions": 3}
+    assert not ez.island_passes_extraction(island, 15000)
+
+
+def test_island_fails_ratio():
+    island = {"island_start": 1000, "island_end": 10000, "num_regions": 5}
+    assert not ez.island_passes_extraction(island, 25000)
+
+
+def test_island_fails_too_few_regions():
+    island = {"island_start": 1000, "island_end": 4000, "num_regions": 2}
+    assert not ez.island_passes_extraction(island, 30000)
+
+
+def test_island_fails_span_too_small():
+    island = {"island_start": 1000, "island_end": 1800, "num_regions": 3}
+    assert not ez.island_passes_extraction(island, 30000)
+
+
+def test_buffered_coords_clamp_both_ends():
+    near_start = {"island_start": 200, "island_end": 3000}
+    assert ez.buffered_island_coords(near_start, 30000, buffer=500) == (1, 3500)
+    near_end = {"island_start": 26000, "island_end": 29800}
+    assert ez.buffered_island_coords(near_end, 30000, buffer=500) == (25500, 30000)
+
+
+def test_make_island_id_uses_safe_name():
+    assert ez.make_island_id("contig/1", 500, 4500) == "contig_1_island_500-4500"
+
+
+def test_extract_islands_end_to_end(tmp_path):
+    asm = tmp_path / "asm.fasta"
+    asm.write_text(">bigContig\n" + "A" * 60000 + "\n>smallPlasmid\n" + "C" * 8000 + "\n")
+    region_df = _regions_df([
+        ("bigContig", 1000, 1500), ("bigContig", 2200, 2800), ("bigContig", 3500, 4000),
+        ("smallPlasmid", 500, 1500), ("smallPlasmid", 2500, 3500), ("smallPlasmid", 4500, 5500),
+    ])
+    contig_lengths = {"bigContig": 60000, "smallPlasmid": 8000}
+    outdir = tmp_path / "out"
+    outdir.mkdir()
+
+    rmap, cmap = ez.extract_islands_for_assembly(
+        region_df, contig_lengths, str(asm), str(outdir), "asm")
+
+    assert "smallPlasmid" not in cmap
+    assert cmap["bigContig"] == ["bigContig_island_500-4500"]
+    assert set(rmap.keys()) == {0, 1, 2}
+
+    man = pd.read_csv(outdir / "asm-extracted-islands.tsv", sep="\t")
+    row = man[man["contig"] == "bigContig"].iloc[0]
+    assert row["island_start"] == 1000 and row["island_end"] == 4000
+    assert row["island_span"] == 3001
+    assert row["buffered_start"] == 500 and row["buffered_end"] == 4500
+    assert row["num_regions"] == 3
+
+    fasta = outdir / "asm-extracted-islands" / "bigContig_island_500-4500.fasta"
+    assert fasta.exists()
+    seq = fasta.read_text().strip().split("\n")[1]
+    assert len(seq) == 4001
+
+
+def test_extract_islands_empty_regions_writes_empty_manifest(tmp_path):
+    outdir = tmp_path / "out"
+    outdir.mkdir()
+    rmap, cmap = ez.extract_islands_for_assembly(
+        pd.DataFrame(), {}, "unused.fasta", str(outdir), "asm")
+    assert rmap == {} and cmap == {}
+    man = pd.read_csv(outdir / "asm-extracted-islands.tsv", sep="\t")
+    assert man.empty
+    assert not (outdir / "asm-extracted-islands").exists()
+
+
+def test_contig_summary_island_ids_column():
+    loci = pd.DataFrame([
+        {"contig": "bigContig", "target": "t", "q_low": 1000, "q_high": 4000,
+         "perc_target_cov": 99.0, "pident": 99.0, "bitscore": 1000,
+         "length": 3001, "slen": 3000},
+    ])
+    contig_lengths = {"bigContig": 60000}
+    cmap = {"bigContig": ["bigContig_island_500-4500"]}
+    out = ez.gen_contig_summary_table(loci, contig_lengths, contig_island_map=cmap)
+    assert "island_ids" in out.columns
+    assert out.iloc[0]["island_ids"] == "bigContig_island_500-4500"

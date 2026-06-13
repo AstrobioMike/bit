@@ -285,9 +285,24 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan):
         # targets (including across nt/aa types) that pile onto the same contig
         # locus into a single called region, keeping the best and folding the
         # rest into 'other_targets'. on by default; disabled with --dont-resolve-regions.
+        contig_island_map = {}
         if args.resolve_regions:
             region_df, num_regions_by_contig = gen_region_calls_table(
                 loci_df, overlap_frac=args.region_overlap_frac)
+
+            # optional island extraction: cluster regions into islands and cut
+            # out those buried in large contigs (needs resolved regions). adds
+            # cross-reference ids tying region-calls <-> contig-summary <-> the
+            # extracted FASTAs + manifest. off via --no-island-extraction.
+            if args.island_extraction:
+                region_island_map, contig_island_map = extract_islands_for_assembly(
+                    region_df, contig_lengths, assembly, outputs_dir, out_base,
+                    island_gap=args.island_gap, contig_floor=args.island_contig_floor,
+                    ratio=args.island_contig_ratio, min_span=args.island_min_span,
+                    min_regions=args.island_min_regions, buffer=args.island_buffer)
+                region_df["island_id"] = region_df.index.map(
+                    lambda idx: region_island_map.get(idx, "none"))
+
             region_df.to_csv(f"{outputs_dir}/{out_base}-region-calls.tsv",
                              sep="\t", index=False)
         else:
@@ -295,7 +310,8 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan):
 
         # per-assembly contig summary table
         contig_df = gen_contig_summary_table(loci_df, contig_lengths,
-                                             num_regions_by_contig)
+                                             num_regions_by_contig,
+                                             contig_island_map=contig_island_map)
         contig_df.to_csv(f"{outputs_dir}/{out_base}-hit-contig-summary.tsv",
                          sep="\t", index=False)
 
@@ -724,7 +740,8 @@ def safe_name(name):
     return name.replace("/", "_").replace("\\", "_")
 
 
-def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None):
+def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None,
+                             contig_island_map=None):
 
     cols = ["contig", "length", "bases_aligned_to_targets",
             "perc_contig_aligned_to_targets", "num_unique_target_hits",
@@ -733,6 +750,8 @@ def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None
     if loci_df.empty:
         if num_regions_by_contig is not None:
             cols.insert(5, "num_regions")
+        if contig_island_map:
+            cols.append("island_ids")
         return pd.DataFrame(columns=cols)
 
     grouped = loci_df.groupby("contig")
@@ -767,6 +786,13 @@ def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None
         contig_df["num_regions"] = contig_df["num_regions"].fillna(0).astype(int)
         ordered_cols = ["length", "bases_aligned_to_targets", "perc_contig_aligned_to_targets",
                         "num_regions", "num_unique_target_hits", "num_total_target_hits"]
+
+    # island cross-reference: which extracted island(s) came from each contig.
+    # 'none' for contigs that produced no extracted island.
+    if contig_island_map:
+        contig_df["island_ids"] = contig_df.index.map(
+            lambda c: ";".join(contig_island_map[c]) if c in contig_island_map else "none")
+        ordered_cols = ordered_cols + ["island_ids"]
 
     contig_df = contig_df[ordered_cols]
 
@@ -1058,6 +1084,175 @@ def gen_region_calls_table(loci_df, overlap_frac=0.5):
     ).reset_index(drop=True)
 
     return region_df, num_regions_by_contig
+
+
+def cluster_regions_into_islands(region_df_for_contig, island_gap=2500):
+    """ 
+    given the resolved regions for an individual contig (rows with region_start /
+    region_end and a DataFrame index), this chains regions within island_gap bp of
+    each other into islands
+
+    returns a list of dicts:
+        {island_start, island_end, num_regions, region_indices}
+    where region_indices are the DataFrame index labels of the member
+    regions (used to tag region-calls with the island id)
+    """
+
+    if region_df_for_contig.empty:
+        return []
+
+    rows = sorted(
+        ((int(r.region_start), int(r.region_end), idx)
+         for idx, r in region_df_for_contig.iterrows()),
+        key=lambda t: (t[0], t[1]))
+
+    islands = []
+    cur_start, cur_end, idxs, cur_count = rows[0][0], rows[0][1], [rows[0][2]], 1
+
+    for start, end, idx in rows[1:]:
+        if start <= cur_end + island_gap:
+            cur_end = max(cur_end, end)
+            cur_count += 1
+            idxs.append(idx)
+        else:
+            islands.append({"island_start": cur_start, "island_end": cur_end,
+                            "num_regions": cur_count, "region_indices": idxs})
+            cur_start, cur_end, idxs, cur_count = start, end, [idx], 1
+    islands.append({"island_start": cur_start, "island_end": cur_end,
+                    "num_regions": cur_count, "region_indices": idxs})
+
+    return islands
+
+
+def island_passes_extraction(island, contig_length, contig_floor=20000,
+                             ratio=3.0, min_span=2000, min_regions=3):
+    """ 
+    four-part extraction trigger on one island (base span (no buffer)):
+        contig_length >= contig_floor          (big enough to bother cutting)
+        contig_length >= ratio * island_span   (island is a minority of contig)
+        island_span   >= min_span              (long enough to cut)
+        num_regions   >= min_regions           (a real cluster, not a lone hit)
+    """
+    span = island["island_end"] - island["island_start"] + 1
+    return (
+        contig_length >= contig_floor and
+        contig_length >= ratio * span and
+        span >= min_span and
+        island["num_regions"] >= min_regions
+    )
+
+
+def buffered_island_coords(island, contig_length, buffer=500):
+    """
+    adds the flanking buffer to an island's base coords, up 
+    to any contig ends at least
+    """
+    bstart = max(1, island["island_start"] - buffer)
+    bend = min(contig_length, island["island_end"] + buffer)
+    return bstart, bend
+
+
+def make_island_id(contig, bstart, bend):
+    """
+    makes the identifier shared by the island's fasta filename, its
+    manifest row, and the cross-reference columns in the other tables
+    """
+    return f"{safe_name(contig)}_island_{bstart}-{bend}"
+
+
+def extract_islands_for_assembly(region_df, contig_lengths, assembly_path,
+                                 outputs_dir, out_base,
+                                 island_gap=2500, contig_floor=20000,
+                                 ratio=3.0, min_span=2000, min_regions=3,
+                                 buffer=500):
+    """
+    clusters resolved regions into islands, keeping those passing the extraction
+    trigger, slices each (buffered) out of its contig, and writes one
+    fasta per island into a per-assembly subdir plus a manifest tsv
+
+    returns:
+        region_island_map: {region_df_index: island_id} for passing islands
+        contig_island_map: {contig: [island_id, ...]}
+    so we can add island_id / island_ids columns to the other tables
+
+    sequences are read lazily: only contigs that have a passing island are
+    pulled from the input assembly(ies). islands require resolved regions, so if
+    region_df is empty (e.g., --dont-resolve-regions) nothing is extracted
+    """
+
+    manifest_cols = ["island_id", "contig", "island_start", "island_end",
+                     "island_span", "buffered_start", "buffered_end",
+                     "num_regions", "contig_length"]
+    manifest_path = f"{outputs_dir}/{out_base}-extracted-islands.tsv"
+
+    region_island_map = {}
+    contig_island_map = {}
+
+    if region_df is None or region_df.empty:
+        pd.DataFrame(columns=manifest_cols).to_csv(manifest_path, sep="\t", index=False)
+        return region_island_map, contig_island_map
+
+    # 1. cluster per contig and collect passing islands (no sequence reading yet)
+    passing = []  # (contig, island dict, bstart, bend)
+    for contig, g in region_df.groupby("contig"):
+        contig_length = contig_lengths.get(contig)
+        if not contig_length:
+            continue
+        for island in cluster_regions_into_islands(g, island_gap=island_gap):
+            if island_passes_extraction(island, contig_length,
+                                        contig_floor=contig_floor, ratio=ratio,
+                                        min_span=min_span, min_regions=min_regions):
+                bstart, bend = buffered_island_coords(island, contig_length, buffer=buffer)
+                passing.append((contig, island, bstart, bend))
+
+    if not passing:
+        pd.DataFrame(columns=manifest_cols).to_csv(manifest_path, sep="\t", index=False)
+        return region_island_map, contig_island_map
+
+    # 2. lazily read only the contigs we need from the assembly
+    needed_contigs = {contig for contig, *_ in passing}
+    contig_seqs = {}
+    for record in SeqIO.parse(assembly_path, "fasta"):
+        if record.id in needed_contigs:
+            contig_seqs[record.id] = record.seq
+            if len(contig_seqs) == len(needed_contigs):
+                break
+
+    # 3. slice, write per-island FASTAs into the subdir, build manifest + maps
+    island_subdir = f"{outputs_dir}/{out_base}-extracted-islands"
+    os.makedirs(island_subdir, exist_ok=True)
+
+    manifest_rows = []
+    for contig, island, bstart, bend in passing:
+        seq = contig_seqs.get(contig)
+        if seq is None:
+            continue  # contig not found in assembly (shouldn't happen); skip safely
+        island_id = make_island_id(contig, bstart, bend)
+        subseq = seq[bstart - 1:bend]  # 1-based inclusive -> python slice
+
+        with open(f"{island_subdir}/{island_id}.fasta", "w") as f:
+            f.write(f">{island_id}\n{str(subseq)}\n")
+
+        for idx in island["region_indices"]:
+            region_island_map[idx] = island_id
+        contig_island_map.setdefault(contig, []).append(island_id)
+
+        manifest_rows.append({
+            "island_id": island_id,
+            "contig": contig,
+            "island_start": island["island_start"],
+            "island_end": island["island_end"],
+            "island_span": island["island_end"] - island["island_start"] + 1,
+            "buffered_start": bstart,
+            "buffered_end": bend,
+            "num_regions": island["num_regions"],
+            "contig_length": contig_lengths[contig],
+        })
+
+    pd.DataFrame(manifest_rows, columns=manifest_cols).to_csv(
+        manifest_path, sep="\t", index=False)
+
+    return region_island_map, contig_island_map
 
 
 def check_sseqid_target_match(blast_df, target_names):
