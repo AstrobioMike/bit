@@ -258,7 +258,7 @@ def _add_fine_tuning_arguments(target, hidden=False):
         help=h("Resolved regions within this many bp of each other on a contig are "
                "chained into one island (default: 2500)"),
         metavar="<INT>",
-        default=2500,
+        default=5000,
         type=int)
 
     target.add_argument(
