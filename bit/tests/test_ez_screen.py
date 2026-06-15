@@ -923,7 +923,7 @@ def test_extract_islands_end_to_end(tmp_path):
     outdir = tmp_path / "out"
     outdir.mkdir()
 
-    rmap, cmap = ez.extract_islands_for_assembly(
+    rmap, cmap = ez.extract_islands(
         region_df, contig_lengths, str(asm), str(outdir), "asm")
 
     assert "smallPlasmid" not in cmap
@@ -946,7 +946,7 @@ def test_extract_islands_end_to_end(tmp_path):
 def test_extract_islands_empty_regions_writes_empty_manifest(tmp_path):
     outdir = tmp_path / "out"
     outdir.mkdir()
-    rmap, cmap = ez.extract_islands_for_assembly(
+    rmap, cmap = ez.extract_islands(
         pd.DataFrame(), {}, "unused.fasta", str(outdir), "asm")
     assert rmap == {} and cmap == {}
     man = pd.read_csv(outdir / "asm-extracted-islands.tsv", sep="\t")
