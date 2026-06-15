@@ -295,7 +295,7 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan):
             # cross-reference ids tying region-calls <-> contig-summary <-> the
             # extracted FASTAs + manifest. off via --no-island-extraction.
             if args.island_extraction:
-                region_island_map, contig_island_map = extract_islands_for_assembly(
+                region_island_map, contig_island_map = extract_islands(
                     region_df, contig_lengths, assembly, outputs_dir, out_base,
                     island_gap=args.island_gap, contig_floor=args.island_contig_floor,
                     ratio=args.island_contig_ratio, min_span=args.island_min_span,
@@ -1087,7 +1087,7 @@ def gen_region_calls_table(loci_df, overlap_frac=0.5):
 
 
 def cluster_regions_into_islands(region_df_for_contig, island_gap=2500):
-    """ 
+    """
     given the resolved regions for an individual contig (rows with region_start /
     region_end and a DataFrame index), this chains regions within island_gap bp of
     each other into islands
@@ -1126,7 +1126,7 @@ def cluster_regions_into_islands(region_df_for_contig, island_gap=2500):
 
 def island_passes_extraction(island, contig_length, contig_floor=20000,
                              ratio=3.0, min_span=2000, min_regions=3):
-    """ 
+    """
     four-part extraction trigger on one island (base span (no buffer)):
         contig_length >= contig_floor          (big enough to bother cutting)
         contig_length >= ratio * island_span   (island is a minority of contig)
@@ -1144,7 +1144,7 @@ def island_passes_extraction(island, contig_length, contig_floor=20000,
 
 def buffered_island_coords(island, contig_length, buffer=500):
     """
-    adds the flanking buffer to an island's base coords, up 
+    adds the flanking buffer to an island's base coords, up
     to any contig ends at least
     """
     bstart = max(1, island["island_start"] - buffer)
@@ -1160,11 +1160,11 @@ def make_island_id(contig, bstart, bend):
     return f"{safe_name(contig)}_island_{bstart}-{bend}"
 
 
-def extract_islands_for_assembly(region_df, contig_lengths, assembly_path,
-                                 outputs_dir, out_base,
-                                 island_gap=2500, contig_floor=20000,
-                                 ratio=3.0, min_span=2000, min_regions=3,
-                                 buffer=500):
+def extract_islands(region_df, contig_lengths, assembly_path,
+                    outputs_dir, out_base,
+                    island_gap=5000, contig_floor=20000,
+                    ratio=3.0, min_span=2000, min_regions=3,
+                    buffer=500):
     """
     clusters resolved regions into islands, keeping those passing the extraction
     trigger, slices each (buffered) out of its contig, and writes one
