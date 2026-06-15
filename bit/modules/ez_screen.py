@@ -14,6 +14,7 @@ from collections import defaultdict
 import numpy as np # type: ignore
 from natsort import natsort_keygen # type: ignore
 from bit.modules.input_parsing import get_input_reads_dict_from_dir
+from bit.modules.seqs import identify_seq_type
 from bit.modules.general import (report_message,
                        report_failure,
                        get_package_path,
@@ -23,8 +24,8 @@ from bit.modules.general import (report_message,
 
 def run_assembly(args, full_cmd_executed):
     outputs_dir = args.output_prefix + "-outputs"
-    assembly_path_dict, targets_type = assembly_preflight(args, outputs_dir)
-    run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_type)
+    assembly_path_dict, targets_plan = assembly_preflight(args, outputs_dir)
+    run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan)
     report_assembly_screen_finished(args, outputs_dir)
     log_command_run(full_cmd_executed, outputs_dir)
 
@@ -39,12 +40,13 @@ def run_reads(args, full_cmd_executed):
 
 def assembly_preflight(args, outputs_dir):
 
-    targets_type = detect_targets_type(args.targets)
-    check_assembly_inputs(args.assemblies, args.targets, targets_type)
+    check_assembly_inputs(args.assemblies)
 
     if os.path.exists(outputs_dir):
         shutil.rmtree(outputs_dir)
     os.makedirs(outputs_dir)
+
+    targets_plan = build_targets_plan(args.targets, outputs_dir)
 
     assembly_basenames = [os.path.splitext(os.path.basename(assembly))[0] for assembly in args.assemblies]
     basename_counts = {basename: assembly_basenames.count(basename) for basename in assembly_basenames}
@@ -54,47 +56,10 @@ def assembly_preflight(args, outputs_dir):
     else:
         assembly_path_dict = {assembly: os.path.splitext(os.path.basename(assembly))[0] for assembly in args.assemblies}
 
-    return assembly_path_dict, targets_type
+    return assembly_path_dict, targets_plan
 
 
-def detect_targets_type(targets):
-    """
-    determines whether --targets points to a nucleotide fasta or a BLAST db
-
-    a BLAST db is given as a path PREFIX (no single file at that exact path),
-    with sibling index files alongside it. a fasta is a normal readable file.
-
-    returns "db" or "fasta"; calls report_failure if it's a db that isn't
-    readable, or neither
-    """
-
-    # an existing regular file that isn't a db prefix -> treat as fasta
-    if os.path.isfile(targets):
-        return "fasta"
-
-    # otherwise it may be a db prefix; confirm by asking BLAST
-    if blast_db_is_readable(targets):
-        return "db"
-
-    report_failure(
-        f"Specified --targets is neither a readable fasta file nor a valid BLAST "
-        f"database: {targets}")
-
-
-def blast_db_is_readable(db_prefix):
-    """ returns True if blastdbcmd can open the nucleotide db at db_prefix """
-
-    try:
-        subprocess.run(
-            ["blastdbcmd", "-db", db_prefix, "-dbtype", "nucl", "-info"],
-            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        return True
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return False
-
-
-def check_assembly_inputs(assemblies, targets, targets_type):
-    """ checks that input files exist """
+def check_assembly_inputs(assemblies):
 
     for assembly in assemblies:
         if not os.path.exists(assembly):
@@ -102,18 +67,155 @@ def check_assembly_inputs(assemblies, targets, targets_type):
         if os.path.isdir(assembly):
             report_failure(f"Specified input assembly is a directory, but needs to be a file or files: {assembly}")
 
-    # a db prefix was already validated in detect_targets_type; only fasta needs
-    # the file/dir checks here
-    if targets_type == "fasta":
-        if not os.path.exists(targets):
-            report_failure(f"Specified input targets file not found: {targets}")
-        if os.path.isdir(targets):
-            report_failure(f"Specified input targets is a directory, but needs to be a file: {targets}")
+
+def parses_as_fasta(path):
+    """
+    checks if at least a fasta record can be read from path. This is
+    used to classify --targets entries
+    """
+    if not os.path.isfile(path):
+        return False
+    try:
+        for _ in SeqIO.parse(path, "fasta"):
+            return True
+    except Exception:
+        return False
+    return False
 
 
-def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_type):
+def blast_db_is_readable(db_prefix, dbtype):
+    """
+    returns True if blastdbcmd can open the db at db_prefix as dbtype
+    ('nucl' or 'prot')
+    """
+    try:
+        subprocess.run(
+            ["blastdbcmd", "-db", db_prefix, "-dbtype", dbtype, "-info"],
+            check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
 
-    targets_dict = get_targets(args.targets, targets_type)
+
+def diamond_db_is_readable(path):
+    """
+    returns True if `diamond dbinfo` can open path as a DIAMOND database.
+    handles the path given with or without the .dmnd extension
+    """
+    candidates = [path]
+    if path.endswith(".dmnd"):
+        candidates.append(path[:-5])
+    else:
+        candidates.append(path + ".dmnd")
+    for candidate in candidates:
+        try:
+            subprocess.run(
+                ["diamond", "dbinfo", "--db", candidate],
+                check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            continue
+    return False
+
+
+def classify_targets_entry(entry):
+    """
+    classify one --targets entry into (modality, seqtype):
+        ("fasta", "nt")  nucleotide fasta   -> blastn -subject
+        ("fasta", "aa")  protein fasta      -> build .dmnd -> diamond blastx
+        ("db",    "nt")  nucleotide BLAST db-> blastn -db
+        ("db",    "aa")  DIAMOND db (.dmnd) -> diamond blastx -db
+
+        protein BLAST dbs and unrecognizable inputs are rejected
+    """
+
+    if parses_as_fasta(entry):
+        return ("fasta", identify_seq_type(entry))
+
+    if diamond_db_is_readable(entry):
+        return ("db", "aa")
+
+    if blast_db_is_readable(entry, "nucl"):
+        return ("db", "nt")
+
+    if blast_db_is_readable(entry, "prot"):
+        report_message(
+            f"The follwing `--targets` entry looks like a protein BLAST database, which isn't "
+            f"supported. Pass a protein fasta or a DIAMOND database (built with `diamond makedb`) instead.")
+        report_message(f"    {entry}", join = False, color = "none")
+        report_failure()
+
+    report_message(
+        f"The following `--targets` entry is neither a readable fasta nor a recognized BLAST or "
+        f"DIAMOND database:")
+    report_message(f"    {entry}", join = False, color = "none")
+    report_failure()
+
+
+def build_targets_plan(targets_entries, outputs_dir):
+    """
+    classifies all --targets entries, pull each one's {target: length}, and
+    merge into a single plan used for the whole run
+
+    applies __nt/__aa suffixes to target names that collide across
+    sequence types. within-type duplicate names are left
+    as-is
+
+    returns a dict:
+        {
+        "entries": [ {"entry","modality","seqtype","names": set(...)}, ... ],
+        "lengths": {target: length},          # merged, suffixed
+        "types":   {target: "nt"|"aa"},        # merged, suffixed
+        }
+    where each entry's 'names' are the SUFFIXED names for that entry, so the
+    search step can remap its raw sseqids to them
+    """
+
+    classified = []
+    for entry in targets_entries:
+        modality, seqtype = classify_targets_entry(entry)
+        raw_lengths = get_targets(entry, modality, seqtype)
+        classified.append({
+            "entry": entry,
+            "modality": modality,
+            "seqtype": seqtype,
+            "raw_lengths": raw_lengths,
+        })
+
+    # find cross-type name collisions
+    names_by_type = {"nt": set(), "aa": set()}
+    for c in classified:
+        names_by_type[c["seqtype"]].update(c["raw_lengths"].keys())
+    colliding = names_by_type["nt"] & names_by_type["aa"]
+
+    merged_lengths = {}
+    merged_types = {}
+    entries_out = []
+
+    for c in classified:
+        st = c["seqtype"]
+        suffix = f"__{st}"
+        suffixed_names = set()
+        for name, length in c["raw_lengths"].items():
+            key = name + suffix if name in colliding else name
+            merged_lengths[key] = length
+            merged_types[key] = st
+            suffixed_names.add(key)
+        entries_out.append({
+            "entry": c["entry"],
+            "modality": c["modality"],
+            "seqtype": st,
+            "names": suffixed_names,
+            "colliding_raw": {n for n in c["raw_lengths"] if n in colliding},
+        })
+
+    return {"entries": entries_out, "lengths": merged_lengths, "types": merged_types}
+
+
+def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan):
+
+    targets_dict = targets_plan["lengths"]
+    type_map = targets_plan["types"]
     summary_df = pd.DataFrame()
     total_assemblies = len(args.assemblies)
 
@@ -126,23 +228,51 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_type):
         unique_assembly_name = assembly_path_dict[assembly]
         out_base = safe_name(unique_assembly_name)
 
-        blast_df = run_blast(assembly, args.targets, targets_type, outputs_dir, out_base, args.num_threads)
+        # ---- per-targets-entry search + per-type loci resolution ----
+        # each entry is homogeneous (one modality, one seqtype), so it gets the
+        # right search engine and the right pident threshold; resulting loci are
+        # tagged with target_type and concatenated, so all downstream outputs
+        # see one merged, type-aware loci frame.
+        per_entry_filtered = []
+        per_entry_loci = []
 
-        # safeguard that ids pulled from blast db match the hits' sseqids
-        check_sseqid_target_match(blast_df, targets_dict)
+        for entry_info in targets_plan["entries"]:
+            entry = entry_info["entry"]
+            seqtype = entry_info["seqtype"]
+            min_perc_id = args.min_aa_perc_id if seqtype == "aa" else args.min_nt_perc_id
 
-        # pident hard filter (coverage gating now happens per-locus, below)
-        filtered_hits_df = filter_blast_results(blast_df, args.min_perc_id)
+            blast_df = run_targets_search(assembly, entry_info, outputs_dir,
+                                          out_base, args.num_threads)
 
-        # per-assembly filtered BLAST table (pident-passing HSPs)
+            # remap this entry's sseqids into the merged (possibly suffixed)
+            # keyspace, so coverage lookups and downstream joins line up
+            blast_df = apply_collision_suffix(blast_df, entry_info)
+
+            # guard against id mismatch (e.g. a db built without -parse_seqids):
+            # check against THIS entry's target names only
+            check_sseqid_target_match(blast_df, entry_info["names"])
+
+            filtered = filter_blast_results(blast_df, min_perc_id)
+            per_entry_filtered.append(filtered)
+
+            loci = resolve_assembly_loci(filtered, targets_dict,
+                                         gap_tolerance=args.hit_merge_gap,
+                                         min_perc_cov=args.min_perc_cov)
+            if not loci.empty:
+                loci = loci.assign(target_type=loci["target"].map(type_map))
+            else:
+                loci = loci.assign(target_type=pd.Series(dtype=object))
+            per_entry_loci.append(loci)
+
+        # merge across entries
+        filtered_hits_df = (pd.concat(per_entry_filtered, ignore_index=True)
+                            if per_entry_filtered else pd.DataFrame())
+        loci_df = (pd.concat(per_entry_loci, ignore_index=True)
+                   if per_entry_loci else pd.DataFrame())
+
+        # per-assembly filtered BLAST table (pident-passing HSPs, all entries)
         filtered_hits_df.to_csv(f"{outputs_dir}/{out_base}-filtered-blast-results.tsv",
                                 sep="\t", index=False)
-
-        # THE single resolution: gap-join HSPs into loci, gate on per-locus
-        # subject coverage. every output below draws from this so they agree.
-        loci_df = resolve_assembly_loci(filtered_hits_df, targets_dict,
-                                        gap_tolerance=args.hit_merge_gap,
-                                        min_perc_cov=args.min_perc_cov)
 
         # contig lengths (not carried on loci_df) for the contig summary
         if filtered_hits_df.empty:
@@ -152,12 +282,27 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_type):
                               .set_index("qseqid")["qlen"].to_dict())
 
         # optional across-target region resolution: collapse loci from different
-        # (often near-identical) targets that pile onto the same contig locus
-        # into a single called region, keeping the best and folding the rest
-        # into 'other_targets'. on by default; disabled with --no-resolve-regions.
+        # targets (including across nt/aa types) that pile onto the same contig
+        # locus into a single called region, keeping the best and folding the
+        # rest into 'other_targets'. on by default; disabled with --dont-resolve-regions.
+        contig_island_map = {}
         if args.resolve_regions:
             region_df, num_regions_by_contig = gen_region_calls_table(
                 loci_df, overlap_frac=args.region_overlap_frac)
+
+            # optional island extraction: cluster regions into islands and cut
+            # out those buried in large contigs (needs resolved regions). adds
+            # cross-reference ids tying region-calls <-> contig-summary <-> the
+            # extracted FASTAs + manifest. off via --no-island-extraction.
+            if args.island_extraction:
+                region_island_map, contig_island_map = extract_islands(
+                    region_df, contig_lengths, assembly, outputs_dir, out_base,
+                    island_gap=args.island_gap, contig_floor=args.island_contig_floor,
+                    ratio=args.island_contig_ratio, min_span=args.island_min_span,
+                    min_regions=args.island_min_regions, buffer=args.island_buffer)
+                region_df["island_id"] = region_df.index.map(
+                    lambda idx: region_island_map.get(idx, "none"))
+
             region_df.to_csv(f"{outputs_dir}/{out_base}-region-calls.tsv",
                              sep="\t", index=False)
         else:
@@ -165,7 +310,8 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_type):
 
         # per-assembly contig summary table
         contig_df = gen_contig_summary_table(loci_df, contig_lengths,
-                                             num_regions_by_contig)
+                                             num_regions_by_contig,
+                                             contig_island_map=contig_island_map)
         contig_df.to_csv(f"{outputs_dir}/{out_base}-hit-contig-summary.tsv",
                          sep="\t", index=False)
 
@@ -180,7 +326,7 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_type):
     output_tsv = args.output_prefix + "-summary.tsv"
     # internally summary_df is built assemblies-as-rows (one row appended per
     # assembly). the default OUTPUT orientation is targets-as-rows, which stays
-    # readable when targets greatly outnumber assemblies (e.g. vector screening)
+    # readable when targets greatly outnumber assemblies
     # and matches the feature-as-row convention of presence/absence tables.
     # --assemblies-as-rows restores the older assemblies-as-rows orientation.
     if args.assemblies_as_rows:
@@ -190,45 +336,97 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_type):
         summary_df.to_csv(output_tsv, sep = "\t", index_label = "target")
 
 
-def get_targets(targets, targets_type):
+def apply_collision_suffix(blast_df, entry_info):
     """
-    returns {target_id: length}
-
-    for a fasta, parses the file
-
-    for a BLAST db, pulls every entry's accession and length via blastdbcmd
+    remap an entry's raw sseqids onto the merged ones. any sseqid whose
+    raw name collided across types gets this entry's __nt/__aa suffix, so it
+    matches the suffixed key in targets_dict. non-colliding ids are
+    untouched
     """
 
-    if targets_type == "fasta":
+    colliding_raw = entry_info.get("colliding_raw", set())
+    if blast_df.empty or not colliding_raw:
+        return blast_df
+    suffix = f"__{entry_info['seqtype']}"
+    blast_df = blast_df.copy()
+    blast_df["sseqid"] = blast_df["sseqid"].map(
+        lambda s: s + suffix if s in colliding_raw else s)
+    return blast_df
+
+
+def get_targets(targets, modality, seqtype):
+    """
+    returns {target_id: length} for one --targets entry
+
+    fasta -> parse the file (length in residues: nt for nucleotide, aa for protein)
+    nt db -> blastdbcmd (nucleotide)
+    aa db -> diamond getseq / dbinfo to recover accessions + lengths
+    """
+
+    if modality == "fasta":
         return {record.id: len(record.seq) for record in SeqIO.parse(targets, "fasta")}
 
-    # db: one "<accession> <length>" line per sequence
+    if seqtype == "nt":
+        # nucleotide BLAST db: one "<accession> <length>" line per sequence
+        result = subprocess.run(
+            ["blastdbcmd", "-db", targets, "-dbtype", "nucl",
+             "-entry", "all", "-outfmt", "%a %l"],
+            check=True, capture_output=True, text=True)
+        targets_dict = {}
+        for line in result.stdout.splitlines():
+            if not line.strip():
+                continue
+            acc, length = line.rsplit(" ", 1)
+            targets_dict[acc] = int(length)
+        return targets_dict
+
+    # aa DIAMOND db: dump sequences and measure lengths. diamond getseq writes
+    # the db's sequences as fasta to stdout; we parse ids + lengths from it.
     result = subprocess.run(
-        ["blastdbcmd", "-db", targets, "-dbtype", "nucl",
-         "-entry", "all", "-outfmt", "%a %l"],
+        ["diamond", "getseq", "--db", targets],
         check=True, capture_output=True, text=True)
-
     targets_dict = {}
-    for line in result.stdout.splitlines():
-        if not line.strip():
-            continue
-        acc, length = line.rsplit(" ", 1)
-        targets_dict[acc] = int(length)
-
+    for record in SeqIO.parse(StringIO(result.stdout), "fasta"):
+        targets_dict[record.id] = len(record.seq)
     return targets_dict
 
 
-def run_blast(assembly, targets, targets_type, outputs_dir, out_base, num_threads):
-    """ runs BLAST to search for targets in assembly. targets is either a fasta
-        (passed as -subject) or a BLAST db prefix (passed as -db, which also
-        enables -num_threads). """
+def run_targets_search(assembly, entry_info, outputs_dir, out_base, num_threads):
+    """
+    dispatches one targets entry to the right search engine and return a
+    BLAST-outfmt-6-shaped DataFrame. nucleotide -> blastn; protein -> DIAMOND
+    blastx (building a .dmnd in outputs_dir first if the entry is a fasta)
+    """
+
+    entry = entry_info["entry"]
+    modality = entry_info["modality"]
+    seqtype = entry_info["seqtype"]
+    # tag outputs per-entry so multiple targets files don't clobber each other
+    entry_tag = safe_name(os.path.splitext(os.path.basename(entry))[0])
+
+    if seqtype == "nt":
+        return run_blastn(assembly, entry, modality, outputs_dir,
+                          f"{out_base}-{entry_tag}", num_threads)
+
+    # protein
+    if modality == "fasta":
+        db_path = f"{outputs_dir}/{entry_tag}.dmnd"
+        if not os.path.exists(db_path):
+            build_diamond_db(entry, db_path)
+    else:
+        db_path = entry  # already a .dmnd db
+    return run_diamond_blastx(assembly, db_path, outputs_dir,
+                              f"{out_base}-{entry_tag}", num_threads)
+
+
+def run_blastn(assembly, targets, modality, outputs_dir, out_base, num_threads):
 
     outfmt = ("6 qseqid qlen sseqid slen qstart qend sstart send length "
               "qcovs qcovhsp qcovus pident evalue bitscore")
 
     blast_command = ["blastn", "-task", "blastn", "-query", assembly, "-outfmt", outfmt]
 
-    if targets_type == "db":
+    if modality == "db":
         blast_command += ["-db", targets, "-num_threads", str(num_threads)]
     else:
         blast_command += ["-subject", targets]
@@ -236,43 +434,84 @@ def run_blast(assembly, targets, targets_type, outputs_dir, out_base, num_thread
     try:
         blast_results = subprocess.check_output(blast_command, stderr=subprocess.STDOUT, text=True)
     except subprocess.CalledProcessError as e:
-        report_failure("BLAST failed with the following error:  \n" + e.output)
+        print()
+        report_message("BLAST failed with the following error:")
+        report_message(f"{e.output}", join = False, color = "none", initial_indent = "      ", subsequent_indent = "      ")
+        report_failure("")
 
-    blast_results = StringIO(blast_results)
+    cols = ["qseqid", "qlen", "sseqid", "slen", "qstart", "qend", "sstart",
+            "send", "length", "qcovs", "qcovhsp", "qcovus", "pident", "evalue", "bitscore"]
+    if blast_results.strip() == "":
+        blast_df = pd.DataFrame(columns=cols)
+    else:
+        blast_df = pd.read_csv(StringIO(blast_results), sep="\t", header=None, names=cols)
 
-    blast_df = pd.read_csv(blast_results, sep="\t", header=None, names=[
-        "qseqid", "qlen", "sseqid", "slen", "qstart", "qend", "sstart",
-        "send", "length", "qcovs", "qcovhsp", "qcovus", "pident", "evalue", "bitscore"
-    ])
-
-    blast_df["perc-subj-cov"] = round((blast_df["length"] / blast_df["slen"]) * 100, 1)
+    blast_df["perc-subj-cov"] = (round((blast_df["length"] / blast_df["slen"]) * 100, 1)
+                                 if not blast_df.empty else pd.Series(dtype=float))
 
     blast_df.to_csv(f"{outputs_dir}/{out_base}-blast-results.tsv", sep="\t", index=False)
 
     return blast_df
 
 
+def build_diamond_db(protein_fasta, db_path):
+
+    cmd = ["diamond", "makedb", "--in", protein_fasta, "--db", db_path, "--quiet"]
+    try:
+        subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
+    except subprocess.CalledProcessError as e:
+        print()
+        report_message("DIAMOND makedb failed with the following error:")
+        report_message(f"{e.output}", join = False, color = "none", initial_indent = "      ", subsequent_indent = "      ")
+        report_failure("")
+
+
+def run_diamond_blastx(assembly, db_path, outputs_dir, out_base, num_threads):
+
+    fields = ["qseqid", "qlen", "sseqid", "slen", "qstart", "qend", "sstart",
+              "send", "length", "pident", "evalue", "bitscore"]
+
+    cmd = [
+        "diamond", "blastx",
+        "--query", assembly,
+        "--db", db_path,
+        "--outfmt", "6", *fields,
+        "--threads", str(num_threads),
+        "--quiet",
+    ]
+
+    try:
+        results = subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
+    except subprocess.CalledProcessError as e:
+        print()
+        report_message("DIAMOND blastx failed with the following error:")
+        report_message(f"{e.output}", join = False, color = "none", initial_indent = "      ", subsequent_indent = "      ")
+        report_failure("")
+
+    if results.strip() == "":
+        blast_df = pd.DataFrame(columns=fields)
+    else:
+        blast_df = pd.read_csv(StringIO(results), sep="\t", header=None, names=fields)
+
+    # DIAMOND doesn't emit the qcov* fields blastn includes; add placeholders
+    # so the combined frame has a consistent shape across entry types
+    for missing in ("qcovs", "qcovhsp", "qcovus"):
+        blast_df[missing] = 0
+
+    blast_df["perc-subj-cov"] = (round((blast_df["length"] / blast_df["slen"]) * 100, 1)
+                                 if not blast_df.empty else pd.Series(dtype=float))
+
+    blast_df.to_csv(f"{outputs_dir}/{out_base}-diamond-results.tsv", sep="\t", index=False)
+
+    return blast_df
+
+
 def filter_blast_results(blast_df, min_perc_id):
-    """ apply the pident hard filter. coverage gating no longer happens here:
-        it is applied per-locus in resolve_assembly_loci after HSPs are
-        gap-joined, so that coverage split across adjacent HSPs is measured on
-        the merged occurrence rather than per individual HSP. there is no longer
-        a short/long target split or length cutoff -- all targets go through the
-        same locus resolution. """
 
     return blast_df[blast_df["pident"] >= min_perc_id].copy()
 
 
-def update_assembly_summary_table(loci_df, targets_dict, unique_assembly_name,
-                                  summary_df):
-    """ updates the summary table with results from the current assembly.
-
-        every target cell is a count of passing loci -- distinct occurrences of
-        that target that cleared the coverage gate. short and long targets are
-        treated identically (no DETECTED/NOT-DETECTED strings, no length cutoff):
-        the value is the number of rows for that target in the resolved loci.
-        the count therefore matches num_total_hits in the contig table and the
-        row count in region-calls, since all three draw from the same loci. """
+def update_assembly_summary_table(loci_df, targets_dict, unique_assembly_name, summary_df):
 
     if loci_df.empty:
         target_counts = {}
@@ -501,27 +740,18 @@ def safe_name(name):
     return name.replace("/", "_").replace("\\", "_")
 
 
-def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None):
-    """ builds a per-contig table from the resolved loci (resolve_assembly_loci):
-        contig length, bases of the contig covered by passing loci (overlaps
-        merged), number of unique targets found, and number of passing loci.
-
-        contig_lengths is a {contig: length} dict (contig lengths aren't carried
-        on loci_df, so they're passed in).
-
-        num_total_hits counts passing loci, so it matches the per-target summary
-        counts and the region-calls rows -- all three draw from the same loci.
-
-        if num_regions_by_contig is provided (a {contig: count} dict from
-        gen_region_calls_table), a 'num_regions' column is added reporting the
-        number of resolved regions after collapsing overlapping targets. """
+def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None,
+                             contig_island_map=None):
 
     cols = ["contig", "length", "bases_aligned_to_targets",
-            "perc_contig_aligned_to_targets", "num_unique_target_hits", "num_total_target_hits"]
+            "perc_contig_aligned_to_targets", "num_unique_target_hits",
+            "num_total_target_hits"]
 
     if loci_df.empty:
         if num_regions_by_contig is not None:
             cols.insert(5, "num_regions")
+        if contig_island_map:
+            cols.append("island_ids")
         return pd.DataFrame(columns=cols)
 
     grouped = loci_df.groupby("contig")
@@ -532,8 +762,6 @@ def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None
     }
     bases_aligned = pd.Series(bases_aligned)
 
-    # length only for contigs that actually have passing loci, so no NaN rows
-    # sneak in and float-ify the integer columns
     lengths = pd.Series({c: contig_lengths[c] for c in bases_aligned.index})
 
     contig_df = pd.DataFrame({
@@ -543,8 +771,6 @@ def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None
         "num_total_target_hits": grouped.size(),
     })
 
-    # guard the integer columns explicitly (a stray NaN anywhere would otherwise
-    # silently promote them to float in the output)
     for int_col in ("length", "bases_aligned_to_targets", "num_unique_target_hits",
                     "num_total_target_hits"):
         contig_df[int_col] = contig_df[int_col].astype(int)
@@ -561,6 +787,13 @@ def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None
         ordered_cols = ["length", "bases_aligned_to_targets", "perc_contig_aligned_to_targets",
                         "num_regions", "num_unique_target_hits", "num_total_target_hits"]
 
+    # island cross-reference: which extracted island(s) came from each contig.
+    # 'none' for contigs that produced no extracted island.
+    if contig_island_map:
+        contig_df["island_ids"] = contig_df.index.map(
+            lambda c: ";".join(contig_island_map[c]) if c in contig_island_map else "none")
+        ordered_cols = ordered_cols + ["island_ids"]
+
     contig_df = contig_df[ordered_cols]
 
     contig_df = contig_df.sort_values("perc_contig_aligned_to_targets", ascending=False)
@@ -571,8 +804,10 @@ def gen_contig_summary_table(loci_df, contig_lengths, num_regions_by_contig=None
 
 
 def merge_intervals(intervals):
-    """ given a list of (start, end) tuples, returns total length covered
-        after merging overlaps (1-based inclusive coordinates) """
+    """
+    given a list of (start, end) tuples, returns total length covered
+    after merging overlaps (1-based inclusive coordinates)
+    """
 
     if not intervals:
         return 0
@@ -591,30 +826,28 @@ def merge_intervals(intervals):
 
 def resolve_assembly_loci(filtered_hits_df, targets_dict, gap_tolerance=200,
                           min_perc_cov=80.0):
-    """ THE unified locus engine. given pident-passing BLAST HSPs for one
-        assembly, resolve them into distinct target occurrences ("loci") and
-        keep only those that clear the coverage gate. every downstream output
-        (summary counts, contig table, region-calls) draws from this single
-        resolution so they cannot disagree.
+    """
+    given pident-passing blast HSPs for one assembly,
+    resolve them into distinct target occurrences ("loci") and
+    keep only those that clear the coverage gate. every downstream output
+    (summary counts, contig table, region-calls) draws from this
+    resolution
 
-        per (target, contig):
-          1. gap-join HSPs into loci in CONTIG space (two HSPs share a locus if
-             they are within gap_tolerance bp on the contig)
-          2. for each locus, merge the SUBJECT intervals (sstart..send) and
-             divide by the target length -> perc_target_cov at that locus
-          3. keep the locus only if perc_target_cov >= min_perc_cov
+    per (target, contig):
+        1. gap-join HSPs into loci in contig space (two HSPs share a locus if
+            they are within gap_tolerance bp on the contig)
+        2. for each locus, merge the subject intervals (sstart..send) and
+            divide by the target length -> perc_target_cov at that locus
+        3. keep the locus only if perc_target_cov >= min_perc_cov
 
-        pident filtering is assumed already applied upstream (filter_blast_results),
-        consistent with how the coverage gate and pident gate are both hard
-        filters: HSPs/loci below threshold simply don't appear.
-
-        returns a DataFrame with one row per PASSING locus, columns:
-          contig, target, q_low, q_high, perc_target_cov, pident, bitscore,
-          length, slen
-        where q_low/q_high are the locus' span on the contig, and pident /
-        bitscore / length are taken from the locus' single best HSP (highest
-        bitscore) so the region-resolution downstream has a representative hit
-        to rank. """
+    returns a DataFrame with one row per passing locus, columns:
+        contig, target, q_low, q_high, perc_target_cov, pident, bitscore,
+        length, slen
+    where q_low/q_high are the locus's span on the contig, and pident /
+    bitscore / length are taken from the locus's single best HSP (highest
+    bitscore) so the region-resolution downstream has a representative hit
+    to rank
+    """
 
     cols = ["contig", "target", "q_low", "q_high", "perc_target_cov",
             "pident", "bitscore", "length", "slen"]
@@ -683,9 +916,11 @@ def resolve_assembly_loci(filtered_hits_df, targets_dict, gap_tolerance=200,
 
 
 def _reciprocal_overlap_frac(a_low, a_high, b_low, b_high):
-    """ fraction of the SHORTER of the two spans that is covered by their
-        overlap (1-based inclusive coordinates). returns 0.0 if they don't
-        overlap """
+    """
+    fraction of the SHORTER of the two spans that is covered by their
+    overlap (1-based inclusive coordinates). returns 0.0 if they don't
+    overlap
+    """
 
     overlap = min(a_high, b_high) - max(a_low, b_low) + 1
     if overlap <= 0:
@@ -698,32 +933,34 @@ def _reciprocal_overlap_frac(a_low, a_high, b_low, b_high):
 
 
 def resolve_contig_regions(contig_loci_df, overlap_frac=0.5):
-    """ given the passing LOCI for a SINGLE contig (a DataFrame with at least
-        q_low, q_high, target, bitscore, pident, length, slen, perc_target_cov
-        columns -- as produced by resolve_assembly_loci), cluster loci that
-        reciprocal-overlap by >= overlap_frac of the shorter span, pick a winner
-        per cluster (by bitscore, tie-broken by pident*length), and return one
-        region record per cluster.
+    """
+    given the passing loci for an individual contig (a DataFrame with at least
+    q_low, q_high, target, bitscore, pident, length, slen, perc_target_cov
+    columns -- as produced by resolve_assembly_loci), cluster loci that
+    reciprocal-overlap by >= overlap_frac of the shorter span, pick a winner
+    per cluster (by bitscore, tie-broken by pident*length), and return one
+    region record per cluster
 
-        a locus joins the current cluster if it reciprocal-overlaps ANY locus
-        already in that cluster by >= overlap_frac (single left-to-right sweep
-        over loci sorted by q_low, then q_high). region coordinates are the
-        WINNER's span; target_length is the WINNER's subject length (slen);
-        perc_target_cov is the WINNER's coverage (winner-only, by design).
+    a locus joins the current cluster if it reciprocal-overlaps ANY locus
+    already in that cluster by >= overlap_frac (single left-to-right sweep
+    over loci sorted by q_low, then q_high). region coordinates are the
+    winner's span; target_length is the winner's subject length (slen);
+    perc_target_cov is the winner's coverage
 
-        returns a list of dicts, one per resolved region, ordered by
-        region_start. """
+    returns a list of dicts, one per resolved region, ordered by
+    region_start
+    """
 
     if contig_loci_df.empty:
         return []
 
-    # work with lightweight tuples so we don't lug the whole frame through the sweep
-    # tuple layout: (q_low, q_high, target, bitscore, pident, length, slen, perc_target_cov)
-    rows = list(
-        contig_loci_df[["q_low", "q_high", "target", "bitscore", "pident",
-                        "length", "slen", "perc_target_cov"]]
-        .itertuples(index=False, name=None)
-    )
+    # tuple layout: (q_low, q_high, target, bitscore, pident, length, slen, perc_target_cov, target_type)
+    has_type = "target_type" in contig_loci_df.columns
+    pull_cols = ["q_low", "q_high", "target", "bitscore", "pident",
+                 "length", "slen", "perc_target_cov"]
+    if has_type:
+        pull_cols.append("target_type")
+    rows = list(contig_loci_df[pull_cols].itertuples(index=False, name=None))
 
     # sort by start, then end
     rows.sort(key=lambda r: (r[0], r[1]))
@@ -769,6 +1006,7 @@ def resolve_contig_regions(contig_loci_df, overlap_frac=0.5):
             "region_end": region_end,
             "region_length": region_end - region_start + 1,
             "aligned_target": winner[2],
+            "target_type": winner[8] if has_type else "nt",
             "target_length": int(winner[6]),
             "pident": float(winner[4]),
             "perc_target_cov": float(winner[7]),
@@ -785,28 +1023,31 @@ def resolve_contig_regions(contig_loci_df, overlap_frac=0.5):
 natural_sort_key = natsort_keygen()
 
 def gen_region_calls_table(loci_df, overlap_frac=0.5):
-    """ builds a per-resolved-region table across all contigs from the resolved
-        loci (resolve_assembly_loci): one row per region, with the chosen (best)
-        target reported as 'aligned_target', the region's coordinates and length
-        on the contig, the aligned target's length, its pident, its per-locus
-        coverage (perc_target_cov), bitscore, and any other targets that
-        overlapped the same region folded into 'other_targets'
-        (semicolon-delimited; "NA" if none).
+    """
+    builds a per-resolved-region table across all contigs from the resolved
+    loci (resolve_assembly_loci): one row per region, with the chosen (best)
+    target reported as 'aligned_target', the region's coordinates and length
+    on the contig, the aligned target's length, its pident, its per-locus
+    coverage (perc_target_cov), bitscore, and any other targets that
+    overlapped the same region folded into 'other_targets'
+    (semicolon-delimited; "NA" if none)
 
-        perc_target_cov is the WINNER's coverage only -- a quality signal among
-        regions that already cleared the coverage gate.
+    perc_target_cov is the winner's coverage only
 
-        columns: contig, region_start, region_end, region_length,
-        aligned_target, target_length, pident, perc_target_cov, bitscore,
-        n_overlapping_targets, other_targets.
+    columns: contig, region_start, region_end, region_length,
+    aligned_target, target_type, target_length, pident, perc_target_cov,
+    bitscore, n_overlapping_targets, other_targets. target_type ('nt'/'aa')
+    is the units key for target_length -- for 'aa' targets the length is in
+    amino acids
 
-        also returns a {contig: num_regions} dict so the contig summary can
-        report a region count sourced from the exact same resolution, keeping
-        the two outputs from drifting. """
+    also returns a {contig: num_regions} dict so the contig summary can
+    report a region count sourced from the exact same resolution, keeping
+    the two outputs from drifting
+    """
 
     cols = ["contig", "region_start", "region_end", "region_length",
-            "aligned_target", "target_length", "pident", "perc_target_cov",
-            "bitscore", "n_overlapping_targets", "other_targets"]
+            "aligned_target", "target_type", "target_length", "pident",
+            "perc_target_cov", "bitscore", "n_overlapping_targets", "other_targets"]
 
     if loci_df.empty:
         return pd.DataFrame(columns=cols), {}
@@ -824,6 +1065,7 @@ def gen_region_calls_table(loci_df, overlap_frac=0.5):
                 "region_end": r["region_end"],
                 "region_length": r["region_length"],
                 "aligned_target": r["aligned_target"],
+                "target_type": r["target_type"],
                 "target_length": r["target_length"],
                 "pident": round(r["pident"], 1),
                 "perc_target_cov": r["perc_target_cov"],
@@ -844,38 +1086,220 @@ def gen_region_calls_table(loci_df, overlap_frac=0.5):
     return region_df, num_regions_by_contig
 
 
-def check_sseqid_target_match(blast_df, targets_dict):
+def cluster_regions_into_islands(region_df_for_contig, island_gap=2500):
     """
-    guards against the silent-empty-output failure where BLAST sseqids don't
-    match any targets_dict key (e.g. a db built without -parse_seqids might have
-    been provided to --targets). In that case every coverage lookup would miss
-    and all loci would get dropped, producing an empty run with no error
+    given the resolved regions for an individual contig (rows with region_start /
+    region_end and a DataFrame index), this chains regions within island_gap bp of
+    each other into islands
+
+    returns a list of dicts:
+        {island_start, island_end, num_regions, region_indices}
+    where region_indices are the DataFrame index labels of the member
+    regions (used to tag region-calls with the island id)
+    """
+
+    if region_df_for_contig.empty:
+        return []
+
+    rows = sorted(
+        ((int(r.region_start), int(r.region_end), idx)
+         for idx, r in region_df_for_contig.iterrows()),
+        key=lambda t: (t[0], t[1]))
+
+    islands = []
+    cur_start, cur_end, idxs, cur_count = rows[0][0], rows[0][1], [rows[0][2]], 1
+
+    for start, end, idx in rows[1:]:
+        if start <= cur_end + island_gap:
+            cur_end = max(cur_end, end)
+            cur_count += 1
+            idxs.append(idx)
+        else:
+            islands.append({"island_start": cur_start, "island_end": cur_end,
+                            "num_regions": cur_count, "region_indices": idxs})
+            cur_start, cur_end, idxs, cur_count = start, end, [idx], 1
+    islands.append({"island_start": cur_start, "island_end": cur_end,
+                    "num_regions": cur_count, "region_indices": idxs})
+
+    return islands
+
+
+def island_passes_extraction(island, contig_length, contig_floor=20000,
+                             ratio=3.0, min_span=2000, min_regions=3):
+    """
+    four-part extraction trigger on one island (base span (no buffer)):
+        contig_length >= contig_floor          (big enough to bother cutting)
+        contig_length >= ratio * island_span   (island is a minority of contig)
+        island_span   >= min_span              (long enough to cut)
+        num_regions   >= min_regions           (a real cluster, not a lone hit)
+    """
+    span = island["island_end"] - island["island_start"] + 1
+    return (
+        contig_length >= contig_floor and
+        contig_length >= ratio * span and
+        span >= min_span and
+        island["num_regions"] >= min_regions
+    )
+
+
+def buffered_island_coords(island, contig_length, buffer=500):
+    """
+    adds the flanking buffer to an island's base coords, up
+    to any contig ends at least
+    """
+    bstart = max(1, island["island_start"] - buffer)
+    bend = min(contig_length, island["island_end"] + buffer)
+    return bstart, bend
+
+
+def make_island_id(contig, bstart, bend):
+    """
+    makes the identifier shared by the island's fasta filename, its
+    manifest row, and the cross-reference columns in the other tables
+    """
+    return f"{safe_name(contig)}_island_{bstart}-{bend}"
+
+
+def extract_islands(region_df, contig_lengths, assembly_path,
+                    outputs_dir, out_base,
+                    island_gap=5000, contig_floor=20000,
+                    ratio=3.0, min_span=2000, min_regions=3,
+                    buffer=500):
+    """
+    clusters resolved regions into islands, keeping those passing the extraction
+    trigger, slices each (buffered) out of its contig, and writes one
+    fasta per island into a per-assembly subdir plus a manifest tsv
+
+    returns:
+        region_island_map: {region_df_index: island_id} for passing islands
+        contig_island_map: {contig: [island_id, ...]}
+    so we can add island_id / island_ids columns to the other tables
+
+    sequences are read lazily: only contigs that have a passing island are
+    pulled from the input assembly(ies). islands require resolved regions, so if
+    region_df is empty (e.g., --dont-resolve-regions) nothing is extracted
+    """
+
+    manifest_cols = ["island_id", "contig", "island_start", "island_end",
+                     "island_span", "buffered_start", "buffered_end",
+                     "num_regions", "contig_length"]
+    manifest_path = f"{outputs_dir}/{out_base}-extracted-islands.tsv"
+
+    region_island_map = {}
+    contig_island_map = {}
+
+    if region_df is None or region_df.empty:
+        pd.DataFrame(columns=manifest_cols).to_csv(manifest_path, sep="\t", index=False)
+        return region_island_map, contig_island_map
+
+    # 1. cluster per contig and collect passing islands (no sequence reading yet)
+    passing = []  # (contig, island dict, bstart, bend)
+    for contig, g in region_df.groupby("contig"):
+        contig_length = contig_lengths.get(contig)
+        if not contig_length:
+            continue
+        for island in cluster_regions_into_islands(g, island_gap=island_gap):
+            if island_passes_extraction(island, contig_length,
+                                        contig_floor=contig_floor, ratio=ratio,
+                                        min_span=min_span, min_regions=min_regions):
+                bstart, bend = buffered_island_coords(island, contig_length, buffer=buffer)
+                passing.append((contig, island, bstart, bend))
+
+    if not passing:
+        pd.DataFrame(columns=manifest_cols).to_csv(manifest_path, sep="\t", index=False)
+        return region_island_map, contig_island_map
+
+    # 2. lazily read only the contigs we need from the assembly
+    needed_contigs = {contig for contig, *_ in passing}
+    contig_seqs = {}
+    for record in SeqIO.parse(assembly_path, "fasta"):
+        if record.id in needed_contigs:
+            contig_seqs[record.id] = record.seq
+            if len(contig_seqs) == len(needed_contigs):
+                break
+
+    # 3. slice, write per-island FASTAs into the subdir, build manifest + maps
+    island_subdir = f"{outputs_dir}/{out_base}-extracted-islands"
+    os.makedirs(island_subdir, exist_ok=True)
+
+    manifest_rows = []
+    for contig, island, bstart, bend in passing:
+        seq = contig_seqs.get(contig)
+        if seq is None:
+            continue  # contig not found in assembly (shouldn't happen); skip safely
+        island_id = make_island_id(contig, bstart, bend)
+        subseq = seq[bstart - 1:bend]  # 1-based inclusive -> python slice
+
+        with open(f"{island_subdir}/{island_id}.fasta", "w") as f:
+            f.write(f">{island_id}\n{str(subseq)}\n")
+
+        for idx in island["region_indices"]:
+            region_island_map[idx] = island_id
+        contig_island_map.setdefault(contig, []).append(island_id)
+
+        manifest_rows.append({
+            "island_id": island_id,
+            "contig": contig,
+            "island_start": island["island_start"],
+            "island_end": island["island_end"],
+            "island_span": island["island_end"] - island["island_start"] + 1,
+            "buffered_start": bstart,
+            "buffered_end": bend,
+            "num_regions": island["num_regions"],
+            "contig_length": contig_lengths[contig],
+        })
+
+    pd.DataFrame(manifest_rows, columns=manifest_cols).to_csv(
+        manifest_path, sep="\t", index=False)
+
+    return region_island_map, contig_island_map
+
+
+def check_sseqid_target_match(blast_df, target_names):
+    """
+    guards against the silent-empty-output failure where BLAST/DIAMOND sseqids
+    don't match any target name (e.g. a db built without -parse_seqids). In that
+    case every coverage lookup would miss and all loci would get dropped,
+    producing an empty run with no error
+
+    target_names is the set of target names for the entry being checked (already
+    collision-suffixed to match the remapped sseqids), so per-entry checking
+    doesn't false-trip against other entries' names
     """
 
     if blast_df.empty:
         return  # genuine no-hits; nothing to diagnose
 
     blast_sseqids = set(blast_df["sseqid"].unique())
-    target_keys = set(targets_dict.keys())
+    target_keys = set(target_names)
 
     if blast_sseqids & target_keys:
         return  # at least some overlap; ids line up
 
     # no overlap at all -> guaranteed every locus would be dropped
     example_sseqid = next(iter(blast_sseqids))
-    example_target = next(iter(target_keys))
+    example_target = next(iter(target_keys)) if target_keys else "(none)"
 
     msg = (
-        "BLAST returned hits, but none of the subject IDs match the target IDs "
-        "used for coverage gating, so every hit would be silently dropped.\n\n"
-        f"    Example subject ID from BLAST:  {example_sseqid}\n"
-        f"    Example target ID expected:     {example_target}\n"
+        "A target search returned hits, but none of the subject IDs don't match the headers "
+        "pulled out in fasta form from the database. (This won't work for us...)")
+
+    print()
+    report_message(msg)
+
+    report_message(f"Example subject ID from search:  {example_sseqid}",
+                   initial_indent = "      ", subsequent_indent = "      ",
+                   color = "none")
+    report_message(f"Example header pulled out:       {example_target}",
+                   initial_indent = "      ", subsequent_indent = "      ",
+                   color = "none", leading_newline = False, join = False)
+
+    msg = (
+        "For a BLAST db this usually means it was built without "
+        "'-parse_seqids'. Rebuild with '-parse_seqids', or pass the original "
+        "fasta to `--targets` instead."
     )
 
-    msg += (
-        "\n  This usually means the BLAST database was built without "
-        "'-parse_seqids'. Rebuild the db with '-parse_seqids', "
-        "or pass the original fasta to --targets instead."
-    )
+    report_message(msg)
 
-    report_failure(msg)
+    report_failure()

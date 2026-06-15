@@ -23,6 +23,7 @@ requirements:
     - blast=2
     - bwa>=0.7
     - coreutils
+    - diamond=2.1.24
     - edlib=1.3
     - entrez-direct
     - goatools

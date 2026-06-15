@@ -14,6 +14,16 @@
 
 -->
 
+## v2.4.0 (15-Jun-2026)
+
+### Added
+- additions to `bit ez-screen assembly`
+  - can now take multiple nucleotide (as fasta or blast db) and/or amino-acid (as fasta or diamond db) inputs for targets
+  - now by default extracts "islands" of densely clustered regions into their own fastas (disable with `--no-island-extraction`)
+  - detailed help menu accessible with `-H|--show-detailed-help`
+
+---
+
 ## v2.3.0 (11-Jun-2026)
 
 ### Added
