@@ -256,7 +256,7 @@ def _add_fine_tuning_arguments(target, hidden=False):
     target.add_argument(
         "--island-gap",
         help=h("Resolved regions within this many bp of each other on a contig are "
-               "chained into one island (default: 2500)"),
+               "chained into one island (default: 5000)"),
         metavar="<INT>",
         default=5000,
         type=int)
