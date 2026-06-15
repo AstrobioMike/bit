@@ -232,11 +232,15 @@ def make_hsp(qseqid, sseqid, qstart, qend, sstart, send, slen,
     }
 
 
-def loci_from(rows, targets_dict, gap_tolerance=200, min_perc_cov=80.0):
-    """ run the engine on a list of HSP rows """
+def loci_from(rows, targets_dict, gap_tolerance=200, min_perc_cov=80.0,
+              min_edge_perc_cov=None, edge_tolerance=100):
+
+    if min_edge_perc_cov is None:
+        min_edge_perc_cov = min_perc_cov
     return ez.resolve_assembly_loci(
         pd.DataFrame(rows), targets_dict,
-        gap_tolerance=gap_tolerance, min_perc_cov=min_perc_cov)
+        gap_tolerance=gap_tolerance, min_perc_cov=min_perc_cov,
+        min_edge_perc_cov=min_edge_perc_cov, edge_tolerance=edge_tolerance)
 
 
 EMPTY_HSP_COLS = ["qseqid", "sseqid", "qstart", "qend", "sstart", "send",
@@ -965,3 +969,75 @@ def test_contig_summary_island_ids_column():
     out = ez.gen_contig_summary_table(loci, contig_lengths, contig_island_map=cmap)
     assert "island_ids" in out.columns
     assert out.iloc[0]["island_ids"] == "bigContig_island_500-4500"
+
+
+# =========================================================================== #
+# edge-rescue coverage gate
+# =========================================================================== #
+
+def _hsp_row(qseqid, sseqid, qstart, qend, sstart, send, slen, qlen,
+             pident=99.0, bitscore=500, length=None):
+    length = length if length is not None else abs(qend - qstart) + 1
+    return {"qseqid": qseqid, "sseqid": sseqid, "qstart": qstart, "qend": qend,
+            "sstart": sstart, "send": send, "slen": slen, "qlen": qlen,
+            "pident": pident, "bitscore": bitscore, "length": length}
+
+
+def test_locus_abuts_contig_edge_helper():
+    # left edge within tolerance
+    assert ez.locus_abuts_contig_edge(50, 600, 10000, edge_tolerance=100)
+    # right edge within tolerance (q_high within 100 of 10000)
+    assert ez.locus_abuts_contig_edge(9500, 9950, 10000, edge_tolerance=100)
+    # mid-contig, not near either edge
+    assert not ez.locus_abuts_contig_edge(5000, 5600, 10000, edge_tolerance=100)
+    # no contig length -> not eligible
+    assert not ez.locus_abuts_contig_edge(1, 600, None, edge_tolerance=100)
+
+
+def test_edge_rescue_drops_midcontig_partial():
+    # 60% covered, mid-contig -> dropped under min_perc_cov=80
+    df = pd.DataFrame([_hsp_row("c", "geneA", 5000, 5600, 1, 600, 1000, 10000)])
+    loci = ez.resolve_assembly_loci(df, {"geneA": 1000}, min_perc_cov=80,
+                                    min_edge_perc_cov=50, edge_tolerance=100)
+    assert loci.empty
+
+
+def test_edge_rescue_keeps_edge_partial_right():
+    # 60% covered, locus ends at contig_length -> rescued
+    df = pd.DataFrame([_hsp_row("c", "geneA", 5001, 5600, 1, 600, 1000, 5600)])
+    loci = ez.resolve_assembly_loci(df, {"geneA": 1000}, min_perc_cov=80,
+                                    min_edge_perc_cov=50, edge_tolerance=100)
+    assert len(loci) == 1
+    assert loci.iloc[0]["perc_target_cov"] == 60.0
+
+
+def test_edge_rescue_keeps_edge_partial_left():
+    # 60% covered, locus starts at position 1 -> rescued
+    df = pd.DataFrame([_hsp_row("c", "geneA", 1, 600, 1, 600, 1000, 10000)])
+    loci = ez.resolve_assembly_loci(df, {"geneA": 1000}, min_perc_cov=80,
+                                    min_edge_perc_cov=50, edge_tolerance=100)
+    assert len(loci) == 1
+
+
+def test_edge_rescue_respects_edge_floor():
+    # 40% covered at an edge -> still dropped (below min_edge_perc_cov=50)
+    df = pd.DataFrame([_hsp_row("c", "geneA", 1, 400, 1, 400, 1000, 10000)])
+    loci = ez.resolve_assembly_loci(df, {"geneA": 1000}, min_perc_cov=80,
+                                    min_edge_perc_cov=50, edge_tolerance=100)
+    assert loci.empty
+
+
+def test_edge_rescue_normal_gate_still_passes_midcontig():
+    # 90% covered mid-contig -> kept by the normal gate, no edge needed
+    df = pd.DataFrame([_hsp_row("c", "geneA", 5000, 5900, 1, 900, 1000, 10000)])
+    loci = ez.resolve_assembly_loci(df, {"geneA": 1000}, min_perc_cov=80,
+                                    min_edge_perc_cov=50, edge_tolerance=100)
+    assert len(loci) == 1
+
+
+def test_edge_rescue_within_tolerance():
+    # locus starts at position 90 (<= edge_tolerance 100) -> treated as edge
+    df = pd.DataFrame([_hsp_row("c", "geneA", 90, 689, 1, 600, 1000, 10000)])
+    loci = ez.resolve_assembly_loci(df, {"geneA": 1000}, min_perc_cov=80,
+                                    min_edge_perc_cov=50, edge_tolerance=100)
+    assert len(loci) == 1

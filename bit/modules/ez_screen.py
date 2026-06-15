@@ -257,7 +257,9 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan):
 
             loci = resolve_assembly_loci(filtered, targets_dict,
                                          gap_tolerance=args.hit_merge_gap,
-                                         min_perc_cov=args.min_perc_cov)
+                                         min_perc_cov=args.min_perc_cov,
+                                         min_edge_perc_cov=args.min_edge_perc_cov,
+                                         edge_tolerance=args.edge_tolerance)
             if not loci.empty:
                 loci = loci.assign(target_type=loci["target"].map(type_map))
             else:
@@ -271,7 +273,7 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan):
                    if per_entry_loci else pd.DataFrame())
 
         # per-assembly filtered BLAST table (pident-passing HSPs, all entries)
-        filtered_hits_df.to_csv(f"{outputs_dir}/{out_base}-filtered-blast-results.tsv",
+        filtered_hits_df.to_csv(f"{outputs_dir}/{out_base}-filtered-search-results.tsv",
                                 sep="\t", index=False)
 
         # contig lengths (not carried on loci_df) for the contig summary
@@ -541,7 +543,7 @@ def filter_undetected_assembly_targets(summary_df):
 border = "-" * 80
 def report_assembly_screen_finished(args, outputs_dir):
     print(f"\n{border}")
-    report_message("DONE!", color = "green")
+    report_message("DONE!", color = "green", trailing_newline = True)
     out_file = f"{args.output_prefix}-summary.tsv"
     out_dir = f"{outputs_dir}/"
     print(f"    Summary table written to: {color_text(out_file, 'green')}")
@@ -551,7 +553,7 @@ def report_assembly_screen_finished(args, outputs_dir):
 
 def report_read_screen_finished(args):
     print(f"\n{border}")
-    report_message("DONE!", color = "green")
+    report_message("DONE!", color = "green", trailing_newline = True)
     out_file = f"{args.output_prefix}-reads-summary.tsv"
     out_dir = f"{args.output_prefix}-mapping/"
     print(f"    Summary table written to: {color_text(out_file, 'green')}")
@@ -824,8 +826,21 @@ def merge_intervals(intervals):
     return sum(end - start + 1 for start, end in merged)
 
 
+def locus_abuts_contig_edge(q_low, q_high, contig_length, edge_tolerance=100):
+    """ True if the locus reaches within edge_tolerance bp of either contig
+        terminus -- i.e. it starts at/near position 1 or ends at/near
+        contig_length. used to relax the coverage gate for targets that may be
+        truncated by a contig boundary. """
+    if contig_length is None:
+        return False
+    abuts_left = q_low <= edge_tolerance
+    abuts_right = q_high >= contig_length - edge_tolerance + 1
+    return abuts_left or abuts_right
+
+
 def resolve_assembly_loci(filtered_hits_df, targets_dict, gap_tolerance=200,
-                          min_perc_cov=80.0):
+                          min_perc_cov=80.0, contig_lengths=None,
+                          min_edge_perc_cov=50.0, edge_tolerance=100):
     """
     given pident-passing blast HSPs for one assembly,
     resolve them into distinct target occurrences ("loci") and
@@ -838,7 +853,12 @@ def resolve_assembly_loci(filtered_hits_df, targets_dict, gap_tolerance=200,
             they are within gap_tolerance bp on the contig)
         2. for each locus, merge the subject intervals (sstart..send) and
             divide by the target length -> perc_target_cov at that locus
-        3. keep the locus only if perc_target_cov >= min_perc_cov
+        3. keep the locus if perc_target_cov >= min_perc_cov; OR, for a locus
+            abutting a contig edge (within edge_tolerance bp of either end), keep
+            it under the relaxed min_edge_perc_cov threshold -- this rescues
+            targets truncated by a contig boundary on fragmented assemblies.
+            edge rescue needs contig_lengths; without it, only the normal gate
+            applies.
 
     returns a DataFrame with one row per passing locus, columns:
         contig, target, q_low, q_high, perc_target_cov, pident, bitscore,
@@ -860,6 +880,12 @@ def resolve_assembly_loci(filtered_hits_df, targets_dict, gap_tolerance=200,
     df["q_high"] = df[["qstart", "qend"]].max(axis=1)
     df["s_low"] = df[["sstart", "send"]].min(axis=1)
     df["s_high"] = df[["sstart", "send"]].max(axis=1)
+
+    # contig lengths for the edge-rescue test. the HSP frame already carries
+    # qlen per row, so derive them here if not supplied by the caller -- keeps
+    # the edge gate self-contained.
+    if contig_lengths is None:
+        contig_lengths = df.drop_duplicates("qseqid").set_index("qseqid")["qlen"].to_dict()
 
     locus_rows = []
 
@@ -891,8 +917,21 @@ def resolve_assembly_loci(filtered_hits_df, targets_dict, gap_tolerance=200,
             subj_bases = merge_intervals([(h["s_low"], h["s_high"]) for h in locus])
             perc_target_cov = round(subj_bases / target_length * 100, 1)
 
+            locus_q_low = min(h["q_low"] for h in locus)
+            locus_q_high = max(h["q_high"] for h in locus)
+
+            # two-tier coverage gate: normal threshold everywhere, OR the
+            # relaxed edge threshold for loci abutting a contig terminus (which
+            # may be truncated by the boundary rather than genuinely partial)
             if perc_target_cov < min_perc_cov:
-                continue  # hard coverage gate, same treatment as pident filter
+                contig_length = contig_lengths.get(contig) if contig_lengths else None
+                rescued = (
+                    perc_target_cov >= min_edge_perc_cov and
+                    locus_abuts_contig_edge(locus_q_low, locus_q_high,
+                                            contig_length, edge_tolerance)
+                )
+                if not rescued:
+                    continue  # fails both the normal and edge coverage gates
 
             # representative HSP for the locus = highest bitscore
             best = max(locus, key=lambda h: h["bitscore"])
@@ -900,8 +939,8 @@ def resolve_assembly_loci(filtered_hits_df, targets_dict, gap_tolerance=200,
             locus_rows.append({
                 "contig": contig,
                 "target": target,
-                "q_low": min(h["q_low"] for h in locus),
-                "q_high": max(h["q_high"] for h in locus),
+                "q_low": locus_q_low,
+                "q_high": locus_q_high,
                 "perc_target_cov": perc_target_cov,
                 "pident": best["pident"],
                 "bitscore": best["bitscore"],

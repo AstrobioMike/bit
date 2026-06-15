@@ -10,15 +10,6 @@ from bit.cli.common import (CustomRichHelpFormatter,
 
 
 def build_parser(parent_subparsers=None, show_fine=False):
-    """ builds the ez-screen parser.
-
-        show_fine controls whether the assembly subcommand's 'Fine-tuning
-        Parameters' group is included. By default (show_fine=False) it is
-        omitted so the standard `-h` menu stays uncluttered; the group is added
-        only when building the detailed help (triggered by -H/--show-detailed-help,
-        handled in main()). The fine-tuning options still WORK when passed either
-        way -- when omitted here they're added in a hidden pass so argparse still
-        recognizes and defaults them (see _add_fine_tuning_arguments). """
 
     desc = """
         This program helps detect target-genes/regions present in assemblies or reads. See subcommand-specific
@@ -52,14 +43,6 @@ def build_parser(parent_subparsers=None, show_fine=False):
             help = 'Output prefix (default: "ez-screen")',
             metavar = "<STR>",
             default = "ez-screen", type = str
-        )
-        group.add_argument(
-            "-M",
-            "--min-perc-cov",
-            help = 'Minimum percent coverage required of a target (default: 80)',
-            metavar = "<INT>",
-            default = 80,
-            type = float
         )
 
     ### subcommand cli for assembly screening ###
@@ -99,6 +82,15 @@ def build_parser(parent_subparsers=None, show_fine=False):
         nargs = '+')
 
     add_common_optional_arguments(assembly_general)
+
+    assembly_general.add_argument(
+        "-M",
+        "--min-perc-cov",
+        help = 'Minimum percent coverage required of a target (also see --min-edge-perc-cov; default: 80)',
+        metavar = "<INT>",
+        default = 80,
+        type = float
+    )
 
     assembly_general.add_argument(
         "--min-nt-perc-id",
@@ -188,6 +180,17 @@ def build_parser(parent_subparsers=None, show_fine=False):
         type = str
     )
 
+    add_common_optional_arguments(reads_optional)
+
+    reads_optional.add_argument(
+        "-M",
+        "--min-perc-cov",
+        help = 'Minimum percent coverage required of a target (default: 80)',
+        metavar = "<INT>",
+        default = 80,
+        type = float
+    )
+
     reads_optional.add_argument(
         "-m",
         "--min-perc-id",
@@ -196,8 +199,6 @@ def build_parser(parent_subparsers=None, show_fine=False):
         default = 80,
         type = float
     )
-
-    add_common_optional_arguments(reads_optional)
 
     add_help(reads_optional)
 
@@ -211,13 +212,6 @@ def build_parser(parent_subparsers=None, show_fine=False):
 
 
 def _add_fine_tuning_arguments(target, hidden=False):
-    """ adds the assembly subcommand's fine-tuning arguments to `target` (either
-        an argument group, for the visible detailed menu, or the assembly parser
-        itself with help suppressed, for the standard menu).
-
-        hidden=True suppresses each from the help display while keeping them
-        fully functional, so `--island-gap 3000` etc. still parse on the standard
-        menu even though they aren't listed there. """
 
     def h(text):
         return argparse.SUPPRESS if hidden else text
@@ -225,16 +219,34 @@ def _add_fine_tuning_arguments(target, hidden=False):
     target.add_argument(
         "--hit-merge-gap",
         help=h("When counting hits per contig, multiple alignments (HSPs) of the same "
-               "target separated by up to this many bp are counted as one hit/locus "
+               "target separated by up to this many bp are counted as one hit "
                "(default: 200)"),
         metavar="<INT>",
         default=200,
         type=int)
 
     target.add_argument(
+        "--min-edge-perc-cov",
+        help=h("Relaxed minimum percent coverage for a target whose hit is near a contig "
+               "edge (within --edge-tolerance bp of a contig end), to rescue targets "
+               "likely truncated by a contig boundary (default: 50)"),
+        metavar="<INT>",
+        default=50,
+        type=float)
+
+    target.add_argument(
+        "--edge-tolerance",
+        help=h("A hit reaching within this many bp of a contig end is treated as 'near' "
+               "the edge, making it eligible for the relaxed --min-edge-perc-cov threshold "
+               "(default: 100)"),
+        metavar="<INT>",
+        default=100,
+        type=int)
+
+    target.add_argument(
         "--no-region-resolution",
         help=h("By default, hits from different targets at the same contig "
-               "locus are collapsed into a single region. Add this flag to disable this"),
+               "locus are collapsed into a single 'region'. Add this flag to disable this"),
         dest="resolve_regions",
         action="store_false")
 
@@ -312,13 +324,8 @@ def _add_fine_tuning_arguments(target, hidden=False):
 
 def main():
 
-    # detailed help: -H/--show-detailed-help anywhere on an assembly invocation
-    # prints the full menu (including fine-tuning params) and exits, mirroring how
-    # -h works regardless of position and without requiring the otherwise-required
-    # -a/-t. handled before normal parsing so an incomplete command line still
-    # shows help rather than erroring on missing required args.
     argv = sys.argv[1:]
-    if "assembly" in argv and ("-H" in argv or "--show-detailed-help" in argv):
+    if "assembly" in argv and ("-H" in argv or "--detailed-help" in argv):
         detailed_parser = build_parser(show_fine=True)
         detailed_parser.subparsers.choices["assembly"].print_help(sys.stderr)
         sys.exit(0)

@@ -14,6 +14,14 @@
 
 -->
 
+## v2.4.1 (15-Jun-2026)
+
+### Added
+- additions to `bit ez-screen assembly`
+  - `--min-edge-perc-cov` and `--edge-tolerance` which enable lower-coverage targets to be captured and reported that are likely to be clipped by the contig edge
+
+---
+
 ## v2.4.0 (15-Jun-2026)
 
 ### Added
