@@ -267,10 +267,12 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan):
             per_entry_loci.append(loci)
 
         # merge across entries
-        filtered_hits_df = (pd.concat(per_entry_filtered, ignore_index=True)
-                            if per_entry_filtered else pd.DataFrame())
-        loci_df = (pd.concat(per_entry_loci, ignore_index=True)
-                   if per_entry_loci else pd.DataFrame())
+        nonempty_filtered = [d for d in per_entry_filtered if not d.empty]
+        nonempty_loci = [d for d in per_entry_loci if not d.empty]
+        filtered_hits_df = (pd.concat(nonempty_filtered, ignore_index=True)
+                            if nonempty_filtered else pd.DataFrame())
+        loci_df = (pd.concat(nonempty_loci, ignore_index=True)
+                   if nonempty_loci else pd.DataFrame())
 
         # per-assembly filtered BLAST table (pident-passing HSPs, all entries)
         filtered_hits_df.to_csv(f"{outputs_dir}/{out_base}-filtered-search-results.tsv",
