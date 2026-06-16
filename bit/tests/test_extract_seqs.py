@@ -59,7 +59,6 @@ class TestExtractSeqsByHeaders:
             input_fasta=simple_fasta,
             output_fasta=out,
             headers=["seq1", "seq3"],
-            file_with_headers=None,
             inverse=False,
         )
         extract_seqs_by_headers(args)
@@ -70,6 +69,20 @@ class TestExtractSeqsByHeaders:
         assert result["seq3"] == "AAATTTGGGCCC"
 
 
+    def test_extract_matching_headers_with_leading_gt(self, tmp_path, simple_fasta):
+        out = str(tmp_path / "out.fasta")
+        args = SimpleNamespace(
+            input_fasta=simple_fasta,
+            output_fasta=out,
+            headers=[">seq1", "seq3"],
+            inverse=False,
+        )
+        extract_seqs_by_headers(args)
+
+        result = read_fasta_dict(out)
+        assert set(result.keys()) == {"seq1", "seq3"}
+
+
     def test_extract_matching_headers_from_file(self, tmp_path, simple_fasta):
         header_file = tmp_path / "headers.txt"
         header_file.write_text("seq2\n")
@@ -78,10 +91,10 @@ class TestExtractSeqsByHeaders:
         args = SimpleNamespace(
             input_fasta=simple_fasta,
             output_fasta=out,
-            headers=None,
-            file_with_headers=str(header_file),
+            headers=[str(header_file)],
             inverse=False,
         )
+
         extract_seqs_by_headers(args)
 
         result = read_fasta_dict(out)
@@ -95,7 +108,6 @@ class TestExtractSeqsByHeaders:
             input_fasta=simple_fasta,
             output_fasta=out,
             headers=["seq2"],
-            file_with_headers=None,
             inverse=True,
         )
         extract_seqs_by_headers(args)
@@ -110,7 +122,6 @@ class TestExtractSeqsByHeaders:
             input_fasta=simple_fasta,
             output_fasta=out,
             headers=["seq1", "missing"],
-            file_with_headers=None,
             inverse=False,
         )
         extract_seqs_by_headers(args)

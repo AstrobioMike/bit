@@ -102,16 +102,10 @@ def build_parser():
     by_headers_required.add_argument(
         "-H",
         "--headers",
-        help="Headers of sequences (space-delimited if more than one)",
-        metavar="<STR>",
-        nargs="+"
-    )
-
-    by_headers_required.add_argument(
-        "-f",
-        "--file-with-headers",
-        help="File with headers of sequences (one header per line)",
-        metavar="<FILE>"
+        help="Headers of sequences (space-delimited list or a single file with one header per line)",
+        metavar="<STR/FILE>",
+        nargs="+",
+        required=True
     )
 
     add_common_optional_arguments(by_headers_optional)
@@ -228,21 +222,4 @@ def main():
 
     func = func_map[args.func]
 
-    if func == extract_seqs_by_headers:
-        check_by_headers_required_inputs(args)
-
     func(args)
-
-
-def check_by_headers_required_inputs(args):
-
-    from bit.modules.general import report_message, notify_premature_exit
-
-    if not args.headers and not args.file_with_headers:
-        report_message("You must provide either -H/--headers or -f/--file-with-headers.",
-                       initial_indent="    ", subsequent_indent="    ")
-        notify_premature_exit()
-    if args.headers and args.file_with_headers:
-        report_message("You have provided both -H/--headers and -f/--file-with-headers parameters, please only provide one.",
-                       initial_indent="    ", subsequent_indent="    ")
-        notify_premature_exit()

@@ -4,6 +4,10 @@ from pybedtools import BedTool # type: ignore
 from bit.modules.general import report_message
 from bit.modules.seqs import revcomp, read_fasta
 
+
+def _normalize_header(header):
+    return header.strip().lstrip(">")
+
 def extract_seqs_by_coords(args):
     coordinates_file = BedTool(args.bed_file)
     fasta = BedTool(args.input_fasta)
@@ -23,10 +27,20 @@ def extract_seqs_by_coords(args):
 
 def extract_seqs_by_headers(args):
 
-    if args.headers:
-        headers_of_interest = set(line.strip() for line in args.headers)
+    if len(args.headers) == 1 and os.path.isfile(args.headers[0]):
+            with open(args.headers[0], "r") as in_headers:
+                headers_of_interest = set(_normalize_header(line) for line in in_headers)
     else:
-        headers_of_interest = set(line.strip() for line in open(args.file_with_headers, "r"))
+        if len(args.headers) > 1:
+            files = [entry for entry in args.headers if os.path.isfile(entry)]
+            if files:
+                report_message(f"Note: We're treating all of -H/--headers as literal header strings, but "
+                            f"{', '.join(files)} "
+                            f"{'is an existing file' if len(files) == 1 else 'are existing files!'} "
+                            f"File contents are only read when a single file path "
+                            f"is the sole argument to -H. You may want to re-evaluate and re-run.",
+                            initial_indent="    ", subsequent_indent="    ")
+        headers_of_interest = set(_normalize_header(line) for line in args.headers)
 
     seqs_pulled = 0
     num_targets = len(headers_of_interest)

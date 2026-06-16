@@ -292,7 +292,8 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan):
         contig_island_map = {}
         if args.resolve_regions:
             region_df, num_regions_by_contig = gen_region_calls_table(
-                loci_df, overlap_frac=args.region_overlap_frac)
+                loci_df, overlap_frac=args.region_overlap_frac,
+                contig_lengths=contig_lengths)
 
             # optional island extraction: cluster regions into islands and cut
             # out those buried in large contigs (needs resolved regions). adds
@@ -1063,7 +1064,7 @@ def resolve_contig_regions(contig_loci_df, overlap_frac=0.5):
 
 natural_sort_key = natsort_keygen()
 
-def gen_region_calls_table(loci_df, overlap_frac=0.5):
+def gen_region_calls_table(loci_df, overlap_frac=0.5, contig_lengths=None):
     """
     builds a per-resolved-region table across all contigs from the resolved
     loci (resolve_assembly_loci): one row per region, with the chosen (best)
@@ -1086,7 +1087,7 @@ def gen_region_calls_table(loci_df, overlap_frac=0.5):
     the two outputs from drifting
     """
 
-    cols = ["contig", "region_start", "region_end", "region_length",
+    cols = ["contig", "contig_length", "region_start", "region_end", "region_length",
             "aligned_target", "target_type", "target_length", "pident",
             "perc_target_cov", "bitscore", "n_overlapping_targets", "other_targets"]
 
@@ -1102,6 +1103,7 @@ def gen_region_calls_table(loci_df, overlap_frac=0.5):
         for r in regions:
             region_rows.append({
                 "contig": contig,
+                "contig_length": (contig_lengths or {}).get(contig, ""),
                 "region_start": r["region_start"],
                 "region_end": r["region_end"],
                 "region_length": r["region_length"],

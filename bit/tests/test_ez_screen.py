@@ -254,7 +254,7 @@ def empty_loci():
 LOCI_COLS = ["contig", "target", "q_low", "q_high", "perc_target_cov",
              "pident", "bitscore", "length", "slen"]
 
-REGION_COLS = ["contig", "region_start", "region_end", "region_length",
+REGION_COLS = ["contig", "contig_length", "region_start", "region_end", "region_length",
                "aligned_target", "target_type", "target_length", "pident",
                "perc_target_cov", "bitscore", "n_overlapping_targets",
                "other_targets"]

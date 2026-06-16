@@ -14,6 +14,18 @@
 
 -->
 
+## v2.X.X (NOT YET RELEASED)
+
+### Added
+- additions to `bit ez-screen assembly`
+  - region-calls.tsv now includes a contig_length column
+
+### Changed
+- `bit fasta extract-seqs-by-headers` 
+  - now ignores ">" characters if they are at the front of the specified headers
+  - space-delimited list or file with one header per line can be provided to the `-H` parameter now
+
+
 ## v2.4.1 (15-Jun-2026)
 
 ### Added
