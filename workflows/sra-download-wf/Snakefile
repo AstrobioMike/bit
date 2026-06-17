@@ -1,6 +1,6 @@
 ###################################################################################################
 ## Snakefile for the "bit" SRA download workflow                                                 ##
-## Version 1.1.0                                                                                 ##
+## Version 1.1.2                                                                                 ##
 ## bit: https://github.com/AstrobioMike/bit                                                      ##
 ##                                                                                               ##
 ## If you use this workflow in a publication, please consider citing :)                          ##
@@ -9,10 +9,10 @@
 ###################################################################################################
 
 import os
+import sys
 import pandas as pd
 
 configfile: "config.yaml"
-
 
 ########################################
 ############# General Info #############
@@ -96,7 +96,7 @@ for dir in dirs_to_create:
 
 rule all:
     input:
-        expand(f"{triggers_dir}/{{acc}}/all.done", acc = target_sra_accessions_list)
+        expand(triggers_dir + "/{acc}/all.done", acc = target_sra_accessions_list)
     shell:
         """
         bash scripts/combine-benchmarks.sh
@@ -132,7 +132,7 @@ rule fasterq_dump:
     input:
         "{acc}-tmp/{acc}/{acc}.sra"
     output:
-        touch(f"{triggers_dir}/{{acc}}/fq-dump.done")
+        touch(triggers_dir + "/{acc}/fq-dump.done")
     params:
         num_threads = config["num_threads"]
     benchmark:
@@ -145,8 +145,8 @@ rule fasterq_dump:
 
         # renaming the files to have R1/R2 in their names if they are paired end
         if [ -f {wildcards.acc}-tmp/{wildcards.acc}_1.fastq ]; then
-            mv {wildcards.acc}-tmp/{wildcards.acc}_1.fastq {wildcards.acc}-tmp/{wildcards.acc}_R1.fastq.fastq
-            mv {wildcards.acc}-tmp/{wildcards.acc}_2.fastq {wildcards.acc}-tmp/{wildcards.acc}_R2.fastq.fastq
+            mv {wildcards.acc}-tmp/{wildcards.acc}_1.fastq {wildcards.acc}-tmp/{wildcards.acc}_R1.fastq
+            mv {wildcards.acc}-tmp/{wildcards.acc}_2.fastq {wildcards.acc}-tmp/{wildcards.acc}_R2.fastq
         fi
         """
 
@@ -158,9 +158,9 @@ rule gzip_fastq_files:
     conda:
         "envs/sra-dl.yaml"
     input:
-        f"{triggers_dir}/{{acc}}/fq-dump.done"
+        triggers_dir + "/{acc}/fq-dump.done"
     output:
-        touch(f"{triggers_dir}/{{acc}}/all.done")
+        touch(triggers_dir + "/{acc}/all.done")
     params:
         num_threads = config["num_threads"],
         initial_sra_dir = "{acc}-tmp/",

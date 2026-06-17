@@ -1,5 +1,11 @@
 # SRA-download workflow change log
 
+## 1.1.2
+- slight changes to f-strings so it works with python 3.12 (after bit migration from 3.10)
+
+## 1.1.1
+- fixed duplication of "fastq" in output filenames
+
 ## 1.1.0
 - workflow can now also handle sra objects that hold single-end data
 
