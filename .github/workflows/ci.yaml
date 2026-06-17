@@ -14,10 +14,12 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v4
+    # - uses: actions/checkout@v4
+    - uses: actions/checkout@v5
 
     - name: Set up miniconda
-      uses: conda-incubator/setup-miniconda@v3
+      # uses: conda-incubator/setup-miniconda@v3
+      uses: conda-incubator/setup-miniconda@v4
       with:
         # miniforge-version: latest
         architecture: "x86_64"
@@ -25,9 +27,6 @@ jobs:
         channel-priority: strict
         conda-remove-defaults: true
         auto-update-conda: true
-
-    # - name: Point conda at prefix.dev mirror (avoids anaconda.org rate limits)
-    #   run: conda config --set channel_alias https://prefix.dev/channels
 
     - name: Build conda package
       run: |
