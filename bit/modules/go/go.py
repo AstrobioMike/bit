@@ -118,7 +118,7 @@ def write_go_tables(GO_df, args):
     combined = _write_if_nonempty(GO_df, out_prefix + ".tsv", None)
     if len(combined.index) == 0:
         print("\n\tThere were no counts to any terms :( Sure we're working with the right files here?\n")
-        sys.exit(0)
+        sys.exit(1)
 
     if args.by_namespace:
         for ns_key, label, suffix in (
@@ -199,7 +199,7 @@ def combine_summaries(args):
         if len(args.sample_names) != len(args.input_files):
             print("\n    It seems the number of provided sample names doesn't match the number of provided input files :(")
             print("\n    Check usage with `bit go combine-summaries -h`.\n")
-            sys.exit(0)
+            sys.exit(1)
 
         for i, curr_sample in enumerate(args.sample_names):
             all_samples[args.input_files[i]] = curr_sample

@@ -102,9 +102,9 @@ def check_if_output_dir_exists(output_dir, force_overwrite=False):
             shutil.rmtree(output_dir)
 
 
-def notify_premature_exit():
-    print("\n  Exiting for now :(\n")
-    sys.exit(0)
+def notify_premature_exit(exit_code=1):
+    print("\n  Exiting for now :(\n", file=sys.stderr)
+    sys.exit(exit_code)
 
 
 def tee(msg, log_path, end="\n"):
@@ -174,7 +174,7 @@ def colnames(args):
         print("\n  But here's the first line:")
         print(f"    {header_line}")
         print()
-        exit()
+        sys.exit(1)
 
     columns = header_line.split(delimiter)
 

@@ -98,7 +98,7 @@ def test_check_files_are_found_exits_on_missing(tmp_path, capsys):
     missing = tmp_path / "nope.txt"
     with pytest.raises(SystemExit) as e:
         check_files_are_found([str(missing)])
-    assert e.value.code == 0          # notify_premature_exit uses exit(0)
+    assert e.value.code == 1
     assert "not able to find" in capsys.readouterr().out
 
 
@@ -108,7 +108,7 @@ def test_check_if_output_dir_exists_no_force_exits(tmp_path, capsys):
     d.mkdir()
     with pytest.raises(SystemExit) as e:
         check_if_output_dir_exists(str(d), force_overwrite=False)
-    assert e.value.code == 0
+    assert e.value.code == 1
     assert "already exists" in capsys.readouterr().out
 
 
@@ -132,8 +132,8 @@ def test_notify_premature_exit(capsys):
 
     with pytest.raises(SystemExit) as e:
         notify_premature_exit()
-    assert e.value.code == 0
-    assert "Exiting for now" in capsys.readouterr().out
+    assert e.value.code == 1
+    assert "Exiting for now" in capsys.readouterr().err
 
 
 def test_is_gzipped_true(tmp_path):

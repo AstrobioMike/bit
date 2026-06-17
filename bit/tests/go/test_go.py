@@ -205,7 +205,7 @@ def test_write_go_tables_all_zero_exits(tmp_path, capsys):
     args = Args(output_prefix=str(tmp_path / "go"), keep_zeros=False, by_namespace=False)
     with pytest.raises(SystemExit) as e:
         write_go_tables(df, args)
-    assert e.value.code == 0
+    assert e.value.code == 1
     assert "no counts to any terms" in capsys.readouterr().out
 
 
@@ -246,7 +246,7 @@ def test_combine_summaries_name_count_mismatch_exits(tmp_path, capsys):
                 input_files=[str(s1)], output_file=str(tmp_path / "o.tsv"))
     with pytest.raises(SystemExit) as e:
         combine_summaries(args)
-    assert e.value.code == 0
+    assert e.value.code == 1
     assert "doesn't match the number" in capsys.readouterr().out
 
 

@@ -13,7 +13,7 @@ def check_go_data_location_var_is_set():
         wprint(color_text("The environment variable 'GO_DB_DIR' does not seem to be set :(", "yellow"))
         wprint("This shouldn't happen, check on things with `bit data locations check`.")
         print("")
-        sys.exit(0)
+        sys.exit(1)
 
     return go_data_dir
 

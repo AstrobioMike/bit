@@ -104,7 +104,7 @@ PROGRAM_GROUPS = [
                 "subcommands": [
                     ("calc-gc",           "calculate GC content per sequence or for the full file"),
                     ("calc-var-in-msa",   "calculate variation in each column of a multiple-sequence alignment"),
-                    ("count",             "count and summarize bases or sequences in a fasta file"),
+                    ("count",             "count and summarize bases or sequences"),
                     ("extract-by-coords", "extract sequences by genomic coordinates"),
                     ("extract-by-headers","extract sequences by header names"),
                     ("extract-by-primers","extract sequences based on primer sequences"),
