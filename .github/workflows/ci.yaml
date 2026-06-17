@@ -19,7 +19,6 @@ jobs:
     - name: Set up miniconda
       uses: conda-incubator/setup-miniconda@v4
       with:
-        python-version: "3.12"
         architecture: "x86_64"
         channels: conda-forge,bioconda
         channel-priority: strict
