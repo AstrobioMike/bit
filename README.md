@@ -68,8 +68,8 @@ You can see an overview of available programs like below by running `bit` by its
 | Program | Purpose |
 | ------- | ------- |
 | `bit cov-analyzer` | analyze coverage patterns from a bam + reference fasta to identify regions of relatively higher or lower coverage |
-| `bit cov-stats` | get detection, coverage, and mean percent ID for single or multiple references given fasta(s) and a bam file |
-| `bit mapped-reads-pid` | get percent ID information for mapped reads in a bam file |
+| `bit cov-stats` | get detection, coverage, and mean percent ID for single or multiple references given fasta(s) and a bam |
+| `bit mapped-read-stats` | get percent ID and other information for mapped reads in a bam |
 
 ---
 
@@ -104,7 +104,7 @@ You can see an overview of available programs like below by running `bit` by its
 | ---------- | ------- |
 | `calc-gc` | calculate GC content per sequence or for the full file |
 | `calc-var-in-msa` | calculate [variation](https://scikit.bio/docs/dev/generated/skbio.alignment.TabularMSA.conservation.html) in each column of a multiple-sequence alignment |
-| `count` | count and summarize bases or sequences in a fasta file |
+| `count` | count and summarize bases or sequences |
 | `extract-by-coords` | extract sequences by genomic coordinates |
 | `extract-by-headers` | extract sequences by header names |
 | `extract-by-primers` | extract sequences based on primer sequences |
