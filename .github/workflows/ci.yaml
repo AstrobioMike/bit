@@ -14,12 +14,12 @@ jobs:
     runs-on: ${{ matrix.os }}
 
     steps:
-    - uses: actions/checkout@v5
+    - uses: actions/checkout@v4
 
     - name: Set up miniconda
-      uses: conda-incubator/setup-miniconda@v4
+      uses: conda-incubator/setup-miniconda@v3
       with:
-        miniforge-version: latest
+        # miniforge-version: latest
         architecture: "x86_64"
         channels: conda-forge,bioconda
         channel-priority: strict
