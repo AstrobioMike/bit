@@ -143,7 +143,7 @@ class TestExtractSeqsByCoords:
 
         args = SimpleNamespace(
             input_fasta=str(fasta),
-            bed_file=str(bed),
+            bed=[str(bed)],
             output_fasta=str(out),
         )
         extract_seqs_by_coords(args)
@@ -165,13 +165,30 @@ class TestExtractSeqsByCoords:
         out = tmp_path / "out.fasta"
         args = SimpleNamespace(
             input_fasta=str(fasta),
-            bed_file=str(bed),
+            bed=[str(bed)],
             output_fasta=str(out),
         )
         extract_seqs_by_coords(args)
 
         result = read_fasta_dict(str(out))
         assert len(result) == 2
+
+
+    def test_inline_region(self, tmp_path):
+        fasta = tmp_path / "input.fasta"
+        write_fasta(fasta, [("chr1", "ATGCATGCATGCATGC")])
+
+        out = tmp_path / "out.fasta"
+        args = SimpleNamespace(
+            input_fasta=str(fasta),
+            bed=["chr1", "2", "6"],
+            output_fasta=str(out),
+        )
+        extract_seqs_by_coords(args)
+
+        result = read_fasta_dict(str(out))
+        assert len(result) == 1
+        assert list(result.values())[0].upper() == "GCAT"
 
 
 class TestFindAllPrimerHits:

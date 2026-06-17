@@ -1,17 +1,18 @@
 import os
 import edlib # type: ignore
 from pybedtools import BedTool # type: ignore
-from bit.modules.general import report_message
+from bit.modules.general import report_message, notify_premature_exit
 from bit.modules.seqs import revcomp, read_fasta
 
 
 def _normalize_header(header):
     return header.strip().lstrip(">")
 
+
 def extract_seqs_by_coords(args):
-    coordinates_file = BedTool(args.bed_file)
+    coordinates = _build_coords_bedtool(args.bed)
     fasta = BedTool(args.input_fasta)
-    seq = coordinates_file.sequence(fi = fasta)
+    seq = coordinates.sequence(fi = fasta)
 
     content = open(seq.seqfn).read()
 
@@ -23,6 +24,39 @@ def extract_seqs_by_coords(args):
         out_fasta.write(content)
     report_message(f"Extracted sequences based on the provided coordinates were written to:", color="none")
     report_message(args.output_fasta, color="yellow", initial_indent="    ", leading_newline=False, trailing_newline=True)
+
+
+def _build_coords_bedtool(bed):
+    """
+    accepts either a single bed-file path, or three strings (contig, start, end)
+    specifying one region inline. returns a BedTool
+    """
+    if len(bed) == 1:
+        path = bed[0]
+        if not os.path.isfile(path):
+            report_message(f"Provided coordinate input '{path}' is not an existing file. "
+                           f"Provide a bed file, or three values: contig start end.",
+                           color="yellow", initial_indent="    ", subsequent_indent="    ")
+            notify_premature_exit()
+        return BedTool(path)
+
+    if len(bed) == 3:
+        contig, start, end = bed
+        try:
+            start, end = int(start), int(end)
+        except ValueError:
+            report_message(f"Inline coordinates must be integers, but got start='{bed[1]}' and end='{bed[2]}'.",
+                           color="yellow", initial_indent="    ", subsequent_indent="    ")
+            notify_premature_exit()
+        if start >= end:
+            report_message(f"Inline start ({start}) must be less than end ({end}).",
+                           color="yellow", initial_indent="    ", subsequent_indent="    ")
+            notify_premature_exit()
+        return BedTool(f"{contig}\t{start}\t{end}\n", from_string=True)
+
+    report_message(f"Provide either a single bed file, or exactly three values: contig start end ",
+                   color="yellow", initial_indent="    ", subsequent_indent="    ")
+    notify_premature_exit()
 
 
 def extract_seqs_by_headers(args):

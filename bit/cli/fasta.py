@@ -190,14 +190,16 @@ def build_parser(parent_subparsers=None):
     ##############################################################
     extract_by_coords_desc = """
         This subcommand takes a fasta file and tab-delimited (bed) file specifying which contigs
-        and coordinates are wanted, and it returns a fasta of the chopped out sequences.
+        and coordinates are wanted, or a single inline region (contig start end) and it returns a
+        fasta of the chopped out sequences.
         """
 
     extract_by_coords_parser = subparsers.add_parser(
         "extract-by-coords",
         help="Extract sequences based on coordinates provided in a bed file",
         description=extract_by_coords_desc,
-        epilog="Ex. usage: `bit fasta extract-by-coords -i input.fasta -b targets.bed`",
+        epilog="Ex. usage: `bit fasta extract-by-coords -i input.fasta -b targets.bed` "
+               "or `bit fasta extract-by-coords -i input.fasta -b contig-3 500 1200`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -212,11 +214,15 @@ def build_parser(parent_subparsers=None):
         metavar="<FILE>",
         required=True
     )
+
     extract_by_coords_required.add_argument(
         "-b",
-        "--bed-file",
-        help="Tab-delimited bed file of desired contigs and coordinates (3 columns - contig, start, end - no header, 0-based counting)",
-        metavar="<FILE>"
+        "--bed",
+        help="Either a tab-delimited bed file (3 columns - contig, start, end - no header, 0-based half-open counting), "
+             "or three space-delimited values specifying a single region inline: contig start end (same 0-based half-open counting)",
+        # metavar="<FILE | contig start end>",
+        nargs="+",
+        required=True
     )
 
     extract_by_coords_optional.add_argument(
