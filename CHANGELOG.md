@@ -14,7 +14,9 @@
 
 -->
 
-## v2.X.X (NOT YET RELEASED)
+## v2.5.0 (NOT YET RELEASED)
+
+**Base python updated from 3.10 to 3.12**
 
 ### Added
 - additions to `bit ez-screen assembly`
