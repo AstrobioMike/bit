@@ -68,5 +68,9 @@ jobs:
     - name: Run pytest
       # 3.11/3.12 are informational for now, a failure here is logged but does
       # not fail the job. i need to flip the version's `required` to true above to gate on it
-      continue-on-error: ${{ !matrix.required }}
-      run: conda run -n bit pytest
+      run: |
+        if [ "${{ matrix.required }}" = "true" ]; then
+          conda run -n bit pytest
+        else
+          conda run -n bit pytest || echo "::warning::pytest failed on Python ${{ matrix.python-version }} (informational, non-blocking)"
+        fi
