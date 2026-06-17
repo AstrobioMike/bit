@@ -26,8 +26,8 @@ jobs:
         conda-remove-defaults: true
         auto-update-conda: true
 
-    - name: Point conda at prefix.dev mirror (avoids anaconda.org rate limits)
-      run: conda config --set channel_alias https://prefix.dev/channels
+    # - name: Point conda at prefix.dev mirror (avoids anaconda.org rate limits)
+    #   run: conda config --set channel_alias https://prefix.dev/channels
 
     - name: Build conda package
       run: |
