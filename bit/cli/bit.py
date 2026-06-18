@@ -7,6 +7,7 @@ from bit.cli.common import add_help, add_version_arg, CustomRichHelpFormatter
 SUBCOMMAND_MAP = {
     "dl-ncbi-assemblies":  "bit.cli.dl_ncbi_assemblies",
     "get-accs-from-gtdb":  "bit.cli.get_accessions_from_gtdb",
+    "get-accs-from-ncbi":  "bit.cli.get_accessions_from_ncbi",
     "cov-analyzer":        "bit.cli.cov_analyzer",
     "cov-stats":           "bit.cli.cov_stats",
     "mapped-read-stats":   "bit.cli.mapped_read_stats",
@@ -35,12 +36,16 @@ PROGRAM_GROUPS = [
         "title": "NCBI/GTDB-related",
         "programs": [
             {
-                "name": "dl-ncbi-assemblies",
-                "desc": "download NCBI assemblies in different formats given input accessions",
-            },
-            {
                 "name": "get-accs-from-gtdb",
                 "desc": "search the GTDB by taxonomy and retrieve NCBI accessions",
+            },
+            {
+                "name": "get-accs-from-ncbi",
+                "desc": "search NCBI by taxonomy or taxid and retrieve NCBI accessions",
+            },
+            {
+                "name": "dl-ncbi-assemblies",
+                "desc": "download NCBI assemblies in different formats given input accessions",
             },
         ],
     },

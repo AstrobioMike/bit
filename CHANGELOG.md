@@ -14,6 +14,14 @@
 
 -->
 
+## v2.6.0 (NOT RELEASED YET)
+
+### Added
+- `bit get-accs-from-ncbi` for searching for accessions based on taxonomy (corollary to `bit get-accs-from-gtdb`)
+
+
+---
+
 ## v2.5.0 (18-Jun-2026)
 
 **Base python updated from 3.10 to 3.12**

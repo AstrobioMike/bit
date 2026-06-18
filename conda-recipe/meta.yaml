@@ -30,6 +30,7 @@ requirements:
     - matplotlib=3.10
     - miniprot=0.18
     - mosdepth
+    - ncbi-datasets-cli=18.30
     - numpy=1.26.4
     - pandas
     - parallel

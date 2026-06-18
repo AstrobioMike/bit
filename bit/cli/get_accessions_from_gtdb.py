@@ -27,7 +27,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: bit get-accs-from-gtdb -t Archaea --gtdb-representatives-only",
+            epilog="Ex. usage: `bit get-accs-from-gtdb -t Archaea --gtdb-representatives-only`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )
@@ -70,14 +70,14 @@ def build_parser(parent_subparsers=None):
     optional.add_argument(
         "--get-taxon-counts",
         action="store_true",
-        help=wrap_help("Provide this flag along with a specified taxon to the `-t` flag "
+        help=wrap_help("Add this flag along with a specified taxon to the `-t` parameter "
                        "to see how many of that taxon are in the database."),
     )
 
     optional.add_argument(
         "--gtdb-representatives-only",
         action="store_true",
-        help=wrap_help("Provide this flag along with a specified taxon to the `-t` flag "
+        help=wrap_help("Add this flag along with a specified taxon to the `-t` parameter "
                        "to pull accessions only for genomes designated as GTDB species "
                        "representatives (see e.g.: https://gtdb.ecogenomic.org/faq#gtdb_species_clusters)."),
     )
@@ -85,7 +85,7 @@ def build_parser(parent_subparsers=None):
     optional.add_argument(
         "--refseq-reference-genomes-only",
         action="store_true",
-        help=wrap_help("Provide this flag along with a specified taxon to the `-t` flag "
+        help=wrap_help("Add this flag along with a specified taxon to the `-t` parameter "
                        "to pull accessions only for genomes designated as RefSeq \"reference\" "
                        "genomes (these used to be called \"representative\" genomes, see e.g.: "
                        "https://www.ncbi.nlm.nih.gov/refseq/about/prokaryotes/#reference_genomes). "
