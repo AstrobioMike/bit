@@ -1,10 +1,5 @@
 {% set data = load_file_data("../pyproject.toml", from_recipe_dir=True) %}
 
-# python version is overridable at build time via a conda-build variant
-# (e.g. `conda build conda-recipe --variants "{python_version: ['3.12']}"`).
-# defaults to 3.10 when no variant is passed, so normal builds are unchanged.
-{% set python_version = python_version or "3.10" %}
-
 package:
   name: "{{ data.get('project', {}).get('name')|lower }}"
   version: "{{ data.get('project', {}).get('version') }}"
@@ -17,7 +12,7 @@ build:
 
 requirements:
   host:
-    - python={{ python_version }}
+    - python=3.12
     - pip
     - setuptools>=61.0
     - wheel
@@ -28,8 +23,7 @@ requirements:
     - blast=2
     - bwa>=0.7
     - coreutils
-    - diamond=2.1.16
-    - edlib=1.3
+    - python-edlib
     - entrez-direct
     - goatools
     - mamba=1
@@ -46,7 +40,7 @@ requirements:
     - pyfastx
     - pytest
     - pytest-cov
-    - python={{ python_version }}
+    - python=3.12
     - rich
     - rich-argparse=1.7.1
     - samtools

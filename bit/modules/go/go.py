@@ -1,6 +1,6 @@
-from goatools import obo_parser
+from goatools import obo_parser # type: ignore
 import os
-import pandas as pd
+import pandas as pd # type: ignore
 import sys
 from bit.modules.go.get_go_dbs import get_go_data
 

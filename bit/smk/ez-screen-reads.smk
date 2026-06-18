@@ -9,11 +9,11 @@ mapping_output_dir = config['mapping_output_dir']
 log_files_dir = config['log_files_dir']
 targets_path = config['targets']
 targets_base_name = Path(targets_path).stem
-mapping_index_prefix = f"{mapping_output_dir}/index/{targets_base_name}"
+mapping_index_prefix = mapping_output_dir + "/index/" + targets_base_name
 reads_dir = config['reads_dir']
 min_perc_id = config['min_perc_id']
 min_perc_cov = config['min_perc_cov']
-final_output = f"{base_output_dir}/{base_output_prefix}-reads-summary.tsv"
+final_output = base_output_dir + "/" + base_output_prefix + "-reads-summary.tsv"
 
 samples = list(reads_dict.keys())
 
@@ -26,13 +26,14 @@ rule make_bwa_index:
         targets_path
     output:
         expand(
-            f"{mapping_index_prefix}.{{ext}}",
+            "{prefix}.{ext}",
+            prefix=mapping_index_prefix,
             ext=["amb", "ann", "bwt", "pac", "sa"]
         )
     params:
         mapping_index_prefix = mapping_index_prefix
     log:
-        f"{log_files_dir}/{targets_base_name}-make-bwa-index.log"
+        log_files_dir + "/" + targets_base_name + "-make-bwa-index.log"
     shell:
         """
         bwa index -p {params.mapping_index_prefix} {targets_path} 2> {log}
@@ -42,7 +43,8 @@ rule make_bwa_index:
 rule map_reads:
     input:
         expand(
-            f"{mapping_index_prefix}.{{ext}}",
+            "{prefix}.{ext}",
+            prefix=mapping_index_prefix,
             ext=["amb", "ann", "bwt", "pac", "sa"]
         )
     output:
@@ -105,7 +107,7 @@ rule combine_outputs:
         final_output = final_output
     run:
         samples_output_summaries_dict = {
-            sample: f"{mapping_output_dir}/{sample}/{sample}-ez-screen-summary.tsv"
+            sample: mapping_output_dir + "/" + sample + "/" + sample + "-ez-screen-summary.tsv"
             for sample in samples
         }
         combine_reads_summary_outputs(samples_output_summaries_dict, output.final_output)

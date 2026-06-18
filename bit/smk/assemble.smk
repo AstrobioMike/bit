@@ -30,8 +30,8 @@ rule all:
 if run_fastp:
     post_fastp_reads_dict = {
         sample: {
-            'R1': f"{output_dir}/{sample}/filtered-reads/{sample}-filtered-R1.fastq.gz",
-            'R2': f"{output_dir}/{sample}/filtered-reads/{sample}-filtered-R2.fastq.gz"
+            'R1': output_dir + "/" + sample + "/filtered-reads/" + sample + "-filtered-R1.fastq.gz",
+            'R2': output_dir + "/" + sample + "/filtered-reads/" + sample + "-filtered-R2.fastq.gz"
         } for sample in samples
     }
 
@@ -66,8 +66,8 @@ else:
 if run_bbnorm:
     post_bbnorm_reads_dict = {
         sample: {
-            'R1': f"{output_dir}/{sample}/bbnormd-reads/{sample}-bbnormd-R1.fastq.gz",
-            'R2': f"{output_dir}/{sample}/bbnormd-reads/{sample}-bbnormd-R2.fastq.gz"
+            'R1': output_dir + "/" + sample + "/bbnormd-reads/" + sample + "-bbnormd-R1.fastq.gz",
+            'R2': output_dir + "/" + sample + "/bbnormd-reads/" + sample + "-bbnormd-R2.fastq.gz"
         } for sample in samples
     }
 
