@@ -10,9 +10,7 @@ def build_parser(parent_subparsers=None):
         This is a helper program to facilitate getting NCBI accessions and assembly
         metadata based on an NCBI-taxonomy search. It primarily returns NCBI
         accessions and a summary metadata table based on NCBI-taxonomy or taxid searches, 
-        which can then be passed to, e.g., `bit dl-ncbi-assemblies`. Filters are available 
-        for assembly source (GenBank/RefSeq), RefSeq "reference" genomes only, 
-        assembly level, and annotation status.
+        which can then be passed to, e.g., `bit dl-ncbi-assemblies`.
         """
 
     if parent_subparsers is not None:
@@ -25,7 +23,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit get-accs-from-ncbi -t Alteromonas --assembly-source RefSeq`",
+            epilog="Ex. usage: `bit get-accs-from-ncbi -t Alteromonas`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )
