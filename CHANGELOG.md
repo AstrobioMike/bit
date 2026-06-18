@@ -14,7 +14,7 @@
 
 -->
 
-## v2.5.0 (NOT YET RELEASED)
+## v2.5.0 (18-Jun-2026)
 
 **Base python updated from 3.10 to 3.12**
 
