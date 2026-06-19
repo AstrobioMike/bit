@@ -1,7 +1,7 @@
 # Metagenomics workflow change log
 
 ## 1.0.4
-- removed f-strings and made shell blocks raw/r so Snakefile was compatiable with bit env python 3.12
+- removed f-strings and made shell blocks raw/r so Snakefile was compatible with bit env python 3.12
 
 ## 1.0.3
 - CAT was having trouble downloading its DB, so added `-k` to curl command
