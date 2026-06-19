@@ -1,6 +1,6 @@
 ###################################################################################################
 ## Snakefile for the "bit" amplicon processing workflow                                          ##
-## Version 1.0.0                                                                                 ##
+## Version 1.0.1                                                                                 ##
 ## bit: https://github.com/AstrobioMike/bit                                                      ##
 ##                                                                                               ##
 ## If you use this workflow in a publication, please consider citing :)                          ##
@@ -75,16 +75,16 @@ if config["data_type"] == "PE":
                 expand(filtered_reads_dir + "{ID}" + config["filtered_R2_suffix"], ID = sample_ID_list),
                 expand(trimmed_reads_dir + "{ID}" + config["primer_trimmed_R1_suffix"], ID = sample_ID_list),
                 expand(trimmed_reads_dir + "{ID}" + config["primer_trimmed_R2_suffix"], ID = sample_ID_list),
-                trimmed_reads_dir + config["output_prefix"] + f"cutadapt.log",
-                trimmed_reads_dir + config["output_prefix"] + f"trimmed-read-counts.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.biom",
-                final_outputs_dir + config["output_prefix"] + f"ASVs.fasta",
-                final_outputs_dir + config["output_prefix"] + f"read-count-tracking.tsv",
-                final_outputs_dir + config["output_prefix"] + f"counts.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.tsv",
-                fastqc_out_dir + config["output_prefix"] + f"raw_multiqc_report.zip",
-                fastqc_out_dir + config["output_prefix"] + f"filtered_multiqc_report.zip"
+                trimmed_reads_dir + config["output_prefix"] + "cutadapt.log",
+                trimmed_reads_dir + config["output_prefix"] + "trimmed-read-counts.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.biom",
+                final_outputs_dir + config["output_prefix"] + "ASVs.fasta",
+                final_outputs_dir + config["output_prefix"] + "read-count-tracking.tsv",
+                final_outputs_dir + config["output_prefix"] + "counts.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.tsv",
+                fastqc_out_dir + config["output_prefix"] + "raw_multiqc_report.zip",
+                fastqc_out_dir + config["output_prefix"] + "filtered_multiqc_report.zip"
             shell:
                 """
                 bash scripts/combine-benchmarks.sh
@@ -97,14 +97,14 @@ if config["data_type"] == "PE":
             input:
                 expand(filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"], ID = sample_ID_list),
                 expand(filtered_reads_dir + "{ID}" + config["filtered_R2_suffix"], ID = sample_ID_list),
-                final_outputs_dir + config["output_prefix"] + f"taxonomy.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.biom.zip",
-                final_outputs_dir + config["output_prefix"] + f"ASVs.fasta",
-                final_outputs_dir + config["output_prefix"] + f"read-count-tracking.tsv",
-                final_outputs_dir + config["output_prefix"] + f"counts.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.tsv",
-                fastqc_out_dir + config["output_prefix"] + f"raw_multiqc_report.zip",
-                fastqc_out_dir + config["output_prefix"] + f"filtered_multiqc_report.zip"
+                final_outputs_dir + config["output_prefix"] + "taxonomy.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.biom.zip",
+                final_outputs_dir + config["output_prefix"] + "ASVs.fasta",
+                final_outputs_dir + config["output_prefix"] + "read-count-tracking.tsv",
+                final_outputs_dir + config["output_prefix"] + "counts.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.tsv",
+                fastqc_out_dir + config["output_prefix"] + "raw_multiqc_report.zip",
+                fastqc_out_dir + config["output_prefix"] + "filtered_multiqc_report.zip"
             shell:
                 """
                 bash scripts/combine-benchmarks.sh
@@ -120,16 +120,16 @@ if config["data_type"] == "PE":
             input:
                 expand(trimmed_reads_dir + "{ID}" + config["primer_trimmed_R1_suffix"], ID = sample_ID_list),
                 expand(trimmed_reads_dir + "{ID}" + config["primer_trimmed_R2_suffix"], ID = sample_ID_list),
-                trimmed_reads_dir + config["output_prefix"] + f"trimmed-read-counts.tsv"
+                trimmed_reads_dir + config["output_prefix"] + "trimmed-read-counts.tsv"
             output:
                 expand(filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"], ID = sample_ID_list),
                 expand(filtered_reads_dir + "{ID}" + config["filtered_R2_suffix"], ID = sample_ID_list),
-                final_outputs_dir + config["output_prefix"] + f"taxonomy.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.biom",
-                final_outputs_dir + config["output_prefix"] + f"ASVs.fasta",
-                final_outputs_dir + config["output_prefix"] + f"read-count-tracking.tsv",
-                final_outputs_dir + config["output_prefix"] + f"counts.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.tsv"
+                final_outputs_dir + config["output_prefix"] + "taxonomy.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.biom",
+                final_outputs_dir + config["output_prefix"] + "ASVs.fasta",
+                final_outputs_dir + config["output_prefix"] + "read-count-tracking.tsv",
+                final_outputs_dir + config["output_prefix"] + "counts.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.tsv"
             params:
                 left_trunc = config["left_trunc"],
                 right_trunc = config["right_trunc"],
@@ -170,12 +170,12 @@ if config["data_type"] == "PE":
             output:
                 expand(filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"], ID = sample_ID_list),
                 expand(filtered_reads_dir + "{ID}" + config["filtered_R2_suffix"], ID = sample_ID_list),
-                final_outputs_dir + config["output_prefix"] + f"taxonomy.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.biom",
-                final_outputs_dir + config["output_prefix"] + f"ASVs.fasta",
-                final_outputs_dir + config["output_prefix"] + f"read-count-tracking.tsv",
-                final_outputs_dir + config["output_prefix"] + f"counts.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.tsv"
+                final_outputs_dir + config["output_prefix"] + "taxonomy.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.biom",
+                final_outputs_dir + config["output_prefix"] + "ASVs.fasta",
+                final_outputs_dir + config["output_prefix"] + "read-count-tracking.tsv",
+                final_outputs_dir + config["output_prefix"] + "counts.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.tsv"
             params:
                 left_trunc = config["left_trunc"],
                 right_trunc = config["right_trunc"],
@@ -296,7 +296,7 @@ if config["data_type"] == "PE":
             r2_html_files = expand(input_reads_dir + "{ID}" + config["input_R2_suffix"].rsplit(".", 2)[0] + "_fastqc.html", ID = sample_ID_list),
             config_file = "config/multiqc.config"
         output:
-            final_out_zip = fastqc_out_dir + config["output_prefix"] + f"raw_multiqc_report.zip"
+            final_out_zip = fastqc_out_dir + config["output_prefix"] + "raw_multiqc_report.zip"
         benchmark:
             benchmarks_dir + "raw_multiqc-benchmarks.tsv"
         shell:
@@ -345,7 +345,7 @@ if config["data_type"] == "PE":
             r2_html_files = expand(filtered_reads_dir + "{ID}" + config["filtered_R2_suffix"].rsplit(".", 2)[0] + "_fastqc.html", ID = sample_ID_list),
             config_file = "config/multiqc.config"
         output:
-            final_out_zip = fastqc_out_dir + config["output_prefix"] + f"filtered_multiqc_report.zip"
+            final_out_zip = fastqc_out_dir + config["output_prefix"] + "filtered_multiqc_report.zip"
         benchmark:
             benchmarks_dir + "filtered_multiqc-benchmarks.tsv"
 
@@ -365,16 +365,16 @@ if config["data_type"] == "SE":
             input:
                 expand(filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"], ID = sample_ID_list),
                 expand(trimmed_reads_dir + "{ID}" + config["primer_trimmed_R1_suffix"], ID = sample_ID_list),
-                trimmed_reads_dir + config["output_prefix"] + f"cutadapt.log",
-                trimmed_reads_dir + config["output_prefix"] + f"trimmed-read-counts.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.biom.zip",
-                final_outputs_dir + config["output_prefix"] + f"ASVs.fasta",
-                final_outputs_dir + config["output_prefix"] + f"read-count-tracking.tsv",
-                final_outputs_dir + config["output_prefix"] + f"counts.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.tsv",
-                fastqc_out_dir + config["output_prefix"] + f"raw_multiqc_report.zip",
-                fastqc_out_dir + config["output_prefix"] + f"filtered_multiqc_report.zip"
+                trimmed_reads_dir + config["output_prefix"] + "cutadapt.log",
+                trimmed_reads_dir + config["output_prefix"] + "trimmed-read-counts.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.biom.zip",
+                final_outputs_dir + config["output_prefix"] + "ASVs.fasta",
+                final_outputs_dir + config["output_prefix"] + "read-count-tracking.tsv",
+                final_outputs_dir + config["output_prefix"] + "counts.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.tsv",
+                fastqc_out_dir + config["output_prefix"] + "raw_multiqc_report.zip",
+                fastqc_out_dir + config["output_prefix"] + "filtered_multiqc_report.zip"
             shell:
                 """
                 bash scripts/combine-benchmarks.sh
@@ -386,14 +386,14 @@ if config["data_type"] == "SE":
         rule all:
             input:
                 expand(filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"], ID = sample_ID_list),
-                final_outputs_dir + config["output_prefix"] + f"taxonomy.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.biom.zip",
-                final_outputs_dir + config["output_prefix"] + f"ASVs.fasta",
-                final_outputs_dir + config["output_prefix"] + f"read-count-tracking.tsv",
-                final_outputs_dir + config["output_prefix"] + f"counts.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.tsv",
-                fastqc_out_dir + config["output_prefix"] + f"raw_multiqc_report.zip",
-                fastqc_out_dir + config["output_prefix"] + f"filtered_multiqc_report.zip"
+                final_outputs_dir + config["output_prefix"] + "taxonomy.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.biom.zip",
+                final_outputs_dir + config["output_prefix"] + "ASVs.fasta",
+                final_outputs_dir + config["output_prefix"] + "read-count-tracking.tsv",
+                final_outputs_dir + config["output_prefix"] + "counts.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.tsv",
+                fastqc_out_dir + config["output_prefix"] + "raw_multiqc_report.zip",
+                fastqc_out_dir + config["output_prefix"] + "filtered_multiqc_report.zip"
             shell:
                 """
                 bash scripts/combine-benchmarks.sh
@@ -408,15 +408,15 @@ if config["data_type"] == "SE":
                 "envs/R.yaml"
             input:
                 expand(trimmed_reads_dir + "{ID}" + config["primer_trimmed_R1_suffix"], ID = sample_ID_list),
-                trimmed_reads_dir + config["output_prefix"] + f"trimmed-read-counts.tsv"
+                trimmed_reads_dir + config["output_prefix"] + "trimmed-read-counts.tsv"
             output:
                 expand(filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"], ID = sample_ID_list),
-                final_outputs_dir + config["output_prefix"] + f"taxonomy.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.biom",
-                final_outputs_dir + config["output_prefix"] + f"ASVs.fasta",
-                final_outputs_dir + config["output_prefix"] + f"read-count-tracking.tsv",
-                final_outputs_dir + config["output_prefix"] + f"counts.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.tsv"
+                final_outputs_dir + config["output_prefix"] + "taxonomy.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.biom",
+                final_outputs_dir + config["output_prefix"] + "ASVs.fasta",
+                final_outputs_dir + config["output_prefix"] + "read-count-tracking.tsv",
+                final_outputs_dir + config["output_prefix"] + "counts.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.tsv"
             params:
                 left_trunc = config["left_trunc"],
                 left_maxEE = config["left_maxEE"],
@@ -450,12 +450,12 @@ if config["data_type"] == "SE":
                 expand(input_reads_dir + "{ID}" + config["input_R1_suffix"], ID = sample_ID_list)
             output:
                 expand(filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"], ID = sample_ID_list),
-                final_outputs_dir + config["output_prefix"] + f"taxonomy.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.biom",
-                final_outputs_dir + config["output_prefix"] + f"ASVs.fasta",
-                final_outputs_dir + config["output_prefix"] + f"read-count-tracking.tsv",
-                final_outputs_dir + config["output_prefix"] + f"counts.tsv",
-                final_outputs_dir + config["output_prefix"] + f"taxonomy-and-counts.tsv"
+                final_outputs_dir + config["output_prefix"] + "taxonomy.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.biom",
+                final_outputs_dir + config["output_prefix"] + "ASVs.fasta",
+                final_outputs_dir + config["output_prefix"] + "read-count-tracking.tsv",
+                final_outputs_dir + config["output_prefix"] + "counts.tsv",
+                final_outputs_dir + config["output_prefix"] + "taxonomy-and-counts.tsv"
             params:
                 left_trunc = config["left_trunc"],
                 left_maxEE = config["left_maxEE"],
@@ -565,7 +565,7 @@ if config["data_type"] == "SE":
             r1_html_files = expand(input_reads_dir + "{ID}" + config["input_R1_suffix"].rsplit(".", 2)[0] + "_fastqc.html", ID = sample_ID_list),
             config_file = "config/multiqc.config"
         output:
-            final_out_zip = fastqc_out_dir + config["output_prefix"] + f"raw_multiqc_report.zip"
+            final_out_zip = fastqc_out_dir + config["output_prefix"] + "raw_multiqc_report.zip"
         benchmark:
             benchmarks_dir + "raw_multiqc-benchmarks.tsv"
         shell:
@@ -610,7 +610,7 @@ if config["data_type"] == "SE":
             r1_html_files = expand(filtered_reads_dir + "{ID}" + config["filtered_R1_suffix"].rsplit(".", 2)[0] + "_fastqc.html", ID = sample_ID_list),
             config_file = "config/multiqc.config"
         output:
-            final_out_zip = fastqc_out_dir + config["output_prefix"] + f"filtered_multiqc_report.zip"
+            final_out_zip = fastqc_out_dir + config["output_prefix"] + "filtered_multiqc_report.zip"
         benchmark:
             benchmarks_dir + "filtered_multiqc-benchmarks.tsv"
 
@@ -626,8 +626,8 @@ rule combine_cutadapt_logs_and_summarize:
         counts = expand(trimmed_reads_dir + "{ID}-trimmed-counts.tsv", ID = sample_ID_list),
         logs = expand(trimmed_reads_dir + "{ID}-cutadapt.log", ID = sample_ID_list)
     output:
-        combined_log = trimmed_reads_dir + config["output_prefix"] + f"cutadapt.log",
-        combined_counts = trimmed_reads_dir + config["output_prefix"] + f"trimmed-read-counts.tsv"
+        combined_log = trimmed_reads_dir + config["output_prefix"] + "cutadapt.log",
+        combined_counts = trimmed_reads_dir + config["output_prefix"] + "trimmed-read-counts.tsv"
     benchmark:
         benchmarks_dir + "combine_cutadapt_logs_and_summarize-benchmarks.tsv"
     shell:

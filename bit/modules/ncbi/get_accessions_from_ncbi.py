@@ -1,17 +1,10 @@
 import sys
-import os
-import shutil
 import subprocess
 import pandas as pd
 from io import StringIO
 from bit.modules.general import color_text, wprint, report_message
 
 
-# the dataformat field names we pull and the friendlier column names we rename them to;
-# order here is also the output column order.
-# field names verified against `dataformat tsv genome --help` for datasets v18.30.1;
-# they have shifted across major versions (e.g. `source-database` existed in older docs
-# but is not a valid field in v18), so re-check this list if bumping the pinned version.
 FIELD_MAP = {
     "accession": "accession",
     "organism-name": "organism_name",
@@ -25,27 +18,7 @@ FIELD_MAP = {
     "source_database": "source_database",
 }
 
-
 def get_accessions_from_ncbi(args):
-
-    check_datasets_available()
-
-    # mutually-exclusive / co-required arg checks (mirrors the GTDB tool's up-front validation)
-    if args.get_taxon_counts and not args.target_taxon:
-        report_message("A specific taxon needs to also be provided to the `-t` flag in "
-                       "order to use `--get-taxon-counts`.", "yellow")
-        print("")
-        wprint("  E.g.: bit get-accs-from-ncbi --get-taxon-counts -t Alteromonas")
-        print("")
-        sys.exit(0)
-
-    if not args.target_taxon:
-        report_message("A target taxon (name or NCBI taxID) needs to be provided to the "
-                       "`-t` flag.", "yellow")
-        print("")
-        wprint("  E.g.: bit get-accs-from-ncbi -t Alteromonas")
-        print("")
-        sys.exit(0)
 
     if args.get_taxon_counts:
         get_taxon_count(args)
@@ -55,39 +28,12 @@ def get_accessions_from_ncbi(args):
     sys.exit(0)
 
 
-def check_datasets_available():
-    """ ensures the NCBI `datasets` and `dataformat` CLIs are on PATH
-
-    these are hard conda deps (ncbi-datasets-cli) in meta.yaml, but unlike a python
-    import they won't fail loudly on their own when called via subprocess, so we check
-    here to give a clean message rather than a cryptic FileNotFoundError
-    """
-
-    missing = [tool for tool in ("datasets", "dataformat") if shutil.which(tool) is None]
-
-    if missing:
-        report_message("This program requires the NCBI Datasets command-line tools, but "
-                       f"the following were not found on your PATH: {', '.join(missing)}.",
-                       "red")
-        print("")
-        wprint("These are normally installed as a dependency (conda package "
-               "`ncbi-datasets-cli`). You can install them with:")
-        print("")
-        print(color_text("    conda install -c conda-forge ncbi-datasets-cli\n"))
-        sys.exit(1)
-
-
 def build_summary_command(args):
-    """ assembles the `datasets summary genome taxon ...` argv list
-
-    returned as a list (not a shell string) so it's passed to subprocess without a shell,
-    which avoids any quoting issues with taxon names that contain spaces
-    """
 
     cmd = ["datasets", "summary", "genome", "taxon", str(args.target_taxon),
            "--as-json-lines"]
 
-    # --source: genbank vs refseq vs both
+    # --source: genbank vs refseq vs both (which takes nothing)
     if args.source == "refseq":
         cmd += ["--assembly-source", "RefSeq"]
     elif args.source == "genbank":
@@ -95,12 +41,12 @@ def build_summary_command(args):
 
     # only NCBI RefSeq "reference" genomes (the broad-diversity subset);
     # corollary to the GTDB tool's --refseq-reference-genomes-only
-    if args.reference_only:
+    if args.reference_genomes_only:
         cmd += ["--reference"]
 
     # assembly level(s), comma-separated, e.g. "complete,chromosome"
     if args.assembly_level:
-        cmd += ["--assembly-level", args.assembly_level]
+        cmd += ["--assembly-level", ",".join(args.assembly_level)]
 
     # only annotated genomes
     if args.annotated_only:
@@ -119,8 +65,7 @@ def run_ncbi_summary(args):
     summary_cmd = build_summary_command(args)
     dataformat_cmd = ["dataformat", "tsv", "genome", "--fields", ",".join(FIELD_MAP.keys())]
 
-    report_message(f"Querying NCBI for genomes under taxon '{args.target_taxon}'...", "yellow")
-    print("")
+    report_message(f"Querying NCBI for genomes under target '{args.target_taxon}'...", "yellow")
 
     summary_proc = subprocess.Popen(summary_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     dataformat_proc = subprocess.Popen(dataformat_cmd, stdin=summary_proc.stdout,
@@ -162,10 +107,7 @@ def run_ncbi_summary(args):
     if summary_proc.returncode != 0 and not out_text.strip():
         # distinguish "no genomes found" from a real error by inspecting stderr
         lowered = summary_err_text.lower()
-        if "does not match any" in lowered or \
-           "no genomes" in lowered or \
-           "no assemblies" in lowered or \
-           "no records" in lowered:
+        if "is not recognized" in lowered or "is not exact" in lowered:
             return pd.DataFrame(columns=list(FIELD_MAP.values()))
 
         report_message("The NCBI `datasets` query failed:", "red")
@@ -211,6 +153,15 @@ def run_ncbi_summary(args):
 
     tab = tab.apply(lambda col: col.map(normalize_cell))
 
+    if "source_database" in tab.columns:
+        source_db_map = {
+            "SOURCE_DATABASE_GENBANK": "genbank",
+            "SOURCE_DATABASE_REFSEQ": "refseq",
+        }
+        tab["source_database"] = tab["source_database"].map(
+            lambda value: source_db_map.get(value, value)
+        )
+
     return tab
 
 
@@ -221,7 +172,7 @@ def get_accessions(args):
 
     if tab.empty:
         report_message(f"No genomes were found under taxon '{args.target_taxon}' with the "
-                       "specified filters.", "yellow")
+                       "specified filters.", "none", initial_indent="    ", subsequent_indent="    ")
         print("")
         sys.exit(0)
 
@@ -229,7 +180,7 @@ def get_accessions(args):
     taxon_for_filename = str(args.target_taxon).replace(" ", "-").replace("/", "-")
 
     suffix_bits = []
-    if args.reference_only:
+    if args.reference_genomes_only:
         suffix_bits.append("refseq-ref")
     elif args.source != "both":
         suffix_bits.append(args.source.lower())
@@ -249,7 +200,7 @@ def get_accessions(args):
     wprint(f"Wrote {len(target_accs):,} accession(s) to:")
     wprint("  " + color_text(acc_out_filename))
     print("")
-    wprint("Associated taxonomy and assembly info of these targets written to:")
+    wprint("Associated metadata of these targets written to:")
     wprint("  " + color_text(tab_out_filename))
     print("")
 
@@ -266,7 +217,6 @@ def get_taxon_count(args):
 
     count = len(tab.index)
 
-    print("")
-    wprint(f"  There are {count:,} genome(s) under taxon '{args.target_taxon}' with the "
-           "specified filters.")
-    print("")
+    report_message(f"There are {count:,} genome(s) under target '{args.target_taxon}' with the "
+                    "specified filters.", "none", initial_indent="    ", subsequent_indent="    ",
+                    trailing_newline=True)

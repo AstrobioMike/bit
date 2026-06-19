@@ -1,5 +1,6 @@
 import sys
 import argparse
+from bit.modules.general import report_message
 from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help, add_version_arg
 from bit.modules.ncbi.get_accessions_from_ncbi import get_accessions_from_ncbi
 
@@ -35,22 +36,24 @@ def build_parser(parent_subparsers=None):
         "-t",
         "--target-taxon",
         metavar="<STR>",
-        help=wrap_help("Target taxon to search for. Can be a scientific name or common "
-                       "name, or an NCBI taxid (e.g. 'Alteromonas', "
-                       "'archaea', or '226')."),
+        help=wrap_help("Target to search for. Can be a taxon name or an "
+                       "NCBI taxid (e.g. 'Alteromonas', 'archaea', or '226')."),
         action="store",
+        required=True
     )
 
     optional.add_argument(
+        "-s",
         "--source",
         help=wrap_help("Specify source (default: \"refseq\"; note that 'both' "
                        "will also grab 'suppressed' assembly accessions)"),
-        choices=["genbank", "refseq", "both"],
+        choices=["refseq", "genbank", "both"],
         default="refseq",
     )
 
     optional.add_argument(
-        "--reference-only",
+        "-r",
+        "--reference-genomes-only",
         action="store_true",
         help=wrap_help("Add this flag to only pull accessions "
                        "for genomes designated as RefSeq \"reference\" genomes (these "
@@ -60,10 +63,10 @@ def build_parser(parent_subparsers=None):
 
     optional.add_argument(
         "--assembly-level",
-        metavar="<STR>",
-        help=wrap_help("Limit to one or more assembly levels, comma-separated. Options are "
-                       "'chromosome', 'complete', 'contig', and 'scaffold' (e.g. "
-                       "'complete,chromosome')."),
+        nargs="+",
+        choices=["complete", "chromosome", "scaffold", "contig"],
+        help=wrap_help("Limit to one or more assembly levels, space-separated (e.g. "
+                       "'complete chromosome')."),
         action="store",
     )
 
@@ -97,4 +100,15 @@ def main():
 
     args = parser.parse_args()
 
+    preflight_checks(args)
+
     get_accessions_from_ncbi(args)
+
+
+def preflight_checks(args):
+
+    if args.reference_genomes_only and args.source == "genbank":
+        report_message("The `--reference-genomes-only` flag is incompatible with " 
+                       "`--source genbank` as it restricts the search to refseq only.", 
+                       trailing_newline=True)
+        sys.exit()

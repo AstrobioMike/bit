@@ -200,7 +200,7 @@ def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representative
     wprint("  " + color_text(acc_out_filename))
     print("")
     if tab_out_filename:
-        wprint("Associated taxoonomy and GTDB info of these targets written to:")
+        wprint("Associated taxonomy and metadata of these targets written to:")
         wprint("  " + color_text(tab_out_filename))
         print("")
     else:
