@@ -30,7 +30,7 @@
 - additions to `bit ez-screen assembly`
   - region-calls.tsv now includes a contig_length column
 - additions to `bit fasta extract-seqs-by-coords`
-  - can now take an inline entry for a single region to extract instead of requiring a bed file, e.g. `-b contig-1 20 100` 
+  - can now take an inline entry for a single region to extract instead of requiring a bed file, e.g., `-b contig-1 20 100` 
 
 ### Changed
 - `bit fasta extract-seqs-by-headers` 
