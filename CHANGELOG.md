@@ -17,7 +17,7 @@
 ## v2.6.0 (NOT RELEASED YET)
 
 ### Added
-- `bit get-accs-from-ncbi` for searching for accessions based on taxonomy (corollary to `bit get-accs-from-gtdb`)
+- `bit get-accs-from-ncbi` for searching ncbi for assembly accessions based on taxonomy (corollary to `bit get-accs-from-gtdb`)
 
 
 ---
