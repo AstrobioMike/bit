@@ -1,5 +1,5 @@
-import pytest
-import pandas as pd
+import pytest # type: ignore
+import pandas as pd # type: ignore
 from argparse import Namespace
 from unittest.mock import patch, MagicMock
 

@@ -1,6 +1,6 @@
 import sys
 import subprocess
-import pandas as pd
+import pandas as pd # type: ignore
 from io import StringIO
 from bit.modules.general import color_text, wprint, report_message
 
@@ -33,22 +33,17 @@ def build_summary_command(args):
     cmd = ["datasets", "summary", "genome", "taxon", str(args.target_taxon),
            "--as-json-lines"]
 
-    # --source: genbank vs refseq vs both (which takes nothing)
     if args.source == "refseq":
         cmd += ["--assembly-source", "RefSeq"]
     elif args.source == "genbank":
         cmd += ["--assembly-source", "GenBank"]
 
-    # only NCBI RefSeq "reference" genomes (the broad-diversity subset);
-    # corollary to the GTDB tool's --refseq-reference-genomes-only
     if args.reference_genomes_only:
         cmd += ["--reference"]
 
-    # assembly level(s), comma-separated, e.g. "complete,chromosome"
     if args.assembly_level:
         cmd += ["--assembly-level", ",".join(args.assembly_level)]
 
-    # only annotated genomes
     if args.annotated_only:
         cmd += ["--annotated"]
 
@@ -56,10 +51,8 @@ def build_summary_command(args):
 
 
 def run_ncbi_summary(args):
-    """ runs `datasets summary ... | dataformat tsv genome ...` and returns a parsed DataFrame
-
-    we run the two processes explicitly and pipe between them rather than using shell=True,
-    so we keep control of argument quoting and can surface stderr from each stage clearly
+    """ 
+    runs `datasets summary ... | dataformat tsv genome ...` and returns a parsed DataFrame
     """
 
     summary_cmd = build_summary_command(args)
@@ -71,13 +64,8 @@ def run_ncbi_summary(args):
     dataformat_proc = subprocess.Popen(dataformat_cmd, stdin=summary_proc.stdout,
                                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
 
-    # allow summary_proc to receive SIGPIPE if dataformat exits early
     summary_proc.stdout.close()
 
-    # collect dataformat's stdout+stderr first (it's the downstream process), then drain
-    # summary's stderr. we read summary_proc.stderr directly rather than calling
-    # communicate() a second time, since stdout was already closed above and a second
-    # communicate() after the pipe is torn down doesn't reliably return stderr.
     out, dataformat_err = dataformat_proc.communicate()
     summary_err = summary_proc.stderr.read()
     summary_proc.stderr.close()
@@ -88,24 +76,17 @@ def run_ncbi_summary(args):
     dataformat_err_text = dataformat_err.decode("utf-8", errors="replace") if dataformat_err else ""
 
     # a field-name mismatch (or other dataformat problem) shows up as a non-zero exit from
-    # dataformat with a message on ITS stderr, not datasets'. surface that explicitly,
-    # since it's the most likely failure when the installed CLI version drifts.
+    # dataformat with a message on its stderr. printing that error out if it happens
     if dataformat_proc.returncode != 0:
         report_message("The NCBI `dataformat` step failed:", "red")
         print("")
         wprint(dataformat_err_text.strip() if dataformat_err_text.strip() else
                "(no error message was returned)")
         print("")
-        wprint("This often means a requested field name isn't valid for your installed "
-               "NCBI Datasets version. Check the valid names with "
-               + color_text("dataformat tsv genome --help", "none") + ".")
-        print("")
         sys.exit(1)
 
-    # `datasets` exits non-zero (and prints to stderr) when a taxon yields no genomes;
-    # we treat "no records" as an empty result rather than a hard failure
     if summary_proc.returncode != 0 and not out_text.strip():
-        # distinguish "no genomes found" from a real error by inspecting stderr
+
         lowered = summary_err_text.lower()
         if "is not recognized" in lowered or "is not exact" in lowered:
             return pd.DataFrame(columns=list(FIELD_MAP.values()))
@@ -122,13 +103,9 @@ def run_ncbi_summary(args):
 
     tab = pd.read_csv(StringIO(out_text), sep="\t", dtype=str, low_memory=False)
 
-    # dataformat emits human-readable headers (e.g. "Assembly Accession"); we re-key by
-    # position to our snake_case names since we control the --fields order above
     if len(tab.columns) == len(FIELD_MAP):
         tab.columns = list(FIELD_MAP.values())
     else:
-        # column count drift means our assumed field set no longer matches the installed
-        # dataformat; surface it rather than silently misaligning columns
         report_message("The columns returned by `dataformat` didn't match what was "
                        "expected. The installed NCBI Datasets version may use different "
                        "field names. Got these columns:", "red")
@@ -137,12 +114,6 @@ def run_ncbi_summary(args):
         print("")
         sys.exit(1)
 
-    # normalize missing values to a consistent "NA" in the output table. this covers:
-    #   - true NaN (empty fields under dtype=str)
-    #   - empty / whitespace-only strings from dataformat
-    #   - NCBI's own literal "na" placeholders in any casing (na, NA, Na, ...)
-    # every column is read as string (dtype=str) or NaN, so we map all of them rather than
-    # guarding on dtype == "object", which doesn't reliably hold across pandas versions.
     def normalize_cell(value):
         if pd.isna(value):
             return "NA"
@@ -166,7 +137,9 @@ def run_ncbi_summary(args):
 
 
 def get_accessions(args):
-    """ pulls accessions + metadata for the target taxon and writes the two output files """
+    """ 
+    pulls accessions + metadata for the target taxon and writes the two output files
+    """
 
     tab = run_ncbi_summary(args)
 
@@ -206,12 +179,6 @@ def get_accessions(args):
 
 
 def get_taxon_count(args):
-    """ reports how many genomes match the target taxon under the current filters
-
-    implemented via the same summary query (counting returned rows) rather than a
-    separate count endpoint, so the count always reflects the same filters that
-    `get_accessions` would apply
-    """
 
     tab = run_ncbi_summary(args)
 

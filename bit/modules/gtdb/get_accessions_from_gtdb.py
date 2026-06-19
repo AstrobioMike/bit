@@ -1,7 +1,7 @@
 import sys
 import os
 import shutil
-import pandas as pd
+import pandas as pd # type: ignore
 from bit.modules.general import color_text, wprint
 from bit.modules.gtdb.get_gtdb_data import get_gtdb_data
 
