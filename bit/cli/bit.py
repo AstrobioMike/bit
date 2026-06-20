@@ -5,12 +5,13 @@ from bit.cli.common import add_help, add_version_arg, CustomRichHelpFormatter
 
 
 SUBCOMMAND_MAP = {
-    "dl-ncbi-assemblies":  "bit.cli.dl_ncbi_assemblies",
     "get-accs-from-gtdb":  "bit.cli.get_accessions_from_gtdb",
     "get-accs-from-ncbi":  "bit.cli.get_accessions_from_ncbi",
+    "dl-ncbi-assemblies":  "bit.cli.dl_ncbi_assemblies",
     "cov-analyzer":        "bit.cli.cov_analyzer",
     "cov-stats":           "bit.cli.cov_stats",
     "mapped-read-stats":   "bit.cli.mapped_read_stats",
+    # "gen-metagenome":      "bit.cli.gen_metagenome",
     "gen-reads":           "bit.cli.gen_reads",
     "mutate-seqs":         "bit.cli.mutate_seqs",
     "add-insertion":       "bit.cli.add_insertion",
@@ -69,6 +70,10 @@ PROGRAM_GROUPS = [
     {
         "title": "Sequence manipulation / read generation",
         "programs": [
+            # {
+            #     "name": "gen-metagenome",
+            #     "desc": "generate an in silico metagenome with ground-truth tables",
+            # },
             {
                 "name": "gen-reads",
                 "desc": "generate reads from fasta files",

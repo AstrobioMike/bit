@@ -19,6 +19,9 @@
 ### Added
 - `bit get-accs-from-ncbi` for searching ncbi for assembly accessions based on taxonomy (corollary to `bit get-accs-from-gtdb`)
 
+### Changed
+- further robustification of `bit dl-ncbi-assemblies`
+
 
 ---
 

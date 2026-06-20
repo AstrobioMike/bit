@@ -1,4 +1,7 @@
 import os
+import time
+import gzip
+import random
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests # type: ignore
@@ -8,6 +11,9 @@ from bit.modules.general import (color_text, check_files_are_found,
                                  attempt_to_make_dir)
 from bit.modules.ncbi.parse_ncbi_assembly_summary import parse_ncbi_assembly_summary
 from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data
+
+
+TRANSIENT_STATUS = {429, 500, 502, 503, 504}
 
 
 def dl_ncbi_assemblies(args):
@@ -74,6 +80,7 @@ class RunData:
     num_found: int = 0
     num_not_found: int = 0
     num_downloaded: int = 0
+    num_skipped: int = 0
     num_not_downloaded: int = 0
     ncbi_sub_table_path: str = None
     not_found_path: str = None
@@ -97,20 +104,72 @@ def summarize_search(summary):
         print(f"    Remaining total targets: {summary.num_found}")
 
 
-def download_one(target_link, local_dest, retries=3):
+def looks_valid(path):
+    """
+    lightweight integrity check for an already-present file. For gzipped outputs,
+    verifies the stream isn't truncated; for plain-text outputs (e.g. report, stats) 
+    just checks the file isn't empty
+    """
+    if str(path).endswith(".gz"):
+        try:
+            with gzip.open(path, "rb") as fh:
+                fh.read(1024)
+            return True
+        except OSError:
+            return False
+    return True
+
+
+def sleep_backoff(attempt, resp=None):
+    """
+    sleep before a retry. Honors an NCBI-provided Retry-After header when present,
+    otherwise falls back to exponential backoff with jitter (~1, 2, 4, 8s + up to 1s)
+    """
+    if resp is not None:
+        retry_after = resp.headers.get("Retry-After")
+        if retry_after:
+            try:
+                time.sleep(float(retry_after))
+                return
+            except ValueError:
+                pass
+    time.sleep((2 ** (attempt - 1)) + random.uniform(0, 1))
+
+
+def download_one(target_link, local_dest, retries=5):
 
     local_path = Path(local_dest)
+
+    # skip if a valid file already exists (enables resuming an interrupted run)
+    if local_path.exists() and local_path.stat().st_size > 0 and looks_valid(local_path):
+        return (local_dest, None, "skipped")
+
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
     for attempt in range(1, retries + 1):
         try:
             resp = requests.get(target_link, stream=True, timeout=60)
+
+            # a real "not available in this format" - don't waste retries on it
+            if resp.status_code == 404:
+                return (local_dest, "Not available in requested format (404)", "failed")
+
+            # transient server-side issues - back off and retry
+            if resp.status_code in TRANSIENT_STATUS:
+                if attempt == retries:
+                    return (local_dest, f"HTTP {resp.status_code} after {retries} attempts", "failed")
+                sleep_backoff(attempt, resp)
+                continue
+
             resp.raise_for_status()
 
             # catch for if we got an XML/HTML error page instead of the file
             content_type = resp.headers.get("Content-Type", "")
             if "xml" in content_type.lower() or "html" in content_type.lower():
-                return (local_dest, f"NCBI returned an error page (attempt {attempt}/{retries})")
+                if attempt == retries:
+                    return (local_dest, f"NCBI returned an error page after {retries} attempts", "failed")
+                sleep_backoff(attempt)
+                continue
 
             with open(local_path, "wb") as fh:
                 for chunk in resp.iter_content(chunk_size=1024 * 64):
@@ -119,14 +178,18 @@ def download_one(target_link, local_dest, retries=3):
             # check we actually got something
             if local_path.stat().st_size == 0:
                 local_path.unlink(missing_ok=True)
-                return (local_dest, "Downloaded file was empty")
+                if attempt == retries:
+                    return (local_dest, "Downloaded file was empty", "failed")
+                sleep_backoff(attempt)
+                continue
 
-            return (local_dest, None)
+            return (local_dest, None, "downloaded")
 
         except (requests.RequestException, OSError) as e:
             if attempt == retries:
                 local_path.unlink(missing_ok=True)
-                return (local_dest, str(e))
+                return (local_dest, str(e), "failed")
+            sleep_backoff(attempt)
 
 
 def download_assemblies(run_data):
@@ -144,6 +207,7 @@ def download_assemblies(run_data):
             targets.append((fields[link_idx], fields[dest_idx]))
 
     failed = []
+    num_skipped = 0
 
     with ThreadPoolExecutor(max_workers=min(run_data.num_jobs, 20)) as pool:
         futures = {
@@ -154,9 +218,11 @@ def download_assemblies(run_data):
 
         with tqdm(total=len(targets), desc="      Progress", unit="file", ncols=70) as pbar:
             for future in as_completed(futures):
-                dest, error = future.result()
-                if error:
+                dest, error, status = future.result()
+                if status == "failed":
                     failed.append((dest, error))
+                elif status == "skipped":
+                    num_skipped += 1
                 pbar.update(1)
 
     if failed:
@@ -166,7 +232,12 @@ def download_assemblies(run_data):
                 acc = Path(dest).stem.split(".")[0]
                 fh.write(f"{acc}\t{error}\n")
         run_data.num_not_downloaded = len(failed)
+    else:
+        # nothing failed this run; clear out any stale file from a prior run
+        Path(run_data.not_downloaded_path).unlink(missing_ok=True)
 
+    run_data.num_skipped = num_skipped
+    # skipped files are already present, so they count as successfully available
     run_data.num_downloaded = len(targets) - len(failed)
 
     return run_data
@@ -174,11 +245,15 @@ def download_assemblies(run_data):
 
 def report_finish(run_data):
 
+    skipped_note = ""
+    if run_data.num_skipped > 0:
+        skipped_note = f" ({run_data.num_skipped} already present, skipped)"
+
     if run_data.num_downloaded == run_data.num_wanted:
-        print(color_text(f"\n    All {run_data.num_wanted} file(s) downloaded successfully!\n", "green"))
+        print(color_text(f"\n    All {run_data.num_wanted} file(s) downloaded successfully!{skipped_note}\n", "green"))
 
     elif run_data.num_downloaded == run_data.num_found:
-        print(color_text(f"\n    All {run_data.num_found} found file(s) downloaded successfully!\n", "yellow"))
+        print(color_text(f"\n    All {run_data.num_found} found file(s) downloaded successfully!{skipped_note}\n", "yellow"))
 
     elif run_data.num_not_downloaded > 0:
         print(color_text("\n\n                      NOTICE", "orange"))
@@ -186,4 +261,4 @@ def report_finish(run_data):
         print(f"        They may not be available in the requested format.")
         print(f"        See '{run_data.not_downloaded_path}'.\n")
 
-        print(color_text(f"\n    The remaining {run_data.num_downloaded} found file(s) downloaded successfully.\n", "yellow"))
+        print(color_text(f"\n    The remaining {run_data.num_downloaded} found file(s) downloaded successfully.{skipped_note}\n", "yellow"))

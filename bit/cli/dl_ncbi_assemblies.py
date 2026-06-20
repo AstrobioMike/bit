@@ -1,7 +1,7 @@
 import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
-from bit.modules.dl_ncbi_assemblies import dl_ncbi_assemblies
+from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
 
 
 def build_parser(parent_subparsers=None):
