@@ -58,8 +58,20 @@ You can see an overview of available programs like below by running `bit` by its
 
 | Program | Purpose |
 | ------- | ------- |
-| `bit dl-ncbi-assemblies` | download NCBI assemblies in different formats given input accessions |
 | `bit get-accs-from-gtdb` | search the [GTDB](https://gtdb.ecogenomic.org/) by taxonomy and retrieve NCBI accessions |
+| `bit get-accs-from-ncbi` | search the NCBI by taxonomy or taxid and retrieve NCBI accessions |
+| `bit dl-ncbi-assemblies` | download NCBI assemblies in different formats given input accessions |
+
+---
+
+#### Simulation / sequence manipulation
+
+| Program | Purpose |
+| ------- | ------- |
+| `bit gen-metagenome` | generate reads from fasta files |
+| `bit gen-reads` | generate reads from fasta files |
+| `bit mutate-seqs` | introduce point mutations (substitutions/indels) into nucleotide or amino-acid fasta files |
+| `bit add-insertion` | add insertions into nucleotide or amino-acid fasta sequences |
 
 ---
 
@@ -70,16 +82,6 @@ You can see an overview of available programs like below by running `bit` by its
 | `bit cov-analyzer` | analyze coverage patterns from a bam + reference fasta to identify regions of relatively higher or lower coverage |
 | `bit cov-stats` | get detection, coverage, and mean percent ID for single or multiple references given fasta(s) and a bam |
 | `bit mapped-read-stats` | get percent ID and other information for mapped reads in a bam |
-
----
-
-#### Sequence manipulation / read generation
-
-| Program | Purpose |
-| ------- | ------- |
-| `bit gen-reads` | generate reads from fasta files |
-| `bit mutate-seqs` | introduce point mutations (substitutions/indels) into nucleotide or amino-acid fasta files |
-| `bit add-insertion` | add insertions into nucleotide or amino-acid fasta sequences |
 
 ---
 

@@ -63,7 +63,7 @@ def build_parser(parent_subparsers=None):
         "-T",
         "--ti-tv-ratio",
         metavar = "<FLOAT>",
-        help = "Specify a transition/transversion ratio for nucleotide sequences (default = 1.0).",
+        help = "Transition/transversion ratio for nucleotide sequences (default = 1.0).",
         action = "store",
         type = float,
         default = 1.0
@@ -74,11 +74,11 @@ def build_parser(parent_subparsers=None):
         "--indel-rate",
         metavar = "<FLOAT>",
         help = """
-            Specify the frequency of indels wanted, must be a float between 0 and 1 (default = 0.0).
+            The frequency of indels wanted, must be a float between 0 and 1 (default = 0.0).
             This is a subset of the overall mutation rate provided via the '-m' argument.
             E.g., providing '-I 0.2' means 1 out of every 5 generated mutations will be an indel.
-            By default, no indels are incorporated. The likelihood of adding an insertion/deletion
-            is 50/50, with all characters equally likely to be inserted.
+            The likelihood of adding an insertion/deletion is 50/50, with all characters equally 
+            likely to be inserted.
             """,
         action = "store",
         type = float,

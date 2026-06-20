@@ -8,13 +8,13 @@ SUBCOMMAND_MAP = {
     "get-accs-from-gtdb":  "bit.cli.get_accessions_from_gtdb",
     "get-accs-from-ncbi":  "bit.cli.get_accessions_from_ncbi",
     "dl-ncbi-assemblies":  "bit.cli.dl_ncbi_assemblies",
-    "cov-analyzer":        "bit.cli.cov_analyzer",
-    "cov-stats":           "bit.cli.cov_stats",
-    "mapped-read-stats":   "bit.cli.mapped_read_stats",
-    # "gen-metagenome":      "bit.cli.gen_metagenome",
+    "gen-metagenome":      "bit.cli.gen_metagenome",
     "gen-reads":           "bit.cli.gen_reads",
     "mutate-seqs":         "bit.cli.mutate_seqs",
     "add-insertion":       "bit.cli.add_insertion",
+    "cov-analyzer":        "bit.cli.cov_analyzer",
+    "cov-stats":           "bit.cli.cov_stats",
+    "mapped-read-stats":   "bit.cli.mapped_read_stats",
     "aa-diff":             "bit.cli.aa_diff",
     "ez-screen":           "bit.cli.ez_screen",
     "fasta":               "bit.cli.fasta",
@@ -51,6 +51,27 @@ PROGRAM_GROUPS = [
         ],
     },
     {
+        "title": "Simulation / sequence manipulation",
+        "programs": [
+            {
+                "name": "gen-metagenome",
+                "desc": "generate an in silico metagenome with ground-truth tables",
+            },
+            {
+                "name": "gen-reads",
+                "desc": "generate reads from fasta files",
+            },
+            {
+                "name": "mutate-seqs",
+                "desc": "introduce point mutations into nucleotide or amino-acid fasta files",
+            },
+            {
+                "name": "add-insertion",
+                "desc": "add insertions into nucleotide or amino-acid fasta sequences",
+            },
+        ],
+    },
+    {
         "title": "Coverage/mapping-related",
         "programs": [
             {
@@ -64,27 +85,6 @@ PROGRAM_GROUPS = [
             {
                 "name": "mapped-read-stats",
                 "desc": "get percent ID and other information for mapped reads in a bam",
-            },
-        ],
-    },
-    {
-        "title": "Sequence manipulation / read generation",
-        "programs": [
-            # {
-            #     "name": "gen-metagenome",
-            #     "desc": "generate an in silico metagenome with ground-truth tables",
-            # },
-            {
-                "name": "gen-reads",
-                "desc": "generate reads from fasta files",
-            },
-            {
-                "name": "mutate-seqs",
-                "desc": "introduce point mutations into nucleotide or amino-acid fasta files",
-            },
-            {
-                "name": "add-insertion",
-                "desc": "add insertions into nucleotide or amino-acid fasta sequences",
             },
         ],
     },
