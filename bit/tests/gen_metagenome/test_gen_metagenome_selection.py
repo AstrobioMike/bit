@@ -122,7 +122,7 @@ def test_normalize_gtdb_schema_and_sizes(gtdb_tab):
     assert (norm["source_db"] == "GTDB").all()
     assert (norm["taxonomy_source"] == "GTDB").all()
     assert (~norm["user_supplied"]).all()
-    assert (norm["genome_size"] > 0).all()
+    assert (norm["metadata_genome_size"] > 0).all()
 
 
 def test_normalize_ncbi_without_lineage_gives_na_ranks():
@@ -132,7 +132,7 @@ def test_normalize_ncbi_without_lineage_gives_na_ranks():
     ])
     norm = _normalize_ncbi_rows(tab, lineage_lookup=None, user_supplied=True)
     assert (norm["domain"] == "NA").all()
-    assert norm["genome_size"].tolist() == [12_100_000, 34_000_000]
+    assert norm["metadata_genome_size"].tolist() == [12_100_000, 34_000_000]
     assert (norm["taxonomy_source"] == "NCBI").all()
     assert norm["user_supplied"].all()
 
