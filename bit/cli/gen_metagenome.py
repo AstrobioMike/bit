@@ -2,7 +2,7 @@ import sys
 import argparse
 from bit.cli.common import (CustomRichHelpFormatter, add_help, wrap_help,
                             add_version_arg)
-from bit.modules import gen_metagenome
+from bit.modules.gen_metagenome import gen_metagenome
 
 
 def build_parser(parent_subparsers=None, show_fine=False):

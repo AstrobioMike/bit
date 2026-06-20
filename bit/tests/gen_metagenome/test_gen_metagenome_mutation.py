@@ -3,7 +3,7 @@ import numpy as np
 import pytest
 from Bio import SeqIO  # type: ignore
 
-from bit.modules.gen_metagenome.mutation import (
+from bit.modules.gen_mg.mutation import (
     assign_rates,
     mutate_genome,
     run_mutation,

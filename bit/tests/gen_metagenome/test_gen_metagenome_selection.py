@@ -1,7 +1,7 @@
 import pandas as pd
 import pytest
 
-from bit.modules.gen_metagenome.selection import (
+from bit.modules.gen_mg.selection import (
     _select_gtdb_one_per_rank,
     _normalize_gtdb_rows,
     _normalize_ncbi_rows,

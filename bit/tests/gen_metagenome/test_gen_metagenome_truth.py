@@ -2,7 +2,7 @@ import os
 import pandas as pd
 import pytest
 
-from bit.modules.gen_metagenome.truth import (
+from bit.modules.gen_mg.truth import (
     build_gen_reads_args,
     build_per_genome_table,
     build_per_rank_tables,

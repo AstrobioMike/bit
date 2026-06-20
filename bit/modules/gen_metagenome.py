@@ -22,10 +22,10 @@ from bit.modules.general import (color_text, report_message,
 from bit.modules.gtdb.get_gtdb_data import get_gtdb_data
 from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
 
-from bit.modules.gen_metagenome import selection as SEL
-from bit.modules.gen_metagenome import abundance as ABD
-from bit.modules.gen_metagenome import mutation as MUT
-from bit.modules.gen_metagenome import truth as TRU
+from bit.modules.gen_mg import selection as SEL
+from bit.modules.gen_mg import abundance as ABD
+from bit.modules.gen_mg import mutation as MUT
+from bit.modules.gen_mg import truth as TRU
 
 
 def gen_metagenome(args):

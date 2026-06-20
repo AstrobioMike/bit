@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from bit.modules.gen_metagenome.abundance import (
+from bit.modules.gen_mg.abundance import (
     assign_abundance,
     write_coverage_tsv,
     _reads_for_coverage,

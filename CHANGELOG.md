@@ -17,6 +17,7 @@
 ## v2.6.0 (NOT RELEASED YET)
 
 ### Added
+- `bit gen-metagenome`
 - `bit get-accs-from-ncbi` for searching ncbi for assembly accessions based on taxonomy (corollary to `bit get-accs-from-gtdb`)
 - `bit gen-reads` has an optional `--source-tsv` option which will write out each read's source info (and when set, the headers no long hold all that info and are smaller)
 
