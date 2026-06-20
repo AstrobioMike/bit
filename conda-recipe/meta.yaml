@@ -23,7 +23,7 @@ requirements:
     - blast=2
     - bwa>=0.7
     - coreutils
-    - python-edlib
+    - diamond=2
     - entrez-direct
     - goatools
     - mamba=1
@@ -42,6 +42,7 @@ requirements:
     - pytest
     - pytest-cov
     - python=3.12
+    - python-edlib
     - rich
     - rich-argparse=1.7.1
     - samtools
