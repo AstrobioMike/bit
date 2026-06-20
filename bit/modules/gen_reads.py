@@ -172,6 +172,60 @@ def extract_subsequence(sequence, seq_length, subseq_len, circularize, include_N
     return subseq, start
 
 
+def compute_mate_coords(frag_start, fragment, fwd_len, rev_len, seq_length):
+    """
+    given the fragment's reference start, the realized fragment string, and the
+    realized forward/reverse read lengths, return each mate's own 0-based,
+    end-exclusive reference span plus a wrap flag.
+
+    these spans are computed in the reference's forward orientation: r1 covers the
+    low-coordinate end of the fragment footprint, r2 the high-coordinate end. when the
+    sampled fragment comes from the minus strand, the caller is responsible for swapping
+    the pairs so each reported span matches the mate that actually covers it (see gen_paired_reads)
+    """
+    frag_len_actual = len(fragment)
+
+    r1_start = frag_start
+    r1_end = frag_start + fwd_len
+
+    r2_end = frag_start + frag_len_actual
+    r2_start = r2_end - rev_len
+
+    wrapped = (frag_start + frag_len_actual) > seq_length
+
+    return r1_start, r1_end, r2_start, r2_end, wrapped
+
+
+def format_header(read_id, source_tsv, contig=None, start=None, end=None,
+                  strand=None, wrapped=False):
+    """
+    when a source TSV is being written, the header is just the unique read id so
+    read names stay clean for downstream tools. otherwise we're writing the full provenance 
+    in the comment field (after a space) as key=value pairs
+    """
+    if source_tsv:
+        return read_id
+
+    comment = f"contig={contig};start={start};end={end};strand={strand}"
+    if wrapped:
+        comment += ";wrapped=true"
+
+    return f"{read_id} {comment}"
+
+
+def write_source_row(source_tsv, read_id, source_fasta, contig, start, end,
+                     strand, wrapped):
+    """ writes one per-read provenance row to the source TSV """
+
+    source_tsv.write(f"{read_id}\t{source_fasta}\t{contig}\t{start}\t{end}\t"
+                     f"{strand}\t{str(wrapped).lower()}\n")
+
+
+def reverse_complement(seq):
+
+    return seq[::-1].translate(str.maketrans("ACGTacgt", "TGCAtgca"))
+
+
 def gen_reads(args, proportions):
 
     if args.seed is not None:
@@ -195,6 +249,10 @@ def gen_paired_reads(args, proportions):
     pct = args.fragment_size_range / 100
     min_frag = max(1, int(args.fragment_size * (1 - pct)))
     max_frag = int(args.fragment_size * (1 + pct))
+
+    source_tsv = open(f"{args.output_prefix}-read-sources.tsv", "w") if args.source_tsv else None
+    if source_tsv:
+        source_tsv.write("read_id\tsource_fasta\tcontig\tstart\tend\tstrand\twrapped\n")
 
     with open(forward_reads_file, 'w') as fw, open(reverse_reads_file, 'w') as rw:
 
@@ -227,22 +285,47 @@ def gen_paired_reads(args, proportions):
 
                     fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize, args.include_Ns)
 
+                    # real libraries draw the fragment from either strand ~50/50;
+                    # R2 is always the opposite orientation of its R1 mate. strands are
+                    # reported relative to the input reference, so a minus-strand fragment
+                    # also swaps which reference span each mate covers
+                    if random.random() < 0.5:
+                        fragment_strand = "+"
+                    else:
+                        fragment_strand = "-"
+                        fragment = reverse_complement(fragment)
+
                     forward_read = fragment[:args.read_length]
                     reverse_read = fragment[-args.read_length:][::-1].translate(str.maketrans("ACGT", "TGCA"))
 
                     fwd_quality_scores = "I" * len(forward_read)
                     rev_quality_scores = "I" * len(reverse_read)
 
+                    r1_start, r1_end, r2_start, r2_end, wrapped = compute_mate_coords(
+                        start, fragment, len(forward_read), len(reverse_read), seq_length)
+
+                    if fragment_strand == "-":
+                        r1_start, r1_end, r2_start, r2_end = r2_start, r2_end, r1_start, r1_end
+
+                    r1_strand = fragment_strand
+                    r2_strand = "-" if fragment_strand == "+" else "+"
+
                     read_count += 1
-                    fw.write(f"@{seq_id}_{read_count}_{start}/1\n")
+                    read_id = f"r{read_count}"
+
+                    fw.write(f"@{format_header(read_id + '/1', source_tsv, seq_id, r1_start, r1_end, r1_strand, wrapped)}\n")
                     fw.write(f"{forward_read}\n")
                     fw.write(f"+\n")
                     fw.write(f"{fwd_quality_scores}\n")
 
-                    rw.write(f"@{seq_id}_{read_count}_{start}/2\n")
+                    rw.write(f"@{format_header(read_id + '/2', source_tsv, seq_id, r2_start, r2_end, r2_strand, wrapped)}\n")
                     rw.write(f"{reverse_read}\n")
                     rw.write(f"+\n")
                     rw.write(f"{rev_quality_scores}\n")
+
+                    if source_tsv:
+                        write_source_row(source_tsv, read_id + "/1", fasta_file, seq_id, r1_start, r1_end, r1_strand, wrapped)
+                        write_source_row(source_tsv, read_id + "/2", fasta_file, seq_id, r2_start, r2_end, r2_strand, wrapped)
 
                 reads_remaining = reads_remaining - entry_reads
                 if reads_remaining <= 0:
@@ -264,25 +347,58 @@ def gen_paired_reads(args, proportions):
 
                 fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize, args.include_Ns)
 
+                # real libraries draw the fragment from either strand ~50/50;
+                # R2 is always the opposite orientation of its R1 mate. strands are
+                # reported relative to the input reference, so a minus-strand fragment
+                # also swaps which reference span each mate covers
+                if random.random() < 0.5:
+                    fragment_strand = "+"
+                else:
+                    fragment_strand = "-"
+                    fragment = reverse_complement(fragment)
+
                 forward_read = fragment[:args.read_length]
                 reverse_read = fragment[-args.read_length:][::-1].translate(str.maketrans("ACGT", "TGCA"))
-                quality_scores = "I" * args.read_length
+                fwd_quality_scores = "I" * len(forward_read)
+                rev_quality_scores = "I" * len(reverse_read)
+
+                r1_start, r1_end, r2_start, r2_end, wrapped = compute_mate_coords(
+                    start, fragment, len(forward_read), len(reverse_read), seq_length)
+
+                if fragment_strand == "-":
+                    r1_start, r1_end, r2_start, r2_end = r2_start, r2_end, r1_start, r1_end
+
+                r1_strand = fragment_strand
+                r2_strand = "-" if fragment_strand == "+" else "+"
 
                 read_count += 1
-                fw.write(f"@{seq_id}_{read_count}_{start}/1\n")
+                read_id = f"r{read_count}"
+
+                fw.write(f"@{format_header(read_id + '/1', source_tsv, seq_id, r1_start, r1_end, r1_strand, wrapped)}\n")
                 fw.write(f"{forward_read}\n")
                 fw.write(f"+\n")
-                fw.write(f"{quality_scores}\n")
+                fw.write(f"{fwd_quality_scores}\n")
 
-                rw.write(f"@{seq_id}_{read_count}_{start}/2\n")
+                rw.write(f"@{format_header(read_id + '/2', source_tsv, seq_id, r2_start, r2_end, r2_strand, wrapped)}\n")
                 rw.write(f"{reverse_read}\n")
                 rw.write(f"+\n")
-                rw.write(f"{quality_scores}\n")
+                rw.write(f"{rev_quality_scores}\n")
+
+                if source_tsv:
+                    write_source_row(source_tsv, read_id + "/1", fasta_file, seq_id, r1_start, r1_end, r1_strand, wrapped)
+                    write_source_row(source_tsv, read_id + "/2", fasta_file, seq_id, r2_start, r2_end, r2_strand, wrapped)
+
+        if source_tsv:
+            source_tsv.close()
 
 
 def gen_single_reads(args, proportions):
 
     reads_file = f"{args.output_prefix}.fastq"
+
+    source_tsv = open(f"{args.output_prefix}-read-sources.tsv", "w") if args.source_tsv else None
+    if source_tsv:
+        source_tsv.write("read_id\tsource_fasta\tcontig\tstart\tend\tstrand\twrapped\n")
 
     with open(reads_file, 'w') as fw:
 
@@ -321,13 +437,27 @@ def gen_single_reads(args, proportions):
 
                     read, start = extract_subsequence(sequence, seq_length, read_len, args.circularize, args.include_Ns)
 
+                    read_end = start + len(read)
+                    wrapped = read_end > seq_length
+
+                    # real single-end / long-read libraries sequence both strands ~50/50
+                    if random.random() < 0.5:
+                        strand = "+"
+                    else:
+                        strand = "-"
+                        read = reverse_complement(read)
+
                     quality_scores = "I" * len(read)
 
                     read_count += 1
-                    fw.write(f"@{seq_id}_{read_count}_{start}\n")
+                    read_id = f"r{read_count}"
+                    fw.write(f"@{format_header(read_id, source_tsv, seq_id, start, read_end, strand, wrapped)}\n")
                     fw.write(f"{read}\n")
                     fw.write(f"+\n")
                     fw.write(f"{quality_scores}\n")
+
+                    if source_tsv:
+                        write_source_row(source_tsv, read_id, fasta_file, seq_id, start, read_end, strand, wrapped)
 
                 reads_remaining = reads_remaining - entry_reads
                 if reads_remaining <= 0:
@@ -351,12 +481,29 @@ def gen_single_reads(args, proportions):
 
                 read, start = extract_subsequence(sequence, seq_length, read_len, args.circularize, args.include_Ns)
 
+                read_end = start + len(read)
+                wrapped = read_end > seq_length
+
+                if random.random() < 0.5:
+                    strand = "+"
+                else:
+                    strand = "-"
+                    read = reverse_complement(read)
+
                 quality_scores = "I" * len(read)
+
                 read_count += 1
-                fw.write(f"@{seq_id}_{read_count}_{start}\n")
+                read_id = f"r{read_count}"
+                fw.write(f"@{format_header(read_id, source_tsv, seq_id, start, read_end, strand, wrapped)}\n")
                 fw.write(f"{read}\n")
                 fw.write(f"+\n")
                 fw.write(f"{quality_scores}\n")
+
+                if source_tsv:
+                    write_source_row(source_tsv, read_id, fasta_file, seq_id, start, read_end, strand, wrapped)
+
+        if source_tsv:
+            source_tsv.close()
 
 
 def compress_with_pigz(output_prefix, read_type="paired-end"):

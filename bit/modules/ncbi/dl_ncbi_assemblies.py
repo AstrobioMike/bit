@@ -104,18 +104,17 @@ def summarize_search(summary):
         print(f"    Remaining total targets: {summary.num_found}")
 
 
-def looks_valid(path):
+def valid_gzip(path):
     """
-    lightweight integrity check for an already-present file. For gzipped outputs,
-    verifies the stream isn't truncated; for plain-text outputs (e.g. report, stats) 
-    just checks the file isn't empty
+    integrity check for a gzipped file (only used for retried runs)
     """
     if str(path).endswith(".gz"):
         try:
             with gzip.open(path, "rb") as fh:
-                fh.read(1024)
+                while fh.read(1024 * 1024):
+                    pass
             return True
-        except OSError:
+        except (OSError, EOFError):
             return False
     return True
 
@@ -141,7 +140,7 @@ def download_one(target_link, local_dest, retries=5):
     local_path = Path(local_dest)
 
     # skip if a valid file already exists (enables resuming an interrupted run)
-    if local_path.exists() and local_path.stat().st_size > 0 and looks_valid(local_path):
+    if local_path.exists() and local_path.stat().st_size > 0 and valid_gzip(local_path):
         return (local_dest, None, "skipped")
 
     local_path.parent.mkdir(parents=True, exist_ok=True)

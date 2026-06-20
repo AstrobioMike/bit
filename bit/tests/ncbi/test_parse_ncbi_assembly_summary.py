@@ -2,7 +2,7 @@ import pytest # type: ignore
 from pathlib import Path
 
 from bit.modules.ncbi.parse_ncbi_assembly_summary import parse_ncbi_assembly_summary, build_base_link
-from bit.modules.dl_ncbi_assemblies import RunData
+from bit.modules.ncbi.dl_ncbi_assemblies import RunData
 
 
 def _make_summary_line(acc, assembly_name="TestAssembly_v1", taxid="12345",
@@ -156,7 +156,7 @@ def test_parse_with_format_link_content(tmp_path):
     local_dest = row[header.index("local_destination")]
     assert "_genomic.fna.gz" in target_link
     assert "ftp.ncbi.nlm.nih.gov" in target_link
-    assert local_dest.endswith(".fa.gz")
+    assert local_dest.endswith(".fasta.gz")
 
 
 def test_parse_empty_summary_file(tmp_path):

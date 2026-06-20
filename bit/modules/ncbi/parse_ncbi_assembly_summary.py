@@ -10,7 +10,7 @@ def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
 
     FORMAT_EXTENSIONS = {
         "genbank":     ("_genomic.gbff.gz",            ".gb.gz"),
-        "fasta":       ("_genomic.fna.gz",             ".fa.gz"),
+        "fasta":       ("_genomic.fna.gz",             ".fasta.gz"),
         "protein":     ("_protein.faa.gz",             ".faa.gz"),
         "gff":         ("_genomic.gff.gz",             ".gff.gz"),
         "nt_cds":      ("_cds_from_genomic.fna.gz",    "_cds_from_genomic.fna.gz"),

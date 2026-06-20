@@ -18,10 +18,15 @@
 
 ### Added
 - `bit get-accs-from-ncbi` for searching ncbi for assembly accessions based on taxonomy (corollary to `bit get-accs-from-gtdb`)
+- `bit gen-reads` has an optional `--source-tsv` option which will write out each read's source info (and when set, the headers no long hold all that info and are smaller)
 
 ### Changed
-- further robustification of `bit dl-ncbi-assemblies`
-
+- `bit dl-ncbi-assemblies`
+  - output fasta files have extension ".fasta.gz" now instead of ".fa.gz" for consistency with the rest of bit-produced nt fasta files (sorry for the change!)
+  - further robustification improvements
+- `bit gen-reads`
+  - read headers have been improved with regard to provenance tracking
+  - initial fragments/reads now have a 50/50 chance to be drawn from +/- strand (relative to the ref)
 
 ---
 

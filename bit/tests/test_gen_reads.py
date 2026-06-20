@@ -6,14 +6,51 @@ import pytest # type: ignore
 from bit.modules.gen_reads import parse_proportions_file
 from bit.modules.general import get_package_path
 from bit.tests.utils import run_cli
-from bit.modules.gen_reads import (gen_paired_reads,
+from bit.modules.gen_reads import (preflight_checks,
+                                   gen_paired_reads,
                                    gen_single_reads,
                                    get_proportions,
+                                   compute_reads_from_coverage,
                                    extract_subsequence,
                                    parse_coverages_input)
 
 
 test_fasta = get_package_path("tests/data/ez-screen-assembly.fasta")
+
+
+def _base_args(**kw):
+    d = dict(input_fastas=[], proportions_file=None, coverage=None,
+             read_length=10, fragment_size=50, type="paired-end")
+    d.update(kw)
+    return Namespace(**d)
+ 
+ 
+def _revcomp(s):
+    return s[::-1].translate(str.maketrans("ACGT", "TGCA"))
+ 
+ 
+def _read_fasta_seq(path):
+    seq = ""
+    with open(path) as f:
+        for line in f:
+            if not line.startswith(">"):
+                seq += line.strip()
+    return seq.upper()
+ 
+ 
+def _count_reads(path):
+    with open(path) as f:
+        return sum(1 for _ in f) // 4
+ 
+ 
+def _fastq_map(path):
+    m = {}
+    with open(path) as f:
+        lines = [l.rstrip("\n") for l in f]
+    for i in range(0, len(lines), 4):
+        m[lines[i][1:]] = lines[i + 1]  # strip leading '@'
+    return m
+
 
 def test_gen_reads(tmp_path):
 
@@ -36,16 +73,16 @@ def test_gen_reads(tmp_path):
     assert R2_path.exists(), f"R2 file not found at {R2_path}"
 
     with gzip.open(R1_path, 'rt') as f:
-        expected = f.read().splitlines()
+        observed = f.read().splitlines()
 
-    observed = [
-        "@partial-NC_003131.1_1_567/1",
+    expected = [
+        "@r1/1 contig=partial-NC_003131.1;start=567;end=577;strand=+",
         "GGAATGCCTG",
         "+",
         "IIIIIIIIII"
     ]
 
-    assert expected == observed, f"R1 content does not match expected:\n{observed}\nExpected:\n{expected}"
+    assert observed == expected, f"R1 content does not match expected:\n{observed}\nExpected:\n{expected}"
 
 
 def test_parse_proportions_file_logic(tmp_path):
@@ -90,6 +127,10 @@ def _collect_forward_reads(fastq_path):
     return seqs
 
 
+def _reverse_complement(seq):
+    return seq[::-1].translate(str.maketrans("ACGT", "TGCA"))
+
+
 def test_wrapped_fragments_generated_with_circularize(tmp_path):
 
     fasta = tmp_path / "contig.fasta"
@@ -110,6 +151,7 @@ def test_wrapped_fragments_generated_with_circularize(tmp_path):
         output_prefix=str(out_prefix),
         circularize=True,
         include_Ns=False,
+        source_tsv=False,
     )
 
     gen_paired_reads(args, get_proportions(args))
@@ -128,8 +170,12 @@ def test_wrapped_fragments_generated_with_circularize(tmp_path):
             fragment = seq[start:] + seq[: end - seq_len]
             wrapped_fw.add(fragment[: args.read_length])
 
+    # fragments are now drawn from either strand ~50/50, so a wrapped forward read
+    # may appear as the reverse complement of the forward-orientation fragment
+    wrapped_all = wrapped_fw | {_reverse_complement(w) for w in wrapped_fw}
+
     # ensure at least one wrapped forward read appears
-    assert any(s in wrapped_fw for s in seqs), "No wrapped fragments found with circularize=True"
+    assert any(s in wrapped_all for s in seqs), "No wrapped fragments found with circularize=True"
 
 
 def test_gen_reads_single_end(tmp_path):
@@ -183,6 +229,7 @@ def test_simulate_single_end_reads_unit(tmp_path):
         circularize=False,
         type="single-end",
         include_Ns=False,
+        source_tsv=False,
     )
 
     gen_single_reads(args, get_proportions(args))
@@ -227,6 +274,7 @@ def test_long_reads_variable_length(tmp_path):
         type="long",
         long_read_length_range=50,
         include_Ns=False,
+        source_tsv=False,
     )
 
     gen_single_reads(args, get_proportions(args))
@@ -335,6 +383,7 @@ def test_gen_paired_reads_skips_Ns(tmp_path):
         output_prefix=str(out_prefix),
         circularize=False,
         include_Ns=False,
+        source_tsv=False,
     )
 
     gen_paired_reads(args, get_proportions(args))
@@ -396,6 +445,7 @@ def test_coverage_mode_paired_end(tmp_path):
         circularize=False,
         include_Ns=False,
         type="paired-end",
+        source_tsv=False,
     )
 
     proportions = get_proportions(args)
@@ -423,6 +473,7 @@ def test_coverage_mode_single_end(tmp_path):
         circularize=False,
         include_Ns=False,
         type="single-end",
+        source_tsv=False,
     )
 
     proportions = get_proportions(args)
@@ -449,6 +500,7 @@ def test_coverage_mode_multiple_genomes(tmp_path):
         circularize=False,
         include_Ns=False,
         type="single-end",
+        source_tsv=False,
     )
 
     proportions = get_proportions(args)
@@ -525,3 +577,201 @@ def test_coverage_tsv_cli(tmp_path):
     R2_path = tmp_path / "cov-tsv-reads_R2.fastq.gz"
     assert R1_path.exists(), f"R1 file not found at {R1_path}"
     assert R2_path.exists(), f"R2 file not found at {R2_path}"
+
+ 
+def test_preflight_missing_input_fasta_exits(tmp_path):
+    args = _base_args(input_fastas=[str(tmp_path / "nope.fasta")])
+    with pytest.raises(SystemExit):
+        preflight_checks(args)
+ 
+ 
+def test_preflight_missing_coverage_file_exits(tmp_path):
+    real = tmp_path / "in.fasta"
+    real.write_text(">c\nACGT\n")
+    args = _base_args(input_fastas=[str(real)], coverage=str(tmp_path / "missing.tsv"))
+    with pytest.raises(SystemExit):
+        preflight_checks(args)
+ 
+ 
+def test_preflight_missing_proportions_file_exits(tmp_path):
+    real = tmp_path / "in.fasta"
+    real.write_text(">c\nACGT\n")
+    args = _base_args(input_fastas=[str(real)], proportions_file=str(tmp_path / "missing.tsv"))
+    with pytest.raises(SystemExit):
+        preflight_checks(args)
+ 
+ 
+def test_preflight_proportions_and_coverage_mutually_exclusive(tmp_path):
+    real = tmp_path / "in.fasta"
+    real.write_text(">c\nACGT\n")
+    prop = tmp_path / "p.tsv"
+    prop.write_text(f"{real}\t1\n")
+    args = _base_args(input_fastas=[str(real)], proportions_file=str(prop), coverage="10")
+    with pytest.raises(SystemExit):
+        preflight_checks(args)
+ 
+ 
+def test_get_proportions_missing_fasta_in_proportions_exits(tmp_path):
+    f1 = tmp_path / "a.fasta"
+    f1.write_text(">c\nACGT\n")
+    prop = tmp_path / "p.tsv"
+    prop.write_text("other.fasta\t1\n")
+    args = _base_args(input_fastas=[str(f1)], proportions_file=str(prop), coverage=None)
+    with pytest.raises(SystemExit):
+        get_proportions(args)
+ 
+ 
+def test_compute_coverage_missing_fasta_in_coverage_exits(tmp_path):
+    f1 = tmp_path / "a.fasta"
+    f1.write_text(">c\nACGT\n")
+    cov = tmp_path / "c.tsv"
+    cov.write_text("other.fasta\t10\n")
+    args = _base_args(input_fastas=[str(f1)], coverage=str(cov), type="single-end")
+    with pytest.raises(SystemExit):
+        compute_reads_from_coverage(args)
+ 
+ 
+def test_compute_coverage_zero_total_reads_exits(tmp_path):
+    f1 = tmp_path / "a.fasta"
+    f1.write_text(">c\nACGT\n")  # 4 bp
+    args = _base_args(input_fastas=[str(f1)], coverage="0", type="single-end")
+    with pytest.raises(SystemExit):
+        compute_reads_from_coverage(args)
+ 
+  
+def test_source_tsv_paired_end_reconstructs_reads(tmp_path):
+    fasta = tmp_path / "ref.fasta"
+    ref = "ACGTTGCAACGTTGCAACGTTGCAACGTTGCAACGTTGCA"  # 40 bp
+    fasta.write_text(f">refcontig\n{ref}\n")
+    out = tmp_path / "pe"
+    args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
+        seed=7, num_reads=20, read_length=8, fragment_size=20, fragment_size_range=10,
+        output_prefix=str(out), circularize=False, include_Ns=False, source_tsv=True)
+    gen_paired_reads(args, get_proportions(args))
+ 
+    tsv = out.parent / (out.name + "-read-sources.tsv")
+    assert tsv.exists()
+ 
+    # headers must be bare ids (no comment field) when source_tsv is on
+    with open(str(out) + "_R1.fastq") as f:
+        first_header = f.readline().rstrip("\n")
+    assert " " not in first_header
+    assert first_header.endswith("/1")
+ 
+    r1_seqs = _fastq_map(str(out) + "_R1.fastq")
+    r2_seqs = _fastq_map(str(out) + "_R2.fastq")
+    refseq = _read_fasta_seq(fasta)
+ 
+    with open(tsv) as f:
+        header = f.readline().rstrip("\n").split("\t")
+        assert header == ["read_id", "source_fasta", "contig", "start", "end", "strand", "wrapped"]
+        rows = 0
+        for line in f:
+            rid, _sf, _contig, start, end, strand, wrapped = line.rstrip("\n").split("\t")
+            start, end = int(start), int(end)
+            emitted = r1_seqs.get(rid) or r2_seqs.get(rid)
+            assert emitted is not None, f"no fastq read for {rid}"
+            # each non-wrapped read must reconstruct from its reported reference span
+            if wrapped == "false":
+                expected = refseq[start:end]
+                if strand == "-":
+                    expected = _revcomp(expected)
+                assert emitted == expected, f"{rid}: {emitted} != {expected} (strand {strand})"
+            rows += 1
+    assert rows == 20  # 10 fragments x 2 mates
+ 
+ 
+def test_source_tsv_single_end_reconstructs_reads(tmp_path):
+    fasta = tmp_path / "ref.fasta"
+    ref = "ACGTTGCAACGTTGCAACGTTGCAACGTTGCAACGTTGCA"
+    fasta.write_text(f">refcontig\n{ref}\n")
+    out = tmp_path / "se"
+    args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
+        seed=3, num_reads=10, read_length=8, output_prefix=str(out),
+        circularize=False, type="single-end", include_Ns=False, source_tsv=True)
+    gen_single_reads(args, get_proportions(args))
+ 
+    tsv = out.parent / (out.name + "-read-sources.tsv")
+    assert tsv.exists()
+    refseq = _read_fasta_seq(fasta)
+    seqs = _fastq_map(str(out) + ".fastq")
+ 
+    with open(tsv) as f:
+        f.readline()
+        n = 0
+        for line in f:
+            rid, _sf, _contig, start, end, strand, wrapped = line.rstrip("\n").split("\t")
+            if wrapped == "false":
+                expected = refseq[int(start):int(end)]
+                if strand == "-":
+                    expected = _revcomp(expected)
+                assert seqs[rid] == expected
+            n += 1
+    assert n == 10
+ 
+  
+def test_paired_end_remainder_tail_recovers_stranded_reads(tmp_path):
+    fasta = tmp_path / "ref.fasta"
+    fasta.write_text(">c0\n" + "ACGT" * 50 + "\n")  # 200 bp
+    out = tmp_path / "pe_tail"
+    args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
+        seed=0, num_reads=20, read_length=10, fragment_size=50, fragment_size_range=10,
+        output_prefix=str(out), circularize=False, include_Ns=False, source_tsv=False)
+    gen_paired_reads(args, {str(fasta): 0.5})  # sub-unity -> strands ~half, tail recovers
+    assert _count_reads(str(out) + "_R1.fastq") == 10
+    assert _count_reads(str(out) + "_R2.fastq") == 10
+ 
+ 
+def test_single_end_remainder_tail_recovers_stranded_reads(tmp_path):
+    fasta = tmp_path / "ref.fasta"
+    fasta.write_text(">c0\n" + "ACGT" * 50 + "\n")
+    out = tmp_path / "se_tail"
+    args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
+        seed=0, num_reads=20, read_length=10, output_prefix=str(out),
+        circularize=False, type="single-end", include_Ns=False, source_tsv=False)
+    gen_single_reads(args, {str(fasta): 0.5})
+    assert _count_reads(str(out) + ".fastq") == 20
+ 
+ 
+def test_single_end_remainder_tail_long_reads(tmp_path):
+    # exercises the long-read length sampling at the top of the tail
+    fasta = tmp_path / "ref.fasta"
+    fasta.write_text(">c0\n" + "ACGT" * 500 + "\n")  # 2000 bp
+    out = tmp_path / "se_long_tail"
+    args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
+        seed=0, num_reads=20, read_length=200, output_prefix=str(out),
+        circularize=False, type="long", long_read_length_range=50,
+        include_Ns=False, source_tsv=False)
+    gen_single_reads(args, {str(fasta): 0.5})
+    assert _count_reads(str(out) + ".fastq") == 20
+ 
+ 
+def test_remainder_tail_writes_source_rows_paired_end(tmp_path):
+    # tail + source_tsv together, so the provenance writes inside the tail run
+    fasta = tmp_path / "ref.fasta"
+    fasta.write_text(">c0\n" + "ACGT" * 50 + "\n")
+    out = tmp_path / "pe_tail_src"
+    args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
+        seed=0, num_reads=20, read_length=10, fragment_size=50, fragment_size_range=10,
+        output_prefix=str(out), circularize=False, include_Ns=False, source_tsv=True)
+    gen_paired_reads(args, {str(fasta): 0.5})
+    tsv = out.parent / (out.name + "-read-sources.tsv")
+    assert tsv.exists()
+    with open(tsv) as f:
+        rows = [l for l in f.read().splitlines() if l]
+    assert len(rows) == 21  # header + 20 reads
+ 
+ 
+def test_remainder_tail_writes_source_rows_single_end(tmp_path):
+    fasta = tmp_path / "ref.fasta"
+    fasta.write_text(">c0\n" + "ACGT" * 50 + "\n")
+    out = tmp_path / "se_tail_src"
+    args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
+        seed=0, num_reads=20, read_length=10, output_prefix=str(out),
+        circularize=False, type="single-end", include_Ns=False, source_tsv=True)
+    gen_single_reads(args, {str(fasta): 0.5})
+    tsv = out.parent / (out.name + "-read-sources.tsv")
+    assert tsv.exists()
+    with open(tsv) as f:
+        rows = [l for l in f.read().splitlines() if l]
+    assert len(rows) == 21
