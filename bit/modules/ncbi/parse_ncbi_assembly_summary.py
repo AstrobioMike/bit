@@ -1,3 +1,24 @@
+import re
+
+def sanitize_assembly_name(name):
+    sanitized = re.sub(r"[\s/,#()\[\]]", "_", name)
+    sanitized = re.sub(r"_+", "_", sanitized)
+    return sanitized.strip("_")
+
+
+def build_base_link(dl_acc, assembly_name):
+    """
+    fallback directory URL builder, used only when the summary has no ftp_path
+    """
+    base_url = "https://ftp.ncbi.nlm.nih.gov/genomes/all/"
+    prefix, rest = dl_acc.split("_", 1)
+    number = rest.split(".")[0]
+    p1, p2, p3 = number[0:3], number[3:6], number[6:9]
+    dir_basename = f"{dl_acc}_{sanitize_assembly_name(assembly_name)}"
+    path = f"{prefix}/{p1}/{p2}/{p3}/{dir_basename}/"
+    return base_url + path, dir_basename
+
+
 def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
 
     wanted_dict = {}
@@ -42,14 +63,14 @@ def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
                     infra_name = fields[8].strip() if len(fields) > 8 and fields[8].strip() else "NA"
                     version_status = fields[10].strip() if len(fields) > 10 and fields[10].strip() else "NA"
                     assembly_level = fields[11].strip() if len(fields) > 11 and fields[11].strip() else "NA"
-                    ftp_path = fields[19].strip() if len(fields) > 19 and fields[19].strip() and fields[19].strip() != "na" else ""
-
-                    if ftp_path:
+                    ftp_path = fields[19].strip() if len(fields) > 19 else ""
+                    if ftp_path and ftp_path.lower() != "na":
                         http_path = ftp_path.replace("ftp://", "https://").rstrip("/") + "/"
                         dir_basename = http_path.rstrip("/").split("/")[-1]
+                    elif assembly_name != "NA" and dl_acc != "NA":
+                        http_path, dir_basename = build_base_link(dl_acc, assembly_name)
                     else:
-                        http_path = "NA"
-                        dir_basename = "NA"
+                        http_path, dir_basename = "NA", "NA"
 
                     out_line = "\t".join([
                         wanted_dict[root],
