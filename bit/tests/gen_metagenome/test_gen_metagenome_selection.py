@@ -118,11 +118,16 @@ def test_invalid_derep_rank_raises(gtdb_tab):
 def test_normalize_gtdb_schema_and_sizes(gtdb_tab):
     sel, _ = _select_gtdb_one_per_rank(gtdb_tab, derep_rank="genus", seed=1)
     norm = _normalize_gtdb_rows(sel)
-    assert list(norm.columns)[:len(SCHEMA)] == SCHEMA[:len(norm.columns)]
-    assert (norm["source_db"] == "GTDB").all()
-    assert (norm["taxonomy_source"] == "GTDB").all()
+    assert list(norm.columns) == SCHEMA
     assert (~norm["user_supplied"]).all()
-    assert (norm["metadata_genome_size"] > 0).all()
+    # gtdb_* ranks populated, ncbi_* left NA (resolved later by taxonomy layer)
+    assert (norm["gtdb_domain"] != "NA").all()
+    assert set(norm["gtdb_domain"]) <= {"Bacteria", "Archaea"}
+    assert (norm["ncbi_domain"] == "NA").all()
+    # dropped columns are absent
+    assert "source_db" not in norm.columns
+    assert "taxonomy_source" not in norm.columns
+    assert "metadata_genome_size" not in norm.columns
 
 
 def test_normalize_ncbi_without_lineage_gives_na_ranks():
@@ -131,10 +136,12 @@ def test_normalize_ncbi_without_lineage_gives_na_ranks():
         ncbi_row("GCA_901.1", "Aspergillus niger", "5061", 34_000_000),
     ])
     norm = _normalize_ncbi_rows(tab, lineage_lookup=None, user_supplied=True)
-    assert (norm["domain"] == "NA").all()
-    assert norm["metadata_genome_size"].tolist() == [12_100_000, 34_000_000]
-    assert (norm["taxonomy_source"] == "NCBI").all()
+    # both rank sets NA pre-resolution; gtdb_* always NA for NCBI-normalized rows
+    assert (norm["ncbi_domain"] == "NA").all()
+    assert (norm["gtdb_domain"] == "NA").all()
     assert norm["user_supplied"].all()
+    assert "source_db" not in norm.columns
+    assert "metadata_genome_size" not in norm.columns
 
 
 def test_normalize_ncbi_with_lineage_populates_ranks():
@@ -143,9 +150,10 @@ def test_normalize_ncbi_with_lineage_populates_ranks():
                             "Saccharomycetaceae;Saccharomyces;Saccharomyces cerevisiae"}
     norm = _normalize_ncbi_rows(tab, lineage_lookup=lineage, user_supplied=True)
     row = norm.iloc[0]
-    assert row["domain"] == "Eukaryota"
-    assert row["genus"] == "Saccharomyces"
-    assert row["species"] == "Saccharomyces cerevisiae"
+    assert row["ncbi_domain"] == "Eukaryota"
+    assert row["ncbi_genus"] == "Saccharomyces"
+    assert row["ncbi_species"] == "Saccharomyces cerevisiae"
+    assert row["gtdb_domain"] == "NA"      # GTDB filled later if in GTDB
 
 
 def test_split_lineage_handles_missing_ranks():
@@ -184,12 +192,16 @@ def test_merge_empty_returns_warning():
 
 
 def test_user_filled_groups():
+    # user_filled_groups reads gtdb_<rank> (generative derep is GTDB-based); in
+    # the real flow fill_gtdb_taxonomy populates this before exclusion runs.
     u = _normalize_ncbi_rows(
         pd.DataFrame([ncbi_row("GCA_999.1", "Pseudomonas aeruginosa", "287", 6_300_000)]),
-        lineage_lookup={"GCA_999.1": "Bacteria;Proteobacteria;Gammaproteobacteria;"
-                                     "Pseudomonadales;Pseudomonadaceae;Pseudomonas;"
-                                     "Pseudomonas aeruginosa"},
-        user_supplied=True)
+        lineage_lookup=None, user_supplied=True)
+    # before GTDB resolution, gtdb ranks are NA -> no groups filled
+    assert user_filled_groups(u, "genus") == set()
+    # simulate fill_gtdb_taxonomy having resolved the GTDB genus
+    u = u.copy()
+    u["gtdb_genus"] = "Pseudomonas"
     assert user_filled_groups(u, "genus") == {"Pseudomonas"}
     assert user_filled_groups(u, "off") == set()
     assert user_filled_groups(None, "genus") == set()

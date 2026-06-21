@@ -18,6 +18,7 @@
 
 ### Added
 - `bit gen-metagenome`
+  - leverages `bit get-accs-from-gtdb`, `bit dl-ncbi-assemblies`, `bit mutate-seqs`, `bit gen-reads`, and taxonomy helpers to produce mock metagenomes with ground-truth tables per-genome, per-taxonomic-rank, and per-read with associated GTDB and NCBI taxonomy
 - `bit get-accs-from-ncbi` for searching ncbi for assembly accessions based on taxonomy (corollary to `bit get-accs-from-gtdb`)
 - `bit gen-reads` 
   - has an optional `--source-tsv` option which will write out each read's source info (and when set, the headers no long hold all that info and are smaller)
