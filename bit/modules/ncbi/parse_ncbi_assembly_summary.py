@@ -42,8 +42,14 @@ def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
                     infra_name = fields[8].strip() if len(fields) > 8 and fields[8].strip() else "NA"
                     version_status = fields[10].strip() if len(fields) > 10 and fields[10].strip() else "NA"
                     assembly_level = fields[11].strip() if len(fields) > 11 and fields[11].strip() else "NA"
+                    ftp_path = fields[19].strip() if len(fields) > 19 and fields[19].strip() and fields[19].strip() != "na" else ""
 
-                    http_path = build_base_link(dl_acc, assembly_name)
+                    if ftp_path:
+                        http_path = ftp_path.replace("ftp://", "https://").rstrip("/") + "/"
+                        dir_basename = http_path.rstrip("/").split("/")[-1]
+                    else:
+                        http_path = "NA"
+                        dir_basename = "NA"
 
                     out_line = "\t".join([
                         wanted_dict[root],
@@ -58,7 +64,10 @@ def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
                     ])
                     if run_data.wanted_format:
                         ncbi_ext, local_ext = FORMAT_EXTENSIONS[run_data.wanted_format]
-                        target_link = f"{http_path}{dl_acc}_{assembly_name}{ncbi_ext}"
+                        if http_path != "NA":
+                            target_link = f"{http_path}{dir_basename}{ncbi_ext}"
+                        else:
+                            target_link = "NA"
                         local_path = f"{run_data.output_dir}/{dl_acc}{local_ext}"
                         out_line += "\t" + target_link + "\t" + local_path
 
@@ -77,16 +86,3 @@ def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
     run_data.num_not_found = len(not_found)
 
     return run_data
-
-
-def build_base_link(dl_acc, assembly_name):
-    base_url = "https://ftp.ncbi.nlm.nih.gov/genomes/all/"
-    prefix, number = dl_acc.split("_")
-
-    p1 = number[0:3]
-    p2 = number[3:6]
-    p3 = number[6:9]
-
-    path = f"{prefix}/{p1}/{p2}/{p3}/{dl_acc}_{assembly_name}/"
-
-    return base_url + path

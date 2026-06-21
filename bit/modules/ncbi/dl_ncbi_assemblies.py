@@ -1,4 +1,5 @@
 import os
+import sys
 import time
 import gzip
 import random
@@ -99,7 +100,7 @@ def summarize_search(summary):
             print(f"        None of the {summary.num_wanted} target accession(s) were found at NCBI...")
             print(f"        This is weird. Are the inputs assembly accessions?\n")
             os.remove(summary.not_found_path)
-            exit(1)
+            sys.exit(1)
 
         print(f"    Remaining total targets: {summary.num_found}")
 
@@ -260,4 +261,8 @@ def report_finish(run_data):
         print(f"        They may not be available in the requested format.")
         print(f"        See '{run_data.not_downloaded_path}'.\n")
 
-        print(color_text(f"\n    The remaining {run_data.num_downloaded} found file(s) downloaded successfully.{skipped_note}\n", "yellow"))
+        if run_data.num_downloaded > 0:
+            print(color_text(f"\n    The remaining {run_data.num_downloaded} found file(s) downloaded successfully.{skipped_note}\n", "yellow"))
+        else:
+            print(color_text(f"\n    No files were successfully downloaded...{skipped_note}\n", "orange"))
+            sys.exit(1)
