@@ -257,7 +257,7 @@ def print_overview():
     from importlib.metadata import version
     from datetime import datetime
 
-    console = Console()
+    console = Console(highlight=False)
     ver = f"v{version('bit')}"
 
     console.print()
