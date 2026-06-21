@@ -42,6 +42,7 @@ def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="pa
         fragment_size_range=fragment_size_range,
         long_read_length_range=long_read_length_range,
         source_tsv=True,
+        quiet=True,
     )
 
 

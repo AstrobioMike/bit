@@ -1,10 +1,30 @@
 from Bio import SeqIO # type: ignore
+import gzip
 import random
 import os
 import sys
 import subprocess
 from tqdm import tqdm # type: ignore
 from bit.modules.general import color_text
+
+
+def parse_fasta(fasta_file):
+    """ parse a fasta that may be plain text or gzip-compressed (.gz). """
+    if str(fasta_file).endswith(".gz"):
+        handle = gzip.open(fasta_file, "rt")
+    else:
+        handle = open(fasta_file, "r")
+    try:
+        for record in SeqIO.parse(handle, "fasta"):
+            yield record
+    finally:
+        handle.close()
+
+def _status(args, msg):
+    """ print a status line unless the caller (e.g., gen-metagenome) set quiet """
+    if not getattr(args, "quiet", False):
+        print(msg)
+
 
 def generate_reads(args):
 
@@ -14,7 +34,7 @@ def generate_reads(args):
 
     gen_reads(args, proportions)
 
-    compress_with_pigz(args.output_prefix, read_type=args.type)
+    compress_with_pigz(args.output_prefix, read_type=args.type, quiet=getattr(args, 'quiet', False))
 
 
 def preflight_checks(args):
@@ -72,7 +92,7 @@ def compute_reads_from_coverage(args):
     reads_per_file = {}
 
     for fasta_file in args.input_fastas:
-        genome_size = sum(len(record.seq) for record in SeqIO.parse(fasta_file, "fasta"))
+        genome_size = sum(len(record.seq) for record in parse_fasta(fasta_file))
 
         if args.type == "paired-end":
             bases_per_fragment = min(2 * args.read_length, args.fragment_size)
@@ -91,7 +111,7 @@ def compute_reads_from_coverage(args):
     # override num_reads with computed total
     args.num_reads = total_reads
 
-    print(f"\n    {color_text('Running in coverage-specified mode:', 'yellow')} making {total_reads:,} total reads from {len(args.input_fastas)} input file(s)")
+    _status(args, f"\n    {color_text('Running in coverage-specified mode:', 'yellow')} making {total_reads:,} total reads from {len(args.input_fastas)} input file(s)")
 
     # return proportions derived from the per-file read counts
     proportions = {fasta_file: reads / total_reads for fasta_file, reads in reads_per_file.items()}
@@ -241,7 +261,7 @@ def gen_paired_reads(args, proportions):
 
     if args.num_reads % 2 != 0:
         args.num_reads += 1
-        print(f"\n    Note: Paired-end mode requires an even number of reads. Rounding up to {args.num_reads}.")
+        _status(args, f"\n    Note: Paired-end mode requires an even number of reads. Rounding up to {args.num_reads}.")
 
     forward_reads_file = f"{args.output_prefix}_R1.fastq"
     reverse_reads_file = f"{args.output_prefix}_R2.fastq"
@@ -263,12 +283,20 @@ def gen_paired_reads(args, proportions):
         remainder = 0.0
         read_count = 0
 
-        pbar = tqdm(total=len(args.input_fastas), desc = "    Generating reads from fasta file(s)", ncols=90)
+        if getattr(args, "quiet", False):
+            desc = "    Progress"
+            ncols = 78
+        else:
+            desc = "    Generating reads from fasta file(s)"
+            ncols = 90
+
+        pbar = tqdm(total=len(args.input_fastas), desc = desc, unit="file", ncols=ncols)
+
         for fasta_file in args.input_fastas:
 
-            total_length = sum(len(record.seq) for record in SeqIO.parse(fasta_file, "fasta"))
+            total_length = sum(len(record.seq) for record in parse_fasta(fasta_file))
 
-            for record in SeqIO.parse(fasta_file, "fasta"):
+            for record in parse_fasta(fasta_file):
                 seq_id = record.id
                 sequence = str(record.seq).upper()
                 seq_length = len(sequence)
@@ -413,12 +441,20 @@ def gen_single_reads(args, proportions):
         remainder = 0.0
         read_count = 0
 
-        pbar = tqdm(total=len(args.input_fastas), desc = "    Generating reads from fasta file(s)", ncols=90)
+        if getattr(args, "quiet", False):
+            desc = "    Progress"
+            ncols = 78
+        else:
+            desc = "    Generating reads from fasta file(s)"
+            ncols = 90
+
+        pbar = tqdm(total=len(args.input_fastas), desc = desc, unit="file", ncols=ncols)
+
         for fasta_file in args.input_fastas:
 
-            total_length = sum(len(record.seq) for record in SeqIO.parse(fasta_file, "fasta"))
+            total_length = sum(len(record.seq) for record in parse_fasta(fasta_file))
 
-            for record in SeqIO.parse(fasta_file, "fasta"):
+            for record in parse_fasta(fasta_file):
                 seq_id = record.id
                 sequence = str(record.seq)
                 seq_length = len(sequence)
@@ -506,14 +542,16 @@ def gen_single_reads(args, proportions):
             source_tsv.close()
 
 
-def compress_with_pigz(output_prefix, read_type="paired-end"):
+def compress_with_pigz(output_prefix, read_type="paired-end", quiet=False):
 
     if read_type in ("single-end", "long"):
         reads_file = f"{output_prefix}.fastq"
-        print("\n    Compressing output FASTQ file...")
+        if not quiet:
+            print("\n    Compressing output FASTQ file...")
         try:
             subprocess.run(["pigz", "-f", reads_file], check = True)
-            print(f"\n    Compressed file written: {reads_file}.gz\n")
+            if not quiet:
+                print(f"\n    Compressed file written: {reads_file}.gz\n")
         except FileNotFoundError:
             print("pigz not found. You're on your own for compression!")
         except subprocess.CalledProcessError as e:
@@ -522,12 +560,14 @@ def compress_with_pigz(output_prefix, read_type="paired-end"):
         forward_reads_file = f"{output_prefix}_R1.fastq"
         reverse_reads_file = f"{output_prefix}_R2.fastq"
 
-        print("\n    Compressing output fastq files...")
+        if not quiet:
+            print("\n    Compressing output fastq files...")
 
         try:
             subprocess.run(["pigz", "-f", forward_reads_file], check = True)
             subprocess.run(["pigz", "-f", reverse_reads_file], check = True)
-            print(f"\n    Compressed files written: {forward_reads_file}.gz, {reverse_reads_file}.gz\n")
+            if not quiet:
+                print(f"\n    Compressed files written: {forward_reads_file}.gz, {reverse_reads_file}.gz\n")
         except FileNotFoundError:
             print("pigz not found. You're on your own for compression!")
         except subprocess.CalledProcessError as e:

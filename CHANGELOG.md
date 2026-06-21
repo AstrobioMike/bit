@@ -19,7 +19,9 @@
 ### Added
 - `bit gen-metagenome`
 - `bit get-accs-from-ncbi` for searching ncbi for assembly accessions based on taxonomy (corollary to `bit get-accs-from-gtdb`)
-- `bit gen-reads` has an optional `--source-tsv` option which will write out each read's source info (and when set, the headers no long hold all that info and are smaller)
+- `bit gen-reads` 
+  - has an optional `--source-tsv` option which will write out each read's source info (and when set, the headers no long hold all that info and are smaller)
+  - can now take gzipped input fastas
 
 ### Changed
 - `bit dl-ncbi-assemblies`
@@ -28,6 +30,7 @@
 - `bit gen-reads`
   - read headers have been improved with regard to provenance tracking
   - initial fragments/reads now have a 50/50 chance to be drawn from +/- strand (relative to the ref)
+
 
 ---
 

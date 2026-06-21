@@ -107,9 +107,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
     ## selection ##
     selection.add_argument(
         "-d",
-        "--domains", 
-        nargs="+", 
-        default=["both"],
+        "--domain",  
+        default="both",
         choices=["bacteria", "archaea", "both"],
         help=wrap_help("Domain(s) to draw genomes from "
                        "(default: both). Eukaryotes can be specified via --accessions."))

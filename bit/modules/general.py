@@ -206,7 +206,7 @@ def report_version():
 
 
 @contextmanager
-def spinner(in_progress_msg, complete_msg):
+def spinner(in_progress_msg, complete_msg, indent="    "):
     """Show a spinner while a block runs; report elapsed time only if >= 60 s."""
     done = threading.Event()
     elapsed = [0.0]
@@ -215,7 +215,7 @@ def spinner(in_progress_msg, complete_msg):
         for char in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
             if done.is_set():
                 break
-            sys.stderr.write(f"\r    {char} {in_progress_msg}")
+            sys.stderr.write(f"\r{indent}{char} {in_progress_msg}")
             sys.stderr.flush()
             time.sleep(0.1)
         if elapsed[0] >= 60:
@@ -223,7 +223,7 @@ def spinner(in_progress_msg, complete_msg):
             time_str = f"(took ~{mins} min and {secs} sec)"
         else:
             time_str = ""
-        sys.stderr.write(f"\r    ✔ {complete_msg}{time_str}          \n")
+        sys.stderr.write(f"\r{indent}✔ {complete_msg}{time_str}          \n")
         sys.stderr.flush()
         time.sleep(0.1)
 

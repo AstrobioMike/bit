@@ -54,7 +54,8 @@ def setup(args):
         num_wanted=len(wanted_accs),
         ncbi_sub_table_path=Path(args.output_dir) / "wanted-ncbi-accessions-info.tsv",
         not_found_path=Path(args.output_dir) / "ncbi-accessions-not-found.txt",
-        not_downloaded_path=Path(args.output_dir) / "ncbi-accessions-not-downloaded.tsv"
+        not_downloaded_path=Path(args.output_dir) / "ncbi-accessions-not-downloaded.tsv",
+        quiet=getattr(args, "quiet", False)
         )
 
     return run_data
@@ -62,7 +63,8 @@ def setup(args):
 
 def parse_main_assembly_table(run_data):
 
-    print(color_text(f"\n    Targeting {run_data.num_wanted} accession(s) in {run_data.wanted_format} format...", "yellow"))
+    if not run_data.quiet:
+        print(color_text(f"\n    Targeting {run_data.num_wanted} accession(s) in {run_data.wanted_format} format...", "yellow"))
 
     assembly_summary_file = Path(os.environ['NCBI_assembly_data_dir']) / "ncbi-assembly-info.tsv"
 
@@ -86,6 +88,7 @@ class RunData:
     ncbi_sub_table_path: str = None
     not_found_path: str = None
     not_downloaded_path: str = None
+    quiet: bool = False
 
 
 def summarize_search(summary):
@@ -102,7 +105,8 @@ def summarize_search(summary):
             os.remove(summary.not_found_path)
             sys.exit(1)
 
-        print(f"    Remaining total targets: {summary.num_found}")
+        if not summary.quiet:
+            print(f"    Remaining total targets: {summary.num_found}")
 
 
 def valid_gzip(path):
@@ -194,7 +198,8 @@ def download_one(target_link, local_dest, retries=5):
 
 def download_assemblies(run_data):
 
-    print(color_text("\n    Downloading assemblies...\n", "yellow"))
+    if not run_data.quiet:
+        print(color_text("\n    Downloading assemblies...\n", "yellow"))
 
     # reading the table into a list of (target_link, local_dest) tuples
     targets = []
@@ -215,8 +220,13 @@ def download_assemblies(run_data):
             for link, dest in targets
         }
 
-
-        with tqdm(total=len(targets), desc="      Progress", unit="file", ncols=70) as pbar:
+        if run_data.quiet:
+            desc_buffer = "    "
+            ncols = 78
+        else:
+            desc_buffer = "      "
+            ncols = 70
+        with tqdm(total=len(targets), desc=f"{desc_buffer}Progress", unit="file", ncols=ncols) as pbar:
             for future in as_completed(futures):
                 dest, error, status = future.result()
                 if status == "failed":
@@ -250,10 +260,12 @@ def report_finish(run_data):
         skipped_note = f" ({run_data.num_skipped} already present, skipped)"
 
     if run_data.num_downloaded == run_data.num_wanted:
-        print(color_text(f"\n    All {run_data.num_wanted} file(s) downloaded successfully!{skipped_note}\n", "green"))
+        if not run_data.quiet:
+            print(color_text(f"\n    All {run_data.num_wanted} file(s) downloaded successfully!{skipped_note}\n", "green"))
 
     elif run_data.num_downloaded == run_data.num_found:
-        print(color_text(f"\n    All {run_data.num_found} found file(s) downloaded successfully!{skipped_note}\n", "yellow"))
+        if not run_data.quiet:
+            print(color_text(f"\n    All {run_data.num_found} found file(s) downloaded successfully!{skipped_note}\n", "yellow"))
 
     elif run_data.num_not_downloaded > 0:
         print(color_text("\n\n                      NOTICE", "orange"))
@@ -262,7 +274,8 @@ def report_finish(run_data):
         print(f"        See '{run_data.not_downloaded_path}'.\n")
 
         if run_data.num_downloaded > 0:
-            print(color_text(f"\n    The remaining {run_data.num_downloaded} found file(s) downloaded successfully.{skipped_note}\n", "yellow"))
+            if not run_data.quiet:
+                print(color_text(f"\n    The remaining {run_data.num_downloaded} found file(s) downloaded successfully.{skipped_note}\n", "yellow"))
         else:
             print(color_text(f"\n    No files were successfully downloaded...{skipped_note}\n", "orange"))
             sys.exit(1)

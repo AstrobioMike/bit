@@ -18,7 +18,7 @@ import pandas as pd
 from tqdm import tqdm  # type: ignore
 
 from bit.modules.general import (color_text, report_message,
-                                 attempt_to_make_dir, check_files_are_found)
+                                 attempt_to_make_dir, check_files_are_found, spinner)
 from bit.modules.gtdb.get_gtdb_data import get_gtdb_data
 from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
 
@@ -32,26 +32,35 @@ def gen_metagenome(args):
 
     run = setup(args)
 
-    section("Selecting genomes")
+    section("Phase 1: Selecting genomes...")
     run = phase_select(args, run)
 
-    section("Downloading assemblies")
+    section("Phase 2: Downloading assemblies...")
     run = phase_download(args, run)
 
     if args.mutation_mode != "off":
-        section("Mutating genomes")
+        section("Phase 3: Mutating genomes...")
     run = phase_mutate(args, run)
 
-    section("Assigning abundances")
+    if args.mutation_mode != "off":
+        section("Phase 4: Assigning abundances...")
+    else:
+        section("Phase 3: Assigning abundances...")
     run = phase_abundance(args, run)
 
-    section("Generating reads")
+    if args.mutation_mode != "off":
+        section("Phase 5: Generating reads...")
+    else:
+        section("Phase 4: Generating reads...")
     run = phase_reads(args, run)
 
-    section("Building truth tables")
+    if args.mutation_mode != "off":
+        section("Phase 6: Building truth tables...")
+    else:
+        section("Phase 5: Building truth tables...")
     phase_truth(args, run)
 
-    report_finish(run)
+    report_finish(args, run)
 
 
 # ----------------------------------------------------------------------------
@@ -81,8 +90,24 @@ def setup(args):
         reads_prefix=os.path.join(args.output_dir, args.output_prefix),
     )
 
+def report_gtdb_reading(location):
 
-# ---- phase 1: select ----
+    report_message("Reading in the GTDB info table...", initial_indent="    ", leading_newline=False)
+    version_info = []
+
+    with open(os.path.join(location, "GTDB-version-info.txt")) as version_info_file:
+        for line in version_info_file:
+            line = line.strip()
+            if line != "":
+                version_info.append(line)
+
+    gtdb_version = version_info[0]
+    gtdb_release_date = version_info[1]
+
+    print("      Using GTDB " + gtdb_version + ": " + gtdb_release_date)
+
+
+# ---- selection ----
 
 def phase_select(args, run):
 
@@ -94,13 +119,21 @@ def phase_select(args, run):
     generative_df = None
     if args.num_genomes:
         gtdb_dir = get_gtdb_data(quiet=True)
-        gtdb_tab = pd.read_csv(
-            os.path.join(gtdb_dir, "GTDB-arc-and-bac-metadata.tsv"),
-            sep="\t", low_memory=False)
+        report_gtdb_reading(gtdb_dir)
+        with spinner("", "", indent="        "):
+            gtdb_tab = pd.read_csv(
+                os.path.join(gtdb_dir, "GTDB-arc-and-bac-metadata.tsv"),
+                sep="\t", low_memory=False)
 
         exclude = SEL.user_filled_groups(user_df, args.derep_rank) if user_df is not None else set()
+
+        if args.domain == "both":
+            domains = None
+        else:
+            alias = {"bacteria": "Bacteria", "archaea": "Archaea"}
+            domains = [alias[args.domain]]
         sel, sw = SEL._select_gtdb_one_per_rank(
-            gtdb_tab, derep_rank=args.derep_rank, domains=args.domains,
+            gtdb_tab, derep_rank=args.derep_rank, domains=domains,
             num_genomes=args.num_genomes, seed=args.seed, exclude_groups=exclude)
         warn_all(sw)
         generative_df = SEL._normalize_gtdb_rows(sel)
@@ -110,12 +143,14 @@ def phase_select(args, run):
 
     if len(merged) == 0:
         report_message("No genomes selected; nothing to do.", "red",
-                       initial_indent="    ", subsequent_indent="    ")
+                    initial_indent="    ", subsequent_indent="    ")
         raise SystemExit(1)
 
     run.merged = merged
     report_message(f"Selected {len(merged)} genome(s).", "green",
-                   initial_indent="    ", subsequent_indent="    ")
+                initial_indent="    ", subsequent_indent="    ")
+    print()
+
     return run
 
 
@@ -183,7 +218,7 @@ def fetch_ncbi_metadata_for_accessions(accessions):
     return tab
 
 
-# ---- phase 2: download ----
+# ---- downloading ----
 
 def phase_download(args, run):
     acc_file = os.path.join(run.out_dir, "selected-accessions.txt")
@@ -191,15 +226,17 @@ def phase_download(args, run):
         for a in run.merged["accession"]:
             fh.write(a + "\n")
 
+    print()
     dl_args = SimpleNamespace(
         wanted_accessions=acc_file, format="fasta",
-        jobs=args.jobs, output_dir=run.genomes_dir)
+        jobs=args.jobs, output_dir=run.genomes_dir, quiet=True)
     dl_ncbi_assemblies(dl_args)
 
     # resolve downloaded fasta paths per accession
     for a in run.merged["accession"]:
         run.genome_paths[a] = find_downloaded_fasta(run.genomes_dir, a)
     run.working_paths = dict(run.genome_paths)
+    print()
     return run
 
 
@@ -211,20 +248,7 @@ def find_downloaded_fasta(genomes_dir, accession):
     return None
 
 
-# ---- phase 4: abundance (runs after mutate so coverage uses used_genome_size) ----
-
-def phase_abundance(args, run):
-    assigned, w = ABD.assign_abundance(
-        run.merged, mode=args.abundance_mode, dist=args.abundance_dist,
-        sigma=args.sigma, total_reads=args.total_reads, read_length=args.read_length,
-        read_type=args.type, fragment_size=args.fragment_size,
-        median_coverage=args.median_coverage, seed=args.seed)
-    warn_all(w)
-    run.merged = assigned
-    return run
-
-
-# ---- phase 3: mutate (runs before abundance so coverage uses used sizes) ----
+# ---- mutating (runs before abundance so coverage uses used sizes) ----
 
 def measure_fasta_size(path):
     """ sum sequence lengths in a fasta (handles .gz). measured, not metadata. """
@@ -274,7 +298,21 @@ def phase_mutate(args, run):
     return run
 
 
-# ---- phase 5: reads ----
+# ---- abundance figuring (runs after mutate so coverage uses used_genome_size) ----
+
+def phase_abundance(args, run):
+    assigned, w = ABD.assign_abundance(
+        run.merged, mode=args.abundance_mode, dist=args.abundance_dist,
+        sigma=args.sigma, total_reads=args.total_reads, read_length=args.read_length,
+        read_type=args.type, fragment_size=args.fragment_size,
+        median_coverage=args.median_coverage, seed=args.seed)
+    warn_all(w)
+    run.merged = assigned
+    print()
+    return run
+
+
+# ---- generating reads ----
 
 def phase_reads(args, run):
     from bit.modules.gen_reads import generate_reads
@@ -291,10 +329,11 @@ def phase_reads(args, run):
         include_Ns=args.include_Ns)
     generate_reads(gr_args)
     run.read_sources_tsv = f"{run.reads_prefix}-read-sources.tsv"
+    print()
     return run
 
 
-# ---- phase 6: truth ----
+# ---- making truth outputs ----
 
 def phase_truth(args, run):
     per_genome = TRU.build_per_genome_table(run.merged, run.mutation_results)
@@ -316,16 +355,38 @@ def phase_truth(args, run):
             if p:
                 fasta2acc[p] = a
                 fasta2acc[os.path.basename(p)] = a
-        rt_path = os.path.join(run.out_dir, "truth-read-level.tsv")
+        rt_path = os.path.join(run.out_dir, "truth-per-read.tsv")
         TRU.build_read_truth(run.read_sources_tsv, fasta2acc, per_genome, rt_path)
         run.truth_files.append(rt_path)
+    print()
 
 
-def report_finish(run):
+def report_finish(args, run):
+    report_message("-" * 78, "green", initial_indent="  ")
     report_message("Mock metagenome complete!", "green",
-                   initial_indent="    ", subsequent_indent="    ",
+                   initial_indent=" " * 28, subsequent_indent="    ",
+                   leading_newline=False, trailing_newline=False)
+    report_message("-" * 78, "green", initial_indent="  ", leading_newline=False,
                    trailing_newline=True)
-    print(f"        Reads:            {run.reads_prefix}_R1.fastq.gz, _R2.fastq.gz")
-    print(f"        Per-genome truth: {os.path.join(run.out_dir, 'truth-per-genome.tsv')}")
-    print(f"        Per-rank truth:   {os.path.join(run.out_dir, 'truth-per-rank/')}")
+ 
+    num_genomes = len(run.merged)
+    total_reads = int(run.merged["assigned_reads"].sum()) if "assigned_reads" in run.merged.columns else 0
+ 
+    if args.type == "paired-end":
+        reads_line = f"{run.reads_prefix}_R1.fastq.gz, {run.reads_prefix}_R2.fastq.gz"
+        read_unit = "Read-pairs" if total_reads else "Reads"
+        reported = total_reads // 2 if total_reads else 0
+    else:
+        reads_line = f"{run.reads_prefix}.fastq.gz"
+        read_unit = "reads"
+        reported = total_reads
+ 
+    print(f"      Genomes included:      {num_genomes:,}")
+    print(f"      {read_unit} generated:  {reported:,}\n")
+
+    print(f"      Reads:                 {reads_line}")
+    if args.per_read_tsv:
+        print(f"      Per-read truth:        {os.path.join(run.out_dir, 'truth-per-read.tsv')}")
+    print(f"      Per-genome truth:      {os.path.join(run.out_dir, 'truth-per-genome.tsv')}")
+    print(f"      Per-rank truth:        {os.path.join(run.out_dir, 'truth-per-rank/')}")
     print("")
