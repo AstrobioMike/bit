@@ -261,10 +261,10 @@ def print_overview():
     ver = f"v{version('bit')}"
 
     console.print()
-    console.print(f"{'':>33}bit [green]{ver}[/green]")
-    console.print(f"{'':>25}github.com/AstrobioMike/bit")
+    console.print(f"{'':>34}bit [green]{ver}[/green]")
+    console.print(f"{'':>26}github.com/AstrobioMike/bit")
     console.print()
-    console.print(f"{'':>27}OVERVIEW OF SUBCOMMANDS")
+    console.print(f"{'':>28}OVERVIEW OF SUBCOMMANDS")
     console.print()
 
     # global name-column width — keeps description column aligned across all groups
