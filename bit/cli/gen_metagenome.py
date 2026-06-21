@@ -115,7 +115,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         default="both",
         choices=["bacteria", "archaea", "both"],
         help=wrap_help("Domain(s) to draw genomes from "
-                       "(default: both). Eukaryotes can be specified via --accessions."))
+                       "(default: both), eukaryotes can be specified via --accessions"))
     
     selection.add_argument(
         "--derep-rank", 
@@ -123,8 +123,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
         choices=["domain", "phylum", "class", "order", "family", "genus",
                  "species", "off"],
         help=wrap_help("Keep at most one genome per unique taxon at this rank "
-                       "(default: species). 'off' selects randomly with no "
-                       "taxonomic dereplication."))
+                       "(default: species), 'off' selects randomly with no "
+                       "taxonomic dereplication"))
 
 
     ## abundance ##
@@ -134,14 +134,14 @@ def build_parser(parent_subparsers=None, show_fine=False):
         choices=["relative", "coverage"],
         help=wrap_help("Whether the distribution describes relative abundance "
                        "(needs --total-reads) or per-genome fold-coverage directly "
-                       "(default: relative)."))
+                       "(default: relative)"))
 
     abundance.add_argument(
         "--abundance-dist", 
         default="lognormal",
         choices=["lognormal", "even"],
         help=wrap_help("Shape of the abundance/coverage distribution "
-                       "(default: lognormal)."))
+                       "(default: lognormal)"))
 
     abundance.add_argument(
         "--total-reads", 
@@ -157,7 +157,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         default=None,  # 30 set later
         help=h(wrap_help("Median per-genome coverage in 'coverage' abundance mode; scales the "
                          "distribution so 'even' gives this coverage to every genome and "
-                         "'lognormal' centers around it (default: 30). Ignored in 'relative' mode.")))
+                         "'lognormal' centers around it (default: 30). Ignored in 'relative' mode")))
 
     abundance.add_argument(
         "--sigma", 
@@ -252,7 +252,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
 
     reads.add_argument(
         "--include-Ns", action="store_true", default=False,
-        help=h(wrap_help("Allow reads that include Ns (default: skip N-containing regions).")))
+        help=h(wrap_help("Allow reads that include Ns (default: skip N-containing regions)")))
 
     return parser
 
