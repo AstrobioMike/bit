@@ -448,7 +448,7 @@ def gen_single_reads(args, proportions):
             desc = "    Generating reads from fasta file(s)"
             ncols = 90
 
-        pbar = tqdm(total=len(args.input_fastas), desc = desc, unit="file", ncols=ncols)
+        pbar = tqdm(total=len(args.input_fastas), desc = desc, unit=" file", ncols=ncols)
 
         for fasta_file in args.input_fastas:
 

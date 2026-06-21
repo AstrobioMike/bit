@@ -2,22 +2,34 @@
 gen-metagenome selection layer: produce one normalized genome table from
 GTDB-generative selection and/or user-supplied accessions (GTDB- or NCBI-sourced).
 
-Normalized schema (one row per selected genome):
-  accession, source_db, domain, phylum, class, order, family, genus, species,
-  genome_size, taxonomy_source, user_supplied
+Normalized schema (one row per selected genome) carries BOTH taxonomies side by
+side so downstream truth tables can be written per-source:
+  accession,
+  gtdb_domain..gtdb_species, ncbi_domain..ncbi_species,
+  user_supplied
+(genome sizes are measured from the downloaded/working FASTAs downstream:
+ downloaded_genome_size and used_genome_size, added in the orchestrator)
 plus optional pinned override columns carried through from a user TSV:
   pinned_rel_abundance, pinned_coverage, pinned_mutation_rate
+
+At normalization time each source fills only its native rank set; the other set
+is initialized to 'NA' and filled later by the taxonomy-resolution layer
+(GTDB-table / assembly-info / datasets + taxonkit).
 
 Pure logic: no printing, no sys.exit, no file writes. Returns (df, warnings).
 """
 import pandas as pd
 
 RANKS = ["domain", "phylum", "class", "order", "family", "genus", "species"]
+GTDB_RANKS = [f"gtdb_{r}" for r in RANKS]
+NCBI_RANKS = [f"ncbi_{r}" for r in RANKS]
 
-SCHEMA = ["accession", "source_db"] + RANKS + [
-    "metadata_genome_size", "taxonomy_source", "user_supplied",
+SCHEMA = ["accession"] + GTDB_RANKS + NCBI_RANKS + [
+    "user_supplied",
     "pinned_rel_abundance", "pinned_coverage", "pinned_mutation_rate",
 ]
+
+_PIN_COLS = ["pinned_rel_abundance", "pinned_coverage", "pinned_mutation_rate"]
 
 
 # ---------- GTDB selection (wraps the tested one-per-rank selector) ----------
@@ -74,28 +86,29 @@ def _select_gtdb_one_per_rank(gtdb_tab, derep_rank="species", domains=None,
 
 
 def _normalize_gtdb_rows(gtdb_selected):
-    """ map a GTDB-selected subframe onto the normalized schema. """
+    """ map a GTDB-selected subframe onto the normalized schema.
+
+    Fills gtdb_* ranks from the GTDB taxonomy columns; ncbi_* ranks are left NA
+    here and resolved later (via the accession's NCBI tax_id) by the taxonomy
+    layer. """
     out = pd.DataFrame()
-    out["accession"] = gtdb_selected["ncbi_genbank_assembly_accession"]
-    out["source_db"] = "GTDB"
-    for r in RANKS:
-        out[r] = gtdb_selected[r].values
-    # GTDB metadata carries genome_size; fall back to NA if absent
-    out["metadata_genome_size"] = gtdb_selected["genome_size"].values if "genome_size" in gtdb_selected.columns else pd.NA
-    out["taxonomy_source"] = "GTDB"
+    out["accession"] = gtdb_selected["ncbi_genbank_assembly_accession"].values
+    for gtdb_col, plain in zip(GTDB_RANKS, RANKS):
+        out[gtdb_col] = gtdb_selected[plain].values
+    for ncbi_col in NCBI_RANKS:
+        out[ncbi_col] = "NA"
     out["user_supplied"] = False
-    for c in ("pinned_rel_abundance", "pinned_coverage", "pinned_mutation_rate"):
+    for c in _PIN_COLS:
         out[c] = pd.NA
-    return out.reset_index(drop=True)
+    return out[SCHEMA].reset_index(drop=True)
 
 
 # ---------- NCBI normalization (for user accessions / euk path) ----------
 
-def _split_ncbi_lineage(lineage_str):
+def _split_lineage(lineage_str):
     """
-    Given a 7-rank ';'-joined lineage (domain..species) resolved upstream from a
-    tax_id, return a dict of rank->value. Missing ranks -> 'NA'. If lineage is
-    absent, all ranks 'NA'.
+    Given a 7-rank ';'-joined lineage (domain..species), return a dict of
+    plain-rank -> value. Missing/absent -> 'NA'.
     """
     vals = {r: "NA" for r in RANKS}
     if isinstance(lineage_str, str) and lineage_str.strip():
@@ -105,34 +118,35 @@ def _split_ncbi_lineage(lineage_str):
     return vals
 
 
+# backwards-compatible alias (older callers/tests referenced this name)
+_split_ncbi_lineage = _split_lineage
+
+
 def _normalize_ncbi_rows(ncbi_tab, lineage_lookup=None, user_supplied=True):
     """
-    Map an NCBI metadata frame (run_ncbi_summary schema) onto the normalized schema.
-    lineage_lookup: optional dict accession-> 7-rank ';'-joined lineage string.
-    Ranks are NA when no lineage is available (v1 behavior for euk accessions
-    until tax_id->lineage resolution is wired in).
+    Map an NCBI metadata frame onto the normalized schema.
+
+    Fills ncbi_* ranks from lineage_lookup (accession -> 7-rank ';'-joined
+    lineage string, resolved upstream from a tax_id). gtdb_* ranks are left NA
+    here and filled later by the taxonomy layer if the accession is present in
+    the GTDB metadata table. Ranks are NA when no lineage is available.
     """
     rows = []
     for _, r in ncbi_tab.iterrows():
         acc = r["accession"]
         lineage = (lineage_lookup or {}).get(acc)
-        ranks = _split_ncbi_lineage(lineage)
-        size = r.get("total_sequence_length", "NA")
-        try:
-            size = int(size)
-        except (TypeError, ValueError):
-            size = pd.NA
-        rows.append({
+        ncbi_ranks = _split_lineage(lineage)
+        row = {
             "accession": acc,
-            "source_db": r.get("source_database", "NCBI"),
-            **ranks,
-            "metadata_genome_size": size,
-            "taxonomy_source": "GTDB" if lineage and "_NCBI" not in str(lineage) else "NCBI",
             "user_supplied": user_supplied,
-            "pinned_rel_abundance": pd.NA,
-            "pinned_coverage": pd.NA,
-            "pinned_mutation_rate": pd.NA,
-        })
+        }
+        for gr in GTDB_RANKS:
+            row[gr] = "NA"
+        for nr, plain in zip(NCBI_RANKS, RANKS):
+            row[nr] = ncbi_ranks[plain]
+        for c in _PIN_COLS:
+            row[c] = pd.NA
+        rows.append(row)
     return pd.DataFrame(rows, columns=SCHEMA)
 
 
@@ -162,8 +176,13 @@ def merge_sources(generative_df=None, user_df=None):
 
 
 def user_filled_groups(user_df, derep_rank):
-    """ set of derep_rank values occupied by user genomes (for generative exclusion). """
+    """ set of GTDB derep_rank values occupied by user genomes (for generative
+    exclusion). Uses the gtdb_<rank> column, since generative selection/derep is
+    GTDB-based. Only meaningful after GTDB taxonomy has been resolved for user
+    rows; returns empty set if that column is absent or all-NA. """
     if user_df is None or len(user_df) == 0 or derep_rank == "off":
         return set()
-    vals = set(user_df[derep_rank].dropna().tolist()) - {"NA"}
-    return vals
+    col = f"gtdb_{derep_rank}"
+    if col not in user_df.columns:
+        return set()
+    return set(user_df[col].dropna().tolist()) - {"NA"}

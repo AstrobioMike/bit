@@ -1,7 +1,9 @@
 import sys
 import argparse
 from bit.cli.common import (CustomRichHelpFormatter, add_help, wrap_help,
-                            add_version_arg)
+                            add_version_arg, add_force)
+from bit.modules.general import (notify_premature_exit, check_if_output_dir_exists,
+                                 report_message)
 from bit.modules.gen_metagenome import gen_metagenome
 
 
@@ -9,9 +11,9 @@ def build_parser(parent_subparsers=None, show_fine=False):
 
     desc = """
         Build a mock metagenome with ground-truth tables. Genomes are selected
-        from the GTDB and/or supplied directly as accessions, downloaded, 
-        optionally mutated to set per-genome ANI, then reads are generated at a 
-        chosen abundance distribution. Outputs include reads plus per-genome, per-rank, and 
+        from GTDB and/or supplied directly as accessions, downloaded, 
+        optionally mutated to set per-genome ANI, and then reads are generated at a 
+        chosen abundance distribution. Outputs include reads and per-genome, per-rank, and 
         (optionally) per-read truth tables.
         """
 
@@ -73,8 +75,10 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "--per-read-tsv", 
         action="store_true", 
         default=False,
-        help=wrap_help("Write out a read-level truth table mapping every read to its "
-                       "source genome, taxonomy, and reference coordinates"))
+        help=wrap_help("Add this flag to out a read-level truth table mapping every read to its "
+                       "source genome, coordinates, and taxonomy"))
+
+    add_force(general)
 
     general.add_argument(
         "-j", 
@@ -143,21 +147,23 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "--total-reads", 
         metavar="<INT>", 
         type=int, 
-        default=10_000_000,
+        default=None, # 10,000,000 set later
         help=wrap_help("Number of total reads to generate in 'relative' abundance mode (default: 10,000,000)"))
 
     abundance.add_argument(
         "--median-coverage", 
         metavar="<FLOAT>", 
         type=float, 
-        default=30,
+        default=None,  # 30 set later
         help=h(wrap_help("Median per-genome coverage in 'coverage' abundance mode; scales the "
                          "distribution so 'even' gives this coverage to every genome and "
                          "'lognormal' centers around it (default: 30). Ignored in 'relative' mode.")))
 
     abundance.add_argument(
         "--sigma", 
-        metavar="<FLOAT>", type=float, default=1.0,
+        metavar="<FLOAT>", 
+        type=float, 
+        default=None,  # 1.0 set later
         help=h(wrap_help("Sigma (spread) for the lognormal distribution; higher means "
                          "a longer abundance tail (default: 1.0)")))
 
@@ -176,33 +182,35 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "--mutation-rate", 
         metavar="<FLOAT>", 
         type=float, 
-        default=0.01,
+        default=None, # 0.01 set later
         help=h(wrap_help("Mutation rate for 'uniform' mode (default: 0.01)")))
 
     mutation.add_argument(
         "--mutation-rate-min", 
         metavar="<FLOAT>", 
-        type=float, default=0.001,
+        type=float, 
+        default=None, # 0.001 set later
         help=h(wrap_help("Lower bound for 'distributed' mode (default: 0.001)")))
 
     mutation.add_argument(
         "--mutation-rate-max", 
         metavar="<FLOAT>", 
         type=float, 
-        default=0.05,
+        default=None, # 0.05 set later
         help=h(wrap_help("Upper bound for 'distributed' mode (default: 0.05)")))
 
     mutation.add_argument(
         "--ti-tv-ratio", 
         metavar="<FLOAT>", 
         type=float, 
-        default=1.0,
+        default=None, # 1.0 set later
         help=h(wrap_help("Transition/transversion ratio for substitutions (default: 1.0)")))
 
     mutation.add_argument(
         "--indel-rate", 
         metavar="<FLOAT>", 
-        type=float, default=0.0,
+        type=float, 
+        default=None, # 0.0 set later
         help=h(wrap_help("Fraction of mutations that are indels (default: 0.0)")))
 
     # ---- Reads ----
@@ -264,14 +272,129 @@ def main():
 
     args = parser.parse_args()
 
+    preflight_checks(args)
+
+    # these are all set to None above and ultimately set here so that any 
+    # incompatible user inputs can be detected and reported in preflight_checks 
+    args.total_reads = args.total_reads or 10_000_000
+    args.median_coverage = args.median_coverage or 30
+    args.sigma = args.sigma or 1.0
+    args.mutation_rate = args.mutation_rate or 0.01
+    args.mutation_rate_min = args.mutation_rate_min or 0.001
+    args.mutation_rate_max = args.mutation_rate_max or 0.05
+    args.ti_tv_ratio = args.ti_tv_ratio or 1.0
+    args.indel_rate = args.indel_rate or 0.0
+
     if args.type == "long" and not args.read_length:
         args.read_length = 5000
     elif not args.read_length:
         args.read_length = 150
 
-    if not args.num_genomes and not args.accessions:
-        parser.error("provide at least one selection source: --num-genomes for "
-                     "generative GTDB selection and/or --accessions for specific "
-                     "genomes (one or both).")
-
     gen_metagenome(args)
+
+
+def preflight_checks(args):
+
+    if not args.num_genomes and not args.accessions:
+        report_message("You must specify `--num-genomes` and/or provide input `--accessions` to enjoy this ride.",
+                       initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
+
+    if args.output_dir:
+        check_if_output_dir_exists(args.output_dir, force_overwrite=args.force_overwrite)
+
+
+    # ---- mode/param contradictions ----
+
+    if args.total_reads and args.abundance_mode == "coverage":
+        report_message("Parameter `--total-reads` is incompatible with `--abundance-mode coverage`.",
+                       initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
+
+    if args.median_coverage and args.abundance_mode == "relative":
+        report_message("Parameter `--median-coverage` is incompatible with `--abundance-mode relative`.",
+                       initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
+
+    if args.sigma and args.abundance_dist == "even":
+        report_message("Parameter `--sigma` is incompatible with `--abundance-dist even`.",
+                       initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
+
+    if args.mutation_mode == "off" and (args.mutation_rate or args.mutation_rate_min 
+                                        or args.mutation_rate_max or args.ti_tv_ratio
+                                        or args.indel_rate):
+        report_message("You must specify a `--mutation-mode` if wanting any other mutation parameters.`",
+                       initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
+
+
+    # ---- mode-specific mutation params (set the wrong knob for the chosen mode) ----
+
+    if args.mutation_mode == "uniform" and (args.mutation_rate_min is not None
+                                            or args.mutation_rate_max is not None):
+        report_message("Parameters `--mutation-rate-min`/`--mutation-rate-max` apply to "
+                       "`--mutation-mode distributed`, not `uniform` (which uses `--mutation-rate`).",
+                       initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
+
+    if args.mutation_mode == "distributed" and args.mutation_rate is not None:
+        report_message("Parameter `--mutation-rate` applies to `--mutation-mode uniform`, not "
+                       "`distributed` (which uses `--mutation-rate-min`/`--mutation-rate-max`).",
+                       initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
+
+    # ---- range / validity checks ----
+    # only validate values the user actually supplied (None == unset, gets a
+    # valid default later in main()); a real 0 survives here to be checked.
+
+    def _fail(msg):
+        report_message(msg, initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
+
+    def _check_range(val, name, lo=None, hi=None, lo_inclusive=True, hi_inclusive=True):
+        """ fatal if a supplied value falls outside [lo, hi] (bounds optional). """
+        if val is None:
+            return
+        if lo is not None:
+            if (val < lo) or (val == lo and not lo_inclusive):
+                _fail(f"Parameter `{name}` must be "
+                      f"{'>= ' if lo_inclusive else '> '}{lo} (got {val}).")
+        if hi is not None:
+            if (val > hi) or (val == hi and not hi_inclusive):
+                _fail(f"Parameter `{name}` must be "
+                      f"{'<= ' if hi_inclusive else '< '}{hi} (got {val}).")
+
+    # counts must be positive
+    _check_range(args.num_genomes, "--num-genomes", lo=0, lo_inclusive=False)
+    _check_range(args.total_reads, "--total-reads", lo=0, lo_inclusive=False)
+    _check_range(args.jobs, "--jobs", lo=0, lo_inclusive=False)
+
+    # coverage / spread must be positive
+    _check_range(args.median_coverage, "--median-coverage", lo=0, lo_inclusive=False)
+    _check_range(args.sigma, "--sigma", lo=0, lo_inclusive=False)
+    _check_range(args.ti_tv_ratio, "--ti-tv-ratio", lo=0, lo_inclusive=False)
+
+    # rates are fractions in [0, 1]
+    _check_range(args.mutation_rate, "--mutation-rate", lo=0, hi=1)
+    _check_range(args.mutation_rate_min, "--mutation-rate-min", lo=0, hi=1)
+    _check_range(args.mutation_rate_max, "--mutation-rate-max", lo=0, hi=1)
+    _check_range(args.indel_rate, "--indel-rate", lo=0, hi=1)
+
+    # distributed bounds must be ordered (min < max); only when both supplied
+    if (args.mutation_rate_min is not None and args.mutation_rate_max is not None
+            and args.mutation_rate_min > args.mutation_rate_max):
+        _fail(f"`--mutation-rate-min` ({args.mutation_rate_min}) must be "
+              f"<= `--mutation-rate-max` ({args.mutation_rate_max}).")
+
+    # read geometry
+    _check_range(args.read_length, "--read-length", lo=0, lo_inclusive=False)
+    _check_range(args.fragment_size, "--fragment-size", lo=0, lo_inclusive=False)
+    _check_range(args.fragment_size_range, "--fragment-size-range", lo=0, hi=100, hi_inclusive=False)
+    _check_range(args.long_read_length_range, "--long-read-length-range", lo=0, hi=100, hi_inclusive=False)
+
+    # paired-end fragments must be at least as long as a read
+    if (args.type == "paired-end" and args.read_length is not None
+            and args.fragment_size is not None and args.fragment_size < args.read_length):
+        _fail(f"`--fragment-size` ({args.fragment_size}) must be >= `--read-length` "
+              f"({args.read_length}) for paired-end reads.")

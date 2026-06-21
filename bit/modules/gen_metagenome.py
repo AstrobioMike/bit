@@ -13,60 +13,87 @@ Phases:
 
 import os
 from types import SimpleNamespace
-
 import pandas as pd
 from tqdm import tqdm  # type: ignore
-
 from bit.modules.general import (color_text, report_message,
                                  attempt_to_make_dir, check_files_are_found, spinner)
 from bit.modules.gtdb.get_gtdb_data import get_gtdb_data
 from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
-
+from bit.modules.ncbi.get_ncbi_tax_data import get_ncbi_tax_data
+from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data
 from bit.modules.gen_mg import selection as SEL
 from bit.modules.gen_mg import abundance as ABD
 from bit.modules.gen_mg import mutation as MUT
 from bit.modules.gen_mg import truth as TRU
+from bit.modules.gen_mg import taxonomy as TAX
 
 
 def gen_metagenome(args):
 
     run = setup(args)
+    check_required_dbs(args, run)
 
-    section("Phase 1: Selecting genomes...")
+    mutating = args.mutation_mode != "off"
+    n = _phase_counter()
+
+    section(f"Phase {n()}: Selecting genomes and resolving taxonomy...")
     run = phase_select(args, run)
 
-    section("Phase 2: Downloading assemblies...")
+    section(f"Phase {n()}: Downloading assemblies...")
     run = phase_download(args, run)
 
-    if args.mutation_mode != "off":
-        section("Phase 3: Mutating genomes...")
+    if mutating:
+        section(f"Phase {n()}: Mutating genomes...")
     run = phase_mutate(args, run)
 
-    if args.mutation_mode != "off":
-        section("Phase 4: Assigning abundances...")
+    # when not mutating, genome sizes are measured here (needed for abundance)
+    if mutating:
+        section(f"Phase {n()}: Assigning abundances...")
     else:
-        section("Phase 3: Assigning abundances...")
+        section(f"Phase {n()}: Getting genome sizes and assigning abundances...")
     run = phase_abundance(args, run)
 
-    if args.mutation_mode != "off":
-        section("Phase 5: Generating reads...")
-    else:
-        section("Phase 4: Generating reads...")
+    section(f"Phase {n()}: Generating reads...")
     run = phase_reads(args, run)
 
-    if args.mutation_mode != "off":
-        section("Phase 6: Building truth tables...")
-    else:
-        section("Phase 5: Building truth tables...")
+    section(f"Phase {n()}: Building truth tables...")
     phase_truth(args, run)
 
     report_finish(args, run)
+
+
+def _phase_counter():
+    """ returns a callable yielding 1, 2, 3, ... on each call (for phase labels). """
+    state = {"i": 0}
+    def nxt():
+        state["i"] += 1
+        return state["i"]
+    return nxt
+
+
+def check_required_dbs(args, run):
+    need_gtdb = True
+    need_ncbi_tax = True
+    # assembly summary is only consulted for accessions not in GTDB; we can't
+    # know that until selection, but only user-supplied accessions can ever need
+    # it, so prematurely fetching it up front only when --accessions is given
+    need_assembly_summary = bool(getattr(args, "accessions", None))
+    if need_gtdb:
+        run.gtdb_dir = get_gtdb_data(quiet=True)
+    if need_ncbi_tax:
+        get_ncbi_tax_data(quiet=True)
+    if need_assembly_summary:
+        get_ncbi_assembly_data(quiet=True)
 
 
 # ----------------------------------------------------------------------------
 
 def section(title):
     print(color_text(f"\n  {title}", "yellow"))
+
+
+def section_border():
+    print(color_text("      " + "- " * 34, "yellow"))
 
 
 def warn_all(warnings):
@@ -92,7 +119,8 @@ def setup(args):
 
 def report_gtdb_reading(location):
 
-    report_message("Reading in the GTDB info table...", initial_indent="    ", leading_newline=False)
+    report_message("Reading in the GTDB info table...", color = "none", 
+                   initial_indent="    ", leading_newline=True)
     version_info = []
 
     with open(os.path.join(location, "GTDB-version-info.txt")) as version_info_file:
@@ -109,22 +137,47 @@ def report_gtdb_reading(location):
 
 # ---- selection ----
 
+def _load_gtdb_table(args, run):
+    """ 
+    load the GTDB metadata table once (needed for generative selection and/or
+    GTDB-taxonomy resolution of user accessions). Cached on run. 
+    """
+    if getattr(run, "gtdb_tab", None) is not None:
+        return run.gtdb_tab
+    gtdb_dir = get_gtdb_data(quiet=True)
+    report_gtdb_reading(gtdb_dir)
+    with spinner("", "", indent="        "):
+        run.gtdb_tab = pd.read_csv(
+            os.path.join(gtdb_dir, "GTDB-arc-and-bac-metadata.tsv"),
+            sep="\t", low_memory=False)
+    return run.gtdb_tab
+
+
+def _assembly_info_path():
+    """ path to bit's stored NCBI assembly-info table (taxid source), if set. """
+    base = os.environ.get("NCBI_assembly_data_dir")
+    if not base:
+        return None
+    p = os.path.join(base, "ncbi-assembly-info.tsv")
+    return p if os.path.exists(p) else None
+
+
 def phase_select(args, run):
+
+    # GTDB table is needed if we're selecting generatively OR resolving GTDB
+    # taxonomy for user accessions; load it once when either applies.
+    gtdb_tab = _load_gtdb_table(args, run) if (args.num_genomes or args.accessions) else None
 
     user_df = None
     if args.accessions:
         check_files_are_found([args.accessions])
         user_df = load_user_accessions(args)
+        # resolve GTDB taxonomy for user rows now, so derep exclusion can use it
+        if gtdb_tab is not None:
+            user_df = TAX.fill_gtdb_taxonomy(user_df, gtdb_tab)
 
     generative_df = None
     if args.num_genomes:
-        gtdb_dir = get_gtdb_data(quiet=True)
-        report_gtdb_reading(gtdb_dir)
-        with spinner("", "", indent="        "):
-            gtdb_tab = pd.read_csv(
-                os.path.join(gtdb_dir, "GTDB-arc-and-bac-metadata.tsv"),
-                sep="\t", low_memory=False)
-
         exclude = SEL.user_filled_groups(user_df, args.derep_rank) if user_df is not None else set()
 
         if args.domain == "both":
@@ -146,38 +199,80 @@ def phase_select(args, run):
                     initial_indent="    ", subsequent_indent="    ")
         raise SystemExit(1)
 
+    # resolve both taxonomies on the merged community: GTDB for any unresolved
+    # rows, then NCBI for all rows (tiered taxid sources + one taxonkit pass).
+    ai_path = _assembly_info_path()
+    if _needs_ncbi_assembly_info(merged) and ai_path:
+        report_ncbi_assembly_reading(ai_path)
+        with spinner("", "", indent="        "):
+            merged = TAX.resolve_all(merged, gtdb_tab, ai_path)
+    else:
+        merged = TAX.resolve_all(merged, gtdb_tab, ai_path)
+
     run.merged = merged
-    report_message(f"Selected {len(merged)} genome(s).", "green",
-                initial_indent="    ", subsequent_indent="    ")
+    # report_message(f"Selected {len(merged)} genome(s).", "green",
+    #             initial_indent="    ", subsequent_indent="    ")
     print()
 
     return run
+
+
+def _needs_ncbi_assembly_info(merged):
+    """ 
+    True if any genome lacks GTDB taxonomy after the early GTDB fill, meaning
+    it will fall through to the NCBI assembly-summary (and beyond) for its taxid
+    """
+    if "gtdb_domain" not in merged.columns:
+        return False
+    return bool((merged["gtdb_domain"].astype(str) == "NA").any())
+
+
+def report_ncbi_assembly_reading(assembly_info_path):
+    """ 
+    mirror report_gtdb_reading for the NCBI assembly summary: announce the
+    read-in and, if a retrieved-date is stored alongside it, report it
+    """
+    from datetime import datetime
+    report_message("Reading in the NCBI assembly summary table...", color = "none",
+                   initial_indent="    ", leading_newline=True)
+    date_path = os.path.join(os.path.dirname(assembly_info_path), "date-retrieved.txt")
+    retrieved = None
+    if os.path.exists(date_path):
+        with open(date_path) as fh:
+            line = fh.readline().strip()
+            try:
+                retrieved = datetime.strptime(line, "%Y,%m,%d").strftime("%b %d, %Y")
+            except ValueError:
+                retrieved = line.replace(",", "-")
+    if retrieved:
+        print(f"      Summary table retrieved {retrieved}")
 
 
 def load_user_accessions(args):
     """
     read user accession file. Bare one-per-line, or a TSV whose first column is
     the accession and optional named columns pin rel_abundance / coverage /
-    mutation_rate. NCBI metadata (sizes, taxonomy) is fetched for these
+    mutation_rate. Taxonomy is resolved downstream (resolve_all) and genome sizes
+    are measured from the downloaded FASTAs; no NCBI metadata query is needed.
     """
     first = open(args.accessions).readline()
     has_header = "accession" in first.lower()
     if has_header:
-        udf = pd.read_csv(args.accessions, sep="\t", dtype=str)
-        accs = udf["accession"].tolist()
+        udf_in = pd.read_csv(args.accessions, sep="\t", dtype=str)
+        accs = udf_in["accession"].tolist()
         pins = {a: {} for a in accs}
         for col, key in (("rel_abundance", "pinned_rel_abundance"),
                          ("coverage", "pinned_coverage"),
                          ("mutation_rate", "pinned_mutation_rate")):
-            if col in udf.columns:
-                for a, v in zip(udf["accession"], udf[col]):
+            if col in udf_in.columns:
+                for a, v in zip(udf_in["accession"], udf_in[col]):
                     pins[a][key] = v
     else:
         accs = [l.strip() for l in open(args.accessions) if l.strip()]
         pins = {a: {} for a in accs}
 
-    # fetch NCBI metadata (sizes, source) for these accessions
-    ncbi_tab = fetch_ncbi_metadata_for_accessions(accs)
+    # build normalized rows directly (ranks NA here; filled by resolve_all)
+    ncbi_tab = pd.DataFrame({"accession": accs})
     udf = SEL._normalize_ncbi_rows(ncbi_tab, lineage_lookup=None, user_supplied=True)
 
     # apply pins
@@ -193,29 +288,6 @@ def _num_or_na(v):
         return float(v)
     except (TypeError, ValueError):
         return pd.NA
-
-
-def fetch_ncbi_metadata_for_accessions(accessions):
-    """
-    query NCBI Datasets per-accession
-    Returns a frame with at least: accession, total_sequence_length, source_database.
-    """
-    import subprocess
-    from io import StringIO
-    fields = ["accession", "assmstats-total-sequence-len", "source_database"]
-    summary = subprocess.Popen(
-        ["datasets", "summary", "genome", "accession", *accessions, "--as-json-lines"],
-        stdout=subprocess.PIPE)
-    fmt = subprocess.Popen(
-        ["dataformat", "tsv", "genome", "--fields", ",".join(fields)],
-        stdin=summary.stdout, stdout=subprocess.PIPE)
-    summary.stdout.close()
-    out, _ = fmt.communicate()
-    tab = pd.read_csv(StringIO(out.decode()), sep="\t", dtype=str)
-    tab.columns = ["accession", "total_sequence_length", "source_database"]
-    src_map = {"SOURCE_DATABASE_GENBANK": "genbank", "SOURCE_DATABASE_REFSEQ": "refseq"}
-    tab["source_database"] = tab["source_database"].map(lambda v: src_map.get(v, v))
-    return tab
 
 
 # ---- downloading ----
@@ -277,6 +349,8 @@ def phase_mutate(args, run):
     if args.mutation_mode == "off" and all(v == 0 for v in rates.values()):
         run.mutation_results = {a: {"rate": 0.0} for a in accs}
         run.working_paths = dict(run.genome_paths)
+        # sizes are measured in the abundance phase (parallel, with a bar), since
+        # nothing has read the FASTAs yet and abundance needs the sizes.
     else:
         mut_dir = os.path.join(run.out_dir, "mutated-genomes")
         with tqdm(total=len(accs), desc="    Mutating", ncols=70) as pbar:
@@ -285,22 +359,36 @@ def phase_mutate(args, run):
                 indel_rate=args.indel_rate, seed=args.seed, progress=pbar)
         run.working_paths = {a: run.mutation_results[a]["mutated_fasta"] for a in accs}
 
-    # populate used_genome_size: measured from the fasta reads will come from.
-    # mutation agg already carries the mutated size; otherwise measure the download.
-    used = []
-    for a in accs:
-        mr = run.mutation_results.get(a, {})
-        size = mr.get("genome_size")             # present only when this genome was mutated
-        if size is None:
-            size = measure_fasta_size(run.working_paths.get(a))
-        used.append(size if size else pd.NA)
-    run.merged["used_genome_size"] = used
+        # mutation already read every input FASTA, so both sizes come free from
+        # its aggregated counts (no extra reads): input length -> downloaded,
+        # written length -> used (differ only under indels).
+        run.merged["downloaded_genome_size"] = [
+            _size_or_na(run.mutation_results.get(a, {}).get("input_genome_size")) for a in accs
+        ]
+        run.merged["used_genome_size"] = [
+            _size_or_na(run.mutation_results.get(a, {}).get("genome_size")) for a in accs
+        ]
     return run
+
+
+def _size_or_na(v):
+    return v if (v is not None and not pd.isna(v) and v) else pd.NA
 
 
 # ---- abundance figuring (runs after mutate so coverage uses used_genome_size) ----
 
 def phase_abundance(args, run):
+    # if sizes weren't set during mutation (mutation off), measure them now —
+    # abundance needs them. Parallelized across --jobs with a progress bar.
+    if "used_genome_size" not in run.merged.columns:
+        print()
+        sizes = measure_sizes_parallel(
+            list(run.merged["accession"]), run.working_paths, jobs=args.jobs)
+        run.merged["downloaded_genome_size"] = [
+            _size_or_na(sizes.get(a)) for a in run.merged["accession"]]
+        # no mutation -> used == downloaded
+        run.merged["used_genome_size"] = run.merged["downloaded_genome_size"]
+
     assigned, w = ABD.assign_abundance(
         run.merged, mode=args.abundance_mode, dist=args.abundance_dist,
         sigma=args.sigma, total_reads=args.total_reads, read_length=args.read_length,
@@ -310,6 +398,28 @@ def phase_abundance(args, run):
     run.merged = assigned
     print()
     return run
+
+
+def measure_sizes_parallel(accessions, path_map, jobs=10):
+    """ 
+    get genome size for each accession's FASTA in parallel, with a bar.
+    Returns dict accession -> size (or None on failure)
+    """
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+    sizes = {}
+    with ThreadPoolExecutor(max_workers=min(max(int(jobs), 1), 20)) as pool:
+        futures = {pool.submit(measure_fasta_size, path_map.get(a)): a
+                   for a in accessions}
+        with tqdm(total=len(futures), desc="    Progress",
+                  unit=" genome", ncols=78) as pbar:
+            for fut in as_completed(futures):
+                a = futures[fut]
+                try:
+                    sizes[a] = fut.result()
+                except Exception:
+                    sizes[a] = None
+                pbar.update(1)
+    return sizes
 
 
 # ---- generating reads ----
@@ -336,28 +446,20 @@ def phase_reads(args, run):
 # ---- making truth outputs ----
 
 def phase_truth(args, run):
-    per_genome = TRU.build_per_genome_table(run.merged, run.mutation_results)
-    pg_path = os.path.join(run.out_dir, "truth-per-genome.tsv")
-    per_genome.to_csv(pg_path, sep="\t", index=False)
-
-    per_rank = TRU.build_per_rank_tables(per_genome)
-    rank_dir = os.path.join(run.out_dir, "truth-per-rank")
-    attempt_to_make_dir(rank_dir)
-    for rank, tab in per_rank.items():
-        tab.to_csv(os.path.join(rank_dir, f"truth-{rank}-abundance.tsv"),
-                   sep="\t", index=False)
-
-    run.truth_files = [pg_path, rank_dir]
-
+    fasta2acc = None
     if args.per_read_tsv:
         fasta2acc = {}
         for a, p in run.working_paths.items():
             if p:
                 fasta2acc[p] = a
                 fasta2acc[os.path.basename(p)] = a
-        rt_path = os.path.join(run.out_dir, "truth-per-read.tsv")
-        TRU.build_read_truth(run.read_sources_tsv, fasta2acc, per_genome, rt_path)
-        run.truth_files.append(rt_path)
+
+    run.truth_written = TRU.write_truth_outputs(
+        run.merged, run.mutation_results, run.out_dir,
+        read_sources_tsv=run.read_sources_tsv if args.per_read_tsv else None,
+        fasta_to_accession=fasta2acc,
+        per_read=args.per_read_tsv,
+        attempt_to_make_dir=attempt_to_make_dir)
     print()
 
 
@@ -385,8 +487,8 @@ def report_finish(args, run):
     print(f"      {read_unit} generated:  {reported:,}\n")
 
     print(f"      Reads:                 {reads_line}")
-    if args.per_read_tsv:
-        print(f"      Per-read truth:        {os.path.join(run.out_dir, 'truth-per-read.tsv')}")
-    print(f"      Per-genome truth:      {os.path.join(run.out_dir, 'truth-per-genome.tsv')}")
-    print(f"      Per-rank truth:        {os.path.join(run.out_dir, 'truth-per-rank/')}")
+    gt_root = os.path.join(run.out_dir, "ground-truth")
+    print(f"      Ground truth:          {gt_root}{os.sep}")
+    print(f"                                 gtdb{os.sep}  (GTDB-taxonomy truth tables)")
+    print(f"                                 ncbi{os.sep}  (NCBI-taxonomy truth tables)")
     print("")

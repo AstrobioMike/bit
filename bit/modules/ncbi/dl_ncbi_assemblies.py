@@ -226,7 +226,7 @@ def download_assemblies(run_data):
         else:
             desc_buffer = "      "
             ncols = 70
-        with tqdm(total=len(targets), desc=f"{desc_buffer}Progress", unit="file", ncols=ncols) as pbar:
+        with tqdm(total=len(targets), desc=f"{desc_buffer}Progress", unit=" file", ncols=ncols) as pbar:
             for future in as_completed(futures):
                 dest, error, status = future.result()
                 if status == "failed":

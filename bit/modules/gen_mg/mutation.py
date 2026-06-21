@@ -40,16 +40,23 @@ def mutate_genome(in_fasta, out_fasta, rate, ti_tv_ratio=1.0, indel_rate=0.0,
                   seed=None):
     """
     Mutate every contig in in_fasta at `rate`, writing out_fasta. Returns a dict
-    of aggregated counts across contigs. rate==0 copies sequences unchanged.
+    of aggregated counts across contigs, including:
+      input_genome_size  - summed length of the input contigs (pre-mutation)
+      genome_size        - summed length of the written contigs (post-mutation)
+    These differ only when indels are applied; equal otherwise. in_fasta may be
+    gzip-compressed (.gz). rate==0 copies sequences unchanged.
     Seeding: mutate_seq uses the global `random`; caller seeds once upstream for
     reproducibility across the run.
     """
-    agg = dict(genome_size=0, num_substitutions=0, num_transitions=0,
-               num_transversions=0, num_indels=0, num_insertions=0,
-               num_deletions=0, num_total_changes=0)
+    import gzip
+    agg = dict(input_genome_size=0, genome_size=0, num_substitutions=0,
+               num_transitions=0, num_transversions=0, num_indels=0,
+               num_insertions=0, num_deletions=0, num_total_changes=0)
 
-    with open(in_fasta) as fin, open(out_fasta, "w") as fout:
+    opener = gzip.open if str(in_fasta).endswith(".gz") else open
+    with opener(in_fasta, "rt") as fin, open(out_fasta, "w") as fout:
         for rec in SeqIO.parse(fin, "fasta"):
+            agg["input_genome_size"] += len(rec.seq)
             if rate > 0:
                 (seq, tot, subs, ti, tv, indels, ins, dels) = mutate_seq(
                     rec.seq, "NT", NT_SUBS, rate, ti_tv_ratio, indel_rate)
