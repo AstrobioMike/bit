@@ -1,5 +1,5 @@
-import pandas as pd
-import pytest
+import pandas as pd # type: ignore
+import pytest # type: ignore
 
 from bit.modules.gen_mg import selection as SEL
 from bit.modules.gen_mg import taxonomy as TAX
@@ -201,3 +201,40 @@ def test_resolve_all_no_datasets_calls(gtdb_tab, merged_mixed, tmp_path, monkeyp
     TAX.resolve_all(merged_mixed, gtdb_tab, str(ai),
                     use_datasets_fallback=True, _resolver=resolver)
     assert called["datasets"] is False
+
+
+# ─── present_accessions (suppression screen) ───────────────────────────────
+
+def _write_ai(path, accessions):
+    with open(path, "w") as fh:
+        fh.write("#header\n")
+        for a in accessions:
+            fh.write(a + "\t" + "\t".join(["x"] * 22) + "\n")
+
+
+def test_present_accessions_detects_absence(tmp_path):
+    ai = tmp_path / "ncbi-assembly-info.tsv"
+    _write_ai(ai, ["GCA_000000003.1", "GCA_000000004.1"])   # 002 absent (suppressed)
+    live = TAX.present_accessions(
+        ["GCA_000000002.1", "GCA_000000003.1", "GCA_000000004.1"], str(ai))
+    assert live == {"GCA_000000003.1", "GCA_000000004.1"}
+
+
+def test_present_accessions_matches_gca_gcf_twin(tmp_path):
+    # file has the GenBank (GCA) row; a GCF query must still register present
+    ai = tmp_path / "ncbi-assembly-info.tsv"
+    _write_ai(ai, ["GCA_000005845.2"])
+    live = TAX.present_accessions(["GCF_000005845.2"], str(ai))
+    assert live == {"GCF_000005845.2"}
+
+
+def test_present_accessions_version_tolerant(tmp_path):
+    ai = tmp_path / "ncbi-assembly-info.tsv"
+    _write_ai(ai, ["GCA_000005845.3"])           # newer version in file
+    live = TAX.present_accessions(["GCA_000005845.1"], str(ai))   # older queried
+    assert live == {"GCA_000005845.1"}
+
+
+def test_present_accessions_missing_file():
+    assert TAX.present_accessions(["GCA_000000001.1"], None) == set()
+    assert TAX.present_accessions(["GCA_000000001.1"], "/no/such.tsv") == set()

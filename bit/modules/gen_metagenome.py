@@ -57,7 +57,7 @@ def gen_metagenome(args):
     section(f"Phase {n()}: Generating reads...")
     run = phase_reads(args, run)
 
-    section(f"Phase {n()}: Building output tables...")
+    section(f"Phase {n()}: Generating final output tables...")
     phase_truth(args, run)
 
     report_finish(args, run)
@@ -196,6 +196,77 @@ def _assembly_info_path():
     return p if os.path.exists(p) else None
 
 
+def _select_with_suppression_screen(gtdb_tab, derep_rank, domains, num_genomes, seed,
+                                    user_excluded_groups, assembly_info_path):
+    """
+    Select num_genomes GTDB genomes, screening each pick against the NCBI
+    assembly-summary (absent == suppressed/removed/version-drifted) and backfill-
+    ing replacements until num_genomes live genomes are found or the pool is
+    exhausted. Excludes dead accessions (not their whole group), so at coarse
+    derep ranks a suppressed pick is replaced by a sibling in the same group; at
+    species rank (one representative per group) it degrades to a different group.
+
+    Returns (selected_subframe, warnings).
+    """
+    warnings = []
+    on = derep_rank != "off"
+
+    kept_rows = []                 # list of selected GTDB rows (as 1-row frames)
+    kept_accs = set()              # accessions already kept (for dedup safety)
+    kept_groups = set(user_excluded_groups) if user_excluded_groups else set()
+    dead_accs = set()
+
+    def acc_of(row_frame):
+        return row_frame["ncbi_genbank_assembly_accession"].iloc[0]
+
+    while len(kept_rows) < num_genomes:
+        need = num_genomes - len(kept_rows)
+        excl_groups = kept_groups if on else None
+        sel, sw = SEL._select_gtdb_one_per_rank(
+            gtdb_tab, derep_rank=derep_rank, domains=domains,
+            num_genomes=need, seed=seed,
+            exclude_groups=excl_groups, exclude_accessions=dead_accs or None)
+        # keep only the "available" warnings from the FINAL shortfall; intermediate
+        # iterations' shortfall warnings are misleading, so collect at the end.
+        if len(sel) == 0:
+            break
+
+        # screen this batch
+        accs = list(sel["ncbi_genbank_assembly_accession"])
+        if assembly_info_path:
+            live = TAX.present_accessions(accs, assembly_info_path)
+        else:
+            live = set(accs)       # no screen possible -> assume all live
+
+        added = 0
+        for _, r in sel.iterrows():
+            a = r["ncbi_genbank_assembly_accession"]
+            if a in live and a not in kept_accs:
+                kept_rows.append(r.to_frame().T)
+                kept_accs.add(a)
+                if on:
+                    kept_groups.add(r[derep_rank])
+                added += 1
+            elif a not in live:
+                dead_accs.add(a)
+        if added == 0:
+            break                  # nothing new this round -> pool exhausted
+
+    import pandas as _pd # type: ignore
+    selected = (_pd.concat(kept_rows, ignore_index=True)
+                if kept_rows else gtdb_tab.iloc[0:0].copy())
+
+    if len(selected) < num_genomes:
+        n_dead = len(dead_accs)
+        warnings.append(
+            f"Requested {num_genomes} genomes; returning {len(selected)} after "
+            f"screening out {n_dead} suppressed/unavailable accession(s) and "
+            f"exhausting available candidates."
+        )
+
+    return selected, warnings
+
+
 def phase_select(args, run):
 
     generative = bool(args.num_genomes)
@@ -232,9 +303,12 @@ def phase_select(args, run):
             else:
                 alias = {"bacteria": "Bacteria", "archaea": "Archaea"}
                 domains = [alias[args.domain]]
-            sel, sw = SEL._select_gtdb_one_per_rank(
+
+            sel, sw = _select_with_suppression_screen(
                 gtdb_tab, derep_rank=args.derep_rank, domains=domains,
-                num_genomes=args.num_genomes, seed=args.seed, exclude_groups=exclude)
+                num_genomes=args.num_genomes, seed=args.seed,
+                user_excluded_groups=exclude,
+                assembly_info_path=_assembly_info_path())
             warnings += sw
             generative_df = SEL._normalize_gtdb_rows(sel)
 
@@ -344,8 +418,77 @@ def phase_download(args, run):
         raise SystemExit(1)
 
     run.working_paths = dict(run.genome_paths)
+
+    # rename dl-ncbi-assemblies' info table for consistency with the gtdb summary
+    _rename_if_exists(
+        os.path.join(run.genomes_dir, "wanted-ncbi-accessions-info.tsv"),
+        os.path.join(run.genomes_dir, "selected-genomes-ncbi-info.tsv"))
+
+    # write the GTDB info summary for the final (downloaded) community
+    write_gtdb_summary(run)
+
     print()
     return run
+
+
+def _rename_if_exists(src, dst):
+    if os.path.exists(src):
+        os.replace(src, dst)
+
+
+# columns for the per-genome GTDB info summary written to genomes/
+GTDB_SUMMARY_RANKS = ["domain", "phylum", "class", "order", "family", "genus", "species"]
+GTDB_SUMMARY_EXTRA = ["ambiguous_bases", "checkm2_completeness", "checkm2_contamination",
+                      "coding_bases", "coding_density", "contig_count", "gc_count",
+                      "gc_percentage", "genome_size"]
+
+
+def write_gtdb_summary(run):
+    """
+    Write genomes/selected-genomes-gtdb-info.tsv: GTDB taxonomy + quality/
+    composition columns for each genome in the final community, keyed by
+    run.merged['accession']. Genomes not in the GTDB table (e.g. user-supplied
+    accessions absent from GTDB) get NA for all GTDB columns. checkm2 columns are
+    emitted strictly (NA if the source lacks checkm2_*, never back-filled from
+    an older checkm_* column).
+    """
+    gtdb_tab = getattr(run, "gtdb_tab", None)
+    out_cols = ["accession"] + GTDB_SUMMARY_RANKS + GTDB_SUMMARY_EXTRA
+    accs = list(run.merged["accession"])
+
+    # build a lookup from the GTDB table keyed by numeric accession core so user
+    # GCF/GCA accessions match GTDB's GCA-form rows.
+    lookup = {}
+    if gtdb_tab is not None and "ncbi_genbank_assembly_accession" in gtdb_tab.columns:
+        cols_present = [c for c in (GTDB_SUMMARY_RANKS + GTDB_SUMMARY_EXTRA)
+                        if c in gtdb_tab.columns]
+        gcol = gtdb_tab["ncbi_genbank_assembly_accession"].map(_acc_digits_core)
+        for key, row in zip(gcol.values, gtdb_tab[cols_present].to_dict("records")):
+            lookup.setdefault(key, row)
+
+    rows = []
+    for a in accs:
+        rec = {"accession": a}
+        src = lookup.get(_acc_digits_core(a), {})
+        for c in GTDB_SUMMARY_RANKS + GTDB_SUMMARY_EXTRA:
+            rec[c] = src.get(c, pd.NA)
+        rows.append(rec)
+
+    out_path = os.path.join(run.genomes_dir, "selected-genomes-gtdb-info.tsv")
+    pd.DataFrame(rows, columns=out_cols).to_csv(out_path, sep="\t", index=False)
+    run.gtdb_summary_path = out_path
+
+
+def _acc_digits_core(acc):
+    """ numeric core of an accession (drop RS_/GB_ prefix, GCA_/GCF_ prefix, and
+    version), so GCA/GCF twins and version variants collapse to one key. """
+    s = str(acc)
+    if s.startswith(("RS_", "GB_")):
+        s = s[3:]
+    s = s.split(".")[0]
+    if "_" in s:
+        s = s.split("_", 1)[1]
+    return s
 
 
 def find_downloaded_fasta(genomes_dir, accession):

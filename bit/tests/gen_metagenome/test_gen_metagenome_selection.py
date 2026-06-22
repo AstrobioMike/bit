@@ -1,5 +1,5 @@
-import pandas as pd
-import pytest
+import pandas as pd # type: ignore
+import pytest # type: ignore
 
 from bit.modules.gen_mg.selection import (
     _select_gtdb_one_per_rank,
@@ -15,13 +15,15 @@ from bit.modules.gen_mg.selection import (
 
 # ─── fixtures ──────────────────────────────────────────────────────────────
 
-def gtdb_row(acc, dom, gen, sp, rep, refseq="", size=4_000_000):
+def gtdb_row(acc, dom, gen, sp, rep, refseq="", size=4_000_000,
+             completeness=99.0, contamination=0.5):
     return {
         "ncbi_genbank_assembly_accession": acc,
         "domain": dom, "phylum": "P", "class": "C", "order": "O",
         "family": "F", "genus": gen, "species": sp,
         "gtdb_representative": rep, "ncbi_refseq_category": refseq,
         "genome_size": size,
+        "checkm2_completeness": completeness, "checkm2_contamination": contamination,
     }
 
 
@@ -96,9 +98,52 @@ def test_absent_domain_warns_and_empty(gtdb_tab):
     assert any("Eukaryota" in w for w in warnings)
 
 
-def test_derep_off_returns_all_representatives(gtdb_tab):
+def test_derep_off_uses_full_pool_including_non_representatives(gtdb_tab):
+    # off-mode now draws from the FULL table (all genomes), so the non-rep
+    # GCF_006.1 is eligible — multiple strains per species become possible.
     sel, _ = _select_gtdb_one_per_rank(gtdb_tab, derep_rank="off", seed=1)
-    assert len(sel) == 5      # all reps, no derep
+    assert len(sel) == 6      # all genomes, no derep, all pass the quality floor
+    assert "GCF_006.1" in set(sel["ncbi_genbank_assembly_accession"])
+
+
+def test_derep_off_applies_quality_floor():
+    # one genome below completeness, one above contamination -> both excluded
+    tab = pd.DataFrame([
+        gtdb_row("GCF_good.1", "Bacteria", "G", "sp1", "t", completeness=95.0, contamination=1.0),
+        gtdb_row("GCF_lowcomp.1", "Bacteria", "G", "sp2", "f", completeness=65.0, contamination=1.0),
+        gtdb_row("GCF_highcont.1", "Bacteria", "G", "sp3", "f", completeness=95.0, contamination=12.0),
+        gtdb_row("GCF_edge.1", "Bacteria", "G", "sp4", "f", completeness=70.0, contamination=9.99),
+    ])
+    sel, _ = _select_gtdb_one_per_rank(tab, derep_rank="off", seed=1)
+    accs = set(sel["ncbi_genbank_assembly_accession"])
+    assert "GCF_good.1" in accs
+    assert "GCF_edge.1" in accs           # exactly 70 / just under 10 -> kept
+    assert "GCF_lowcomp.1" not in accs    # below 70 completeness
+    assert "GCF_highcont.1" not in accs   # >= 10 contamination
+
+
+def test_derep_mode_still_representatives_only(gtdb_tab):
+    # with a derep rank set, the pool is still representatives only (non-rep
+    # GCF_006.1 excluded), unchanged from before.
+    sel, _ = _select_gtdb_one_per_rank(gtdb_tab, derep_rank="genus", seed=1)
+    assert "GCF_006.1" not in set(sel["ncbi_genbank_assembly_accession"])
+
+
+def test_exclude_accessions_skips_dead_but_allows_group_sibling(gtdb_tab):
+    # Genus_A has two representatives (GCF_001, GCF_002). Excluding GCF_001 by
+    # accession must still allow Genus_A via its sibling GCF_002 at genus derep.
+    sel, _ = _select_gtdb_one_per_rank(
+        gtdb_tab, derep_rank="genus", seed=1, exclude_accessions=["GCF_001.1"])
+    accs = set(sel["ncbi_genbank_assembly_accession"])
+    assert "GCF_001.1" not in accs
+    assert "Genus_A" in set(sel["genus"])     # group preserved via sibling
+    assert accs & {"GCF_002.1"}               # the sibling was used
+
+
+def test_exclude_accessions_version_tolerant(gtdb_tab):
+    # excluding a different version still matches (version-stripped compare)
+    sel, _ = _select_gtdb_one_per_rank(
+        gtdb_tab, derep_rank="off", seed=1, exclude_accessions=["GCF_006.5"])
     assert "GCF_006.1" not in set(sel["ncbi_genbank_assembly_accession"])
 
 

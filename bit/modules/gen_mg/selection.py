@@ -18,7 +18,7 @@ is initialized to 'NA' and filled later by the taxonomy-resolution layer
 
 Pure logic: no printing, no sys.exit, no file writes. Returns (df, warnings).
 """
-import pandas as pd
+import pandas as pd # type: ignore
 
 RANKS = ["domain", "phylum", "class", "order", "family", "genus", "species"]
 GTDB_RANKS = [f"gtdb_{r}" for r in RANKS]
@@ -34,14 +34,59 @@ _PIN_COLS = ["pinned_rel_abundance", "pinned_coverage", "pinned_mutation_rate"]
 
 # ---------- GTDB selection (wraps the tested one-per-rank selector) ----------
 
+def _resolve_checkm_cols(tab):
+    """ return (completeness_col, contamination_col), preferring checkm2_* (GTDB
+    R214+) and falling back to checkm_* (<=R207). None if neither present. """
+    if "checkm2_completeness" in tab.columns and "checkm2_contamination" in tab.columns:
+        return "checkm2_completeness", "checkm2_contamination"
+    if "checkm_completeness" in tab.columns and "checkm_contamination" in tab.columns:
+        return "checkm_completeness", "checkm_contamination"
+    return None, None
+
+
+def _acc_norm(acc):
+    """ canonical accession key: strip GTDB RS_/GB_ prefix and version suffix. """
+    s = str(acc)
+    if s.startswith(("RS_", "GB_")):
+        s = s[3:]
+    return s.split(".")[0]
+
+
+# quality floor applied only when derep is off (the representative pool is already
+# quality-curated; the full pool is not). Not user-tunable by design.
+OFF_MODE_MIN_COMPLETENESS = 70.0
+OFF_MODE_MAX_CONTAMINATION = 10.0
+
+
 def _select_gtdb_one_per_rank(gtdb_tab, derep_rank="species", domains=None,
-                              num_genomes=None, seed=None, exclude_groups=None):
-    """ one GTDB genome per unique value at derep_rank; strict one-per-group. """
+                              num_genomes=None, seed=None, exclude_groups=None,
+                              exclude_accessions=None):
+    """ one GTDB genome per unique value at derep_rank; strict one-per-group.
+
+    When derep_rank == 'off', dereplication is fully disabled: the pool is the
+    FULL GTDB table (all genomes, so multiple strains per species are possible),
+    subject only to a fixed quality floor. Otherwise the pool is GTDB species
+    representatives, the right basis for one-per-group selection.
+
+    exclude_accessions: accessions (any GCA/GCF/prefixed/versioned form) never to
+    select — used by the suppression backfill to skip known-dead genomes while
+    still allowing other members of the same derep group.
+    """
     warnings = []
     if derep_rank != "off" and derep_rank not in RANKS:
         raise ValueError(f"derep_rank must be 'off' or one of {RANKS}, got '{derep_rank}'")
 
-    tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
+    if derep_rank == "off":
+        # full pool (not just representatives) + quality floor
+        tab = gtdb_tab
+        comp_col, cont_col = _resolve_checkm_cols(tab)
+        if comp_col:
+            comp = pd.to_numeric(tab[comp_col], errors="coerce")
+            cont = pd.to_numeric(tab[cont_col], errors="coerce")
+            tab = tab[(comp >= OFF_MODE_MIN_COMPLETENESS) &
+                      (cont < OFF_MODE_MAX_CONTAMINATION)]
+    else:
+        tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
 
     if domains:
         wanted = {d.lower(): d for d in domains}
@@ -54,6 +99,16 @@ def _select_gtdb_one_per_rank(gtdb_tab, derep_rank="species", domains=None,
         return tab.iloc[0:0].copy(), warnings
 
     tab = tab.copy()
+
+    # exclude specific known-dead accessions (suppression backfill); version- and
+    # prefix-tolerant match on the GCA accession column.
+    if exclude_accessions:
+        dead = {_acc_norm(a) for a in exclude_accessions}
+        keep = ~tab["ncbi_genbank_assembly_accession"].map(_acc_norm).isin(dead)
+        tab = tab[keep]
+        if len(tab) == 0:
+            return tab.iloc[0:0].copy(), warnings
+
     tab["_is_refseq_ref"] = (tab["ncbi_refseq_category"] == "reference genome").astype(int)
     tab = tab.sample(frac=1.0, random_state=seed)
     tab = tab.sort_values("_is_refseq_ref", ascending=False, kind="stable")
@@ -61,7 +116,7 @@ def _select_gtdb_one_per_rank(gtdb_tab, derep_rank="species", domains=None,
     if derep_rank == "off":
         selected = tab
     else:
-        # exclude groups already filled by user-supplied accessions
+        # exclude groups already filled (by user accessions or already-kept picks)
         if exclude_groups:
             tab = tab[~tab[derep_rank].isin(exclude_groups)]
         selected = tab.groupby(derep_rank, sort=False, as_index=False).head(1)
@@ -78,7 +133,7 @@ def _select_gtdb_one_per_rank(gtdb_tab, derep_rank="species", domains=None,
         )
     elif num_genomes is not None and num_avail < num_genomes and derep_rank == "off":
         warnings.append(
-            f"Requested {num_genomes} genomes, but only {num_avail} representative genome(s) "
+            f"Requested {num_genomes} genomes, but only {num_avail} genome(s) "
             f"available in this slice. Returning {num_avail}."
         )
 

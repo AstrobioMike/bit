@@ -26,7 +26,7 @@ import subprocess
 import tempfile
 from io import StringIO
 
-import pandas as pd
+import pandas as pd # type: ignore
 
 from bit.modules.gen_mg.selection import RANKS, GTDB_RANKS, NCBI_RANKS
 from bit.modules.ncbi.get_lineage_from_taxids import get_lineage_from_taxids
@@ -155,6 +155,45 @@ def assembly_info_taxid_map(accessions, assembly_info_path):
             if root in wanted and fields[5].strip():
                 out[root] = fields[5].strip()
     return out
+
+
+def _acc_digits(acc):
+    """ numeric core of an assembly accession, ignoring GCA/GCF prefix and
+    version, so GCA_000001.2 and GCF_000001.1 share the key '000001'. GCA/GCF
+    twins share their numeric portion. """
+    s = str(acc)
+    if s.startswith(("RS_", "GB_")):
+        s = s[3:]
+    s = s.split(".")[0]              # drop version
+    if "_" in s:
+        s = s.split("_", 1)[1]       # drop GCA_/GCF_ prefix -> digits
+    return s
+
+
+def present_accessions(accessions, assembly_info_path):
+    """ subset of `accessions` whose assembly is present in the NCBI
+    assembly-summary file. NCBI drops suppressed/removed assemblies from that
+    file entirely, so absence == suppressed/removed/version-drifted. Returns a
+    set of the ORIGINAL accession strings that are present (live).
+
+    The file concatenates GenBank (GCA) and RefSeq (GCF) summaries as separate
+    rows; matching is on the numeric core so a GCF pick is 'present' if its GCA
+    twin is in the file (and vice versa).
+    """
+    if not assembly_info_path or not os.path.exists(assembly_info_path):
+        return set()
+    wanted = {}                       # digits -> original accession
+    for a in accessions:
+        wanted.setdefault(_acc_digits(a), a)
+    live = set()
+    with open(assembly_info_path) as fh:
+        for line in fh:
+            if line.startswith("#") or not line.strip():
+                continue
+            d = _acc_digits(line.split("\t", 1)[0])
+            if d in wanted:
+                live.add(d)
+    return {orig for d, orig in wanted.items() if d in live}
 
 
 def datasets_taxid_map(accessions):
