@@ -1,6 +1,7 @@
 import sys
 import os
 import tarfile
+from datetime import date
 from bit.modules.general import (wprint, color_text, report_message,
                                  notify_premature_exit, download_with_tqdm)
 
@@ -21,11 +22,13 @@ def check_if_data_present(location):
 
     names_path = os.path.join(location, "names.dmp")
     nodes_path = os.path.join(location, "nodes.dmp")
+    date_retrieved_path = os.path.join(location, "date-retrieved.txt")
 
     def is_nonempty_file(p):
         return os.path.isfile(p) and os.path.getsize(p) > 0
 
-    if not (is_nonempty_file(names_path) and is_nonempty_file(nodes_path)):
+    if not (is_nonempty_file(names_path) and is_nonempty_file(nodes_path)
+            and is_nonempty_file(date_retrieved_path)):
 
         # clean up any partial or empty files so the helper can redownload cleanly
         for p in (names_path, nodes_path):
@@ -54,6 +57,13 @@ def download_ncbi_tax_data(location):
         tarball.extractall(location)
 
     os.remove(taxdump_path)
+
+    # record the retrieval date (YYYY,MM,DD) for provenance, mirroring the
+    # NCBI assembly-data and GTDB-data conventions
+    date_retrieved = str(date.today()).replace("-", ",")
+    date_retrieved_path = os.path.join(location, "date-retrieved.txt")
+    with open(date_retrieved_path, "w") as outfile:
+        outfile.write(date_retrieved + "\n")
 
 
 def get_ncbi_tax_data(force_update=False, quiet = False):

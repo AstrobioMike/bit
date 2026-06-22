@@ -38,6 +38,35 @@ def _reads_for_coverage(coverage, genome_size, read_length, read_type, fragment_
     return round(coverage * genome_size / read_length)
 
 
+def _apportion_exact(rel, total_reads, paired=False):
+    """
+    Distribute total_reads across genomes in proportion to `rel` so the per-genome
+    counts sum EXACTLY to total_reads (largest-remainder / Hamilton method), rather
+    than rounding each independently (which drifts off the target).
+
+    For paired-end, counts must be even (reads come in pairs), so apportionment is
+    done in fragment units (total_reads // 2) and then doubled — the per-genome
+    counts stay even and still sum to total_reads (assuming total_reads is even,
+    which gen_reads guarantees for paired mode).
+    """
+    rel = np.asarray(rel, dtype=float)
+    unit = 2 if paired else 1
+    target = int(total_reads) // unit              # apportion in fragments (paired) or reads
+
+    exact = rel * target
+    floor = np.floor(exact).astype(int)
+    leftover = target - int(floor.sum())           # how many units the floors left unallocated
+
+    if leftover > 0:
+        # hand the leftover units to the genomes with the largest fractional parts
+        frac = exact - floor
+        order = np.argsort(-frac)                  # largest remainder first
+        for i in order[:leftover]:
+            floor[i] += 1
+
+    return floor * unit
+
+
 def _coverage_from_reads(reads, genome_size, read_length):
     """ realized fold-coverage from a read count (bases sequenced / genome size). """
     if pd.isna(genome_size) or genome_size in (0, None):
@@ -86,7 +115,7 @@ def assign_abundance(df, mode="relative", dist="lognormal", sigma=1.0,
         rel = rel / rel.sum()
         out["assigned_rel_abundance"] = rel
 
-        reads = np.rint(rel * total_reads).astype(int)
+        reads = _apportion_exact(rel, total_reads, paired=(read_type == "paired-end"))
         out["assigned_reads"] = reads
         out["assigned_coverage"] = [
             _coverage_from_reads(r, s, read_length) for r, s in zip(reads, sizes)

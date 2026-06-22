@@ -16,7 +16,8 @@ from types import SimpleNamespace
 import pandas as pd
 from tqdm import tqdm  # type: ignore
 from bit.modules.general import (color_text, report_message,
-                                 attempt_to_make_dir, check_files_are_found, spinner)
+                                 attempt_to_make_dir, check_files_are_found, spinner,
+                                 log_command_run)
 from bit.modules.gtdb.get_gtdb_data import get_gtdb_data
 from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
 from bit.modules.ncbi.get_ncbi_tax_data import get_ncbi_tax_data
@@ -82,6 +83,8 @@ def check_required_dbs(args, run):
         run.gtdb_dir = get_gtdb_data(quiet=True)
     if need_ncbi_tax:
         get_ncbi_tax_data(quiet=True)
+        log_data_source(run, "NCBI taxonomy (taxdump) retrieved",
+                        _read_retrieved_date(os.environ.get("TAXONKIT_DB")))
     if need_assembly_summary:
         get_ncbi_assembly_data(quiet=True)
 
@@ -106,9 +109,16 @@ def setup(args):
         attempt_to_make_dir(args.output_dir)
     genomes_dir = os.path.join(args.output_dir, "genomes")
     attempt_to_make_dir(genomes_dir)
+
+    # start the runlog: bit version + the rendered command (matches other subcommands)
+    log_file = os.path.join(args.output_dir, "runlog.txt")
+    log_command_run(getattr(args, "full_cmd_executed", "(command not captured)"),
+                    args.output_dir, log_file)
+
     return SimpleNamespace(
         out_dir=args.output_dir,
         genomes_dir=genomes_dir,
+        log_file=log_file,
         merged=None,
         genome_paths={},      # accession -> downloaded fasta path
         working_paths={},     # accession -> fasta to read from (mutated if applicable)
@@ -117,22 +127,53 @@ def setup(args):
         reads_prefix=os.path.join(args.output_dir, args.output_prefix),
     )
 
-def report_gtdb_reading(location):
 
-    report_message("Reading in the GTDB info table...", color = "none", 
-                   initial_indent="    ", leading_newline=True)
+def log_data_source(run, label, detail):
+    """ 
+    append a reference-data provenance line to the runlog (e.g. GTDB version,
+    NCBI assembly-summary retrieval date, NCBI taxdump date)
+    """
+    log_file = getattr(run, "log_file", None)
+    if not log_file:
+        return
+    with open(log_file, "a") as fh:
+        fh.write(f"{label}: {detail}\n")
+
+
+def _read_retrieved_date(data_dir):
+    """
+    read a date-retrieved.txt (stored YYYY,MM,DD) from a data dir and return
+    it formatted like 'Jun 20, 2026'. Returns '(date unknown)' if absent
+    """
+    from datetime import datetime
+    if not data_dir:
+        return "(date unknown)"
+    path = os.path.join(data_dir, "date-retrieved.txt")
+    if not os.path.exists(path):
+        return "(date unknown)"
+    with open(path) as fh:
+        line = fh.readline().strip()
+    if not line:
+        return "(date unknown)"
+    try:
+        return datetime.strptime(line, "%Y,%m,%d").strftime("%b %d, %Y")
+    except ValueError:
+        return line.replace(",", "-")
+
+def _read_gtdb_version(location):
+    """ 
+    read GTDB version + release date from the version-info file (no printing;
+    the value goes to the runlog and the console shows only a spinner)
+    """
     version_info = []
-
     with open(os.path.join(location, "GTDB-version-info.txt")) as version_info_file:
         for line in version_info_file:
             line = line.strip()
             if line != "":
                 version_info.append(line)
-
     gtdb_version = version_info[0]
     gtdb_release_date = version_info[1]
-
-    print("      Using GTDB " + gtdb_version + ": " + gtdb_release_date)
+    return gtdb_version, gtdb_release_date
 
 
 # ---- selection ----
@@ -140,16 +181,18 @@ def report_gtdb_reading(location):
 def _load_gtdb_table(args, run):
     """ 
     load the GTDB metadata table once (needed for generative selection and/or
-    GTDB-taxonomy resolution of user accessions). Cached on run. 
+    GTDB-taxonomy resolution of user accessions). Cached on run. Silent — the
+    caller wraps this in an appropriately-labeled spinner. GTDB version is
+    recorded to the runlog here
     """
     if getattr(run, "gtdb_tab", None) is not None:
         return run.gtdb_tab
     gtdb_dir = get_gtdb_data(quiet=True)
-    report_gtdb_reading(gtdb_dir)
-    with spinner("", "", indent="        "):
-        run.gtdb_tab = pd.read_csv(
-            os.path.join(gtdb_dir, "GTDB-arc-and-bac-metadata.tsv"),
-            sep="\t", low_memory=False)
+    gtdb_version, gtdb_release_date = _read_gtdb_version(gtdb_dir)
+    log_data_source(run, "GTDB version", f"{gtdb_version} ({gtdb_release_date})")
+    run.gtdb_tab = pd.read_csv(
+        os.path.join(gtdb_dir, "GTDB-arc-and-bac-metadata.tsv"),
+        sep="\t", low_memory=False)
     return run.gtdb_tab
 
 
@@ -164,54 +207,72 @@ def _assembly_info_path():
 
 def phase_select(args, run):
 
-    # GTDB table is needed if we're selecting generatively OR resolving GTDB
-    # taxonomy for user accessions; load it once when either applies.
-    gtdb_tab = _load_gtdb_table(args, run) if (args.num_genomes or args.accessions) else None
+    generative = bool(args.num_genomes)
+
+    # GTDB table is needed if selecting generatively OR resolving GTDB taxonomy
+    # for user accessions. In generative mode the load is the "pool" of genomes
+    # to pick from and gets its own spinner; in accessions-only mode it's loaded
+    # silently as part of taxonomy resolution (no pool, no selection step).
+    gtdb_tab = None
+    if generative:
+        with spinner("Loading pool of potential genomes...", "Loading pool of potential genomes...", indent="    "):
+            gtdb_tab = _load_gtdb_table(args, run)
 
     user_df = None
     if args.accessions:
         check_files_are_found([args.accessions])
         user_df = load_user_accessions(args)
-        # resolve GTDB taxonomy for user rows now, so derep exclusion can use it
-        if gtdb_tab is not None:
-            user_df = TAX.fill_gtdb_taxonomy(user_df, gtdb_tab)
 
-    generative_df = None
-    if args.num_genomes:
-        exclude = SEL.user_filled_groups(user_df, args.derep_rank) if user_df is not None else set()
+    if generative:
+        # selection (+ user-accession GTDB fill + merge) under one spinner;
+        # warnings are collected and printed AFTER the checkmark so they don't
+        # collide with the spinner's line redraw.
+        warnings = []
+        with spinner("Selecting genomes...", "Selecting genomes...", indent="    "):
+            if user_df is not None:
+                # resolve GTDB taxonomy for user rows so derep exclusion can use it
+                user_df = TAX.fill_gtdb_taxonomy(user_df, gtdb_tab)
+            exclude = SEL.user_filled_groups(user_df, args.derep_rank) if user_df is not None else set()
 
-        if args.domain == "both":
-            domains = None
-        else:
-            alias = {"bacteria": "Bacteria", "archaea": "Archaea"}
-            domains = [alias[args.domain]]
-        sel, sw = SEL._select_gtdb_one_per_rank(
-            gtdb_tab, derep_rank=args.derep_rank, domains=domains,
-            num_genomes=args.num_genomes, seed=args.seed, exclude_groups=exclude)
-        warn_all(sw)
-        generative_df = SEL._normalize_gtdb_rows(sel)
+            if args.domain == "both":
+                domains = None
+            else:
+                alias = {"bacteria": "Bacteria", "archaea": "Archaea"}
+                domains = [alias[args.domain]]
+            sel, sw = SEL._select_gtdb_one_per_rank(
+                gtdb_tab, derep_rank=args.derep_rank, domains=domains,
+                num_genomes=args.num_genomes, seed=args.seed, exclude_groups=exclude)
+            warnings += sw
+            generative_df = SEL._normalize_gtdb_rows(sel)
 
-    merged, mw = SEL.merge_sources(generative_df, user_df)
-    warn_all(mw)
+            merged, mw = SEL.merge_sources(generative_df, user_df)
+            warnings += mw
+        warn_all(warnings)
+    else:
+        # accessions-only: no pool, no selection — just the user's genomes
+        merged, mw = SEL.merge_sources(None, user_df)
+        warn_all(mw)
 
     if len(merged) == 0:
         report_message("No genomes selected; nothing to do.", "red",
                     initial_indent="    ", subsequent_indent="    ")
         raise SystemExit(1)
 
-    # resolve both taxonomies on the merged community: GTDB for any unresolved
-    # rows, then NCBI for all rows (tiered taxid sources + one taxonkit pass).
+    # resolve both taxonomies. In accessions-only mode the GTDB table hasn't been
+    # loaded yet, so it loads silently inside this spinner (it's in service of
+    # taxonomy resolution here, not pooling). version/date provenance -> runlog.
     ai_path = _assembly_info_path()
     if _needs_ncbi_assembly_info(merged) and ai_path:
-        report_ncbi_assembly_reading(ai_path)
-        with spinner("", "", indent="        "):
-            merged = TAX.resolve_all(merged, gtdb_tab, ai_path)
-    else:
+        log_data_source(run, "NCBI assembly summary retrieved",
+                        _read_retrieved_date(os.path.dirname(ai_path)))
+    with spinner("Resolving taxonomy...", "Resolving taxonomy...", indent="    "):
+        if gtdb_tab is None:
+            gtdb_tab = _load_gtdb_table(args, run)
+            if user_df is not None:
+                merged = TAX.fill_gtdb_taxonomy(merged, gtdb_tab)
         merged = TAX.resolve_all(merged, gtdb_tab, ai_path)
 
     run.merged = merged
-    # report_message(f"Selected {len(merged)} genome(s).", "green",
-    #             initial_indent="    ", subsequent_indent="    ")
     print()
 
     return run
@@ -225,27 +286,6 @@ def _needs_ncbi_assembly_info(merged):
     if "gtdb_domain" not in merged.columns:
         return False
     return bool((merged["gtdb_domain"].astype(str) == "NA").any())
-
-
-def report_ncbi_assembly_reading(assembly_info_path):
-    """ 
-    mirror report_gtdb_reading for the NCBI assembly summary: announce the
-    read-in and, if a retrieved-date is stored alongside it, report it
-    """
-    from datetime import datetime
-    report_message("Reading in the NCBI assembly summary table...", color = "none",
-                   initial_indent="    ", leading_newline=True)
-    date_path = os.path.join(os.path.dirname(assembly_info_path), "date-retrieved.txt")
-    retrieved = None
-    if os.path.exists(date_path):
-        with open(date_path) as fh:
-            line = fh.readline().strip()
-            try:
-                retrieved = datetime.strptime(line, "%Y,%m,%d").strftime("%b %d, %Y")
-            except ValueError:
-                retrieved = line.replace(",", "-")
-    if retrieved:
-        print(f"      Summary table retrieved {retrieved}")
 
 
 def load_user_accessions(args):

@@ -7,6 +7,7 @@ from bit.modules.gen_mg.abundance import (
     write_coverage_tsv,
     _reads_for_coverage,
     _coverage_from_reads,
+    _apportion_exact,
 )
 
 
@@ -67,6 +68,46 @@ def test_relative_ignores_median_coverage():
     o2, _ = assign_abundance(base([4_000_000] * 5), mode="relative", dist="even",
                              total_reads=10_000, median_coverage=999.0, seed=3)
     assert (o1["assigned_reads"].values == o2["assigned_reads"].values).all()
+
+
+# ─── exact total reads (relative mode) ─────────────────────────────────────
+# independent per-genome rounding used to drift off the requested total (e.g.
+# 10,000,000 -> 9,999,998); largest-remainder apportionment must hit it exactly.
+
+def test_relative_exact_total_uneven_sizes_paired():
+    # uneven genome sizes => uneven per-genome reads => the case that used to drift
+    out, _ = assign_abundance(base([6_000_000, 4_100_000, 2_300_000, 999_000, 5_555_555]),
+                              mode="relative", dist="even", total_reads=10_000_000,
+                              read_type="paired-end", seed=1)
+    assert out["assigned_reads"].sum() == 10_000_000
+    # paired => every per-genome count must be even (reads come in pairs)
+    assert (out["assigned_reads"].values % 2 == 0).all()
+
+
+def test_relative_exact_total_lognormal_many_genomes_paired():
+    out, _ = assign_abundance(base([4_000_000] * 137), mode="relative",
+                              dist="lognormal", sigma=1.5, total_reads=10_000_000,
+                              read_type="paired-end", seed=4)
+    assert out["assigned_reads"].sum() == 10_000_000
+    assert (out["assigned_reads"].values % 2 == 0).all()
+
+
+def test_relative_exact_total_single_end_odd_total():
+    # single-end: no even constraint, exact odd totals must be preserved
+    out, _ = assign_abundance(base([6_000_000, 4_100_000, 2_300_000]),
+                              mode="relative", dist="even", total_reads=9_999_999,
+                              read_type="single-end", seed=1)
+    assert out["assigned_reads"].sum() == 9_999_999
+
+
+def test_apportion_exact_helper():
+    rng = np.random.default_rng(0)
+    rel = rng.dirichlet(np.ones(50))
+    paired = _apportion_exact(rel, 10_000_000, paired=True)
+    assert paired.sum() == 10_000_000
+    assert (paired % 2 == 0).all()
+    single = _apportion_exact(rel, 9_999_999, paired=False)
+    assert single.sum() == 9_999_999
 
 
 # ─── coverage mode ─────────────────────────────────────────────────────────

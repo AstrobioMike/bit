@@ -21,9 +21,10 @@ def test_check_tax_location_var_is_set_exits_if_missing(monkeypatch):
         check_tax_location_var_is_set()
 
 
-def test_check_if_data_present_both_files_nonempty(tmp_path):
+def test_check_if_data_present_three_files_nonempty(tmp_path):
     (tmp_path / "names.dmp").write_text("data")
     (tmp_path / "nodes.dmp").write_text("data")
+    (tmp_path / "date-retrieved.txt").write_text("data")
     assert check_if_data_present(str(tmp_path)) is True
 
 
@@ -85,6 +86,7 @@ def test_get_ncbi_tax_data_already_present_not_quiet(tmp_path, capsys, monkeypat
     monkeypatch.setenv("TAXONKIT_DB", str(tmp_path))
     (tmp_path / "names.dmp").write_text("data")
     (tmp_path / "nodes.dmp").write_text("data")
+    (tmp_path / "date-retrieved.txt").write_text("data")
     with patch("bit.modules.ncbi.get_ncbi_tax_data.download_ncbi_tax_data") as mock_dl:
         get_ncbi_tax_data(force_update=False, quiet=False)
     mock_dl.assert_not_called()
@@ -94,6 +96,7 @@ def test_get_ncbi_tax_data_already_present_quiet(tmp_path, monkeypatch):
     monkeypatch.setenv("TAXONKIT_DB", str(tmp_path))
     (tmp_path / "names.dmp").write_text("data")
     (tmp_path / "nodes.dmp").write_text("data")
+    (tmp_path / "date-retrieved.txt").write_text("data")
     with patch("bit.modules.ncbi.get_ncbi_tax_data.download_ncbi_tax_data") as mock_dl:
         get_ncbi_tax_data(force_update=False, quiet=True)
     mock_dl.assert_not_called()
