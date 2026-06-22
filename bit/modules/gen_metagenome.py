@@ -556,7 +556,7 @@ def report_finish(args, run):
 
     print(f"      Reads:                 {reads_line}")
     gt_root = os.path.join(run.out_dir, "ground-truth")
-    print(f"      Ground truth:          {gt_root}{os.sep}")
+    print(f"      Ground-truth files:    {gt_root}{os.sep}")
     print(f"                                 gtdb{os.sep}  (GTDB-taxonomy truth tables)")
     print(f"                                 ncbi{os.sep}  (NCBI-taxonomy truth tables)")
     print("")
