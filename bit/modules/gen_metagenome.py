@@ -424,7 +424,7 @@ def phase_download(args, run):
         os.path.join(run.genomes_dir, "wanted-ncbi-accessions-info.tsv"),
         os.path.join(run.genomes_dir, "selected-genomes-ncbi-info.tsv"))
 
-    # write the GTDB info summary for the final (downloaded) community
+    # write the GTDB info summary for the final community
     write_gtdb_summary(run)
 
     print()
@@ -437,10 +437,9 @@ def _rename_if_exists(src, dst):
 
 
 # columns for the per-genome GTDB info summary written to genomes/
+GTDB_SUMMARY_EXTRA = ["genome_size", "contig_count", "gc_count", "gc_percentage", "ambiguous_bases", "checkm2_completeness", "checkm2_contamination",
+                      "coding_bases", "coding_density"]
 GTDB_SUMMARY_RANKS = ["domain", "phylum", "class", "order", "family", "genus", "species"]
-GTDB_SUMMARY_EXTRA = ["ambiguous_bases", "checkm2_completeness", "checkm2_contamination",
-                      "coding_bases", "coding_density", "contig_count", "gc_count",
-                      "gc_percentage", "genome_size"]
 
 
 def write_gtdb_summary(run):
@@ -453,14 +452,14 @@ def write_gtdb_summary(run):
     an older checkm_* column).
     """
     gtdb_tab = getattr(run, "gtdb_tab", None)
-    out_cols = ["accession"] + GTDB_SUMMARY_RANKS + GTDB_SUMMARY_EXTRA
+    out_cols = ["accession"] + GTDB_SUMMARY_EXTRA + GTDB_SUMMARY_RANKS
     accs = list(run.merged["accession"])
 
     # build a lookup from the GTDB table keyed by numeric accession core so user
     # GCF/GCA accessions match GTDB's GCA-form rows.
     lookup = {}
     if gtdb_tab is not None and "ncbi_genbank_assembly_accession" in gtdb_tab.columns:
-        cols_present = [c for c in (GTDB_SUMMARY_RANKS + GTDB_SUMMARY_EXTRA)
+        cols_present = [c for c in (GTDB_SUMMARY_EXTRA + GTDB_SUMMARY_RANKS)
                         if c in gtdb_tab.columns]
         gcol = gtdb_tab["ncbi_genbank_assembly_accession"].map(_acc_digits_core)
         for key, row in zip(gcol.values, gtdb_tab[cols_present].to_dict("records")):
@@ -470,7 +469,7 @@ def write_gtdb_summary(run):
     for a in accs:
         rec = {"accession": a}
         src = lookup.get(_acc_digits_core(a), {})
-        for c in GTDB_SUMMARY_RANKS + GTDB_SUMMARY_EXTRA:
+        for c in GTDB_SUMMARY_EXTRA + GTDB_SUMMARY_RANKS:
             rec[c] = src.get(c, pd.NA)
         rows.append(rec)
 
