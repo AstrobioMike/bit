@@ -9,7 +9,7 @@ import multiprocessing
 import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm # type: ignore
-from bit.modules.general import color_text
+from bit.modules.general import color_text, spinner
 
 
 def parse_fasta(fasta_file):
@@ -38,7 +38,15 @@ def generate_reads(args):
 
     gen_reads(args, proportions)
 
-    compress_with_pigz(args.output_prefix, read_type=args.type, quiet=getattr(args, 'quiet', False))
+    # compression of large FASTQs is the slow tail after the progress bar; when
+    # orchestrated (quiet) show a spinner so the wait isn't silent. Standalone
+    # keeps its own print messages (compress_with_pigz gates those on quiet).
+    if getattr(args, "quiet", False):
+        print()
+        with spinner("Compressing reads...", "Compressed reads", indent="      "):
+            compress_with_pigz(args.output_prefix, read_type=args.type, quiet=True)
+    else:
+        compress_with_pigz(args.output_prefix, read_type=args.type, quiet=False)
 
 
 def preflight_checks(args):

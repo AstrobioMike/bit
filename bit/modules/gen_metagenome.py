@@ -57,7 +57,7 @@ def gen_metagenome(args):
     section(f"Phase {n()}: Generating reads...")
     run = phase_reads(args, run)
 
-    section(f"Phase {n()}: Building truth tables...")
+    section(f"Phase {n()}: Building output tables...")
     phase_truth(args, run)
 
     report_finish(args, run)
@@ -205,6 +205,7 @@ def phase_select(args, run):
     # to pick from and gets its own spinner; in accessions-only mode it's loaded
     # silently as part of taxonomy resolution (no pool, no selection step).
     gtdb_tab = None
+    print()
     if generative:
         with spinner("Loading pool of potential genomes...",
                      "Loaded pool of potential genomes", indent="    "):
@@ -327,6 +328,21 @@ def phase_download(args, run):
     # resolve downloaded fasta paths per accession
     for a in run.merged["accession"]:
         run.genome_paths[a] = find_downloaded_fasta(run.genomes_dir, a)
+
+    # drop genomes that didn't download (e.g. suppressed/removed accessions) so
+    # later phases don't try to size/mutate/generate reads for absent files. The
+    # download step already reported which accessions weren't found.
+    missing = [a for a in run.merged["accession"] if run.genome_paths.get(a) is None]
+    if missing:
+        run.merged = run.merged[~run.merged["accession"].isin(missing)].reset_index(drop=True)
+        for a in missing:
+            run.genome_paths.pop(a, None)
+
+    if len(run.merged) == 0:
+        report_message("No genomes downloaded successfully; nothing to do.", "red",
+                       initial_indent="    ", subsequent_indent="    ")
+        raise SystemExit(1)
+
     run.working_paths = dict(run.genome_paths)
     print()
     return run
@@ -464,7 +480,8 @@ def phase_reads(args, run):
         run.reads_prefix, read_type=args.type, read_length=args.read_length,
         fragment_size=args.fragment_size, fragment_size_range=args.fragment_size_range,
         long_read_length_range=args.long_read_length_range, seed=args.seed,
-        include_Ns=args.include_Ns, genome_sizes=genome_sizes, jobs=args.jobs)
+        include_Ns=args.include_Ns, genome_sizes=genome_sizes, jobs=args.jobs,
+        source_tsv=args.per_read_tsv)
     generate_reads(gr_args)
     run.read_sources_tsv = f"{run.reads_prefix}-read-sources.tsv"
     print()
@@ -482,12 +499,35 @@ def phase_truth(args, run):
                 fasta2acc[p] = a
                 fasta2acc[os.path.basename(p)] = a
 
-    run.truth_written = TRU.write_truth_outputs(
-        run.merged, run.mutation_results, run.out_dir,
-        read_sources_tsv=run.read_sources_tsv if args.per_read_tsv else None,
-        fasta_to_accession=fasta2acc,
-        per_read=args.per_read_tsv,
-        attempt_to_make_dir=attempt_to_make_dir)
+    gt_root = os.path.join(run.out_dir, "ground-truth")
+    attempt_to_make_dir(gt_root)
+
+    run.truth_written = {}
+    print()
+    for taxonomy in TRU.TAXONOMIES:
+        # the per-read table is the slow part (one row per read, gzipped); label
+        # accordingly when it's being built, otherwise just the quick tables.
+        if args.per_read_tsv:
+            label = f"Building {taxonomy.upper()} per-read table..."
+        else:
+            label = f"Building {taxonomy.upper()} truth tables..."
+        with spinner(label, label, indent="    "):
+            run.truth_written[taxonomy] = TRU.build_truth_for_taxonomy(
+                taxonomy, run.merged, run.mutation_results, gt_root,
+                read_sources_tsv=run.read_sources_tsv if args.per_read_tsv else None,
+                fasta_to_accession=fasta2acc,
+                per_read=args.per_read_tsv,
+                attempt_to_make_dir=attempt_to_make_dir)
+
+    # remove intermediates now that the truth tables hold their information:
+    #   - read-sources TSV: consumed by build_read_truth (per-read tables)
+    #   - per-genome-coverage TSV: consumed by gen-reads; its columns live in
+    #     each truth-per-genome.tsv (assigned_coverage/reads/rel_abundance/sizes)
+    if args.per_read_tsv and os.path.exists(run.read_sources_tsv):
+        os.remove(run.read_sources_tsv)
+    if os.path.exists(run.coverage_tsv):
+        os.remove(run.coverage_tsv)
+
     print()
 
 

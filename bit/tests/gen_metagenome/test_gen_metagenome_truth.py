@@ -1,6 +1,6 @@
 import os
-import pandas as pd
-import pytest
+import pandas as pd # type: ignore
+import pytest # type: ignore
 
 from bit.modules.gen_mg.truth import (
     build_gen_reads_args,
@@ -53,9 +53,14 @@ def merged():
 def test_build_gen_reads_args_defaults():
     args = build_gen_reads_args(["a.fasta", "b.fasta"], "cov.tsv", "pref")
     assert args.coverage == "cov.tsv"          # coverage-specified mode
-    assert args.source_tsv is True             # provenance always on
+    assert args.source_tsv is False            # intermediate; off unless per-read wanted
     assert args.read_length == 150
     assert args.type == "paired-end"
+
+
+def test_build_gen_reads_args_source_tsv_opt_in():
+    args = build_gen_reads_args(["a.fasta"], "cov.tsv", "pref", source_tsv=True)
+    assert args.source_tsv is True
 
 
 def test_build_gen_reads_args_long_default_length():

@@ -64,7 +64,7 @@ def setup(args):
 def parse_main_assembly_table(run_data):
 
     if not run_data.quiet:
-        print(color_text(f"\n    Targeting {run_data.num_wanted} accession(s) in {run_data.wanted_format} format...", "yellow"))
+        print(color_text(f"\n    Targeting {run_data.num_wanted} accession(s) in {run_data.wanted_format} format...\n", "yellow"))
 
     assembly_summary_file = Path(os.environ['NCBI_assembly_data_dir']) / "ncbi-assembly-info.tsv"
 
@@ -95,18 +95,18 @@ def summarize_search(summary):
 
     if summary.num_found != summary.num_wanted:
         if summary.num_found > 0:
-            print(color_text("\n\n                      NOTICE", "orange"))
+            print(color_text("                      NOTICE", "orange"))
             print(f"        {summary.num_not_found} accession(s) not found at NCBI.")
-            print(f"        See '{summary.not_found_path}'.\n\n")
+            print(f"        See '{summary.not_found_path}'.\n")
         else:
-            print(color_text("\n\n                      NOTICE", "orange"))
+            print(color_text("                      NOTICE", "orange"))
             print(f"        None of the {summary.num_wanted} target accession(s) were found at NCBI...")
             print(f"        This is weird. Are the inputs assembly accessions?\n")
             os.remove(summary.not_found_path)
             sys.exit(1)
 
         if not summary.quiet:
-            print(f"    Remaining total targets: {summary.num_found}")
+            print(f"    Remaining total targets: {summary.num_found}\n")
 
 
 def valid_gzip(path):
@@ -199,7 +199,7 @@ def download_one(target_link, local_dest, retries=5):
 def download_assemblies(run_data):
 
     if not run_data.quiet:
-        print(color_text("\n    Downloading assemblies...\n", "yellow"))
+        print(color_text("    Downloading assemblies...\n", "yellow"))
 
     # reading the table into a list of (target_link, local_dest) tuples
     targets = []
@@ -268,7 +268,7 @@ def report_finish(run_data):
             print(color_text(f"\n    All {run_data.num_found} found file(s) downloaded successfully!{skipped_note}\n", "yellow"))
 
     elif run_data.num_not_downloaded > 0:
-        print(color_text("\n\n                      NOTICE", "orange"))
+        print(color_text("\n                      NOTICE", "orange"))
         print(f"        {run_data.num_not_downloaded} file(s) failed to download from NCBI.")
         print(f"        They may not be available in the requested format.")
         print(f"        See '{run_data.not_downloaded_path}'.\n")

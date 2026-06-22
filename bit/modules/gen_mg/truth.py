@@ -33,11 +33,14 @@ def _src_rank_cols(taxonomy):
 def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="paired-end",
                          read_length=None, fragment_size=500, fragment_size_range=10,
                          long_read_length_range=50, seed=None, circularize=False,
-                         include_Ns=False, genome_sizes=None, jobs=10):
+                         include_Ns=False, genome_sizes=None, jobs=10, source_tsv=False):
     """
     Construct an args-like object matching what bit.modules.gen_reads.generate_reads
-    expects. Coverage mode is used (the coverage TSV drives per-genome read counts),
-    and --source-tsv provenance is always on for gen-metagenome
+    expects. Coverage mode is used (the coverage TSV drives per-genome read counts).
+
+    source_tsv: whether gen-reads should emit its per-read source TSV. This is an
+    intermediate consumed by build_read_truth to make the per-read truth tables,
+    so gen-metagenome only needs it when --per-read-tsv is set.
 
     genome_sizes: optional {fasta_path: measured_size} so gen-reads can skip
     re-measuring genomes gen-metagenome already sized
@@ -58,7 +61,7 @@ def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="pa
         fragment_size=fragment_size,
         fragment_size_range=fragment_size_range,
         long_read_length_range=long_read_length_range,
-        source_tsv=True,
+        source_tsv=source_tsv,
         genome_sizes=genome_sizes or {},
         quiet=True,
         jobs=jobs
@@ -158,6 +161,45 @@ def build_read_truth(read_sources_tsv, fasta_to_accession, per_genome_df, out_pa
 
 # ---------- top-level: write the split ground-truth tree ----------
 
+def build_truth_for_taxonomy(taxonomy, merged_df, mutation_results, gt_root,
+                             read_sources_tsv=None, fasta_to_accession=None,
+                             per_read=False, attempt_to_make_dir=os.makedirs,
+                             on_per_read=None):
+    """
+    Build the ground-truth/<taxonomy>/ subtree: per-genome table, per-rank
+    abundance tables, and (optionally) the per-read truth table.
+
+    on_per_read: optional zero-arg callable invoked just before the (slow)
+    per-read build, so a caller can show progress feedback around it without
+    this module doing any console I/O.
+
+    Returns {per_genome, per_rank_dir, per_read?}.
+    """
+    tax_dir = os.path.join(gt_root, taxonomy)
+    _mkdir(attempt_to_make_dir, tax_dir)
+
+    per_genome = build_per_genome_table(merged_df, mutation_results, taxonomy)
+    pg_path = os.path.join(tax_dir, "truth-per-genome.tsv")
+    per_genome.to_csv(pg_path, sep="\t", index=False)
+    entry = {"per_genome": pg_path}
+
+    rank_dir = os.path.join(tax_dir, "truth-per-rank")
+    _mkdir(attempt_to_make_dir, rank_dir)
+    for rank, tab in build_per_rank_tables(per_genome).items():
+        tab.to_csv(os.path.join(rank_dir, f"truth-{rank}-abundance.tsv"),
+                   sep="\t", index=False)
+    entry["per_rank_dir"] = rank_dir
+
+    if per_read and read_sources_tsv and fasta_to_accession is not None:
+        if on_per_read is not None:
+            on_per_read()
+        rt_path = os.path.join(tax_dir, "truth-per-read.tsv.gz")
+        build_read_truth(read_sources_tsv, fasta_to_accession, per_genome, rt_path)
+        entry["per_read"] = rt_path
+
+    return entry
+
+
 def write_truth_outputs(merged_df, mutation_results, out_dir,
                         read_sources_tsv=None, fasta_to_accession=None,
                         per_read=False, attempt_to_make_dir=os.makedirs):
@@ -168,30 +210,13 @@ def write_truth_outputs(merged_df, mutation_results, out_dir,
     """
     written = {}
     gt_root = os.path.join(out_dir, "ground-truth")
-    attempt_to_make_dir(gt_root, exist_ok=True) if attempt_to_make_dir is os.makedirs else attempt_to_make_dir(gt_root)
+    _mkdir(attempt_to_make_dir, gt_root)
 
     for taxonomy in TAXONOMIES:
-        tax_dir = os.path.join(gt_root, taxonomy)
-        _mkdir(attempt_to_make_dir, tax_dir)
-
-        per_genome = build_per_genome_table(merged_df, mutation_results, taxonomy)
-        pg_path = os.path.join(tax_dir, "truth-per-genome.tsv")
-        per_genome.to_csv(pg_path, sep="\t", index=False)
-        entry = {"per_genome": pg_path}
-
-        rank_dir = os.path.join(tax_dir, "truth-per-rank")
-        _mkdir(attempt_to_make_dir, rank_dir)
-        for rank, tab in build_per_rank_tables(per_genome).items():
-            tab.to_csv(os.path.join(rank_dir, f"truth-{rank}-abundance.tsv"),
-                       sep="\t", index=False)
-        entry["per_rank_dir"] = rank_dir
-
-        if per_read and read_sources_tsv and fasta_to_accession is not None:
-            rt_path = os.path.join(tax_dir, "truth-per-read.tsv.gz")
-            build_read_truth(read_sources_tsv, fasta_to_accession, per_genome, rt_path)
-            entry["per_read"] = rt_path
-
-        written[taxonomy] = entry
+        written[taxonomy] = build_truth_for_taxonomy(
+            taxonomy, merged_df, mutation_results, gt_root,
+            read_sources_tsv=read_sources_tsv, fasta_to_accession=fasta_to_accession,
+            per_read=per_read, attempt_to_make_dir=attempt_to_make_dir)
 
     return written
 

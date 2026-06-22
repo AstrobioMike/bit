@@ -81,7 +81,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         action="store_true",
         default=False,
         help=wrap_help("Add this flag to out a read-level truth table mapping every read to its "
-                       "source genome, coordinates, and taxonomy")
+                       "source genome, coordinates, and taxonomy (takes up a bit more spacetime)")
     )
 
     add_force(general)
