@@ -144,6 +144,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
                        "(default: lognormal)"))
 
     abundance.add_argument(
+        "-R",
         "--total-reads", 
         metavar="<INT>", 
         type=int, 
@@ -151,6 +152,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         help=wrap_help("Number of total reads to generate in 'relative' abundance mode (default: 10,000,000)"))
 
     abundance.add_argument(
+        "-c",
         "--median-coverage", 
         metavar="<FLOAT>", 
         type=float, 

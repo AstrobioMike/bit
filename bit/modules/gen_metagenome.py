@@ -431,12 +431,20 @@ def phase_reads(args, run):
     run.merged["_fasta_for_reads"] = run.merged["accession"].map(run.working_paths)
     ABD.write_coverage_tsv(run.merged, "_fasta_for_reads", run.coverage_tsv)
 
+    # sizes already measured (mutate or abundance phase); hand them to gen-reads
+    # keyed by the working fasta path so it doesn't re-read every genome to size
+    # it. used_genome_size matches the working fasta (post-mutation if mutated).
+    genome_sizes = {}
+    for path, size in zip(run.merged["_fasta_for_reads"], run.merged["used_genome_size"]):
+        if path is not None and not pd.isna(path) and pd.notna(size):
+            genome_sizes[path] = int(size)
+
     gr_args = TRU.build_gen_reads_args(
         run.merged["_fasta_for_reads"].dropna().tolist(), run.coverage_tsv,
         run.reads_prefix, read_type=args.type, read_length=args.read_length,
         fragment_size=args.fragment_size, fragment_size_range=args.fragment_size_range,
         long_read_length_range=args.long_read_length_range, seed=args.seed,
-        include_Ns=args.include_Ns)
+        include_Ns=args.include_Ns, genome_sizes=genome_sizes)
     generate_reads(gr_args)
     run.read_sources_tsv = f"{run.reads_prefix}-read-sources.tsv"
     print()

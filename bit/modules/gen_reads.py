@@ -91,8 +91,14 @@ def compute_reads_from_coverage(args):
     # compute reads needed per genome: coverage * genome_size / read_length
     reads_per_file = {}
 
+    # gen-metagenome already measures every genome; if it passed those sizes
+    # through (keyed by the fasta path), we reuse them
+    known_sizes = getattr(args, "genome_sizes", None) or {}
+
     for fasta_file in args.input_fastas:
-        genome_size = sum(len(record.seq) for record in parse_fasta(fasta_file))
+        genome_size = known_sizes.get(fasta_file)
+        if genome_size is None:
+            genome_size = sum(len(record.seq) for record in parse_fasta(fasta_file))
 
         if args.type == "paired-end":
             bases_per_fragment = min(2 * args.read_length, args.fragment_size)

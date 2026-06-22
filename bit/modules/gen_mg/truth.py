@@ -33,11 +33,14 @@ def _src_rank_cols(taxonomy):
 def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="paired-end",
                          read_length=None, fragment_size=500, fragment_size_range=10,
                          long_read_length_range=50, seed=None, circularize=False,
-                         include_Ns=False):
+                         include_Ns=False, genome_sizes=None):
     """
     Construct an args-like object matching what bit.modules.gen_reads.generate_reads
     expects. Coverage mode is used (the coverage TSV drives per-genome read counts),
-    and --source-tsv provenance is always on for gen-metagenome.
+    and --source-tsv provenance is always on for gen-metagenome
+
+    genome_sizes: optional {fasta_path: measured_size} so gen-reads can skip
+    re-measuring genomes gen-metagenome already sized
     """
     if read_length is None:
         read_length = 5000 if read_type == "long" else 150
@@ -56,6 +59,7 @@ def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="pa
         fragment_size_range=fragment_size_range,
         long_read_length_range=long_read_length_range,
         source_tsv=True,
+        genome_sizes=genome_sizes or {},
         quiet=True,
     )
 
