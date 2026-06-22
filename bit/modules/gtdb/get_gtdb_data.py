@@ -1,10 +1,15 @@
 import sys
 import os
+import socket
 import pandas as pd
 import urllib
+import urllib.error
 from bit.modules.general import (wprint, color_text,
                                  report_message, notify_premature_exit,
                                  download_with_tqdm)
+
+
+GTDB_BASE_URL = "https://data.ace.uq.edu.au/public/gtdb/data/releases/latest"
 
 
 def get_gtdb_data(force_update=False, quiet=False):
@@ -52,6 +57,28 @@ def check_if_gtdb_data_present(location):
     return True
 
 
+def report_gtdb_unreachable(err):
+
+    print("")
+    wprint(color_text("  The GTDB data server could not be reached :(", "red"))
+    report_message(f"While trying to download from: {GTDB_BASE_URL}", color = "none",
+                   initial_indent = "    ", subsequent_indent = "      ")
+    report_message("This is typically a network/connectivity problem on the system running "
+           "bit (e.g., no internet access, a firewall or proxy blocking the "
+           "connection, or the GTDB server being temporarily unavailable), rather "
+           "than a problem with bit itself.", color = "none", initial_indent = "    ",
+           subsequent_indent = "    ")
+    report_message(("Things to try:"), color = "none", initial_indent = "    ", subsequent_indent = "    ")
+    print("          - confirm the system has internet access")
+    print(f"          - confirm {GTDB_BASE_URL} is reachable (e.g., in a browser or with curl)")
+    print("          - if behind a proxy/firewall, check that outbound HTTPS is allowed")
+    print("          - wait and try again later in case the server is temporarily down")
+    report_message(f"Underlying error: {err}", initial_indent = "    ", subsequent_indent = "    ")
+    print("")
+    notify_premature_exit()
+    sys.exit(1)
+
+
 def gen_gtdb_tab(location):
     """ downloads and parses the GTDB info tables """
 
@@ -62,19 +89,28 @@ def gen_gtdb_tab(location):
     metadata_path = os.path.join(location, "GTDB-arc-and-bac-metadata.tsv")
     version_info_path = os.path.join(location, "GTDB-version-info.txt")
 
-    # getting archaea
-    arc_link = "https://data.ace.uq.edu.au/public/gtdb/data/releases/latest/ar53_metadata.tsv.gz"
-    arc_tsv_gz = download_with_tqdm(arc_link, "        GTDB archaeal data", arc_path)
-    arc_tab = pd.read_csv(arc_tsv_gz, sep="\t", compression="gzip", on_bad_lines = 'skip', header=0, low_memory=False)
-    arc_tab.rename(columns={arc_tab.columns[0]:"accession"}, inplace=True)
-    arc_tab.dropna(inplace=True, how="all")
+    # fail fast (instead of hanging) if the server can't be reached
+    default_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(30)
 
-    # getting bacteria
-    bac_link = "https://data.ace.uq.edu.au/public/gtdb/data/releases/latest/bac120_metadata.tsv.gz"
-    bac_tsv_gz = download_with_tqdm(bac_link, "        GTDB bacterial data", bac_path)
-    bac_tab = pd.read_csv(bac_tsv_gz, sep="\t", compression="gzip", on_bad_lines = 'skip', header=0, low_memory=False)
-    bac_tab.rename(columns={bac_tab.columns[0]:"accession"}, inplace=True)
-    bac_tab.dropna(inplace=True, how="all")
+    try:
+        # getting archaea
+        arc_link = f"{GTDB_BASE_URL}/ar53_metadata.tsv.gz"
+        arc_tsv_gz = download_with_tqdm(arc_link, "        GTDB archaeal data", arc_path)
+        arc_tab = pd.read_csv(arc_tsv_gz, sep="\t", compression="gzip", on_bad_lines = 'skip', header=0, low_memory=False)
+        arc_tab.rename(columns={arc_tab.columns[0]:"accession"}, inplace=True)
+        arc_tab.dropna(inplace=True, how="all")
+
+        # getting bacteria
+        bac_link = f"{GTDB_BASE_URL}/bac120_metadata.tsv.gz"
+        bac_tsv_gz = download_with_tqdm(bac_link, "        GTDB bacterial data", bac_path)
+        bac_tab = pd.read_csv(bac_tsv_gz, sep="\t", compression="gzip", on_bad_lines = 'skip', header=0, low_memory=False)
+        bac_tab.rename(columns={bac_tab.columns[0]:"accession"}, inplace=True)
+        bac_tab.dropna(inplace=True, how="all")
+    except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError) as err:
+        report_gtdb_unreachable(err)
+    finally:
+        socket.setdefaulttimeout(default_timeout)
 
     # combining
     gtdb_tab = pd.concat([arc_tab, bac_tab])
@@ -117,4 +153,10 @@ def gen_gtdb_tab(location):
     # writing out
     gtdb_tab.to_csv(metadata_path, index=False, sep="\t")
 
-    urllib.request.urlretrieve("https://data.ace.uq.edu.au/public/gtdb/data/releases/latest/VERSION.txt", version_info_path)
+    try:
+        socket.setdefaulttimeout(30)
+        urllib.request.urlretrieve(f"{GTDB_BASE_URL}/VERSION.txt", version_info_path)
+    except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError) as err:
+        report_gtdb_unreachable(err)
+    finally:
+        socket.setdefaulttimeout(default_timeout)

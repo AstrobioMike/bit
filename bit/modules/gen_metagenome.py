@@ -13,7 +13,7 @@ Phases:
 
 import os
 from types import SimpleNamespace
-import pandas as pd
+import pandas as pd # type: ignore
 from tqdm import tqdm  # type: ignore
 from bit.modules.general import (color_text, report_message,
                                  attempt_to_make_dir, check_files_are_found, spinner,
@@ -73,20 +73,17 @@ def _phase_counter():
 
 
 def check_required_dbs(args, run):
-    need_gtdb = True
-    need_ncbi_tax = True
-    # assembly summary is only consulted for accessions not in GTDB; we can't
-    # know that until selection, but only user-supplied accessions can ever need
-    # it, so prematurely fetching it up front only when --accessions is given
-    need_assembly_summary = bool(getattr(args, "accessions", None))
-    if need_gtdb:
-        run.gtdb_dir = get_gtdb_data(quiet=True)
-    if need_ncbi_tax:
-        get_ncbi_tax_data(quiet=True)
-        log_data_source(run, "NCBI taxonomy (taxdump) retrieved",
-                        _read_retrieved_date(os.environ.get("TAXONKIT_DB")))
-    if need_assembly_summary:
-        get_ncbi_assembly_data(quiet=True)
+    # all three reference datasets are needed for every run: GTDB (selection +
+    # taxonomy), NCBI taxonomy (lineage resolution), and the NCBI assembly
+    # summary (download phase resolves accession -> FTP path from it). Fetch them
+    # all up front so no large download surprises the user mid-run.
+    run.gtdb_dir = get_gtdb_data(quiet=True)
+    get_ncbi_tax_data(quiet=True)
+    log_data_source(run, "NCBI taxonomy (taxdump) retrieved",
+                    _read_retrieved_date(os.environ.get("TAXONKIT_DB")))
+    get_ncbi_assembly_data(quiet=True)
+    log_data_source(run, "NCBI assembly summary retrieved",
+                    _read_retrieved_date(os.environ.get("NCBI_assembly_data_dir")))
 
 
 # ----------------------------------------------------------------------------
@@ -129,10 +126,8 @@ def setup(args):
 
 
 def log_data_source(run, label, detail):
-    """ 
-    append a reference-data provenance line to the runlog (e.g. GTDB version,
-    NCBI assembly-summary retrieval date, NCBI taxdump date)
-    """
+    """ append a reference-data provenance line to the runlog (e.g. GTDB version,
+    NCBI assembly-summary retrieval date, NCBI taxdump date). """
     log_file = getattr(run, "log_file", None)
     if not log_file:
         return
@@ -141,10 +136,8 @@ def log_data_source(run, label, detail):
 
 
 def _read_retrieved_date(data_dir):
-    """
-    read a date-retrieved.txt (stored YYYY,MM,DD) from a data dir and return
-    it formatted like 'Jun 20, 2026'. Returns '(date unknown)' if absent
-    """
+    """ read a date-retrieved.txt (stored YYYY,MM,DD) from a data dir and return
+    it formatted like 'Jun 20, 2026'. Returns '(date unknown)' if absent. """
     from datetime import datetime
     if not data_dir:
         return "(date unknown)"
@@ -161,10 +154,8 @@ def _read_retrieved_date(data_dir):
         return line.replace(",", "-")
 
 def _read_gtdb_version(location):
-    """ 
-    read GTDB version + release date from the version-info file (no printing;
-    the value goes to the runlog and the console shows only a spinner)
-    """
+    """ read GTDB version + release date from the version-info file (no printing;
+    the value goes to the runlog and the console shows only a spinner). """
     version_info = []
     with open(os.path.join(location, "GTDB-version-info.txt")) as version_info_file:
         for line in version_info_file:
@@ -179,11 +170,11 @@ def _read_gtdb_version(location):
 # ---- selection ----
 
 def _load_gtdb_table(args, run):
-    """ 
+    """
     load the GTDB metadata table once (needed for generative selection and/or
     GTDB-taxonomy resolution of user accessions). Cached on run. Silent — the
     caller wraps this in an appropriately-labeled spinner. GTDB version is
-    recorded to the runlog here
+    recorded to the runlog here.
     """
     if getattr(run, "gtdb_tab", None) is not None:
         return run.gtdb_tab
@@ -215,7 +206,8 @@ def phase_select(args, run):
     # silently as part of taxonomy resolution (no pool, no selection step).
     gtdb_tab = None
     if generative:
-        with spinner("Loading pool of potential genomes...", "Loading pool of potential genomes...", indent="    "):
+        with spinner("Loading pool of potential genomes...",
+                     "Loaded pool of potential genomes", indent="    "):
             gtdb_tab = _load_gtdb_table(args, run)
 
     user_df = None
@@ -228,7 +220,7 @@ def phase_select(args, run):
         # warnings are collected and printed AFTER the checkmark so they don't
         # collide with the spinner's line redraw.
         warnings = []
-        with spinner("Selecting genomes...", "Selecting genomes...", indent="    "):
+        with spinner("Selecting genomes...", "Selected genomes", indent="    "):
             if user_df is not None:
                 # resolve GTDB taxonomy for user rows so derep exclusion can use it
                 user_df = TAX.fill_gtdb_taxonomy(user_df, gtdb_tab)
@@ -260,12 +252,10 @@ def phase_select(args, run):
 
     # resolve both taxonomies. In accessions-only mode the GTDB table hasn't been
     # loaded yet, so it loads silently inside this spinner (it's in service of
-    # taxonomy resolution here, not pooling). version/date provenance -> runlog.
+    # taxonomy resolution here, not pooling). version/date provenance -> runlog
+    # (assembly-summary date is logged up front in check_required_dbs).
     ai_path = _assembly_info_path()
-    if _needs_ncbi_assembly_info(merged) and ai_path:
-        log_data_source(run, "NCBI assembly summary retrieved",
-                        _read_retrieved_date(os.path.dirname(ai_path)))
-    with spinner("Resolving taxonomy...", "Resolving taxonomy...", indent="    "):
+    with spinner("Resolving taxonomy...", "Resolved taxonomy", indent="    "):
         if gtdb_tab is None:
             gtdb_tab = _load_gtdb_table(args, run)
             if user_df is not None:
@@ -276,16 +266,6 @@ def phase_select(args, run):
     print()
 
     return run
-
-
-def _needs_ncbi_assembly_info(merged):
-    """ 
-    True if any genome lacks GTDB taxonomy after the early GTDB fill, meaning
-    it will fall through to the NCBI assembly-summary (and beyond) for its taxid
-    """
-    if "gtdb_domain" not in merged.columns:
-        return False
-    return bool((merged["gtdb_domain"].astype(str) == "NA").any())
 
 
 def load_user_accessions(args):
@@ -441,13 +421,13 @@ def phase_abundance(args, run):
 
 
 def measure_sizes_parallel(accessions, path_map, jobs=10):
-    """ 
+    """
     get genome size for each accession's FASTA in parallel, with a bar.
     Returns dict accession -> size (or None on failure)
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     sizes = {}
-    with ThreadPoolExecutor(max_workers=min(max(int(jobs), 1), 20)) as pool:
+    with ThreadPoolExecutor(max_workers=max(int(jobs), 1)) as pool:
         futures = {pool.submit(measure_fasta_size, path_map.get(a)): a
                    for a in accessions}
         with tqdm(total=len(futures), desc="    Progress",
@@ -484,7 +464,7 @@ def phase_reads(args, run):
         run.reads_prefix, read_type=args.type, read_length=args.read_length,
         fragment_size=args.fragment_size, fragment_size_range=args.fragment_size_range,
         long_read_length_range=args.long_read_length_range, seed=args.seed,
-        include_Ns=args.include_Ns, genome_sizes=genome_sizes)
+        include_Ns=args.include_Ns, genome_sizes=genome_sizes, jobs=args.jobs)
     generate_reads(gr_args)
     run.read_sources_tsv = f"{run.reads_prefix}-read-sources.tsv"
     print()
@@ -518,10 +498,10 @@ def report_finish(args, run):
                    leading_newline=False, trailing_newline=False)
     report_message("-" * 78, "green", initial_indent="  ", leading_newline=False,
                    trailing_newline=True)
- 
+
     num_genomes = len(run.merged)
     total_reads = int(run.merged["assigned_reads"].sum()) if "assigned_reads" in run.merged.columns else 0
- 
+
     if args.type == "paired-end":
         reads_line = f"{run.reads_prefix}_R1.fastq.gz, {run.reads_prefix}_R2.fastq.gz"
         read_unit = "Read-pairs" if total_reads else "Reads"
@@ -530,7 +510,7 @@ def report_finish(args, run):
         reads_line = f"{run.reads_prefix}.fastq.gz"
         read_unit = "reads"
         reported = total_reads
- 
+
     print(f"      Genomes included:      {num_genomes:,}")
     print(f"      {read_unit} generated:  {reported:,}\n")
 

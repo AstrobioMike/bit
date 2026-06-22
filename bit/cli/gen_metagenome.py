@@ -11,9 +11,9 @@ def build_parser(parent_subparsers=None, show_fine=False):
 
     desc = """
         Build a mock metagenome with ground-truth tables. Genomes are selected
-        from GTDB and/or supplied directly as accessions, downloaded, 
-        optionally mutated to set per-genome ANI, and then reads are generated at a 
-        chosen abundance distribution. Outputs include reads and per-genome, per-rank, and 
+        from GTDB and/or supplied directly as accessions, downloaded,
+        optionally mutated to set per-genome ANI, and then reads are generated at a
+        chosen abundance distribution. Outputs include reads and per-genome, per-rank, and
         (optionally) per-read truth tables.
         """
 
@@ -24,7 +24,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit gen-metagenome -n 20 --domains bacteria`",
+            epilog="Ex. usage: `bit gen-metagenome -n 20`",
             formatter_class=CustomRichHelpFormatter, add_help=False)
 
     # toggles whether detailed (fine-tuning) args show real help or are hidden
@@ -42,51 +42,58 @@ def build_parser(parent_subparsers=None, show_fine=False):
 
     ## required ##
     required.add_argument(
-        "-n", 
-        "--num-genomes", 
-        metavar="<INT>", 
+        "-n",
+        "--num-genomes",
+        metavar="<INT>",
         type=int,
         help=wrap_help("Number of genomes to select from GTDB "
-                       "(can be combined with --accessions to add specific genomes)"))
+                       "(can be combined with --accessions to add specific genomes)")
+    )
+
     required.add_argument(
         "-a",
-        "--accessions", 
+        "--accessions",
         metavar="<FILE>",
         help=wrap_help("File of NCBI accessions to include (one per line), or a TSV "
                        "with an 'accession' column plus optional 'rel_abundance', "
                        "'coverage', and 'mutation_rate' columns to pin per-genome "
-                       "values"))
+                       "values")
+        )
 
     ## general ##
     general.add_argument(
-        "-o", 
-        "--output-dir", 
-        metavar="<DIR>", 
+        "-o",
+        "--output-dir",
+        metavar="<DIR>",
         default="gen-mg-outputs",
-        help=wrap_help("Output directory (default: gen-mg-outputs)"))
+        help=wrap_help("Output directory (default: gen-mg-outputs)")
+    )
 
     general.add_argument(
-        "--output-prefix", 
-        metavar="<STR>", 
+        "--output-prefix",
+        metavar="<STR>",
         default="mg",
-        help=wrap_help("Prefix for the output read files (default: mg)"))
-    
+        help=wrap_help("Prefix for the output read files (default: mg)")
+    )
+
     general.add_argument(
-        "--per-read-tsv", 
-        action="store_true", 
+        "--per-read-tsv",
+        action="store_true",
         default=False,
         help=wrap_help("Add this flag to out a read-level truth table mapping every read to its "
-                       "source genome, coordinates, and taxonomy"))
+                       "source genome, coordinates, and taxonomy")
+    )
 
     add_force(general)
 
     general.add_argument(
-        "-j", 
-        "--jobs", 
-        metavar="<INT>", 
-        type=int, 
+        "-j",
+        "--jobs",
+        metavar="<INT>",
+        type=int,
         default=10,
-        help=h(wrap_help("Concurrent downloads (capped at 20; default: 10)")))
+        help=wrap_help("Number of jobs to run in parallel where possible (capped at 20 for download step; default: 10)")
+    )
 
     general.add_argument(
         "-s",
@@ -100,10 +107,11 @@ def build_parser(parent_subparsers=None, show_fine=False):
     add_help(general)
 
     general.add_argument(
-        "-H", 
-        "--detailed-help", 
+        "-H",
+        "--detailed-help",
         action="store_true",
-        help="Show detailed help, including fine-tuning parameters")
+        help="Show detailed help, including fine-tuning parameters"
+    )
 
     add_version_arg(general)
 
@@ -111,150 +119,169 @@ def build_parser(parent_subparsers=None, show_fine=False):
     ## selection ##
     selection.add_argument(
         "-d",
-        "--domain",  
+        "--domain",
         default="both",
         choices=["bacteria", "archaea", "both"],
         help=wrap_help("Domain(s) to draw genomes from "
-                       "(default: both), eukaryotes can be specified via --accessions"))
-    
+                       "(default: both), eukaryotes can be specified via --accessions")
+    )
+
     selection.add_argument(
-        "--derep-rank", 
+        "--derep-rank",
         default="species",
         choices=["domain", "phylum", "class", "order", "family", "genus",
                  "species", "off"],
         help=wrap_help("Keep at most one genome per unique taxon at this rank "
                        "(default: species), 'off' selects randomly with no "
-                       "taxonomic dereplication"))
+                       "taxonomic dereplication")
+    )
 
 
     ## abundance ##
     abundance.add_argument(
-        "--abundance-mode", 
-        default="relative", 
+        "--abundance-mode",
+        default="relative",
         choices=["relative", "coverage"],
         help=wrap_help("Whether the distribution describes relative abundance "
                        "(needs --total-reads) or per-genome fold-coverage directly "
-                       "(default: relative)"))
+                       "(default: relative)")
+    )
 
     abundance.add_argument(
-        "--abundance-dist", 
+        "--abundance-dist",
         default="lognormal",
         choices=["lognormal", "even"],
         help=wrap_help("Shape of the abundance/coverage distribution "
-                       "(default: lognormal)"))
+                       "(default: lognormal)")
+    )
 
     abundance.add_argument(
         "-R",
-        "--total-reads", 
-        metavar="<INT>", 
-        type=int, 
+        "--total-reads",
+        metavar="<INT>",
+        type=int,
         default=None, # 10,000,000 set later
-        help=wrap_help("Number of total reads to generate in 'relative' abundance mode (default: 10,000,000)"))
+        help=wrap_help("Number of total reads to generate in 'relative' abundance mode (default: 10,000,000)")
+    )
 
     abundance.add_argument(
         "-c",
-        "--median-coverage", 
-        metavar="<FLOAT>", 
-        type=float, 
+        "--median-coverage",
+        metavar="<FLOAT>",
+        type=float,
         default=None,  # 30 set later
         help=h(wrap_help("Median per-genome coverage in 'coverage' abundance mode; scales the "
                          "distribution so 'even' gives this coverage to every genome and "
-                         "'lognormal' centers around it (default: 30). Ignored in 'relative' mode")))
+                         "'lognormal' centers around it (default: 30). Ignored in 'relative' mode"))
+        )
 
     abundance.add_argument(
-        "--sigma", 
-        metavar="<FLOAT>", 
-        type=float, 
+        "--sigma",
+        metavar="<FLOAT>",
+        type=float,
         default=None,  # 1.0 set later
         help=h(wrap_help("Sigma (spread) for the lognormal distribution; higher means "
-                         "a longer abundance tail (default: 1.0)")))
+                         "a longer abundance tail (default: 1.0)"))
+        )
 
 
     ## mutation ##
     mutation.add_argument(
-        "--mutation-mode", 
+        "--mutation-mode",
         default="off",
         choices=["off", "uniform", "distributed"],
         help=wrap_help("Mutate genomes before read generation: "
                        "'uniform' where all are done at --mutation-rate; "
                        "'distributed' with each drawn between --mutation-rate-min and --mutation-rate-max; "
-                       "(default: 'off')"))
+                       "(default: 'off')")
+        )
 
     mutation.add_argument(
-        "--mutation-rate", 
-        metavar="<FLOAT>", 
-        type=float, 
+        "--mutation-rate",
+        metavar="<FLOAT>",
+        type=float,
         default=None, # 0.01 set later
-        help=h(wrap_help("Mutation rate for 'uniform' mode (default: 0.01)")))
+        help=h(wrap_help("Mutation rate for 'uniform' mode (default: 0.01)"))
+    )
 
     mutation.add_argument(
-        "--mutation-rate-min", 
-        metavar="<FLOAT>", 
-        type=float, 
+        "--mutation-rate-min",
+        metavar="<FLOAT>",
+        type=float,
         default=None, # 0.001 set later
-        help=h(wrap_help("Lower bound for 'distributed' mode (default: 0.001)")))
+        help=h(wrap_help("Lower bound for 'distributed' mode (default: 0.001)"))
+    )
 
     mutation.add_argument(
-        "--mutation-rate-max", 
-        metavar="<FLOAT>", 
-        type=float, 
+        "--mutation-rate-max",
+        metavar="<FLOAT>",
+        type=float,
         default=None, # 0.05 set later
-        help=h(wrap_help("Upper bound for 'distributed' mode (default: 0.05)")))
+        help=h(wrap_help("Upper bound for 'distributed' mode (default: 0.05)"))
+    )
 
     mutation.add_argument(
-        "--ti-tv-ratio", 
-        metavar="<FLOAT>", 
-        type=float, 
+        "--ti-tv-ratio",
+        metavar="<FLOAT>",
+        type=float,
         default=None, # 1.0 set later
-        help=h(wrap_help("Transition/transversion ratio for substitutions (default: 1.0)")))
+        help=h(wrap_help("Transition/transversion ratio for substitutions (default: 1.0)"))
+    )
 
     mutation.add_argument(
-        "--indel-rate", 
-        metavar="<FLOAT>", 
-        type=float, 
+        "--indel-rate",
+        metavar="<FLOAT>",
+        type=float,
         default=None, # 0.0 set later
-        help=h(wrap_help("Fraction of mutations that are indels (default: 0.0)")))
+        help=h(wrap_help("Fraction of mutations that are indels (default: 0.0)"))
+    )
 
     # ---- Reads ----
     reads.add_argument(
-        "-t", 
-        "--type", 
+        "-t",
+        "--type",
         default="paired-end",
         choices=["paired-end", "single-end", "long"],
-        help=wrap_help("Type of reads to generate (default: paired-end)"))
-    
-    reads.add_argument(
-        "-r", 
-        "--read-length", 
-        metavar="<INT>", 
-        type=int, 
-        default=None,
-        help=h(wrap_help("Read length (default: 150 for short reads, 5000 for long)")))
-    
-    reads.add_argument(
-        "--fragment-size", 
-        metavar="<INT>", 
-        type=int, 
-        default=500,
-        help=h(wrap_help("Paired-end fragment size (default: 500)")))
-    
-    reads.add_argument(
-        "--fragment-size-range", 
-        metavar="<INT>", 
-        type=int, 
-        default=10,
-        help=h(wrap_help("Percent +/- around --fragment-size (default: 10)")))
+        help=wrap_help("Type of reads to generate (default: paired-end)")
+    )
 
     reads.add_argument(
-        "--long-read-length-range", 
-        metavar="<INT>", 
-        type=int, 
+        "-r",
+        "--read-length",
+        metavar="<INT>",
+        type=int,
+        default=None,
+        help=h(wrap_help("Read length (default: 150 for short reads, 5000 for long)"))
+    )
+
+    reads.add_argument(
+        "--fragment-size",
+        metavar="<INT>",
+        type=int,
+        default=500,
+        help=h(wrap_help("Paired-end fragment size (default: 500)"))
+    )
+
+    reads.add_argument(
+        "--fragment-size-range",
+        metavar="<INT>",
+        type=int,
+        default=10,
+        help=h(wrap_help("Percent +/- around --fragment-size (default: 10)"))
+    )
+
+    reads.add_argument(
+        "--long-read-length-range",
+        metavar="<INT>",
+        type=int,
         default=50,
-        help=h(wrap_help("Percent +/- around --read-length for long reads (default: 50)")))
+        help=h(wrap_help("Percent +/- around --read-length for long reads (default: 50)"))
+    )
 
     reads.add_argument(
         "--include-Ns", action="store_true", default=False,
-        help=h(wrap_help("Allow reads that include Ns (default: skip N-containing regions)")))
+        help=h(wrap_help("Allow reads that include Ns (default: skip N-containing regions)"))
+    )
 
     return parser
 
@@ -276,8 +303,8 @@ def main():
 
     preflight_checks(args)
 
-    # these are all set to None above and ultimately set here so that any 
-    # incompatible user inputs can be detected and reported in preflight_checks 
+    # these are all set to None above and ultimately set here so that any
+    # incompatible user inputs can be detected and reported in preflight_checks
     args.total_reads = args.total_reads or 10_000_000
     args.median_coverage = args.median_coverage or 30
     args.sigma = args.sigma or 1.0
@@ -323,7 +350,7 @@ def preflight_checks(args):
                        initial_indent="    ", subsequent_indent="    ")
         notify_premature_exit()
 
-    if args.mutation_mode == "off" and (args.mutation_rate or args.mutation_rate_min 
+    if args.mutation_mode == "off" and (args.mutation_rate or args.mutation_rate_min
                                         or args.mutation_rate_max or args.ti_tv_ratio
                                         or args.indel_rate):
         report_message("You must specify a `--mutation-mode` if wanting any other mutation parameters.`",

@@ -44,7 +44,7 @@ def download_ncbi_tax_data(location):
     taxdump_path = os.path.join(location, "taxdump.tar.gz")
     taxdump_link = "https://ftp.ncbi.nih.gov/pub/taxonomy/taxdump.tar.gz"
 
-    print(color_text("\n    Downloading required NCBI taxonomy data...\n", "yellow"))
+    print(color_text("\n    Downloading required NCBI taxonomy data (only needs to be done once)...\n", "yellow"))
 
     try:
         download_with_tqdm(taxdump_link, "        NCBI Taxonomy data", taxdump_path)

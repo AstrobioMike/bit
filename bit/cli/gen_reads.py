@@ -51,6 +51,14 @@ def build_parser(parent_subparsers=None):
         default="perfect-reads",
     )
     general.add_argument(
+        "-j",
+        "--jobs",
+        metavar="<INT>",
+        type=int,
+        default=10,
+        help="Number of parallel processes to use for read generation when multiple input fastas are provided (default: 10)",
+    )
+    general.add_argument(
          "-t",
          "--type",
          help="Type of reads to generate (default: 'paired-end')",

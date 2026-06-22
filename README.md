@@ -64,11 +64,11 @@ You can see an overview of available programs like below by running `bit` by its
 
 ---
 
-#### Simulation / sequence manipulation
+#### Sequence simulation and manipulation
 
 | Program | Purpose |
 | ------- | ------- |
-| `bit gen-metagenome` | generate reads from fasta files |
+| `bit gen-metagenome` | generate an in silico metagenome with ground-truth tables |
 | `bit gen-reads` | generate reads from fasta files |
 | `bit mutate-seqs` | introduce point mutations (substitutions/indels) into nucleotide or amino-acid fasta files |
 | `bit add-insertion` | add insertions into nucleotide or amino-acid fasta sequences |

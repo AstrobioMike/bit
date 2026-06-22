@@ -16,7 +16,7 @@ The merged table carries both gtdb_* and ncbi_* rank columns; each builder takes
 emits them under plain rank names so each tree is self-consistent.
 """
 import os
-import pandas as pd
+import pandas as pd # type: ignore
 from types import SimpleNamespace
 
 RANKS = ["domain", "phylum", "class", "order", "family", "genus", "species"]
@@ -33,7 +33,7 @@ def _src_rank_cols(taxonomy):
 def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="paired-end",
                          read_length=None, fragment_size=500, fragment_size_range=10,
                          long_read_length_range=50, seed=None, circularize=False,
-                         include_Ns=False, genome_sizes=None):
+                         include_Ns=False, genome_sizes=None, jobs=10):
     """
     Construct an args-like object matching what bit.modules.gen_reads.generate_reads
     expects. Coverage mode is used (the coverage TSV drives per-genome read counts),
@@ -61,6 +61,7 @@ def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="pa
         source_tsv=True,
         genome_sizes=genome_sizes or {},
         quiet=True,
+        jobs=jobs
     )
 
 

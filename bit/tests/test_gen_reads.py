@@ -7,12 +7,15 @@ from bit.modules.gen_reads import parse_proportions_file
 from bit.modules.general import get_package_path
 from bit.tests.utils import run_cli
 from bit.modules.gen_reads import (preflight_checks,
-                                   gen_paired_reads,
-                                   gen_single_reads,
+                                   gen_reads,
+                                   generate_reads,
                                    get_proportions,
                                    compute_reads_from_coverage,
                                    extract_subsequence,
-                                   parse_coverages_input)
+                                   parse_coverages_input,
+                                   apportion_units,
+                                   compute_id_offsets,
+                                   distribute_units_across_contigs)
 
 
 test_fasta = get_package_path("tests/data/ez-screen-assembly.fasta")
@@ -23,12 +26,12 @@ def _base_args(**kw):
              read_length=10, fragment_size=50, type="paired-end")
     d.update(kw)
     return Namespace(**d)
- 
- 
+
+
 def _revcomp(s):
     return s[::-1].translate(str.maketrans("ACGT", "TGCA"))
- 
- 
+
+
 def _read_fasta_seq(path):
     seq = ""
     with open(path) as f:
@@ -36,13 +39,13 @@ def _read_fasta_seq(path):
             if not line.startswith(">"):
                 seq += line.strip()
     return seq.upper()
- 
- 
+
+
 def _count_reads(path):
     with open(path) as f:
         return sum(1 for _ in f) // 4
- 
- 
+
+
 def _fastq_map(path):
     m = {}
     with open(path) as f:
@@ -152,9 +155,10 @@ def test_wrapped_fragments_generated_with_circularize(tmp_path):
         circularize=True,
         include_Ns=False,
         source_tsv=False,
+        type="paired-end",
     )
 
-    gen_paired_reads(args, get_proportions(args))
+    gen_reads(args, get_proportions(args))
 
     forward_fastq = str(out_prefix) + "_R1.fastq"
     assert os.path.exists(forward_fastq)
@@ -232,7 +236,7 @@ def test_simulate_single_end_reads_unit(tmp_path):
         source_tsv=False,
     )
 
-    gen_single_reads(args, get_proportions(args))
+    gen_reads(args, get_proportions(args))
 
     fastq_path = str(out_prefix) + ".fastq"
     assert os.path.exists(fastq_path), "Single-end FASTQ not created"
@@ -277,7 +281,7 @@ def test_long_reads_variable_length(tmp_path):
         source_tsv=False,
     )
 
-    gen_single_reads(args, get_proportions(args))
+    gen_reads(args, get_proportions(args))
 
     fastq_path = str(out_prefix) + ".fastq"
     assert os.path.exists(fastq_path)
@@ -384,9 +388,10 @@ def test_gen_paired_reads_skips_Ns(tmp_path):
         circularize=False,
         include_Ns=False,
         source_tsv=False,
+        type="paired-end",
     )
 
-    gen_paired_reads(args, get_proportions(args))
+    gen_reads(args, get_proportions(args))
 
     for suffix in ("_R1.fastq", "_R2.fastq"):
         with open(str(out_prefix) + suffix, 'r') as f:
@@ -578,29 +583,29 @@ def test_coverage_tsv_cli(tmp_path):
     assert R1_path.exists(), f"R1 file not found at {R1_path}"
     assert R2_path.exists(), f"R2 file not found at {R2_path}"
 
- 
+
 def test_preflight_missing_input_fasta_exits(tmp_path):
     args = _base_args(input_fastas=[str(tmp_path / "nope.fasta")])
     with pytest.raises(SystemExit):
         preflight_checks(args)
- 
- 
+
+
 def test_preflight_missing_coverage_file_exits(tmp_path):
     real = tmp_path / "in.fasta"
     real.write_text(">c\nACGT\n")
     args = _base_args(input_fastas=[str(real)], coverage=str(tmp_path / "missing.tsv"))
     with pytest.raises(SystemExit):
         preflight_checks(args)
- 
- 
+
+
 def test_preflight_missing_proportions_file_exits(tmp_path):
     real = tmp_path / "in.fasta"
     real.write_text(">c\nACGT\n")
     args = _base_args(input_fastas=[str(real)], proportions_file=str(tmp_path / "missing.tsv"))
     with pytest.raises(SystemExit):
         preflight_checks(args)
- 
- 
+
+
 def test_preflight_proportions_and_coverage_mutually_exclusive(tmp_path):
     real = tmp_path / "in.fasta"
     real.write_text(">c\nACGT\n")
@@ -609,8 +614,8 @@ def test_preflight_proportions_and_coverage_mutually_exclusive(tmp_path):
     args = _base_args(input_fastas=[str(real)], proportions_file=str(prop), coverage="10")
     with pytest.raises(SystemExit):
         preflight_checks(args)
- 
- 
+
+
 def test_get_proportions_missing_fasta_in_proportions_exits(tmp_path):
     f1 = tmp_path / "a.fasta"
     f1.write_text(">c\nACGT\n")
@@ -619,8 +624,8 @@ def test_get_proportions_missing_fasta_in_proportions_exits(tmp_path):
     args = _base_args(input_fastas=[str(f1)], proportions_file=str(prop), coverage=None)
     with pytest.raises(SystemExit):
         get_proportions(args)
- 
- 
+
+
 def test_compute_coverage_missing_fasta_in_coverage_exits(tmp_path):
     f1 = tmp_path / "a.fasta"
     f1.write_text(">c\nACGT\n")
@@ -629,16 +634,16 @@ def test_compute_coverage_missing_fasta_in_coverage_exits(tmp_path):
     args = _base_args(input_fastas=[str(f1)], coverage=str(cov), type="single-end")
     with pytest.raises(SystemExit):
         compute_reads_from_coverage(args)
- 
- 
+
+
 def test_compute_coverage_zero_total_reads_exits(tmp_path):
     f1 = tmp_path / "a.fasta"
     f1.write_text(">c\nACGT\n")  # 4 bp
     args = _base_args(input_fastas=[str(f1)], coverage="0", type="single-end")
     with pytest.raises(SystemExit):
         compute_reads_from_coverage(args)
- 
-  
+
+
 def test_source_tsv_paired_end_reconstructs_reads(tmp_path):
     fasta = tmp_path / "ref.fasta"
     ref = "ACGTTGCAACGTTGCAACGTTGCAACGTTGCAACGTTGCA"  # 40 bp
@@ -646,22 +651,23 @@ def test_source_tsv_paired_end_reconstructs_reads(tmp_path):
     out = tmp_path / "pe"
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=7, num_reads=20, read_length=8, fragment_size=20, fragment_size_range=10,
-        output_prefix=str(out), circularize=False, include_Ns=False, source_tsv=True)
-    gen_paired_reads(args, get_proportions(args))
- 
+        output_prefix=str(out), circularize=False, include_Ns=False, source_tsv=True,
+        type="paired-end")
+    gen_reads(args, get_proportions(args))
+
     tsv = out.parent / (out.name + "-read-sources.tsv")
     assert tsv.exists()
- 
+
     # headers must be bare ids (no comment field) when source_tsv is on
     with open(str(out) + "_R1.fastq") as f:
         first_header = f.readline().rstrip("\n")
     assert " " not in first_header
     assert first_header.endswith("/1")
- 
+
     r1_seqs = _fastq_map(str(out) + "_R1.fastq")
     r2_seqs = _fastq_map(str(out) + "_R2.fastq")
     refseq = _read_fasta_seq(fasta)
- 
+
     with open(tsv) as f:
         header = f.readline().rstrip("\n").split("\t")
         assert header == ["read_id", "source_fasta", "contig", "start", "end", "strand", "wrapped"]
@@ -679,8 +685,8 @@ def test_source_tsv_paired_end_reconstructs_reads(tmp_path):
                 assert emitted == expected, f"{rid}: {emitted} != {expected} (strand {strand})"
             rows += 1
     assert rows == 20  # 10 fragments x 2 mates
- 
- 
+
+
 def test_source_tsv_single_end_reconstructs_reads(tmp_path):
     fasta = tmp_path / "ref.fasta"
     ref = "ACGTTGCAACGTTGCAACGTTGCAACGTTGCAACGTTGCA"
@@ -689,13 +695,13 @@ def test_source_tsv_single_end_reconstructs_reads(tmp_path):
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=3, num_reads=10, read_length=8, output_prefix=str(out),
         circularize=False, type="single-end", include_Ns=False, source_tsv=True)
-    gen_single_reads(args, get_proportions(args))
- 
+    gen_reads(args, get_proportions(args))
+
     tsv = out.parent / (out.name + "-read-sources.tsv")
     assert tsv.exists()
     refseq = _read_fasta_seq(fasta)
     seqs = _fastq_map(str(out) + ".fastq")
- 
+
     with open(tsv) as f:
         f.readline()
         n = 0
@@ -708,33 +714,36 @@ def test_source_tsv_single_end_reconstructs_reads(tmp_path):
                 assert seqs[rid] == expected
             n += 1
     assert n == 10
- 
-  
-def test_paired_end_remainder_tail_recovers_stranded_reads(tmp_path):
+
+
+def test_paired_end_subunity_proportion_yields_full_count(tmp_path):
     fasta = tmp_path / "ref.fasta"
     fasta.write_text(">c0\n" + "ACGT" * 50 + "\n")  # 200 bp
     out = tmp_path / "pe_tail"
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=0, num_reads=20, read_length=10, fragment_size=50, fragment_size_range=10,
-        output_prefix=str(out), circularize=False, include_Ns=False, source_tsv=False)
-    gen_paired_reads(args, {str(fasta): 0.5})  # sub-unity -> strands ~half, tail recovers
+        output_prefix=str(out), circularize=False, include_Ns=False, source_tsv=False,
+        type="paired-end")
+    # a single file given a sub-unity proportion is normalized to 1.0 and still
+    # receives the full budget (20 reads -> 10 fragments -> 10 R1 + 10 R2)
+    gen_reads(args, {str(fasta): 0.5})
     assert _count_reads(str(out) + "_R1.fastq") == 10
     assert _count_reads(str(out) + "_R2.fastq") == 10
- 
- 
-def test_single_end_remainder_tail_recovers_stranded_reads(tmp_path):
+
+
+def test_single_end_subunity_proportion_yields_full_count(tmp_path):
     fasta = tmp_path / "ref.fasta"
     fasta.write_text(">c0\n" + "ACGT" * 50 + "\n")
     out = tmp_path / "se_tail"
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=0, num_reads=20, read_length=10, output_prefix=str(out),
         circularize=False, type="single-end", include_Ns=False, source_tsv=False)
-    gen_single_reads(args, {str(fasta): 0.5})
+    gen_reads(args, {str(fasta): 0.5})
     assert _count_reads(str(out) + ".fastq") == 20
- 
- 
-def test_single_end_remainder_tail_long_reads(tmp_path):
-    # exercises the long-read length sampling at the top of the tail
+
+
+def test_long_read_subunity_proportion_yields_full_count(tmp_path):
+    # exercises long-read length sampling with a sub-unity proportion
     fasta = tmp_path / "ref.fasta"
     fasta.write_text(">c0\n" + "ACGT" * 500 + "\n")  # 2000 bp
     out = tmp_path / "se_long_tail"
@@ -742,36 +751,226 @@ def test_single_end_remainder_tail_long_reads(tmp_path):
         seed=0, num_reads=20, read_length=200, output_prefix=str(out),
         circularize=False, type="long", long_read_length_range=50,
         include_Ns=False, source_tsv=False)
-    gen_single_reads(args, {str(fasta): 0.5})
+    gen_reads(args, {str(fasta): 0.5})
     assert _count_reads(str(out) + ".fastq") == 20
- 
- 
-def test_remainder_tail_writes_source_rows_paired_end(tmp_path):
-    # tail + source_tsv together, so the provenance writes inside the tail run
+
+
+def test_subunity_proportion_writes_source_rows_paired_end(tmp_path):
+    # sub-unity proportion + source_tsv together, so provenance rows are still written
+    # for the full normalized budget
     fasta = tmp_path / "ref.fasta"
     fasta.write_text(">c0\n" + "ACGT" * 50 + "\n")
     out = tmp_path / "pe_tail_src"
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=0, num_reads=20, read_length=10, fragment_size=50, fragment_size_range=10,
-        output_prefix=str(out), circularize=False, include_Ns=False, source_tsv=True)
-    gen_paired_reads(args, {str(fasta): 0.5})
+        output_prefix=str(out), circularize=False, include_Ns=False, source_tsv=True,
+        type="paired-end")
+    gen_reads(args, {str(fasta): 0.5})
     tsv = out.parent / (out.name + "-read-sources.tsv")
     assert tsv.exists()
     with open(tsv) as f:
         rows = [l for l in f.read().splitlines() if l]
     assert len(rows) == 21  # header + 20 reads
- 
- 
-def test_remainder_tail_writes_source_rows_single_end(tmp_path):
+
+
+def test_subunity_proportion_writes_source_rows_single_end(tmp_path):
     fasta = tmp_path / "ref.fasta"
     fasta.write_text(">c0\n" + "ACGT" * 50 + "\n")
     out = tmp_path / "se_tail_src"
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=0, num_reads=20, read_length=10, output_prefix=str(out),
         circularize=False, type="single-end", include_Ns=False, source_tsv=True)
-    gen_single_reads(args, {str(fasta): 0.5})
+    gen_reads(args, {str(fasta): 0.5})
     tsv = out.parent / (out.name + "-read-sources.tsv")
     assert tsv.exists()
     with open(tsv) as f:
         rows = [l for l in f.read().splitlines() if l]
     assert len(rows) == 21
+
+# ---------------------------------------------------------------------------
+# parallel read generation across multiple input genomes
+#
+# the parallel path generates each input fasta in its own process and
+# concatenates the parts in input order. with a fixed --seed (per-file seeds),
+# its output must be byte-for-byte identical to the single-process path, so most
+# of these tests assert serial == parallel rather than re-deriving sequences.
+# ---------------------------------------------------------------------------
+
+def _write_multi_genomes(tmp_path):
+    """ three small genomes of differing sizes/contig counts; returns list of paths """
+    import random
+    rng = random.Random(2024)
+    specs = [("g1", [4000, 1500]), ("g2", [9000]), ("g3", [2500, 2500, 2500])]
+    paths = []
+    for name, lens in specs:
+        p = tmp_path / f"{name}.fasta"
+        with open(p, "w") as f:
+            for i, L in enumerate(lens):
+                f.write(f">{name}_c{i}\n" + "".join(rng.choice("ACGT") for _ in range(L)) + "\n")
+        paths.append(str(p))
+    return paths
+
+
+def _multi_args(paths, out_prefix, jobs, rtype="paired-end", seed=123, source_tsv=True):
+    return Namespace(
+        input_fastas=list(paths),
+        proportions_file=None,
+        coverage=None,
+        seed=seed,
+        num_reads=4000,
+        read_length=100,
+        fragment_size=400,
+        fragment_size_range=10,
+        long_read_length_range=50,
+        output_prefix=str(out_prefix),
+        circularize=False,
+        include_Ns=False,
+        source_tsv=source_tsv,
+        type=rtype,
+        jobs=jobs,
+    )
+
+
+def _read_text(path):
+    with open(path) as f:
+        return f.read()
+
+
+@pytest.mark.parametrize("rtype,suffixes", [
+    ("paired-end", ["_R1.fastq", "_R2.fastq"]),
+    ("single-end", [".fastq"]),
+    ("long", [".fastq"]),
+])
+def test_parallel_matches_serial(tmp_path, rtype, suffixes):
+    paths = _write_multi_genomes(tmp_path)
+
+    s_args = _multi_args(paths, tmp_path / "serial", jobs=1, rtype=rtype)
+    gen_reads(s_args, get_proportions(s_args))
+
+    p_args = _multi_args(paths, tmp_path / "par", jobs=4, rtype=rtype)
+    gen_reads(p_args, get_proportions(p_args))
+
+    for suf in suffixes:
+        assert _read_text(str(tmp_path / "serial") + suf) == _read_text(str(tmp_path / "par") + suf), \
+            f"serial vs parallel mismatch in {suf}"
+
+    # provenance TSV must match too
+    assert _read_text(str(tmp_path / "serial") + "-read-sources.tsv") == \
+           _read_text(str(tmp_path / "par") + "-read-sources.tsv")
+
+
+def test_parallel_reproducible_across_job_counts(tmp_path):
+    paths = _write_multi_genomes(tmp_path)
+
+    a_args = _multi_args(paths, tmp_path / "j4", jobs=4, seed=77)
+    gen_reads(a_args, get_proportions(a_args))
+    b_args = _multi_args(paths, tmp_path / "j2", jobs=2, seed=77)
+    gen_reads(b_args, get_proportions(b_args))
+
+    assert _read_text(str(tmp_path / "j4") + "_R1.fastq") == _read_text(str(tmp_path / "j2") + "_R1.fastq")
+    assert _read_text(str(tmp_path / "j4") + "_R2.fastq") == _read_text(str(tmp_path / "j2") + "_R2.fastq")
+
+
+def test_single_file_output_independent_of_jobs(tmp_path):
+    # a single input fasta always runs serially regardless of --jobs; output identical
+    fasta = tmp_path / "solo.fasta"
+    import random
+    rng = random.Random(5)
+    fasta.write_text(">c0\n" + "".join(rng.choice("ACGT") for _ in range(8000)) + "\n")
+
+    a = _multi_args([str(fasta)], tmp_path / "j1", jobs=1, seed=9)
+    gen_reads(a, get_proportions(a))
+    b = _multi_args([str(fasta)], tmp_path / "j8", jobs=8, seed=9)
+    gen_reads(b, get_proportions(b))
+
+    assert _read_text(str(tmp_path / "j1") + "_R1.fastq") == _read_text(str(tmp_path / "j8") + "_R1.fastq")
+
+
+def test_parallel_total_read_count_and_contiguous_ids(tmp_path):
+    paths = _write_multi_genomes(tmp_path)
+    p_args = _multi_args(paths, tmp_path / "cnt", jobs=4, rtype="paired-end")
+    gen_reads(p_args, get_proportions(p_args))
+
+    r1 = _fastq_map(str(tmp_path / "cnt") + "_R1.fastq")
+    r2 = _fastq_map(str(tmp_path / "cnt") + "_R2.fastq")
+    # num_reads=4000 -> 2000 fragments -> 2000 R1 + 2000 R2
+    assert len(r1) == 2000
+    assert len(r2) == 2000
+
+    # base read ids run 1..2000 with no gaps, each present as /1 and /2
+    base1 = sorted(int(rid[1:].split("/")[0]) for rid in r1)
+    base2 = sorted(int(rid[1:].split("/")[0]) for rid in r2)
+    assert base1 == list(range(1, 2001))
+    assert base2 == list(range(1, 2001))
+
+
+def test_parallel_source_tsv_maps_to_valid_genomes(tmp_path):
+    paths = _write_multi_genomes(tmp_path)
+    p_args = _multi_args(paths, tmp_path / "prov", jobs=3, rtype="single-end")
+    gen_reads(p_args, get_proportions(p_args))
+
+    valid = set(paths)
+    with open(str(tmp_path / "prov") + "-read-sources.tsv") as f:
+        header = f.readline()
+        assert header.startswith("read_id\t")
+        rows = 0
+        for line in f:
+            _rid, source_fasta, _contig, _s, _e, _strand, _w = line.rstrip("\n").split("\t")
+            assert source_fasta in valid
+            rows += 1
+    assert rows == p_args.num_reads
+
+
+# ---------------------------------------------------------------------------
+# apportionment / offset helpers underpinning the parallel split
+# ---------------------------------------------------------------------------
+
+def test_apportion_units_sums_exactly_and_is_ordered():
+    files = ["a", "b", "c", "d"]
+    props = {f: 0.25 for f in files}
+    out = apportion_units(files, 999, props)
+    assert sum(out.values()) == 999
+    assert list(out.keys()) == files  # preserves input order
+    # 999 over 4 equal -> three 250s and one 249, deterministic by input order
+    assert out == {"a": 250, "b": 250, "c": 250, "d": 249}
+
+
+def test_apportion_units_normalizes_unnormalized_proportions():
+    # weights that don't sum to 1 must still distribute the full budget
+    files = ["a", "b"]
+    out = apportion_units(files, 100, {"a": 3.0, "b": 1.0})
+    assert sum(out.values()) == 100
+    assert out == {"a": 75, "b": 25}
+
+
+def test_apportion_units_zero_and_single_file():
+    assert apportion_units(["only"], 4242, {"only": 1.0}) == {"only": 4242}
+    assert apportion_units(["a", "b"], 0, {"a": 0.5, "b": 0.5}) == {"a": 0, "b": 0}
+
+
+def test_apportion_units_nonpositive_weights_fall_back_to_equal():
+    out = apportion_units(["a", "b", "c"], 9, {"a": 0.0, "b": 0.0, "c": 0.0})
+    assert sum(out.values()) == 9
+    # equal fallback -> 3 each
+    assert out == {"a": 3, "b": 3, "c": 3}
+
+
+def test_compute_id_offsets_advances_by_units():
+    files = ["a", "b", "c"]
+    per_file = {"a": 250, "b": 0, "c": 100}  # b has zero budget
+    offs = compute_id_offsets(files, per_file)
+    # offsets advance by units; zero-budget file does not advance the counter
+    assert offs == {"a": 0, "b": 250, "c": 250}
+
+
+def test_distribute_units_across_contigs_sums_to_budget():
+    counts = distribute_units_across_contigs([4000, 1500, 500], 123)
+    assert sum(counts) == 123
+    assert len(counts) == 3
+    # roughly proportional: the largest contig gets the most
+    assert counts[0] >= counts[1] >= counts[2]
+
+
+def test_distribute_units_handles_zero_budget_and_empty():
+    assert distribute_units_across_contigs([1000, 2000], 0) == [0, 0]
+    assert distribute_units_across_contigs([0, 0], 10) == [0, 0]

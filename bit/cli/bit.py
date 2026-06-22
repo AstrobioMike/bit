@@ -38,7 +38,7 @@ PROGRAM_GROUPS = [
         "programs": [
             {
                 "name": "get-accs-from-gtdb",
-                "desc": "search the GTDB by taxonomy and retrieve NCBI accessions",
+                "desc": "search GTDB by taxonomy and retrieve NCBI accessions",
             },
             {
                 "name": "get-accs-from-ncbi",
@@ -51,7 +51,7 @@ PROGRAM_GROUPS = [
         ],
     },
     {
-        "title": "Simulation / sequence manipulation",
+        "title": "Sequence simulation and manipulation",
         "programs": [
             {
                 "name": "gen-metagenome",
