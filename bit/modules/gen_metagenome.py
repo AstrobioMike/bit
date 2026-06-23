@@ -37,7 +37,7 @@ def gen_metagenome(args):
     mutating = args.mutation_mode != "off"
     n = _phase_counter()
 
-    section(f"Phase {n()}: Selecting genomes and resolving taxonomy...")
+    section(f"Phase {n()}: Finding genomes and resolving taxonomy...")
     run = phase_select(args, run)
 
     section(f"Phase {n()}: Downloading assemblies...")
@@ -215,6 +215,7 @@ def _select_with_suppression_screen(gtdb_tab, derep_rank, domains, num_genomes, 
     kept_accs = set()              # accessions already kept (for dedup safety)
     kept_groups = set(user_excluded_groups) if user_excluded_groups else set()
     dead_accs = set()
+    seen_accs = set()              # every accession ever picked (kept or dead)
 
     def acc_of(row_frame):
         return row_frame["ncbi_genbank_assembly_accession"].iloc[0]
@@ -231,14 +232,23 @@ def _select_with_suppression_screen(gtdb_tab, derep_rank, domains, num_genomes, 
         if len(sel) == 0:
             break
 
-        # screen this batch
         accs = list(sel["ncbi_genbank_assembly_accession"])
+
+        # stop only when a round surfaces no genome we haven't already seen — i.e.
+        # the candidate pool is genuinely exhausted. A round can legitimately add
+        # zero *live* genomes (all its head(1) picks suppressed) while still making
+        # progress: recording those as dead changes the next round's picks, letting
+        # live siblings in the same groups surface
+        if all(a in seen_accs for a in accs):
+            break
+        seen_accs.update(accs)
+
+        # screen this batch
         if assembly_info_path:
             live = TAX.present_accessions(accs, assembly_info_path)
         else:
             live = set(accs)       # no screen possible -> assume all live
 
-        added = 0
         for _, r in sel.iterrows():
             a = r["ncbi_genbank_assembly_accession"]
             if a in live and a not in kept_accs:
@@ -246,11 +256,8 @@ def _select_with_suppression_screen(gtdb_tab, derep_rank, domains, num_genomes, 
                 kept_accs.add(a)
                 if on:
                     kept_groups.add(r[derep_rank])
-                added += 1
             elif a not in live:
                 dead_accs.add(a)
-        if added == 0:
-            break                  # nothing new this round -> pool exhausted
 
     import pandas as _pd # type: ignore
     selected = (_pd.concat(kept_rows, ignore_index=True)
@@ -399,9 +406,21 @@ def phase_download(args, run):
         jobs=args.jobs, output_dir=run.genomes_dir, quiet=True)
     dl_ncbi_assemblies(dl_args)
 
-    # resolve downloaded fasta paths per accession
+    # resolve downloaded fasta paths, and reconcile the accession in run.merged to
+    # the version actually downloaded. NCBI may serve a newer version (or the GCF
+    # twin of a requested GCA) than the accession we asked for, and the file is
+    # named after that actual accession; carrying the as-downloaded accession
+    # forward keeps the genome files, path maps, and truth tables all consistent.
+    new_accessions = []
+    new_paths = {}
     for a in run.merged["accession"]:
-        run.genome_paths[a] = find_downloaded_fasta(run.genomes_dir, a)
+        path = find_downloaded_fasta(run.genomes_dir, a)
+        actual = _accession_from_fasta_name(path) if path else None
+        eff = actual or a                    # fall back to requested if unparsable
+        new_accessions.append(eff)
+        new_paths[eff] = path
+    run.merged["accession"] = new_accessions
+    run.genome_paths = new_paths
 
     # drop genomes that didn't download (e.g. suppressed/removed accessions) so
     # later phases don't try to size/mutate/generate reads for absent files. The
@@ -479,8 +498,10 @@ def write_gtdb_summary(run):
 
 
 def _acc_digits_core(acc):
-    """ numeric core of an accession (drop RS_/GB_ prefix, GCA_/GCF_ prefix, and
-    version), so GCA/GCF twins and version variants collapse to one key. """
+    """ 
+    numeric core of an accession (drop RS_/GB_ prefix, GCA_/GCF_ prefix, and
+    version), so GCA/GCF twins and version variants collapse to one key
+    """
     s = str(acc)
     if s.startswith(("RS_", "GB_")):
         s = s[3:]
@@ -490,10 +511,47 @@ def _acc_digits_core(acc):
     return s
 
 
+def _accession_from_fasta_name(path):
+    """ 
+    recover the assembly accession from a dl-ncbi-assemblies filename, which is
+    '<accession>.fasta.gz' (e.g. 'GCF_000005845.2.fasta.gz' -> 'GCF_000005845.2').
+    Returns None if path is falsy
+    """
+    if not path:
+        return None
+    fn = os.path.basename(path)
+    for ext in (".fasta.gz", ".fa.gz", ".fna.gz", ".fasta", ".gz"):
+        if fn.endswith(ext):
+            return fn[: -len(ext)]
+    return fn
+
+
 def find_downloaded_fasta(genomes_dir, accession):
-    """ locate the downloaded fasta for an accession (dl-ncbi-assemblies naming) """
+    """
+    locate the downloaded fasta for an accession (dl-ncbi-assemblies naming).
+
+    Match on the versionless numeric accession core rather than a literal prefix:
+    NCBI names the file after the assembly's CURRENT version and accession form,
+    which can differ from the accession string carried in run.merged (GTDB may
+    reference an older version, and a GCA pick can download as its GCF twin or
+    vice versa). A strict startswith(accession) check misses those and would
+    wrongly treat a present genome as not-downloaded.
+
+    dl-ncbi-assemblies writes files as '<dl_acc>.fasta.gz' (e.g.
+    'GCF_000005845.2.fasta.gz'), so the accession core is the filename with its
+    extension stripped
+    """
+    want = _acc_digits_core(accession)
     for fn in os.listdir(genomes_dir):
-        if fn.startswith(accession) and (fn.endswith(".fasta") or fn.endswith(".gz")):
+        if not (fn.endswith(".fasta") or fn.endswith(".gz")):
+            continue
+        # strip .fasta.gz / .fasta / .gz to recover the leading accession token
+        file_acc = fn
+        for ext in (".fasta.gz", ".fa.gz", ".fna.gz", ".fasta", ".gz"):
+            if file_acc.endswith(ext):
+                file_acc = file_acc[: -len(ext)]
+                break
+        if _acc_digits_core(file_acc) == want:
             return os.path.join(genomes_dir, fn)
     return None
 
