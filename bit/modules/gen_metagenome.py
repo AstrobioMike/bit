@@ -49,10 +49,18 @@ def gen_metagenome(args):
 
     # when not mutating, genome sizes are measured here (needed for abundance)
     if mutating:
-        section(f"Phase {n()}: Assigning abundances...")
+        run = phase_abundance(args, run)
     else:
         section(f"Phase {n()}: Getting genome sizes and assigning abundances...")
-    run = phase_abundance(args, run)
+        run = phase_abundance(args, run)
+
+    # when not mutating, genome sizes are measured here (needed for abundance)
+    # if mutating:
+    #     section(f"Phase {n()}: Assigning abundances...")
+    # else:
+    #     section(f"Phase {n()}: Getting genome sizes and assigning abundances...")
+    # run = phase_abundance(args, run)
+
 
     section(f"Phase {n()}: Generating reads...")
     run = phase_reads(args, run)
@@ -498,7 +506,7 @@ def write_gtdb_summary(run):
 
 
 def _acc_digits_core(acc):
-    """ 
+    """
     numeric core of an accession (drop RS_/GB_ prefix, GCA_/GCF_ prefix, and
     version), so GCA/GCF twins and version variants collapse to one key
     """
@@ -512,7 +520,7 @@ def _acc_digits_core(acc):
 
 
 def _accession_from_fasta_name(path):
-    """ 
+    """
     recover the assembly accession from a dl-ncbi-assemblies filename, which is
     '<accession>.fasta.gz' (e.g. 'GCF_000005845.2.fasta.gz' -> 'GCF_000005845.2').
     Returns None if path is falsy
@@ -588,8 +596,9 @@ def phase_mutate(args, run):
         # sizes are measured in the abundance phase (parallel, with a bar), since
         # nothing has read the FASTAs yet and abundance needs the sizes.
     else:
+        print()
         mut_dir = os.path.join(run.out_dir, "mutated-genomes")
-        with tqdm(total=len(accs), desc="    Mutating", ncols=70) as pbar:
+        with tqdm(total=len(accs), desc="    Mutating", ncols=78, unit=" genome") as pbar:
             run.mutation_results = MUT.run_mutation(
                 run.genome_paths, rates, mut_dir, ti_tv_ratio=args.ti_tv_ratio,
                 indel_rate=args.indel_rate, seed=args.seed, progress=pbar)
@@ -684,7 +693,6 @@ def phase_reads(args, run):
         per_read_tsv=args.per_read_tsv)
     generate_reads(gr_args)
     run.read_sources_tsv = f"{run.reads_prefix}-read-sources.tsv.gz"
-    print()
     return run
 
 

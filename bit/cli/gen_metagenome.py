@@ -170,9 +170,9 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<FLOAT>",
         type=float,
         default=None,  # 30 set later
-        help=h(wrap_help("Median per-genome coverage in 'coverage' abundance mode; scales the "
+        help=wrap_help("Median per-genome coverage in 'coverage' abundance mode; scales the "
                          "distribution so 'even' gives this coverage to every genome and "
-                         "'lognormal' centers around it (default: 30). Ignored in 'relative' mode"))
+                         "'lognormal' centers around it (default: 30)")
         )
 
     abundance.add_argument(
