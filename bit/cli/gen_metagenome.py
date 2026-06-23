@@ -193,7 +193,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         help=wrap_help("Mutate genomes before read generation: "
                        "'uniform' where all are done at --mutation-rate; "
                        "'distributed' with each drawn between --mutation-rate-min and --mutation-rate-max; "
-                       "(default: 'off')")
+                       "(default: off)")
         )
 
     mutation.add_argument(
