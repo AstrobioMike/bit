@@ -39,8 +39,8 @@ def test_assign_rates_uniform():
     assert all(v == 0.02 for v in rates.values())
 
 
-def test_assign_rates_distributed_varies_in_range():
-    rates = assign_rates(ACCS, mode="distributed", rate_min=0.01, rate_max=0.05, seed=1)
+def test_assign_rates_varied_varies_in_range():
+    rates = assign_rates(ACCS, mode="varied", rate_min=0.01, rate_max=0.05, seed=1)
     assert all(0.01 <= v <= 0.05 for v in rates.values())
     assert len(set(rates.values())) == len(ACCS)   # distinct per genome
 
@@ -61,8 +61,8 @@ def test_uniform_observed_rate_matches_requested(genomes, tmp_path):
         assert abs(observed - 0.03) < 0.005
 
 
-def test_distributed_observed_tracks_assigned(genomes, tmp_path):
-    rates = assign_rates(ACCS, mode="distributed", rate_min=0.01, rate_max=0.08, seed=7)
+def test_varied_observed_tracks_assigned(genomes, tmp_path):
+    rates = assign_rates(ACCS, mode="varied", rate_min=0.01, rate_max=0.08, seed=7)
     results = run_mutation(genomes, rates, str(tmp_path / "out"), seed=42)
     for acc in ACCS:
         r = results[acc]

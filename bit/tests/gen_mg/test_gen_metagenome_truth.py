@@ -166,16 +166,20 @@ def test_read_truth_joins_taxonomy(merged, tmp_path):
         "/x/GCA_E.fasta": "GCA_E", "GCA_E.fasta": "GCA_E",
     }
     out = tmp_path / "read-truth.tsv"
-    rt = build_read_truth(str(src), fasta_to_acc, pg, str(out))
+    build_read_truth(str(src), fasta_to_acc, pg, str(out))
+    rt = pd.read_csv(out, sep="\t", dtype=str, keep_default_na=False)
 
     assert (rt["accession"] != "NA").all()
     # GCF_A reads carry Genus_A (gtdb); euk read carries NA under gtdb
     assert (rt[rt["accession"] == "GCF_A"]["genus"] == "Genus_A").all()
     assert (rt[rt["accession"] == "GCA_E"]["genus"] == "NA").all()
     # coordinates carried through, and appear before the rank columns
-    assert set(["contig", "start", "end", "strand", "wrapped"]).issubset(rt.columns)
+    assert set(["contig", "start", "end", "strand"]).issubset(rt.columns)
+    # 'wrapped' is intentionally dropped from the truth table (gen-metagenome
+    # never circularizes, so it would be uniformly 'false')
+    assert "wrapped" not in rt.columns
     cols = list(rt.columns)
-    assert cols.index("wrapped") < cols.index("genus")
+    assert cols.index("strand") < cols.index("genus")
     assert out.exists()
 
 
@@ -187,8 +191,10 @@ def test_read_truth_ncbi_taxonomy(merged, tmp_path):
         "read_id\tsource_fasta\tcontig\tstart\tend\tstrand\twrapped\n"
         "r1/1\t/x/GCA_E.fasta\tGCA_E_ctg0\t5\t155\t+\tfalse\n"
     )
-    rt = build_read_truth(str(src), {"/x/GCA_E.fasta": "GCA_E", "GCA_E.fasta": "GCA_E"},
-                          pg, str(tmp_path / "o.tsv"))
+    out = tmp_path / "o.tsv"
+    build_read_truth(str(src), {"/x/GCA_E.fasta": "GCA_E", "GCA_E.fasta": "GCA_E"},
+                     pg, str(out))
+    rt = pd.read_csv(out, sep="\t", dtype=str)
     assert rt["genus"].iloc[0] == "Saccharomyces"
 
 
@@ -199,7 +205,9 @@ def test_read_truth_basename_fallback(merged, tmp_path):
         "read_id\tsource_fasta\tcontig\tstart\tend\tstrand\twrapped\n"
         "r1/1\tGCF_B.fasta\tGCF_B_ctg0\t1\t151\t+\tfalse\n"
     )
-    rt = build_read_truth(str(src), {"GCF_B.fasta": "GCF_B"}, pg, str(tmp_path / "o.tsv"))
+    out = tmp_path / "o.tsv"
+    build_read_truth(str(src), {"GCF_B.fasta": "GCF_B"}, pg, str(out))
+    rt = pd.read_csv(out, sep="\t", dtype=str)
     assert rt["accession"].iloc[0] == "GCF_B"
     assert rt["genus"].iloc[0] == "Genus_B"
 
@@ -236,3 +244,48 @@ def test_write_truth_outputs_split_tree(merged, tmp_path):
     # per-read is gzipped and reads back
     rt = pd.read_csv(written["ncbi"]["per_read"], sep="\t")
     assert len(rt) == 2
+
+
+def test_build_read_truth_streams_large_input(merged, tmp_path):
+    """ a larger input streams through polars to a single gzipped output with the
+    header once and no rows lost/duplicated (memory is bounded by the engine). """
+    import gzip
+    pg = build_per_genome_table(merged, {a: {"rate": 0.0} for a in merged["accession"]}, "gtdb")
+    n = 5000
+    lines = ["read_id\tsource_fasta\tcontig\tstart\tend\tstrand\twrapped"]
+    for i in range(n):
+        lines.append(f"r{i}/1\t/x/GCF_A.fasta\tGCF_A_ctg0\t{i}\t{i+150}\t+\tfalse")
+    src = tmp_path / "src.tsv"
+    src.write_text("\n".join(lines) + "\n")
+    f2a = {"/x/GCF_A.fasta": "GCF_A", "GCF_A.fasta": "GCF_A"}
+
+    out = tmp_path / "out.tsv.gz"
+    build_read_truth(str(src), f2a, pg, str(out))
+
+    df = pd.read_csv(out, sep="\t", dtype=str, keep_default_na=False)
+    assert len(df) == n                                  # no rows lost
+    assert (df["accession"] == "GCF_A").all()            # all mapped
+    assert (df["genus"] == "Genus_A").all()              # taxonomy joined
+    with gzip.open(out, "rt") as fh:                      # header exactly once
+        assert sum(1 for ln in fh if ln.startswith("read_id\t")) == 1
+
+
+def test_build_read_truth_progress_callback_per_chunk(merged, tmp_path):
+    """ the progress callback fires once per chunk, and the chunked write stays
+    complete and correct (memory bounded by chunksize). """
+    pg = build_per_genome_table(merged, {a: {"rate": 0.0} for a in merged["accession"]}, "gtdb")
+    n = 500
+    lines = ["read_id\tsource_fasta\tcontig\tstart\tend\tstrand\twrapped"]
+    for i in range(n):
+        lines.append(f"r{i}/1\t/x/GCF_A.fasta\tGCF_A_ctg0\t{i}\t{i+150}\t+\tfalse")
+    src = tmp_path / "src.tsv"
+    src.write_text("\n".join(lines) + "\n")
+
+    calls = []
+    out = tmp_path / "o.tsv.gz"
+    build_read_truth(str(src), {"/x/GCF_A.fasta": "GCF_A", "GCF_A.fasta": "GCF_A"},
+                     pg, str(out), chunksize=200, progress=lambda: calls.append(1))
+    assert len(calls) == 3                              # ceil(500/200)
+    df = pd.read_csv(out, sep="\t", dtype=str, keep_default_na=False)
+    assert len(df) == n
+    assert (df["genus"] == "Genus_A").all()

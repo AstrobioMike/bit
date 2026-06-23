@@ -99,19 +99,20 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "-s",
         "--seed",
         metavar="<INT>",
-        help=h("Set the random seed if wanting control over the random number generator (default: None)"),
+        # help=h("Set the random seed if wanting control over the random number generator (default: None)"),
+        help=("Set the random seed if wanting control over the random number generator (default: None)"),
         type=int,
         default=None,
     )
 
     add_help(general)
 
-    general.add_argument(
-        "-H",
-        "--detailed-help",
-        action="store_true",
-        help="Show detailed help, including fine-tuning parameters"
-    )
+    # general.add_argument(
+    #     "-H",
+    #     "--detailed-help",
+    #     action="store_true",
+    #     help="Show detailed help, including fine-tuning parameters"
+    # )
 
     add_version_arg(general)
 
@@ -180,7 +181,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<FLOAT>",
         type=float,
         default=None,  # 1.0 set later
-        help=h(wrap_help("Sigma (spread) for the lognormal distribution; higher means "
+        help=(wrap_help("Sigma (spread) for the lognormal distribution; higher means "
                          "a longer abundance tail (default: 1.0)"))
         )
 
@@ -189,10 +190,10 @@ def build_parser(parent_subparsers=None, show_fine=False):
     mutation.add_argument(
         "--mutation-mode",
         default="off",
-        choices=["off", "uniform", "distributed"],
+        choices=["off", "uniform", "varied"],
         help=wrap_help("Mutate genomes before read generation: "
                        "'uniform' where all are done at --mutation-rate; "
-                       "'distributed' with each drawn between --mutation-rate-min and --mutation-rate-max; "
+                       "'varied' with each drawn between --mutation-rate-min and --mutation-rate-max; "
                        "(default: off)")
         )
 
@@ -201,7 +202,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<FLOAT>",
         type=float,
         default=None, # 0.01 set later
-        help=h(wrap_help("Mutation rate for 'uniform' mode (default: 0.01)"))
+        help=(wrap_help("Mutation rate for 'uniform' mode (default: 0.01)"))
     )
 
     mutation.add_argument(
@@ -209,7 +210,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<FLOAT>",
         type=float,
         default=None, # 0.001 set later
-        help=h(wrap_help("Lower bound for 'distributed' mode (default: 0.001)"))
+        help=(wrap_help("Lower bound for 'varied' mutation mode (default: 0.001)"))
     )
 
     mutation.add_argument(
@@ -217,7 +218,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<FLOAT>",
         type=float,
         default=None, # 0.05 set later
-        help=h(wrap_help("Upper bound for 'distributed' mode (default: 0.05)"))
+        help=(wrap_help("Upper bound for 'varied' mutationmode (default: 0.05)"))
     )
 
     mutation.add_argument(
@@ -225,7 +226,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<FLOAT>",
         type=float,
         default=None, # 1.0 set later
-        help=h(wrap_help("Transition/transversion ratio for substitutions (default: 1.0)"))
+        help=(wrap_help("Transition/transversion ratio for substitutions (default: 1.0)"))
     )
 
     mutation.add_argument(
@@ -233,7 +234,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<FLOAT>",
         type=float,
         default=None, # 0.0 set later
-        help=h(wrap_help("Fraction of mutations that are indels (default: 0.0)"))
+        help=(wrap_help("Fraction of mutations that are indels (default: 0.0)"))
     )
 
     # ---- Reads ----
@@ -251,7 +252,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<INT>",
         type=int,
         default=None,
-        help=h(wrap_help("Read length (default: 150 for short reads, 5000 for long)"))
+        help=(wrap_help("Read length (default: 150 for short reads, 5000 for long)"))
     )
 
     reads.add_argument(
@@ -259,7 +260,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<INT>",
         type=int,
         default=500,
-        help=h(wrap_help("Paired-end fragment size (default: 500)"))
+        help=(wrap_help("Paired-end fragment size (default: 500)"))
     )
 
     reads.add_argument(
@@ -267,7 +268,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<INT>",
         type=int,
         default=10,
-        help=h(wrap_help("Percent +/- around --fragment-size (default: 10)"))
+        help=(wrap_help("Percent +/- around --fragment-size (default: 10)"))
     )
 
     reads.add_argument(
@@ -275,12 +276,12 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<INT>",
         type=int,
         default=50,
-        help=h(wrap_help("Percent +/- around --read-length for long reads (default: 50)"))
+        help=(wrap_help("Percent +/- around --read-length for long reads (default: 50)"))
     )
 
     reads.add_argument(
         "--include-Ns", action="store_true", default=False,
-        help=h(wrap_help("Allow reads that include Ns (default: skip N-containing regions)"))
+        help=(wrap_help("Allow reads that include Ns (default: skip N-containing regions)"))
     )
 
     return parser
@@ -365,13 +366,13 @@ def preflight_checks(args):
     if args.mutation_mode == "uniform" and (args.mutation_rate_min is not None
                                             or args.mutation_rate_max is not None):
         report_message("Parameters `--mutation-rate-min`/`--mutation-rate-max` apply to "
-                       "`--mutation-mode distributed`, not `uniform` (which uses `--mutation-rate`).",
+                       "`--mutation-mode varied`, not `uniform` (which uses `--mutation-rate`).",
                        initial_indent="    ", subsequent_indent="    ")
         notify_premature_exit()
 
-    if args.mutation_mode == "distributed" and args.mutation_rate is not None:
+    if args.mutation_mode == "varied" and args.mutation_rate is not None:
         report_message("Parameter `--mutation-rate` applies to `--mutation-mode uniform`, not "
-                       "`distributed` (which uses `--mutation-rate-min`/`--mutation-rate-max`).",
+                       "`varied` (which uses `--mutation-rate-min`/`--mutation-rate-max`).",
                        initial_indent="    ", subsequent_indent="    ")
         notify_premature_exit()
 
@@ -412,7 +413,7 @@ def preflight_checks(args):
     _check_range(args.mutation_rate_max, "--mutation-rate-max", lo=0, hi=1)
     _check_range(args.indel_rate, "--indel-rate", lo=0, hi=1)
 
-    # distributed bounds must be ordered (min < max); only when both supplied
+    # varied bounds must be ordered (min < max); only when both supplied
     if (args.mutation_rate_min is not None and args.mutation_rate_max is not None
             and args.mutation_rate_min > args.mutation_rate_max):
         _fail(f"`--mutation-rate-min` ({args.mutation_rate_min}) must be "

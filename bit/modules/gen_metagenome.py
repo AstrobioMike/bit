@@ -54,18 +54,12 @@ def gen_metagenome(args):
         section(f"Phase {n()}: Getting genome sizes and assigning abundances...")
         run = phase_abundance(args, run)
 
-    # when not mutating, genome sizes are measured here (needed for abundance)
-    # if mutating:
-    #     section(f"Phase {n()}: Assigning abundances...")
-    # else:
-    #     section(f"Phase {n()}: Getting genome sizes and assigning abundances...")
-    # run = phase_abundance(args, run)
-
-
     section(f"Phase {n()}: Generating reads...")
     run = phase_reads(args, run)
+    print()
 
     section(f"Phase {n()}: Generating final output tables...")
+    print()
     phase_truth(args, run)
 
     report_finish(args, run)
@@ -177,21 +171,46 @@ def _read_gtdb_version(location):
 
 # ---- selection ----
 
+# columns gen-metagenome actually uses from the GTDB metadata table. The full
+# table is ~110 columns; reading only these (via usecols) skips parsing the rest,
+# which is both faster and far lighter in memory. Column names vary across GTDB
+# releases (e.g. checkm2_* vs checkm_*, and some composition columns absent in
+# older releases), so the read intersects this list with the columns actually
+# present rather than passing it verbatim (usecols errors on missing names).
+GTDB_USED_COLUMNS = [
+    "accession", "ncbi_genbank_assembly_accession", "ncbi_taxid",
+    "gtdb_representative", "ncbi_refseq_category",
+    "domain", "phylum", "class", "order", "family", "genus", "species",
+    "checkm2_completeness", "checkm2_contamination",
+    "checkm_completeness", "checkm_contamination",
+    "genome_size", "contig_count", "gc_count", "gc_percentage", "ambiguous_bases",
+    "coding_bases", "coding_density",
+]
+
+
 def _load_gtdb_table(args, run):
     """
     load the GTDB metadata table once (needed for generative selection and/or
     GTDB-taxonomy resolution of user accessions). Cached on run. Silent — the
     caller wraps this in an appropriately-labeled spinner. GTDB version is
     recorded to the runlog here.
+
+    Only the columns gen-metagenome uses are read (see GTDB_USED_COLUMNS); the
+    full table has ~110 columns and skipping the unused ones at parse time is
+    markedly faster and lighter in memory.
     """
     if getattr(run, "gtdb_tab", None) is not None:
         return run.gtdb_tab
     gtdb_dir = get_gtdb_data(quiet=True)
     gtdb_version, gtdb_release_date = _read_gtdb_version(gtdb_dir)
     log_data_source(run, "GTDB version", f"{gtdb_version} ({gtdb_release_date})")
+    gtdb_path = os.path.join(gtdb_dir, "GTDB-arc-and-bac-metadata.tsv")
+    # intersect the desired columns with those actually present (column sets vary
+    # by GTDB release), so usecols never errors on an absent name.
+    present = pd.read_csv(gtdb_path, sep="\t", nrows=0).columns
+    usecols = [c for c in GTDB_USED_COLUMNS if c in present]
     run.gtdb_tab = pd.read_csv(
-        os.path.join(gtdb_dir, "GTDB-arc-and-bac-metadata.tsv"),
-        sep="\t", low_memory=False)
+        gtdb_path, sep="\t", low_memory=False, usecols=usecols)
     return run.gtdb_tab
 
 
@@ -454,6 +473,12 @@ def phase_download(args, run):
     # write the GTDB info summary for the final community
     write_gtdb_summary(run)
 
+    # the full GTDB metadata table (~GBs) is no longer needed after this point —
+    # selection, taxonomy resolution, and the GTDB summary are all done. Drop it
+    # so it isn't held through mutate/abundance/reads/truth (the per-read truth
+    # build is memory-heavy and shouldn't stack on top of the GTDB table).
+    run.gtdb_tab = None
+
     print()
     return run
 
@@ -711,21 +736,42 @@ def phase_truth(args, run):
     attempt_to_make_dir(gt_root)
 
     run.truth_written = {}
-    print()
+
+    chunksize = 1_000_000
+    # total chunks per taxonomy, for a determinate progress bar over the per-read
+    # build (rows == total reads, available from the assigned_reads column).
+    total_reads = int(run.merged["assigned_reads"].sum()) if "assigned_reads" in run.merged.columns else 0
+    n_chunks = max(1, -(-total_reads // chunksize)) if total_reads else None  # ceil-div
+
     for taxonomy in TRU.TAXONOMIES:
-        # the per-read table is the slow part (one row per read, gzipped); label
-        # accordingly when it's being built, otherwise just the quick tables.
         if args.per_read_tsv:
-            label = f"Building {taxonomy.upper()} per-read table..."
-        else:
-            label = f"Building {taxonomy.upper()} truth tables..."
-        with spinner(label, label, indent="    "):
+            # the per-read table dominates this phase; show a progress bar over the
+            # chunked read of the source TSV (memory stays bounded by chunksize).
+            print(f"    Building {taxonomy.upper()} per-read table...")
+            pbar = tqdm(total=n_chunks, desc="      Progress", unit=" chunk", ncols=76)
             run.truth_written[taxonomy] = TRU.build_truth_for_taxonomy(
                 taxonomy, run.merged, run.mutation_results, gt_root,
-                read_sources_tsv=run.read_sources_tsv if args.per_read_tsv else None,
+                read_sources_tsv=run.read_sources_tsv,
                 fasta_to_accession=fasta2acc,
-                per_read=args.per_read_tsv,
-                attempt_to_make_dir=attempt_to_make_dir)
+                per_read=True,
+                attempt_to_make_dir=attempt_to_make_dir,
+                progress=pbar.update)
+            if pbar.total is not None:
+                pbar.update(pbar.total - pbar.n)
+            pbar.close()
+            print()
+        else:
+            # no per-read table -> just the quick per-genome/per-rank tables.
+            label = f"Building {taxonomy.upper()} truth tables..."
+            with spinner(label, label, indent="    "):
+                run.truth_written[taxonomy] = TRU.build_truth_for_taxonomy(
+                    taxonomy, run.merged, run.mutation_results, gt_root,
+                    read_sources_tsv=None,
+                    fasta_to_accession=fasta2acc,
+                    per_read=False,
+                    attempt_to_make_dir=attempt_to_make_dir)
+    if not args.per_read_tsv:
+        print()
 
     # remove intermediates now that the truth tables hold their information:
     #   - read-sources TSV: consumed by build_read_truth (per-read tables)
@@ -735,8 +781,6 @@ def phase_truth(args, run):
         os.remove(run.read_sources_tsv)
     if os.path.exists(run.coverage_tsv):
         os.remove(run.coverage_tsv)
-
-    print()
 
 
 def report_finish(args, run):

@@ -1,7 +1,7 @@
 import sys
 import os
 import socket
-import pandas as pd
+import pandas as pd # type: ignore
 import urllib
 import urllib.error
 from bit.modules.general import (wprint, color_text,

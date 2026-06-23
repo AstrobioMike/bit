@@ -8,6 +8,7 @@ unit-tested here.
 import os
 import pandas as pd
 import pytest
+from types import SimpleNamespace
 
 from bit.modules import gen_metagenome as G
 
@@ -249,3 +250,76 @@ def test_load_user_accessions_with_pins(tmp_path):
     assert udf.loc["GCF_000005845.2", "pinned_rel_abundance"] == 0.7
     assert udf.loc["GCF_000005845.2", "pinned_mutation_rate"] == 0.02
     assert pd.isna(udf.loc["GCA_000009999.1", "pinned_mutation_rate"])
+
+
+# ─── per-read truth build (both taxonomies, in-process) ────────────────────
+
+def test_build_truth_for_taxonomy_per_read_both(tmp_path):
+    """ each taxonomy's per-read table is built correctly in-process (the polars
+    streaming path that replaced the old multiprocessing parallelization). """
+    from bit.modules.gen_mg import truth as TRU
+    src = tmp_path / "mg-read-sources.tsv.gz"
+    pd.DataFrame({
+        "read_id": [f"r{i}" for i in range(1500)],
+        "source_fasta": [f"/g/GCF_00000000{i%3}.1.fasta.gz" for i in range(1500)],
+        "contig": "c0", "start": range(1500), "end": range(1500),
+        "strand": "+", "wrapped": "false",
+    }).to_csv(src, sep="\t", index=False, compression="gzip")
+    accs = ["GCF_000000000.1", "GCF_000000001.1", "GCF_000000002.1"]
+    merged = pd.DataFrame({
+        "accession": accs, "assigned_reads": [500, 500, 500],
+        "assigned_coverage": [1.0, 1.0, 1.0],
+        "assigned_rel_abundance": [0.34, 0.33, 0.33],
+        "used_genome_size": [1000, 1000, 1000],
+        "downloaded_genome_size": [1000, 1000, 1000]})
+    for r in ["domain", "phylum", "class", "order", "family", "genus", "species"]:
+        merged["gtdb_" + r] = f"g_{r}"
+        merged["ncbi_" + r] = f"n_{r}"
+    mut = {a: {"rate": 0.0} for a in accs}
+    f2a = {f"/g/{a}.fasta.gz": a for a in accs}
+
+    gt_root = tmp_path / "ground-truth"; gt_root.mkdir()
+    written = {t: TRU.build_truth_for_taxonomy(
+        t, merged, mut, str(gt_root), read_sources_tsv=str(src),
+        fasta_to_accession=f2a, per_read=True) for t in TRU.TAXONOMIES}
+
+    assert set(written) == set(TRU.TAXONOMIES)
+    for t in TRU.TAXONOMIES:
+        df = pd.read_csv(written[t]["per_read"], sep="\t", dtype=str, keep_default_na=False)
+        assert len(df) == 1500
+        assert (df["accession"] != "NA").all()
+        assert df["genus"].iloc[0] == ("g_genus" if t == "gtdb" else "n_genus")
+
+
+# ─── _load_gtdb_table reads only used columns (usecols intersect) ───────────
+
+def test_load_gtdb_table_usecols_intersect(tmp_path, monkeypatch):
+    """ only the used columns are read; extras are dropped and columns absent in
+    older GTDB releases (coding_density, checkm2_*) don't raise. """
+    gd = tmp_path / "gtdb"; gd.mkdir()
+    cols = ["accession", "ncbi_genbank_assembly_accession", "ncbi_taxid",
+            "gtdb_representative", "ncbi_refseq_category",
+            "domain", "phylum", "class", "order", "family", "genus", "species",
+            "checkm_completeness", "checkm_contamination",  # old style, no checkm2_*
+            "genome_size", "contig_count", "gc_count", "gc_percentage",
+            "ambiguous_bases", "coding_bases",
+            "filler1", "filler2"]  # extras to drop; coding_density absent
+    row = ["RS_GCF_000000001.1", "GCA_000000001.1", "123", "t", "reference genome",
+           "Bacteria", "p", "c", "o", "f", "g", "s", "98.0", "1.0",
+           "3000000", "1", "1500000", "50.0", "0", "2700000", "junk", "junk"]
+    (gd / "GTDB-arc-and-bac-metadata.tsv").write_text(
+        "\t".join(cols) + "\n" + "\t".join(row) + "\n")
+    (gd / "GTDB-version-info.txt").write_text("r220\n2024-04-24\n")
+
+    monkeypatch.setattr(G, "get_gtdb_data", lambda quiet=True: str(gd))
+    run = SimpleNamespace(log_file=None)
+    tab = G._load_gtdb_table(SimpleNamespace(), run)
+
+    assert not any(c.startswith("filler") for c in tab.columns)   # extras dropped
+    assert "coding_density" not in tab.columns                    # absent, no error
+    assert "checkm_completeness" in tab.columns                   # old-style kept
+    assert "checkm2_completeness" not in tab.columns
+    # every present used-column made it in
+    for c in ["accession", "ncbi_genbank_assembly_accession", "domain", "species",
+              "genome_size", "ncbi_taxid"]:
+        assert c in tab.columns
