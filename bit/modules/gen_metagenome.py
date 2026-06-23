@@ -737,7 +737,7 @@ def phase_truth(args, run):
 
     run.truth_written = {}
 
-    chunksize = 1_000_000
+    chunksize = 500_000
     # total chunks per taxonomy, for a determinate progress bar over the per-read
     # build (rows == total reads, available from the assigned_reads column).
     total_reads = int(run.merged["assigned_reads"].sum()) if "assigned_reads" in run.merged.columns else 0
@@ -748,7 +748,7 @@ def phase_truth(args, run):
             # the per-read table dominates this phase; show a progress bar over the
             # chunked read of the source TSV (memory stays bounded by chunksize).
             print(f"    Building {taxonomy.upper()} per-read table...")
-            pbar = tqdm(total=n_chunks, desc="      Progress", unit=" chunk", ncols=76)
+            pbar = tqdm(total=n_chunks, desc="      Progress", unit="chunk", ncols=76)
             run.truth_written[taxonomy] = TRU.build_truth_for_taxonomy(
                 taxonomy, run.merged, run.mutation_results, gt_root,
                 read_sources_tsv=run.read_sources_tsv,
