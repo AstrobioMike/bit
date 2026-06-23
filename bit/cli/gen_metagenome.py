@@ -143,8 +143,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
         default="relative",
         choices=["relative", "coverage"],
         help=wrap_help("Whether the distribution describes relative abundance "
-                       "(needs --total-reads) or per-genome fold-coverage directly "
-                       "(default: relative)")
+                       "(uses --total-reads) or per-genome fold-coverage (uses "
+                       "--median-coverage) (default: relative)")
     )
 
     abundance.add_argument(

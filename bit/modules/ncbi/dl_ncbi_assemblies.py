@@ -127,7 +127,7 @@ def valid_gzip(path):
 def sleep_backoff(attempt, resp=None):
     """
     sleep before a retry. Honors an NCBI-provided Retry-After header when present,
-    otherwise falls back to exponential backoff with jitter (~1, 2, 4, 8s + up to 1s)
+    otherwise falls back to exponential backoff with jitter
     """
     if resp is not None:
         retry_after = resp.headers.get("Retry-After")
@@ -140,7 +140,7 @@ def sleep_backoff(attempt, resp=None):
     time.sleep((2 ** (attempt - 1)) + random.uniform(0, 1))
 
 
-def download_one(target_link, local_dest, retries=5):
+def download_one(target_link, local_dest, retries=10):
 
     local_path = Path(local_dest)
 
@@ -270,7 +270,8 @@ def report_finish(run_data):
     elif run_data.num_not_downloaded > 0:
         print(color_text("\n                      NOTICE", "orange"))
         print(f"        {run_data.num_not_downloaded} file(s) failed to download from NCBI.")
-        print(f"        They may not be available in the requested format.")
+        print(f"        They may not be available in the requested format, or it may "
+              f"        have been a transient problem.")
         print(f"        See '{run_data.not_downloaded_path}'.\n")
 
         if run_data.num_downloaded > 0:
