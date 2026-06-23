@@ -92,7 +92,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<INT>",
         type=int,
         default=10,
-        help=wrap_help("Number of jobs to run in parallel where possible (capped at 20 for download step; default: 10)")
+        help=wrap_help("Number of jobs to run in parallel where possible (capped at 10 for download step; default: 10)")
     )
 
     general.add_argument(

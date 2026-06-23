@@ -214,7 +214,7 @@ def download_assemblies(run_data):
     failed = []
     num_skipped = 0
 
-    with ThreadPoolExecutor(max_workers=min(run_data.num_jobs, 20)) as pool:
+    with ThreadPoolExecutor(max_workers=min(run_data.num_jobs, 10)) as pool:
         futures = {
             pool.submit(download_one, link, dest): dest
             for link, dest in targets
