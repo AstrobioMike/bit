@@ -8,7 +8,6 @@ from bit.modules.general import get_package_path
 from bit.tests.utils import run_cli
 from bit.modules.gen_reads import (preflight_checks,
                                    gen_reads,
-                                   generate_reads,
                                    get_proportions,
                                    compute_reads_from_coverage,
                                    extract_subsequence,
@@ -154,7 +153,7 @@ def test_wrapped_fragments_generated_with_circularize(tmp_path):
         output_prefix=str(out_prefix),
         circularize=True,
         include_Ns=False,
-        source_tsv=False,
+        per_read_tsv=False,
         type="paired-end",
     )
 
@@ -233,7 +232,7 @@ def test_simulate_single_end_reads_unit(tmp_path):
         circularize=False,
         type="single-end",
         include_Ns=False,
-        source_tsv=False,
+        per_read_tsv=False,
     )
 
     gen_reads(args, get_proportions(args))
@@ -278,7 +277,7 @@ def test_long_reads_variable_length(tmp_path):
         type="long",
         long_read_length_range=50,
         include_Ns=False,
-        source_tsv=False,
+        per_read_tsv=False,
     )
 
     gen_reads(args, get_proportions(args))
@@ -387,7 +386,7 @@ def test_gen_paired_reads_skips_Ns(tmp_path):
         output_prefix=str(out_prefix),
         circularize=False,
         include_Ns=False,
-        source_tsv=False,
+        per_read_tsv=False,
         type="paired-end",
     )
 
@@ -450,7 +449,7 @@ def test_coverage_mode_paired_end(tmp_path):
         circularize=False,
         include_Ns=False,
         type="paired-end",
-        source_tsv=False,
+        per_read_tsv=False,
     )
 
     proportions = get_proportions(args)
@@ -478,7 +477,7 @@ def test_coverage_mode_single_end(tmp_path):
         circularize=False,
         include_Ns=False,
         type="single-end",
-        source_tsv=False,
+        per_read_tsv=False,
     )
 
     proportions = get_proportions(args)
@@ -505,7 +504,7 @@ def test_coverage_mode_multiple_genomes(tmp_path):
         circularize=False,
         include_Ns=False,
         type="single-end",
-        source_tsv=False,
+        per_read_tsv=False,
     )
 
     proportions = get_proportions(args)
@@ -644,21 +643,21 @@ def test_compute_coverage_zero_total_reads_exits(tmp_path):
         compute_reads_from_coverage(args)
 
 
-def test_source_tsv_paired_end_reconstructs_reads(tmp_path):
+def test_per_read_tsv_paired_end_reconstructs_reads(tmp_path):
     fasta = tmp_path / "ref.fasta"
     ref = "ACGTTGCAACGTTGCAACGTTGCAACGTTGCAACGTTGCA"  # 40 bp
     fasta.write_text(f">refcontig\n{ref}\n")
     out = tmp_path / "pe"
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=7, num_reads=20, read_length=8, fragment_size=20, fragment_size_range=10,
-        output_prefix=str(out), circularize=False, include_Ns=False, source_tsv=True,
+        output_prefix=str(out), circularize=False, include_Ns=False, per_read_tsv=True,
         type="paired-end")
     gen_reads(args, get_proportions(args))
 
-    tsv = out.parent / (out.name + "-read-sources.tsv")
+    tsv = out.parent / (out.name + "-read-sources.tsv.gz")
     assert tsv.exists()
 
-    # headers must be bare ids (no comment field) when source_tsv is on
+    # headers must be bare ids (no comment field) when per_read_tsv is on
     with open(str(out) + "_R1.fastq") as f:
         first_header = f.readline().rstrip("\n")
     assert " " not in first_header
@@ -668,7 +667,7 @@ def test_source_tsv_paired_end_reconstructs_reads(tmp_path):
     r2_seqs = _fastq_map(str(out) + "_R2.fastq")
     refseq = _read_fasta_seq(fasta)
 
-    with open(tsv) as f:
+    with gzip.open(tsv, "rt") as f:
         header = f.readline().rstrip("\n").split("\t")
         assert header == ["read_id", "source_fasta", "contig", "start", "end", "strand", "wrapped"]
         rows = 0
@@ -687,22 +686,22 @@ def test_source_tsv_paired_end_reconstructs_reads(tmp_path):
     assert rows == 20  # 10 fragments x 2 mates
 
 
-def test_source_tsv_single_end_reconstructs_reads(tmp_path):
+def test_per_read_tsv_single_end_reconstructs_reads(tmp_path):
     fasta = tmp_path / "ref.fasta"
     ref = "ACGTTGCAACGTTGCAACGTTGCAACGTTGCAACGTTGCA"
     fasta.write_text(f">refcontig\n{ref}\n")
     out = tmp_path / "se"
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=3, num_reads=10, read_length=8, output_prefix=str(out),
-        circularize=False, type="single-end", include_Ns=False, source_tsv=True)
+        circularize=False, type="single-end", include_Ns=False, per_read_tsv=True)
     gen_reads(args, get_proportions(args))
 
-    tsv = out.parent / (out.name + "-read-sources.tsv")
+    tsv = out.parent / (out.name + "-read-sources.tsv.gz")
     assert tsv.exists()
     refseq = _read_fasta_seq(fasta)
     seqs = _fastq_map(str(out) + ".fastq")
 
-    with open(tsv) as f:
+    with gzip.open(tsv, "rt") as f:
         f.readline()
         n = 0
         for line in f:
@@ -722,7 +721,7 @@ def test_paired_end_subunity_proportion_yields_full_count(tmp_path):
     out = tmp_path / "pe_tail"
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=0, num_reads=20, read_length=10, fragment_size=50, fragment_size_range=10,
-        output_prefix=str(out), circularize=False, include_Ns=False, source_tsv=False,
+        output_prefix=str(out), circularize=False, include_Ns=False, per_read_tsv=False,
         type="paired-end")
     # a single file given a sub-unity proportion is normalized to 1.0 and still
     # receives the full budget (20 reads -> 10 fragments -> 10 R1 + 10 R2)
@@ -737,7 +736,7 @@ def test_single_end_subunity_proportion_yields_full_count(tmp_path):
     out = tmp_path / "se_tail"
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=0, num_reads=20, read_length=10, output_prefix=str(out),
-        circularize=False, type="single-end", include_Ns=False, source_tsv=False)
+        circularize=False, type="single-end", include_Ns=False, per_read_tsv=False)
     gen_reads(args, {str(fasta): 0.5})
     assert _count_reads(str(out) + ".fastq") == 20
 
@@ -750,25 +749,25 @@ def test_long_read_subunity_proportion_yields_full_count(tmp_path):
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=0, num_reads=20, read_length=200, output_prefix=str(out),
         circularize=False, type="long", long_read_length_range=50,
-        include_Ns=False, source_tsv=False)
+        include_Ns=False, per_read_tsv=False)
     gen_reads(args, {str(fasta): 0.5})
     assert _count_reads(str(out) + ".fastq") == 20
 
 
 def test_subunity_proportion_writes_source_rows_paired_end(tmp_path):
-    # sub-unity proportion + source_tsv together, so provenance rows are still written
+    # sub-unity proportion + per_read_tsv together, so provenance rows are still written
     # for the full normalized budget
     fasta = tmp_path / "ref.fasta"
     fasta.write_text(">c0\n" + "ACGT" * 50 + "\n")
     out = tmp_path / "pe_tail_src"
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=0, num_reads=20, read_length=10, fragment_size=50, fragment_size_range=10,
-        output_prefix=str(out), circularize=False, include_Ns=False, source_tsv=True,
+        output_prefix=str(out), circularize=False, include_Ns=False, per_read_tsv=True,
         type="paired-end")
     gen_reads(args, {str(fasta): 0.5})
-    tsv = out.parent / (out.name + "-read-sources.tsv")
+    tsv = out.parent / (out.name + "-read-sources.tsv.gz")
     assert tsv.exists()
-    with open(tsv) as f:
+    with gzip.open(tsv, "rt") as f:
         rows = [l for l in f.read().splitlines() if l]
     assert len(rows) == 21  # header + 20 reads
 
@@ -779,11 +778,11 @@ def test_subunity_proportion_writes_source_rows_single_end(tmp_path):
     out = tmp_path / "se_tail_src"
     args = Namespace(input_fastas=[str(fasta)], proportions_file=None, coverage=None,
         seed=0, num_reads=20, read_length=10, output_prefix=str(out),
-        circularize=False, type="single-end", include_Ns=False, source_tsv=True)
+        circularize=False, type="single-end", include_Ns=False, per_read_tsv=True)
     gen_reads(args, {str(fasta): 0.5})
-    tsv = out.parent / (out.name + "-read-sources.tsv")
+    tsv = out.parent / (out.name + "-read-sources.tsv.gz")
     assert tsv.exists()
-    with open(tsv) as f:
+    with gzip.open(tsv, "rt") as f:
         rows = [l for l in f.read().splitlines() if l]
     assert len(rows) == 21
 
@@ -811,7 +810,7 @@ def _write_multi_genomes(tmp_path):
     return paths
 
 
-def _multi_args(paths, out_prefix, jobs, rtype="paired-end", seed=123, source_tsv=True):
+def _multi_args(paths, out_prefix, jobs, rtype="paired-end", seed=123, per_read_tsv=True):
     return Namespace(
         input_fastas=list(paths),
         proportions_file=None,
@@ -825,14 +824,16 @@ def _multi_args(paths, out_prefix, jobs, rtype="paired-end", seed=123, source_ts
         output_prefix=str(out_prefix),
         circularize=False,
         include_Ns=False,
-        source_tsv=source_tsv,
+        per_read_tsv=per_read_tsv,
         type=rtype,
         jobs=jobs,
     )
 
 
 def _read_text(path):
-    with open(path) as f:
+    import gzip
+    opener = gzip.open if str(path).endswith(".gz") else open
+    with opener(path, "rt") as f:
         return f.read()
 
 
@@ -855,8 +856,8 @@ def test_parallel_matches_serial(tmp_path, rtype, suffixes):
             f"serial vs parallel mismatch in {suf}"
 
     # provenance TSV must match too
-    assert _read_text(str(tmp_path / "serial") + "-read-sources.tsv") == \
-           _read_text(str(tmp_path / "par") + "-read-sources.tsv")
+    assert _read_text(str(tmp_path / "serial") + "-read-sources.tsv.gz") == \
+           _read_text(str(tmp_path / "par") + "-read-sources.tsv.gz")
 
 
 def test_parallel_reproducible_across_job_counts(tmp_path):
@@ -904,13 +905,13 @@ def test_parallel_total_read_count_and_contiguous_ids(tmp_path):
     assert base2 == list(range(1, 2001))
 
 
-def test_parallel_source_tsv_maps_to_valid_genomes(tmp_path):
+def test_parallel_per_read_tsv_maps_to_valid_genomes(tmp_path):
     paths = _write_multi_genomes(tmp_path)
     p_args = _multi_args(paths, tmp_path / "prov", jobs=3, rtype="single-end")
     gen_reads(p_args, get_proportions(p_args))
 
     valid = set(paths)
-    with open(str(tmp_path / "prov") + "-read-sources.tsv") as f:
+    with gzip.open(str(tmp_path / "prov") + "-read-sources.tsv.gz", "rt") as f:
         header = f.readline()
         assert header.startswith("read_id\t")
         rows = 0

@@ -124,9 +124,12 @@ def reconstruct_invocation(parser, args):
 
     # walking through and getting settings for each item
     for action in all_actions:
-        # skip help and the subparsers action itself
+        # skip help, the subparsers action itself, and version (an exiting flag,
+        # never a real run parameter — avoids a noisy "--version None" in logs)
         if isinstance(action, (argparse._HelpAction,
-                               argparse._SubParsersAction)):
+                               argparse._SubParsersAction,
+                               argparse._VersionAction,
+                               VersionAction)):
             continue
 
         # named parameters handled here

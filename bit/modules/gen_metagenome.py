@@ -623,9 +623,9 @@ def phase_reads(args, run):
         fragment_size=args.fragment_size, fragment_size_range=args.fragment_size_range,
         long_read_length_range=args.long_read_length_range, seed=args.seed,
         include_Ns=args.include_Ns, genome_sizes=genome_sizes, jobs=args.jobs,
-        source_tsv=args.per_read_tsv)
+        per_read_tsv=args.per_read_tsv)
     generate_reads(gr_args)
-    run.read_sources_tsv = f"{run.reads_prefix}-read-sources.tsv"
+    run.read_sources_tsv = f"{run.reads_prefix}-read-sources.tsv.gz"
     print()
     return run
 

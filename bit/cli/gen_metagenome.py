@@ -1,7 +1,7 @@
 import sys
 import argparse
 from bit.cli.common import (CustomRichHelpFormatter, add_help, wrap_help,
-                            add_version_arg, add_force)
+                            add_version_arg, add_force, reconstruct_invocation)
 from bit.modules.general import (notify_premature_exit, check_if_output_dir_exists,
                                  report_message)
 from bit.modules.gen_metagenome import gen_metagenome
@@ -80,8 +80,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "--per-read-tsv",
         action="store_true",
         default=False,
-        help=wrap_help("Add this flag to out a read-level truth table mapping every read to its "
-                       "source genome, coordinates, and taxonomy (takes up a bit more spacetime)")
+        help=wrap_help("Add this flag to write out a read-level truth table mapping every read to its "
+                       "source genome, coordinates, and taxonomy (takes a lot more spacetime)")
     )
 
     add_force(general)
@@ -318,6 +318,8 @@ def main():
         args.read_length = 5000
     elif not args.read_length:
         args.read_length = 150
+
+    args.full_cmd_executed = reconstruct_invocation(parser, args)
 
     gen_metagenome(args)
 

@@ -33,12 +33,12 @@ def _src_rank_cols(taxonomy):
 def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="paired-end",
                          read_length=None, fragment_size=500, fragment_size_range=10,
                          long_read_length_range=50, seed=None, circularize=False,
-                         include_Ns=False, genome_sizes=None, jobs=10, source_tsv=False):
+                         include_Ns=False, genome_sizes=None, jobs=10, per_read_tsv=False):
     """
     Construct an args-like object matching what bit.modules.gen_reads.generate_reads
     expects. Coverage mode is used (the coverage TSV drives per-genome read counts).
 
-    source_tsv: whether gen-reads should emit its per-read source TSV. This is an
+    per_read_tsv: whether gen-reads should emit its per-read source TSV. This is an
     intermediate consumed by build_read_truth to make the per-read truth tables,
     so gen-metagenome only needs it when --per-read-tsv is set.
 
@@ -61,7 +61,7 @@ def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="pa
         fragment_size=fragment_size,
         fragment_size_range=fragment_size_range,
         long_read_length_range=long_read_length_range,
-        source_tsv=source_tsv,
+        per_read_tsv=per_read_tsv,
         genome_sizes=genome_sizes or {},
         quiet=True,
         jobs=jobs

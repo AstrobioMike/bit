@@ -48,6 +48,11 @@ def generate_reads(args):
     else:
         compress_with_pigz(args.output_prefix, read_type=args.type, quiet=False)
 
+    if args.per_read_tsv:
+        if not getattr(args, "quiet", False):
+            print(f"    Per-read tsv written to:  {args.output_prefix}-read-sources.tsv.gz\n")
+    else:
+        print()
 
 def preflight_checks(args):
 
@@ -239,14 +244,14 @@ def compute_mate_coords(frag_start, fragment, fwd_len, rev_len, seq_length):
     return r1_start, r1_end, r2_start, r2_end, wrapped
 
 
-def format_header(read_id, source_tsv, contig=None, start=None, end=None,
+def format_header(read_id, per_read_tsv, contig=None, start=None, end=None,
                   strand=None, wrapped=False):
     """
     when a source TSV is being written, the header is just the unique read id so
     read names stay clean for downstream tools. otherwise we're writing the full provenance
     in the comment field (after a space) as key=value pairs
     """
-    if source_tsv:
+    if per_read_tsv:
         return read_id
 
     comment = f"contig={contig};start={start};end={end};strand={strand}"
@@ -256,11 +261,11 @@ def format_header(read_id, source_tsv, contig=None, start=None, end=None,
     return f"{read_id} {comment}"
 
 
-def write_source_row(source_tsv, read_id, source_fasta, contig, start, end,
+def write_source_row(per_read_tsv, read_id, source_fasta, contig, start, end,
                      strand, wrapped):
     """ writes one per-read provenance row to the source TSV """
 
-    source_tsv.write(f"{read_id}\t{source_fasta}\t{contig}\t{start}\t{end}\t"
+    per_read_tsv.write(f"{read_id}\t{source_fasta}\t{contig}\t{start}\t{end}\t"
                      f"{strand}\t{str(wrapped).lower()}\n")
 
 
@@ -401,16 +406,23 @@ def _open_pair_writers(prefix):
     return fw, rw
 
 
-def _open_source_tsv(prefix, write_header):
-    """ open a per-read provenance TSV, optionally writing the header row """
-    fh = open(f"{prefix}-read-sources.tsv", "w")
+def _open_per_read_tsv(prefix, write_header, gzipped=False):
+    """ 
+    open a per-read provenance TSV, optionally gzip-compressed, optionally
+    writing the header row. The final output is gzipped (large, one row per read);
+    per-worker temp files stay plaintext since they're concatenated then removed
+    """
+    if gzipped:
+        fh = gzip.open(f"{prefix}-read-sources.tsv.gz", "wt")
+    else:
+        fh = open(f"{prefix}-read-sources.tsv", "w")
     if write_header:
         fh.write("read_id\tsource_fasta\tcontig\tstart\tend\tstrand\twrapped\n")
     return fh
 
 
 def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
-                        fw, rw, source_tsv):
+                        fw, rw, per_read_tsv):
     """
     Generate `file_budget` fragments (2 reads each) from a single fasta, writing to
     the already-open R1/R2 handles (and optional source TSV). Read ids start at
@@ -474,19 +486,19 @@ def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
             read_count += 1
             read_id = f"r{read_count}"
 
-            fw.write(f"@{format_header(read_id + '/1', source_tsv, seq_id, r1_start, r1_end, r1_strand, wrapped)}\n")
+            fw.write(f"@{format_header(read_id + '/1', per_read_tsv, seq_id, r1_start, r1_end, r1_strand, wrapped)}\n")
             fw.write(f"{forward_read}\n")
             fw.write(f"+\n")
             fw.write(f"{fwd_quality_scores}\n")
 
-            rw.write(f"@{format_header(read_id + '/2', source_tsv, seq_id, r2_start, r2_end, r2_strand, wrapped)}\n")
+            rw.write(f"@{format_header(read_id + '/2', per_read_tsv, seq_id, r2_start, r2_end, r2_strand, wrapped)}\n")
             rw.write(f"{reverse_read}\n")
             rw.write(f"+\n")
             rw.write(f"{rev_quality_scores}\n")
 
-            if source_tsv:
-                write_source_row(source_tsv, read_id + "/1", fasta_file, seq_id, r1_start, r1_end, r1_strand, wrapped)
-                write_source_row(source_tsv, read_id + "/2", fasta_file, seq_id, r2_start, r2_end, r2_strand, wrapped)
+            if per_read_tsv:
+                write_source_row(per_read_tsv, read_id + "/1", fasta_file, seq_id, r1_start, r1_end, r1_strand, wrapped)
+                write_source_row(per_read_tsv, read_id + "/2", fasta_file, seq_id, r2_start, r2_end, r2_strand, wrapped)
 
             reads_written += 2
 
@@ -494,7 +506,7 @@ def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
 
 
 def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
-                        fw, source_tsv):
+                        fw, per_read_tsv):
     """
     Generate `file_budget` reads (single-end or long) from a single fasta, writing to
     the already-open handle (and optional source TSV). Read ids start at id_offset+1.
@@ -547,13 +559,13 @@ def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
 
             read_count += 1
             read_id = f"r{read_count}"
-            fw.write(f"@{format_header(read_id, source_tsv, seq_id, start, read_end, strand, wrapped)}\n")
+            fw.write(f"@{format_header(read_id, per_read_tsv, seq_id, start, read_end, strand, wrapped)}\n")
             fw.write(f"{read}\n")
             fw.write(f"+\n")
             fw.write(f"{quality_scores}\n")
 
-            if source_tsv:
-                write_source_row(source_tsv, read_id, fasta_file, seq_id, start, read_end, strand, wrapped)
+            if per_read_tsv:
+                write_source_row(per_read_tsv, read_id, fasta_file, seq_id, start, read_end, strand, wrapped)
 
             reads_written += 1
 
@@ -579,7 +591,7 @@ def _gen_reads_serial(args, per_file_units, id_offsets):
         fw = open(f"{args.output_prefix}.fastq", "w")
         rw = None
 
-    source_tsv = _open_source_tsv(args.output_prefix, write_header=True) if args.source_tsv else None
+    per_read_tsv = _open_per_read_tsv(args.output_prefix, write_header=True, gzipped=True) if args.per_read_tsv else None
 
     print("")
     pbar = _progress_bar(args, len(args.input_fastas))
@@ -589,10 +601,10 @@ def _gen_reads_serial(args, per_file_units, id_offsets):
             local_seed = _local_seed(args.seed, idx)
             if paired:
                 gen_one_file_paired(args, fasta_file, per_file_units[fasta_file],
-                                    id_offsets[fasta_file], local_seed, fw, rw, source_tsv)
+                                    id_offsets[fasta_file], local_seed, fw, rw, per_read_tsv)
             else:
                 gen_one_file_single(args, fasta_file, per_file_units[fasta_file],
-                                    id_offsets[fasta_file], local_seed, fw, source_tsv)
+                                    id_offsets[fasta_file], local_seed, fw, per_read_tsv)
             pbar.update(1)
     finally:
         pbar.update(pbar.total - pbar.n)
@@ -600,8 +612,8 @@ def _gen_reads_serial(args, per_file_units, id_offsets):
         fw.close()
         if rw is not None:
             rw.close()
-        if source_tsv:
-            source_tsv.close()
+        if per_read_tsv:
+            per_read_tsv.close()
 
 
 def _worker_generate_file(spec):
@@ -622,37 +634,37 @@ def _worker_generate_file(spec):
 
     tmp_prefix = os.path.join(tmp_dir, f"part_{idx:06d}")
 
-    source_tsv = _open_source_tsv(tmp_prefix, write_header=False) if args.source_tsv else None
+    per_read_tsv = _open_per_read_tsv(tmp_prefix, write_header=False) if args.per_read_tsv else None
 
     if paired:
         fw, rw = _open_pair_writers(tmp_prefix)
         try:
             gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
-                                fw, rw, source_tsv)
+                                fw, rw, per_read_tsv)
         finally:
             fw.close()
             rw.close()
-            if source_tsv:
-                source_tsv.close()
+            if per_read_tsv:
+                per_read_tsv.close()
         return {
             "index": idx,
             "r1": f"{tmp_prefix}_R1.fastq",
             "r2": f"{tmp_prefix}_R2.fastq",
-            "source": f"{tmp_prefix}-read-sources.tsv" if args.source_tsv else None,
+            "source": f"{tmp_prefix}-read-sources.tsv" if args.per_read_tsv else None,
         }
     else:
         fw = open(f"{tmp_prefix}.fastq", "w")
         try:
             gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
-                                fw, source_tsv)
+                                fw, per_read_tsv)
         finally:
             fw.close()
-            if source_tsv:
-                source_tsv.close()
+            if per_read_tsv:
+                per_read_tsv.close()
         return {
             "index": idx,
             "reads": f"{tmp_prefix}.fastq",
-            "source": f"{tmp_prefix}-read-sources.tsv" if args.source_tsv else None,
+            "source": f"{tmp_prefix}-read-sources.tsv" if args.per_read_tsv else None,
         }
 
 
@@ -715,9 +727,9 @@ def _gen_reads_parallel(args, per_file_units, id_offsets, jobs):
         else:
             _concat_files([r["reads"] for r in ordered], f"{args.output_prefix}.fastq")
 
-        if args.source_tsv:
-            dest = f"{args.output_prefix}-read-sources.tsv"
-            with open(dest, "w") as out:
+        if args.per_read_tsv:
+            dest = f"{args.output_prefix}-read-sources.tsv.gz"
+            with gzip.open(dest, "wt") as out:
                 out.write("read_id\tsource_fasta\tcontig\tstart\tend\tstrand\twrapped\n")
                 for r in ordered:
                     with open(r["source"], "r") as src:
@@ -751,7 +763,7 @@ def compress_with_pigz(output_prefix, read_type="paired-end", quiet=False):
             subprocess.run(["pigz", "-f", forward_reads_file], check = True)
             subprocess.run(["pigz", "-f", reverse_reads_file], check = True)
             if not quiet:
-                print(f"\n    Compressed files written: {forward_reads_file}.gz, {reverse_reads_file}.gz\n")
+                print(f"\n    Compressed files written: {forward_reads_file}.gz, {reverse_reads_file}.gz")
         except FileNotFoundError:
             print("pigz not found. You're on your own for compression!")
         except subprocess.CalledProcessError as e:

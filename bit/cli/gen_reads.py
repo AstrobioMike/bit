@@ -117,9 +117,9 @@ def build_parser(parent_subparsers=None):
     )
 
     general.add_argument(
-        "--source-tsv",
-        help="Write a per-read provenance TSV. When set, read headers are kept minimal; "
-             "otherwise the same info is in each read's header.",
+        "--per-read-tsv",
+        help="Add this flag to write a per-read provenance tsv; when set, read headers are kept minimal, "
+             "otherwise the same info is in each read's header",
         action="store_true",
         default=False,
     )
