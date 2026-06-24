@@ -17,7 +17,7 @@ from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data
 TRANSIENT_STATUS = {429, 500, 502, 503, 504}
 
 max_threads=20
-max_retries=1
+max_retries=20
 
 def dl_ncbi_assemblies(args):
 
@@ -97,14 +97,13 @@ def summarize_search(summary):
 
     if summary.num_found != summary.num_wanted:
         if summary.num_found > 0:
-            print(color_text("                      NOTICE", "orange"))
-            print(f"        {summary.num_not_found} accession(s) not found at NCBI.")
-            print(f"        They may be invalid or suppressed.")
-            print(f"        See '{summary.not_found_path}'.\n")
+            print(color_text(f"{' ' * 34}NOTICE", "orange"))
+            print(f"      {summary.num_not_found} accession(s) not found at NCBI. They may be invalid or suppressed.")
+            print(f"          See '{summary.not_found_path}'.\n")
         else:
-            print(color_text("                      NOTICE", "orange"))
-            print(f"        None of the {summary.num_wanted} target accession(s) were found at NCBI...")
-            print(f"        This is kinda weird. Are the inputs assembly accessions?\n")
+            print(color_text(f"{' ' * 34}NOTICE", "orange"))
+            print(f"      None of the {summary.num_wanted} target accession(s) were found at NCBI...")
+            print(f"      This is kinda weird. Are the inputs assembly accessions?\n")
             os.remove(summary.not_found_path)
             sys.exit(1)
 
@@ -147,7 +146,6 @@ def download_one(target_link, local_dest, retries=max_retries):
 
     local_path = Path(local_dest)
 
-    # skip if a valid file already exists (enables resuming an interrupted run)
     if local_path.exists() and local_path.stat().st_size > 0 and valid_gzip(local_path):
         return (local_dest, None, "skipped")
 
@@ -157,24 +155,21 @@ def download_one(target_link, local_dest, retries=max_retries):
         try:
             resp = requests.get(target_link, stream=True, timeout=60)
 
-            # a real "not available in this format" - don't waste retries on it
             if resp.status_code == 404:
                 return (local_dest, "Not available in requested format (404)", "failed")
 
-            # transient server-side issues - back off and retry
             if resp.status_code in TRANSIENT_STATUS:
                 if attempt == retries:
-                    return (local_dest, f"HTTP {resp.status_code} after {retries} attempts", "failed")
+                    return (local_dest, f"HTTP {resp.status_code} after {retries} attempts", "failed_transient")
                 sleep_backoff(attempt, resp)
                 continue
 
             resp.raise_for_status()
 
-            # catch for if we got an XML/HTML error page instead of the file
             content_type = resp.headers.get("Content-Type", "")
             if "xml" in content_type.lower() or "html" in content_type.lower():
                 if attempt == retries:
-                    return (local_dest, f"NCBI returned an error page after {retries} attempts", "failed")
+                    return (local_dest, f"NCBI returned an error page after {retries} attempts", "failed_transient")
                 sleep_backoff(attempt)
                 continue
 
@@ -182,11 +177,10 @@ def download_one(target_link, local_dest, retries=max_retries):
                 for chunk in resp.iter_content(chunk_size=1024 * 64):
                     fh.write(chunk)
 
-            # check we actually got something
             if local_path.stat().st_size == 0:
                 local_path.unlink(missing_ok=True)
                 if attempt == retries:
-                    return (local_dest, "Downloaded file was empty", "failed")
+                    return (local_dest, "Downloaded file was empty", "failed_transient")
                 sleep_backoff(attempt)
                 continue
 
@@ -195,27 +189,21 @@ def download_one(target_link, local_dest, retries=max_retries):
         except (requests.RequestException, OSError) as e:
             if attempt == retries:
                 local_path.unlink(missing_ok=True)
-                return (local_dest, str(e), "failed")
+                return (local_dest, str(e), "failed_transient")
             sleep_backoff(attempt)
 
 
-def download_assemblies(run_data):
-
-    if not run_data.quiet:
-        print(color_text("    Downloading assemblies...\n", "yellow"))
-
-    # reading the table into a list of (target_link, local_dest) tuples
-    targets = []
-    with open(run_data.ncbi_sub_table_path, "r") as f:
-        header = f.readline().strip().split("\t")
-        link_idx = header.index("target_link")
-        dest_idx = header.index("local_destination")
-        for line in f:
-            fields = line.strip().split("\t")
-            targets.append((fields[link_idx], fields[dest_idx]))
-
-    failed = []
+def run_download_pass(targets, run_data, desc="Progress"):
+    """
+    runs one pooled download pass over a list of (target_link, local_dest) tuples.
+    returns (permanent_failures, transient_failures, num_skipped) where each
+    failure list holds (target_link, local_dest, error) so transient ones can be retried
+    """
+    permanent = []
+    transient = []
     num_skipped = 0
+
+    link_by_dest = {dest: link for link, dest in targets}
 
     with ThreadPoolExecutor(max_workers=min(run_data.num_jobs, max_threads)) as pool:
         futures = {
@@ -229,14 +217,52 @@ def download_assemblies(run_data):
         else:
             desc_buffer = "      "
             ncols = 70
-        with tqdm(total=len(targets), desc=f"{desc_buffer}Progress", unit=" file", ncols=ncols) as pbar:
+        with tqdm(total=len(targets), desc=f"{desc_buffer}{desc}", unit=" file", ncols=ncols) as pbar:
             for future in as_completed(futures):
                 dest, error, status = future.result()
                 if status == "failed":
-                    failed.append((dest, error))
+                    permanent.append((link_by_dest[dest], dest, error))
+                elif status == "failed_transient":
+                    transient.append((link_by_dest[dest], dest, error))
                 elif status == "skipped":
                     num_skipped += 1
                 pbar.update(1)
+
+    return permanent, transient, num_skipped
+
+
+def download_assemblies(run_data):
+
+    if not run_data.quiet:
+        print(color_text("    Downloading assemblies...\n", "yellow"))
+
+    targets = []
+    with open(run_data.ncbi_sub_table_path, "r") as f:
+        header = f.readline().strip().split("\t")
+        link_idx = header.index("target_link")
+        dest_idx = header.index("local_destination")
+        for line in f:
+            fields = line.strip().split("\t")
+            targets.append((fields[link_idx], fields[dest_idx]))
+
+    permanent, transient, num_skipped = run_download_pass(targets, run_data)
+
+    # second pass on transient-only failures
+    if transient:
+        retry_targets = [(link, dest) for link, dest, _ in transient]
+        print(color_text(f"\n    {len(transient)} file(s) failed with transient error messages, doing another pass", "yellow"))
+        print(color_text(f"    to see if we can grab them...\n", "yellow"))
+
+        time.sleep(3)
+        retry_permanent, retry_transient, retry_skipped = run_download_pass(
+            retry_targets, run_data, desc="Progress"
+        )
+        num_skipped += retry_skipped
+        # anything still failing after the retry is final, regardless of category
+        permanent.extend(retry_permanent)
+        permanent.extend(retry_transient)
+
+    failed = [(dest, error) for _, dest, error in permanent]
 
     if failed:
         with open(run_data.not_downloaded_path, "w") as fh:
@@ -246,11 +272,9 @@ def download_assemblies(run_data):
                 fh.write(f"{acc}\t{error}\n")
         run_data.num_not_downloaded = len(failed)
     else:
-        # nothing failed this run; clear out any stale file from a prior run
         Path(run_data.not_downloaded_path).unlink(missing_ok=True)
 
     run_data.num_skipped = num_skipped
-    # skipped files are already present, so they count as successfully available
     run_data.num_downloaded = len(targets) - len(failed)
 
     return run_data
@@ -271,15 +295,14 @@ def report_finish(run_data):
             print(color_text(f"\n    All {run_data.num_found} found file(s) downloaded successfully!{skipped_note}\n", "yellow"))
 
     elif run_data.num_not_downloaded > 0:
-        print(color_text("\n                      NOTICE", "orange"))
-        print(f"        {run_data.num_not_downloaded} file(s) failed to download from NCBI.")
-        print(f"        They may not be available in the requested format, or ")
-        print(f"        it may have been a transient problem.")
-        print(f"        See '{run_data.not_downloaded_path}'.\n")
+        print(color_text(f"\n{' ' * 34}NOTICE", "orange"))
+        print(f"      {run_data.num_not_downloaded} file(s) failed to download from NCBI. They may not be available")
+        print(f"      in the requested format, or it may have been a transient problem.")
+        print(f"          See '{run_data.not_downloaded_path}'.")
 
         if run_data.num_downloaded > 0:
             if not run_data.quiet:
-                print(color_text(f"\n    The remaining {run_data.num_downloaded} found file(s) downloaded successfully.{skipped_note}\n", "yellow"))
+                print(color_text(f"\n\n    The remaining {run_data.num_downloaded} found file(s) downloaded successfully.{skipped_note}\n", "yellow"))
         else:
-            print(color_text(f"\n    No files were successfully downloaded...{skipped_note}\n", "orange"))
+            print(color_text(f"\n\n    No files were successfully downloaded...{skipped_note}\n", "orange"))
             sys.exit(1)

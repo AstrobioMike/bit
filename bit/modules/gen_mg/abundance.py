@@ -104,8 +104,17 @@ def assign_abundance(df, mode="relative", dist="lognormal", sigma=1.0,
         free_mask = ~pin_mask.values
         n_free = int(free_mask.sum())
         if pin_total > 1.0:
-            warnings.append(f"Pinned relative abundances sum to {pin_total:.3f} (>1); "
-                            "they will be renormalized with drawn genomes getting ~0.")
+            # over-sum: pins are renormalized down. (With --num-genomes this is
+            # caught earlier in preflight; this branch remains for accessions-only
+            # runs, where all or some genomes are pinned and none are drawn from
+            # --num-genomes.) Word it for whether un-pinned genomes actually exist.
+            if n_free > 0:
+                warnings.append(f"Pinned relative abundances sum to {pin_total:.3f} "
+                                f"(>1); they will be renormalized and the {n_free} "
+                                "un-pinned genome(s) will get ~0.")
+            else:
+                warnings.append(f"Pinned relative abundances sum to {pin_total:.3f} "
+                                "(>1); they will be renormalized to sum to 1.")
         elif pin_mask.any() and n_free == 0 and abs(pin_total - 1.0) > 1e-6:
             # all genomes pinned but the pins don't sum to 1: renormalize (treat
             # the pins as relative weights) and tell the user it was rescaled.

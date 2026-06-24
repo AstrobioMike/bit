@@ -26,8 +26,8 @@
 
 ### Changed
 - `bit dl-ncbi-assemblies`
+  - many robustification improvements
   - output fasta files have extension ".fasta.gz" now instead of ".fa.gz" for consistency with the rest of bit-produced nt fasta files (sorry for the change!)
-  - further robustification improvements
 - `bit gen-reads`
   - read headers have been improved with regard to provenance tracking
   - initial fragments/reads now have a 50/50 chance to be drawn from +/- strand (relative to the ref)

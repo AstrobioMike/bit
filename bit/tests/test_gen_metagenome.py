@@ -6,8 +6,8 @@ functions themselves are thin wiring over already-tested modules and are not
 unit-tested here.
 """
 import os
-import pandas as pd
-import pytest
+import pandas as pd # type: ignore
+import pytest # type: ignore
 from types import SimpleNamespace
 
 from bit.modules import gen_metagenome as G
@@ -485,8 +485,9 @@ def test_write_reproducible_input_relative_with_mutation(tmp_path):
     G.write_reproducible_input(
         SimpleNamespace(abundance_mode="relative", mutation_mode="uniform"), run)
     df = pd.read_csv(tmp_path / "reproducible-input.tsv", sep="\t")
-    # both abundance columns are emitted, plus mutation_rate
-    assert list(df.columns) == ["accession", "rel_abundance", "coverage", "mutation_rate"]
+    # coverage (self-sufficient reproducer) + mutation_rate; rel_abundance omitted
+    assert list(df.columns) == ["accession", "coverage", "mutation_rate"]
+    assert "rel_abundance" not in df.columns
 
 
 def test_write_reproducible_input_no_mutation(tmp_path):
@@ -497,8 +498,8 @@ def test_write_reproducible_input_no_mutation(tmp_path):
     G.write_reproducible_input(
         SimpleNamespace(abundance_mode="coverage", mutation_mode="off"), run)
     df = pd.read_csv(tmp_path / "reproducible-input.tsv", sep="\t")
-    # both abundance columns, no mutation_rate when mutation was off
-    assert list(df.columns) == ["accession", "rel_abundance", "coverage"]
+    assert list(df.columns) == ["accession", "coverage"]
+    assert "rel_abundance" not in df.columns
     assert "mutation_rate" not in df.columns
 
 
@@ -507,3 +508,36 @@ def test_load_user_accessions_skips_bare_header(tmp_path):
     p.write_text("GCF_000005845.2\nGCF_000009999.1\n")
     udf = G.load_user_accessions(SimpleNamespace(accessions=str(p)))
     assert list(udf["accession"]) == ["GCF_000005845.2", "GCF_000009999.1"]
+
+
+# ─── coverage-mode default-median notice ───────────────────────────────────
+
+def _coverage_phase(median_explicit, pins, capsys):
+    accs = ["A", "B", "C"]
+    merged = pd.DataFrame({"accession": accs, "used_genome_size": [1_000_000] * 3,
+                           "pinned_rel_abundance": [pd.NA] * 3,
+                           "pinned_coverage": [pins.get(a, pd.NA) for a in accs],
+                           "pinned_mutation_rate": [pd.NA] * 3})
+    run = SimpleNamespace(merged=merged, working_paths={a: None for a in accs})
+    args = SimpleNamespace(abundance_mode="coverage", abundance_dist="even", sigma=1.0,
+                           total_reads=None, read_length=150, type="paired-end",
+                           fragment_size=500, median_coverage=30,
+                           median_coverage_explicit=median_explicit, seed=1, jobs=1)
+    G.phase_abundance(args, run)
+    return "draw coverage around the default" in capsys.readouterr().out
+
+
+def test_coverage_notice_fires_on_mixed_default_median(capsys):
+    assert _coverage_phase(False, {"A": 200}, capsys) is True
+
+
+def test_coverage_notice_suppressed_when_median_explicit(capsys):
+    assert _coverage_phase(True, {"A": 200}, capsys) is False
+
+
+def test_coverage_notice_suppressed_when_all_pinned(capsys):
+    assert _coverage_phase(False, {"A": 50, "B": 50, "C": 50}, capsys) is False
+
+
+def test_coverage_notice_suppressed_when_no_pins(capsys):
+    assert _coverage_phase(False, {}, capsys) is False

@@ -309,6 +309,10 @@ def main():
     # these are all set to None above and ultimately set here so that any
     # incompatible user inputs can be detected and reported in preflight_checks
     args.total_reads = args.total_reads or 10_000_000
+    # remember whether the user set --median-coverage before applying the default,
+    # so the orchestrator can tell pinned coverages where un-pinned genomes draw
+    # around the *default* (worth a notice) from an explicit choice (no notice).
+    args.median_coverage_explicit = args.median_coverage is not None
     args.median_coverage = args.median_coverage or 30
     args.sigma = args.sigma or 1.0
     args.mutation_rate = args.mutation_rate or 0.01
@@ -426,7 +430,7 @@ def resolve_input_driven_modes(args):
             and cols["rel_abundance_sum"] is not None
             and cols["rel_abundance_sum"] >= 1.0):
         fail(f"Input `rel_abundance` values sum to {cols['rel_abundance_sum']:.3f} "
-             f"(>= 1), leaving no abundance for the `--num-genomes "
+             f"(>= 1), leaving no room for the `--num-genomes "
              f"{args.num_genomes}` randomly-selected genomes. Lower the pinned "
              f"abundances or drop `--num-genomes`.")
 

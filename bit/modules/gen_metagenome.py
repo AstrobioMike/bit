@@ -56,7 +56,6 @@ def gen_metagenome(args):
 
     section(f"Phase {n()}: Generating reads...")
     run = phase_reads(args, run)
-    print()
 
     section(f"Phase {n()}: Generating final output tables...")
     print()
@@ -678,6 +677,25 @@ def phase_abundance(args, run):
         read_type=args.type, fragment_size=args.fragment_size,
         median_coverage=args.median_coverage, seed=args.seed)
     warn_all(w)
+
+    # in coverage mode, un-pinned genomes draw their coverage around
+    # --median-coverage. When that was left at the default (not set by the user)
+    # and there is a mix of pinned and un-pinned genomes, disclose where the
+    # un-pinned ones land so the depth split isn't a surprise. Skipped when the
+    # user set --median-coverage explicitly (they already know).
+    if (args.abundance_mode == "coverage"
+            and not getattr(args, "median_coverage_explicit", False)
+            and "pinned_coverage" in assigned.columns):
+        pinned_cov = pd.to_numeric(assigned["pinned_coverage"], errors="coerce")
+        n_pinned = int(pinned_cov.notna().sum())
+        n_free = len(assigned) - n_pinned
+        if n_pinned and n_free:
+            report_message(
+                f"{n_free} un-pinned genome(s) will draw coverage around the "
+                f"default --median-coverage ({int(args.median_coverage)}x); set "
+                "--median-coverage to change that.",
+                "orange", initial_indent="    ", subsequent_indent="    ")
+
     run.merged = assigned
     print()
     return run
@@ -884,21 +902,18 @@ def _build_truth_processes(run, gt_root, fasta2acc, chunksize, pbar):
 
 def write_reproducible_input(args, run):
     """
-    Write reproducible-input.tsv in the run's root: every genome in the final
-    community (user-supplied and randomly-selected) with both the rel_abundance
-    and coverage columns, plus a mutation_rate column when mutation was on. Fed
-    back as a pure --accessions file (no --num-genomes), it recreates this
-    community's composition; the abundance mode chosen at re-run time selects
-    which abundance column is honored. Identical reads additionally require
-    the same --seed (recorded in runlog.txt).
+    write reproducible-input.tsv in the run's root: every genome in the final
+    community (user-supplied and randomly-selected) with the coverage column
+    plus a mutation_rate column when mutation was on.
+    Fed back as a pure --accessions file (no --num-genomes), it recreates this
+    community's composition. Identical reads additionally require the same --seed
+    (recorded in runlog.txt)
     """
     merged = run.merged
     if merged is None or len(merged) == 0:
         return
 
     cols = {"accession": list(merged["accession"])}
-    if "assigned_rel_abundance" in merged.columns:
-        cols["rel_abundance"] = list(merged["assigned_rel_abundance"])
     if "assigned_coverage" in merged.columns:
         cols["coverage"] = list(merged["assigned_coverage"])
 
@@ -908,7 +923,7 @@ def write_reproducible_input(args, run):
             for a in merged["accession"]
         ]
 
-    out_path = os.path.join(run.out_dir, "reproducible-input.tsv")
+    out_path = os.path.join(run.out_dir, "reproducibility.tsv")
     pd.DataFrame(cols).to_csv(out_path, sep="\t", index=False)
     run.reproducible_input_path = out_path
 
