@@ -13,8 +13,8 @@ Pure logic: returns a new dataframe with added columns
   assigned_rel_abundance, assigned_coverage, assigned_reads
 and a warnings list
 """
-import numpy as np
-import pandas as pd
+import numpy as np # type: ignore
+import pandas as pd # type: ignore
 
 PAIRED_TYPES = {"paired-end"}
 
@@ -101,12 +101,22 @@ def assign_abundance(df, mode="relative", dist="lognormal", sigma=1.0,
         # remaining genomes split the leftover proportionally to their drawn weights
         pin_mask = pinned.notna()
         pin_total = float(pinned[pin_mask].sum()) if pin_mask.any() else 0.0
+        free_mask = ~pin_mask.values
+        n_free = int(free_mask.sum())
         if pin_total > 1.0:
             warnings.append(f"Pinned relative abundances sum to {pin_total:.3f} (>1); "
                             "they will be renormalized with drawn genomes getting ~0.")
+        elif pin_mask.any() and n_free == 0 and abs(pin_total - 1.0) > 1e-6:
+            # all genomes pinned but the pins don't sum to 1: renormalize (treat
+            # the pins as relative weights) and tell the user it was rescaled.
+            warnings.append(f"All genomes have pinned relative abundances summing to "
+                            f"{pin_total:.3f} (not 1); renormalizing them to sum to 1.")
+        elif n_free > 0 and abs(pin_total - 1.0) <= 1e-6:
+            # pins already fill the whole budget, so unpinned genomes get ~0
+            warnings.append(f"Pinned relative abundances sum to ~1; the {n_free} "
+                            "un-pinned genome(s) will get ~0 relative abundance.")
         rel = np.zeros(n)
         rel[pin_mask.values] = pinned[pin_mask].values
-        free_mask = ~pin_mask.values
         leftover = max(0.0, 1.0 - pin_total)
         if free_mask.any() and leftover > 0:
             w = weights[free_mask]

@@ -16,6 +16,8 @@ from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data
 
 TRANSIENT_STATUS = {429, 500, 502, 503, 504}
 
+max_threads=20
+max_retries=1
 
 def dl_ncbi_assemblies(args):
 
@@ -141,7 +143,7 @@ def sleep_backoff(attempt, resp=None):
     time.sleep((2 ** (attempt - 1)) + random.uniform(0, 1))
 
 
-def download_one(target_link, local_dest, retries=15):
+def download_one(target_link, local_dest, retries=max_retries):
 
     local_path = Path(local_dest)
 
@@ -215,7 +217,7 @@ def download_assemblies(run_data):
     failed = []
     num_skipped = 0
 
-    with ThreadPoolExecutor(max_workers=min(run_data.num_jobs, 10)) as pool:
+    with ThreadPoolExecutor(max_workers=min(run_data.num_jobs, max_threads)) as pool:
         futures = {
             pool.submit(download_one, link, dest): dest
             for link, dest in targets

@@ -62,6 +62,8 @@ def gen_metagenome(args):
     print()
     phase_truth(args, run)
 
+    write_reproducible_input(args, run)
+
     report_finish(args, run)
 
 
@@ -113,6 +115,13 @@ def setup(args):
     log_file = os.path.join(args.output_dir, "runlog.txt")
     log_command_run(getattr(args, "full_cmd_executed", "(command not captured)"),
                     args.output_dir, log_file)
+
+    # record the resolved seed (whether user-supplied or generated) so the run is
+    # reproducible from the runlog even when no --seed was passed.
+    seed = getattr(args, "seed", None)
+    if seed is not None:
+        with open(log_file, "a") as fh:
+            fh.write(f"Random seed: {seed}\n")
 
     return SimpleNamespace(
         out_dir=args.output_dir,
@@ -398,6 +407,10 @@ def load_user_accessions(args):
                     pins[a][key] = v
     else:
         accs = [l.strip() for l in open(args.accessions) if l.strip()]
+        # a single-column file is bare accessions, but tolerate a lone 'accession'
+        # header line if present (skip it rather than treat it as an accession).
+        if accs and accs[0].lower() == "accession":
+            accs = accs[1:]
         pins = {a: {} for a in accs}
 
     # build normalized rows directly (ranks NA here; filled by resolve_all)
@@ -867,6 +880,37 @@ def _build_truth_processes(run, gt_root, fasta2acc, chunksize, pbar):
         missing = set(TRU.TAXONOMIES) - set(written)
         raise RuntimeError(f"per-read truth build failed for: {', '.join(missing)}")
     return written
+
+
+def write_reproducible_input(args, run):
+    """
+    Write reproducible-input.tsv in the run's root: every genome in the final
+    community (user-supplied and randomly-selected) with both the rel_abundance
+    and coverage columns, plus a mutation_rate column when mutation was on. Fed
+    back as a pure --accessions file (no --num-genomes), it recreates this
+    community's composition; the abundance mode chosen at re-run time selects
+    which abundance column is honored. Identical reads additionally require
+    the same --seed (recorded in runlog.txt).
+    """
+    merged = run.merged
+    if merged is None or len(merged) == 0:
+        return
+
+    cols = {"accession": list(merged["accession"])}
+    if "assigned_rel_abundance" in merged.columns:
+        cols["rel_abundance"] = list(merged["assigned_rel_abundance"])
+    if "assigned_coverage" in merged.columns:
+        cols["coverage"] = list(merged["assigned_coverage"])
+
+    if args.mutation_mode != "off" and run.mutation_results:
+        cols["mutation_rate"] = [
+            run.mutation_results.get(a, {}).get("rate", pd.NA)
+            for a in merged["accession"]
+        ]
+
+    out_path = os.path.join(run.out_dir, "reproducible-input.tsv")
+    pd.DataFrame(cols).to_csv(out_path, sep="\t", index=False)
+    run.reproducible_input_path = out_path
 
 
 def report_finish(args, run):

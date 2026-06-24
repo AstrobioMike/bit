@@ -141,7 +141,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
     ## abundance ##
     abundance.add_argument(
         "--abundance-mode",
-        default="relative",
+        default=None,  # 'relative' set later (None lets the input TSV's columns
+                       # auto-select the mode, and conflicts be detected, first)
         choices=["relative", "coverage"],
         help=wrap_help("Whether the distribution describes relative abundance "
                        "(uses --total-reads) or per-genome fold-coverage (uses "
@@ -189,7 +190,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
     ## mutation ##
     mutation.add_argument(
         "--mutation-mode",
-        default="off",
+        default=None,  # 'off' set later (None lets a mutation_rate column in the
+                       # input TSV auto-enable mutation, and conflicts be detected)
         choices=["off", "uniform", "varied"],
         help=wrap_help("Mutate genomes before read generation: "
                        "'uniform' where all are done at --mutation-rate; "
@@ -320,9 +322,133 @@ def main():
     elif not args.read_length:
         args.read_length = 150
 
+    # resolve the seed up front (generating one pseudo-randomly when unset) so the
+    # exact seed driving this run can be recorded to the runlog and reproduced.
+    args.seed = _resolve_seed(args.seed)
+
     args.full_cmd_executed = reconstruct_invocation(parser, args)
 
     gen_metagenome(args)
+
+
+def _resolve_seed(input_seed):
+    """ return the user's seed, or a pseudo-random one derived from the clock when
+    unset — so a concrete seed always exists to log and reproduce the run (mirrors
+    set_seed in mutate-seqs / add-insertion). """
+    if input_seed is not None:
+        return int(input_seed)
+    import datetime
+    now = datetime.datetime.now()
+    return now.hour * 10000 + now.minute * 100 + now.second
+
+
+def _inspect_accession_columns(path):
+    """
+    Peek at the accessions input to see which optional pin columns it carries and,
+    for mutation_rate, whether the supplied values are all equal. Returns a dict:
+      {'has_rel_abundance', 'has_coverage', 'has_mutation_rate' (bools),
+       'mutation_uniform' (bool|None), 'mutation_value' (float|None),
+       'rel_abundance_sum' (float|None)}.
+    A bare one-per-line file (no 'accession' header) has no columns.
+    """
+    import pandas as pd
+    info = {"has_rel_abundance": False, "has_coverage": False,
+            "has_mutation_rate": False, "mutation_uniform": None,
+            "mutation_value": None, "rel_abundance_sum": None}
+    try:
+        first = open(path).readline()
+    except OSError:
+        return info
+    if "accession" not in first.lower():
+        return info                      # bare list, no columns
+    df = pd.read_csv(path, sep="\t", dtype=str)
+
+    def _has_values(col):
+        # a column counts as present only if it exists AND has at least one
+        # non-blank value; an all-empty column is treated as absent.
+        if col not in df.columns:
+            return False
+        return pd.to_numeric(df[col], errors="coerce").notna().any()
+
+    info["has_rel_abundance"] = _has_values("rel_abundance")
+    info["has_coverage"] = _has_values("coverage")
+    info["has_mutation_rate"] = _has_values("mutation_rate")
+    if info["has_rel_abundance"]:
+        vals = pd.to_numeric(df["rel_abundance"], errors="coerce").dropna()
+        info["rel_abundance_sum"] = float(vals.sum()) if len(vals) else 0.0
+    if info["has_mutation_rate"]:
+        vals = pd.to_numeric(df["mutation_rate"], errors="coerce").dropna()
+        uniq = set(vals.round(12).tolist())
+        info["mutation_uniform"] = (len(uniq) <= 1)
+        info["mutation_value"] = float(next(iter(uniq))) if len(uniq) == 1 else None
+    return info
+
+
+def resolve_input_driven_modes(args):
+    """
+    Let the input accessions TSV's columns drive the abundance and mutation modes
+    when the user didn't set them explicitly, and reject explicit settings that
+    contradict the file. Runs before the mode-contradiction checks so those see
+    the resolved modes. Mutates args in place.
+    """
+    def fail(msg):
+        report_message(msg, initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
+
+    cols = _inspect_accession_columns(args.accessions) if args.accessions else \
+        {"has_rel_abundance": False, "has_coverage": False,
+         "has_mutation_rate": False, "mutation_uniform": None,
+         "mutation_value": None, "rel_abundance_sum": None}
+
+    # ---- abundance mode ----
+    if cols["has_coverage"] and not cols["has_rel_abundance"]:
+        # only a coverage column -> coverage mode (unless the user said otherwise)
+        if args.abundance_mode == "relative":
+            fail("Input `--accessions` has a `coverage` column, which conflicts "
+                 "with `--abundance-mode relative`. Use coverage mode (or omit "
+                 "`--abundance-mode`) to honor the column.")
+        args.abundance_mode = "coverage"
+    elif cols["has_rel_abundance"] and not cols["has_coverage"]:
+        if args.abundance_mode == "coverage":
+            fail("Input `--accessions` has a `rel_abundance` column, which "
+                 "conflicts with `--abundance-mode coverage`. Use relative mode "
+                 "(or omit `--abundance-mode`) to honor the column.")
+        args.abundance_mode = "relative"
+    # both columns or neither -> fall through to default below; the resolved mode
+    # picks which column is honored (the other is ignored).
+    if args.abundance_mode is None:
+        args.abundance_mode = "relative"
+
+    # ---- pinned rel-abundances vs --num-genomes ----
+    # if the user pins relative abundances that already sum to >= 1 there is no
+    # room left for randomly-selected genomes, so that combination is a conflict.
+    if (args.abundance_mode == "relative" and args.num_genomes
+            and cols["rel_abundance_sum"] is not None
+            and cols["rel_abundance_sum"] >= 1.0):
+        fail(f"Input `rel_abundance` values sum to {cols['rel_abundance_sum']:.3f} "
+             f"(>= 1), leaving no abundance for the `--num-genomes "
+             f"{args.num_genomes}` randomly-selected genomes. Lower the pinned "
+             f"abundances or drop `--num-genomes`.")
+
+    # ---- mutation mode ----
+    if cols["has_mutation_rate"]:
+        if args.mutation_mode == "off":
+            fail("Input `--accessions` has a `mutation_rate` column, which "
+                 "conflicts with `--mutation-mode off`. Omit `--mutation-mode` "
+                 "(or set uniform/varied) to honor the column.")
+        if args.mutation_mode is None:
+            # auto-enable from the column: all-equal supplied rates -> uniform at
+            # that rate (random genomes get the same); differing rates -> varied,
+            # with random genomes drawn from --mutation-rate-min/-max (defaults
+            # unless the user set them).
+            if cols["mutation_uniform"]:
+                args.mutation_mode = "uniform"
+                if args.mutation_rate is None and cols["mutation_value"] is not None:
+                    args.mutation_rate = cols["mutation_value"]
+            else:
+                args.mutation_mode = "varied"
+    if args.mutation_mode is None:
+        args.mutation_mode = "off"
 
 
 def preflight_checks(args):
@@ -335,6 +461,10 @@ def preflight_checks(args):
     if args.output_dir:
         check_if_output_dir_exists(args.output_dir, force_overwrite=args.force_overwrite)
 
+    # let the input TSV's columns drive abundance/mutation modes (and reject
+    # explicit settings that contradict the file) before the checks below, which
+    # then see the resolved modes.
+    resolve_input_driven_modes(args)
 
     # ---- mode/param contradictions ----
 

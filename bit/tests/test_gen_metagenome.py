@@ -383,3 +383,127 @@ def test_processes_match_serial(tmp_path):
         a = pd.read_csv(ser[t]["per_read"], sep="\t", dtype=str, keep_default_na=False).sort_values("read_id").reset_index(drop=True)
         b = pd.read_csv(par[t]["per_read"], sep="\t", dtype=str, keep_default_na=False).sort_values("read_id").reset_index(drop=True)
         assert a.equals(b)
+
+
+# ─── input-TSV-driven mode resolution ──────────────────────────────────────
+
+import bit.cli.gen_metagenome as CLI
+
+
+def _acc_file(tmp_path, content):
+    p = tmp_path / "accs.tsv"
+    p.write_text(content)
+    return str(p)
+
+
+def _mode_args(tmp_path, content, **over):
+    base = dict(accessions=_acc_file(tmp_path, content), abundance_mode=None,
+                mutation_mode=None, num_genomes=None, mutation_rate=None)
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+def test_resolve_coverage_column_autoswitch(tmp_path):
+    a = _mode_args(tmp_path, "accession\tcoverage\nGCF_1\t50\nGCF_2\t30\n")
+    CLI.resolve_input_driven_modes(a)
+    assert a.abundance_mode == "coverage"
+
+
+def test_resolve_coverage_column_conflicts_with_relative(tmp_path):
+    a = _mode_args(tmp_path, "accession\tcoverage\nGCF_1\t50\n", abundance_mode="relative")
+    with pytest.raises(SystemExit):
+        CLI.resolve_input_driven_modes(a)
+
+
+def test_resolve_rel_abundance_column_relative(tmp_path):
+    a = _mode_args(tmp_path, "accession\trel_abundance\nGCF_1\t0.3\nGCF_2\t0.2\n")
+    CLI.resolve_input_driven_modes(a)
+    assert a.abundance_mode == "relative"
+
+
+def test_resolve_both_columns_default_relative(tmp_path):
+    a = _mode_args(tmp_path, "accession\trel_abundance\tcoverage\nGCF_1\t0.3\t50\n")
+    CLI.resolve_input_driven_modes(a)
+    assert a.abundance_mode == "relative"
+
+
+def test_resolve_both_columns_explicit_coverage_ok(tmp_path):
+    a = _mode_args(tmp_path, "accession\trel_abundance\tcoverage\nGCF_1\t0.3\t50\n",
+                   abundance_mode="coverage")
+    CLI.resolve_input_driven_modes(a)
+    assert a.abundance_mode == "coverage"
+
+
+def test_resolve_pins_sum_ge_one_with_num_genomes_exits(tmp_path):
+    a = _mode_args(tmp_path, "accession\trel_abundance\nGCF_1\t0.6\nGCF_2\t0.5\n",
+                   num_genomes=10)
+    with pytest.raises(SystemExit):
+        CLI.resolve_input_driven_modes(a)
+
+
+def test_resolve_mutation_uniform_column(tmp_path):
+    a = _mode_args(tmp_path, "accession\tmutation_rate\nGCF_1\t0.02\nGCF_2\t0.02\n")
+    CLI.resolve_input_driven_modes(a)
+    assert a.mutation_mode == "uniform"
+    assert a.mutation_rate == 0.02
+
+
+def test_resolve_mutation_varied_column_autoswitch(tmp_path):
+    a = _mode_args(tmp_path, "accession\tmutation_rate\nGCF_1\t0.02\nGCF_2\t0.05\n")
+    CLI.resolve_input_driven_modes(a)
+    assert a.mutation_mode == "varied"
+
+
+def test_resolve_mutation_all_empty_column_is_off(tmp_path):
+    # a mutation_rate column with no values is treated as absent (no mutation)
+    a = _mode_args(tmp_path, "accession\tmutation_rate\nGCF_1\t\nGCF_2\t\n")
+    CLI.resolve_input_driven_modes(a)
+    assert a.mutation_mode == "off"
+
+
+def test_resolve_mutation_column_conflicts_with_off(tmp_path):
+    a = _mode_args(tmp_path, "accession\tmutation_rate\nGCF_1\t0.02\n", mutation_mode="off")
+    with pytest.raises(SystemExit):
+        CLI.resolve_input_driven_modes(a)
+
+
+def test_resolve_bare_list_defaults(tmp_path):
+    a = _mode_args(tmp_path, "GCF_1\nGCF_2\n")
+    CLI.resolve_input_driven_modes(a)
+    assert a.abundance_mode == "relative"
+    assert a.mutation_mode == "off"
+
+
+# ─── reproducible-input.tsv ─────────────────────────────────────────────────
+
+def test_write_reproducible_input_relative_with_mutation(tmp_path):
+    merged = pd.DataFrame({"accession": ["GCF_1", "GCF_2"],
+                           "assigned_rel_abundance": [0.6, 0.4],
+                           "assigned_coverage": [50.0, 30.0]})
+    run = SimpleNamespace(merged=merged, out_dir=str(tmp_path),
+                          mutation_results={"GCF_1": {"rate": 0.02}, "GCF_2": {"rate": 0.02}})
+    G.write_reproducible_input(
+        SimpleNamespace(abundance_mode="relative", mutation_mode="uniform"), run)
+    df = pd.read_csv(tmp_path / "reproducible-input.tsv", sep="\t")
+    # both abundance columns are emitted, plus mutation_rate
+    assert list(df.columns) == ["accession", "rel_abundance", "coverage", "mutation_rate"]
+
+
+def test_write_reproducible_input_no_mutation(tmp_path):
+    merged = pd.DataFrame({"accession": ["GCF_1", "GCF_2"],
+                           "assigned_rel_abundance": [0.6, 0.4],
+                           "assigned_coverage": [50.0, 30.0]})
+    run = SimpleNamespace(merged=merged, out_dir=str(tmp_path), mutation_results={})
+    G.write_reproducible_input(
+        SimpleNamespace(abundance_mode="coverage", mutation_mode="off"), run)
+    df = pd.read_csv(tmp_path / "reproducible-input.tsv", sep="\t")
+    # both abundance columns, no mutation_rate when mutation was off
+    assert list(df.columns) == ["accession", "rel_abundance", "coverage"]
+    assert "mutation_rate" not in df.columns
+
+
+def test_load_user_accessions_skips_bare_header(tmp_path):
+    p = tmp_path / "accs.txt"
+    p.write_text("GCF_000005845.2\nGCF_000009999.1\n")
+    udf = G.load_user_accessions(SimpleNamespace(accessions=str(p)))
+    assert list(udf["accession"]) == ["GCF_000005845.2", "GCF_000009999.1"]
