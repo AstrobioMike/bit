@@ -82,7 +82,7 @@ def check_required_dbs(args, run):
     # all up front so no large download surprises the user mid-run.
     run.gtdb_dir = get_gtdb_data(quiet=True)
     get_ncbi_tax_data(quiet=True)
-    log_data_source(run, "NCBI taxonomy (taxdump) retrieved",
+    log_data_source(run, "\nNCBI taxonomy (taxdump) retrieved",
                     _read_retrieved_date(os.environ.get("TAXONKIT_DB")))
     get_ncbi_assembly_data(quiet=True)
     log_data_source(run, "NCBI assembly summary retrieved",
@@ -950,6 +950,12 @@ def report_finish(args, run):
 
     print(f"      Genomes included:      {num_genomes:,}")
     print(f"      {read_unit} generated:  {reported:,}\n")
+
+    log_file = getattr(run, "log_file", None)
+    if log_file:
+        with open(log_file, "a") as fh:
+            fh.write(f"\nGenomes included: {num_genomes:,}\n")
+            fh.write(f"{read_unit} generated: {reported:,}\n")
 
     print(f"      Reads:                 {reads_line}")
     gt_root = os.path.join(run.out_dir, "ground-truth")
