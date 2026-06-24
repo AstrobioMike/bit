@@ -97,11 +97,12 @@ def summarize_search(summary):
         if summary.num_found > 0:
             print(color_text("                      NOTICE", "orange"))
             print(f"        {summary.num_not_found} accession(s) not found at NCBI.")
+            print(f"        They may be invalid or suppressed.")
             print(f"        See '{summary.not_found_path}'.\n")
         else:
             print(color_text("                      NOTICE", "orange"))
             print(f"        None of the {summary.num_wanted} target accession(s) were found at NCBI...")
-            print(f"        This is weird. Are the inputs assembly accessions?\n")
+            print(f"        This is kinda weird. Are the inputs assembly accessions?\n")
             os.remove(summary.not_found_path)
             sys.exit(1)
 
@@ -140,7 +141,7 @@ def sleep_backoff(attempt, resp=None):
     time.sleep((2 ** (attempt - 1)) + random.uniform(0, 1))
 
 
-def download_one(target_link, local_dest, retries=10):
+def download_one(target_link, local_dest, retries=15):
 
     local_path = Path(local_dest)
 
@@ -270,8 +271,8 @@ def report_finish(run_data):
     elif run_data.num_not_downloaded > 0:
         print(color_text("\n                      NOTICE", "orange"))
         print(f"        {run_data.num_not_downloaded} file(s) failed to download from NCBI.")
-        print(f"        They may not be available in the requested format, or it may "
-              f"        have been a transient problem.")
+        print(f"        They may not be available in the requested format, or ")
+        print(f"        it may have been a transient problem.")
         print(f"        See '{run_data.not_downloaded_path}'.\n")
 
         if run_data.num_downloaded > 0:
