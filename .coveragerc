@@ -5,11 +5,12 @@ concurrency = multiprocessing
 source =
     bit.modules
     bit.cli.summarize_assembly
+    bit.cli.gen_metagenome
 
 omit =
     */__init__.py
 
 [report]
 exclude_lines =
-    # pragma: no cover
+    pragma: no cover
     if __name__ == .__main__.

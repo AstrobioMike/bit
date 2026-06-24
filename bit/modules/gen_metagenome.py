@@ -29,7 +29,7 @@ from bit.modules.gen_mg import truth as TRU
 from bit.modules.gen_mg import taxonomy as TAX
 
 
-def gen_metagenome(args):
+def gen_metagenome(args): # pragma: no cover
 
     run = setup(args)
     check_required_dbs(args, run)
@@ -309,7 +309,7 @@ def _select_with_suppression_screen(gtdb_tab, derep_rank, domains, num_genomes, 
     return selected, warnings
 
 
-def phase_select(args, run):
+def phase_select(args, run): # pragma: no cover
 
     generative = bool(args.num_genomes)
 
@@ -433,7 +433,7 @@ def _num_or_na(v):
 
 # ---- downloading ----
 
-def phase_download(args, run):
+def phase_download(args, run): # pragma: no cover
     acc_file = os.path.join(run.out_dir, "selected-accessions.txt")
     with open(acc_file, "w") as fh:
         for a in run.merged["accession"]:
@@ -617,7 +617,7 @@ def measure_fasta_size(path):
     return total
 
 
-def phase_mutate(args, run):
+def phase_mutate(args, run): # pragma: no cover
     accs = list(run.merged["accession"])
     rates = MUT.assign_rates(
         accs, mode=args.mutation_mode, mutation_rate=args.mutation_rate,
@@ -725,7 +725,7 @@ def measure_sizes_parallel(accessions, path_map, jobs=10):
 
 # ---- generating reads ----
 
-def phase_reads(args, run):
+def phase_reads(args, run): # pragma: no cover
     from bit.modules.gen_reads import generate_reads
 
     # coverage tsv keyed by the fasta gen-reads will actually read
@@ -754,7 +754,7 @@ def phase_reads(args, run):
 
 # ---- making truth outputs ----
 
-def phase_truth(args, run):
+def phase_truth(args, run): # pragma: no cover
     fasta2acc = None
     if args.per_read_tsv:
         fasta2acc = {}
@@ -928,7 +928,7 @@ def write_reproducible_input(args, run):
     run.reproducible_input_path = out_path
 
 
-def report_finish(args, run):
+def report_finish(args, run): # pragma: no cover
     report_message("-" * 78, "green", initial_indent="  ")
     report_message("Mock metagenome complete!", "green",
                    initial_indent=" " * 28, subsequent_indent="    ",
