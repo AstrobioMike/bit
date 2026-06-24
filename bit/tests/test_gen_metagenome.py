@@ -323,3 +323,63 @@ def test_load_gtdb_table_usecols_intersect(tmp_path, monkeypatch):
     for c in ["accession", "ncbi_genbank_assembly_accession", "domain", "species",
               "genome_size", "ncbi_taxid"]:
         assert c in tab.columns
+
+
+# ─── parallel per-read truth build (processes) ─────────────────────────────
+
+def _parallel_truth_inputs(tmp_path):
+    import gzip
+    src = tmp_path / "rs.tsv.gz"
+    n = 1500
+    with gzip.open(src, "wt") as fh:
+        fh.write("read_id\tsource_fasta\tcontig\tstart\tend\tstrand\twrapped\n")
+        for i in range(n):
+            fh.write(f"r{i}\t/g/GCF_{i%3:09d}.fasta.gz\tc0\t0\t150\t+\tfalse\n")
+    accs = [f"GCF_{i:09d}" for i in range(3)]
+    merged = pd.DataFrame({
+        "accession": accs, "assigned_reads": [n // 3] * 3,
+        "assigned_coverage": [1.0] * 3, "assigned_rel_abundance": [1/3] * 3,
+        "used_genome_size": [1000] * 3, "downloaded_genome_size": [1000] * 3})
+    for r in ["domain", "phylum", "class", "order", "family", "genus", "species"]:
+        merged["gtdb_" + r] = f"g_{r}"
+        merged["ncbi_" + r] = f"n_{r}"
+    run = SimpleNamespace(merged=merged,
+                          mutation_results={a: {"rate": 0.0} for a in accs},
+                          read_sources_tsv=str(src))
+    f2a = {f"/g/{a}.fasta.gz": a for a in accs}
+    return run, f2a, n
+
+
+class _FakeBar:
+    """ minimal stand-in for a tqdm bar (records updates, no terminal I/O). """
+    def __init__(self): self.n = 0
+    def update(self, k=1): self.n += k
+
+
+def test_build_truth_processes(tmp_path):
+    from bit.modules.gen_mg import truth as TRU
+    run, f2a, n = _parallel_truth_inputs(tmp_path)
+    gt = tmp_path / "gt"; gt.mkdir()
+    written = G._build_truth_processes(run, str(gt), f2a, 500, _FakeBar())
+    assert set(written) == set(TRU.TAXONOMIES)
+    for t in TRU.TAXONOMIES:
+        df = pd.read_csv(written[t]["per_read"], sep="\t", dtype=str, keep_default_na=False)
+        assert len(df) == n
+        assert "wrapped" not in df.columns
+        assert df["genus"].iloc[0] == ("g_genus" if t == "gtdb" else "n_genus")
+
+
+def test_processes_match_serial(tmp_path):
+    from bit.modules.gen_mg import truth as TRU
+    run, f2a, n = _parallel_truth_inputs(tmp_path)
+    s_root = tmp_path / "s"; s_root.mkdir()
+    ser = {t: TRU.build_truth_for_taxonomy(
+        t, run.merged, run.mutation_results, str(s_root),
+        read_sources_tsv=run.read_sources_tsv, fasta_to_accession=f2a,
+        per_read=True, chunksize=500) for t in TRU.TAXONOMIES}
+    p_root = tmp_path / "p"; p_root.mkdir()
+    par = G._build_truth_processes(run, str(p_root), f2a, 500, _FakeBar())
+    for t in TRU.TAXONOMIES:
+        a = pd.read_csv(ser[t]["per_read"], sep="\t", dtype=str, keep_default_na=False).sort_values("read_id").reset_index(drop=True)
+        b = pd.read_csv(par[t]["per_read"], sep="\t", dtype=str, keep_default_na=False).sort_values("read_id").reset_index(drop=True)
+        assert a.equals(b)

@@ -135,7 +135,7 @@ def build_per_rank_tables(per_genome_df):
 # ---------- read-level truth ----------
 
 def build_read_truth(read_sources_tsv, fasta_to_accession, per_genome_df, out_path,
-                     chunksize=2_000_000, progress=None):
+                     chunksize=500_000, progress=None):
     """
     Join gen-reads' per-read source TSV to accession + taxonomy, writing the
     read-level truth table. per_genome_df is expected to carry plain rank columns
@@ -203,7 +203,7 @@ def build_read_truth(read_sources_tsv, fasta_to_accession, per_genome_df, out_pa
 def build_truth_for_taxonomy(taxonomy, merged_df, mutation_results, gt_root,
                              read_sources_tsv=None, fasta_to_accession=None,
                              per_read=False, attempt_to_make_dir=os.makedirs,
-                             on_per_read=None, progress=None):
+                             on_per_read=None, progress=None, chunksize=500_000):
     """
     Build the ground-truth/<taxonomy>/ subtree: per-genome table, per-rank
     abundance tables, and (optionally) the per-read truth table.
@@ -234,7 +234,7 @@ def build_truth_for_taxonomy(taxonomy, merged_df, mutation_results, gt_root,
             on_per_read()
         rt_path = os.path.join(tax_dir, "truth-per-read.tsv.gz")
         build_read_truth(read_sources_tsv, fasta_to_accession, per_genome, rt_path,
-                         progress=progress)
+                         chunksize=chunksize, progress=progress)
         entry["per_read"] = rt_path
 
     return entry

@@ -737,40 +737,54 @@ def phase_truth(args, run):
 
     run.truth_written = {}
 
+    # chunk size for the per-read build: drives both the actual chunked read
+    # (memory bounded by this many rows) and the progress-bar granularity. Smaller
+    # chunks update the bar more often at negligible speed cost and lower peak
+    # memory; this value is the single source of truth for both.
     chunksize = 500_000
     # total chunks per taxonomy, for a determinate progress bar over the per-read
     # build (rows == total reads, available from the assigned_reads column).
     total_reads = int(run.merged["assigned_reads"].sum()) if "assigned_reads" in run.merged.columns else 0
     n_chunks = max(1, -(-total_reads // chunksize)) if total_reads else None  # ceil-div
 
-    for taxonomy in TRU.TAXONOMIES:
-        if args.per_read_tsv:
-            # the per-read table dominates this phase; show a progress bar over the
-            # chunked read of the source TSV (memory stays bounded by chunksize).
-            print(f"    Building {taxonomy.upper()} per-read table...")
-            pbar = tqdm(total=n_chunks, desc="      Progress", unit="chunk", ncols=76)
-            run.truth_written[taxonomy] = TRU.build_truth_for_taxonomy(
-                taxonomy, run.merged, run.mutation_results, gt_root,
-                read_sources_tsv=run.read_sources_tsv,
-                fasta_to_accession=fasta2acc,
-                per_read=True,
-                attempt_to_make_dir=attempt_to_make_dir,
-                progress=pbar.update)
-            if pbar.total is not None:
-                pbar.update(pbar.total - pbar.n)
-            pbar.close()
-            print()
-        else:
-            # no per-read table -> just the quick per-genome/per-rank tables.
+    jobs = max(1, int(getattr(args, "jobs", 1) or 1))
+
+    if not args.per_read_tsv:
+        # no per-read table -> just the quick per-genome/per-rank tables, serial.
+        for taxonomy in TRU.TAXONOMIES:
             label = f"Building {taxonomy.upper()} truth tables..."
             with spinner(label, label, indent="    "):
                 run.truth_written[taxonomy] = TRU.build_truth_for_taxonomy(
                     taxonomy, run.merged, run.mutation_results, gt_root,
-                    read_sources_tsv=None,
-                    fasta_to_accession=fasta2acc,
-                    per_read=False,
-                    attempt_to_make_dir=attempt_to_make_dir)
-    if not args.per_read_tsv:
+                    read_sources_tsv=None, fasta_to_accession=fasta2acc,
+                    per_read=False, attempt_to_make_dir=attempt_to_make_dir)
+    elif jobs <= 1 or len(TRU.TAXONOMIES) < 2:
+        # serial per-read build with a determinate per-taxonomy bar.
+        for taxonomy in TRU.TAXONOMIES:
+            print(f"    Building {taxonomy.upper()} per-read table...")
+            pbar = tqdm(total=n_chunks, desc="      Progress", unit="chunk", ncols=76)
+            run.truth_written[taxonomy] = TRU.build_truth_for_taxonomy(
+                taxonomy, run.merged, run.mutation_results, gt_root,
+                read_sources_tsv=run.read_sources_tsv, fasta_to_accession=fasta2acc,
+                per_read=True, attempt_to_make_dir=attempt_to_make_dir,
+                progress=pbar.update, chunksize=chunksize)
+            if pbar.total is not None:
+                pbar.update(pbar.total - pbar.n)
+            pbar.close()
+            print()
+    else:
+        # parallel per-read build: the two taxonomies are independent (different
+        # output, shared read-only source), built in separate spawned processes
+        # for true multi-core parallelism on the CPU-bound merge+gzip. A shared
+        # counter drives one aggregate progress bar over both taxonomies' chunks.
+        total = (n_chunks * len(TRU.TAXONOMIES)) if n_chunks else None
+        print("    Building per-read tables (gtdb, ncbi)...")
+        pbar = tqdm(total=total, desc="    Progress", unit=" chunk", ncols=78)
+        written = _build_truth_processes(run, gt_root, fasta2acc, chunksize, pbar)
+        run.truth_written.update(written)
+        if pbar.total is not None:
+            pbar.update(pbar.total - pbar.n)
+        pbar.close()
         print()
 
     # remove intermediates now that the truth tables hold their information:
@@ -781,6 +795,78 @@ def phase_truth(args, run):
         os.remove(run.read_sources_tsv)
     if os.path.exists(run.coverage_tsv):
         os.remove(run.coverage_tsv)
+
+
+def _truth_process_worker(spec, counter, result_q):
+    """ picklable worker for the process-parallel path: build one taxonomy's
+    per-read table, incrementing the shared counter once per chunk so the parent
+    can render a single aggregate progress bar, and putting the result (or an
+    error marker) on the queue. counter and result_q are passed as direct Process
+    args (not nested in spec) so spawn can share them. """
+    try:
+        import sys as _sys
+        _sys.path.insert(0, os.getcwd())
+        from bit.modules.gen_mg import truth as _TRU
+
+        def tick():
+            with counter.get_lock():
+                counter.value += 1
+
+        entry = _TRU.build_truth_for_taxonomy(
+            spec["taxonomy"], spec["merged"], spec["mutation_results"], spec["gt_root"],
+            read_sources_tsv=spec["read_sources_tsv"],
+            fasta_to_accession=spec["fasta_to_accession"],
+            per_read=True, attempt_to_make_dir=os.makedirs,
+            progress=tick, chunksize=spec["chunksize"])
+        result_q.put((spec["taxonomy"], entry))
+    except Exception as e:                           # surface worker failures
+        result_q.put(("__error__", f"{spec['taxonomy']}: {type(e).__name__}: {e}"))
+
+
+def _build_truth_processes(run, gt_root, fasta2acc, chunksize, pbar):
+    """ build the two taxonomies' per-read tables in separate (spawned) processes
+    for true multi-core parallelism on the CPU-bound merge+gzip. A shared counter
+    (incremented per chunk by each worker) drives the single aggregate bar; results
+    come back over a queue. Raw Process (not a pool) so the shared Value/Queue can
+    be passed as direct args at construction rather than pickled through submit. """
+    import time
+    import multiprocessing as mp
+    ctx = mp.get_context("spawn")
+    counter = ctx.Value("i", 0)
+    result_q = ctx.Queue()
+
+    specs = [{
+        "taxonomy": taxonomy, "merged": run.merged,
+        "mutation_results": run.mutation_results, "gt_root": gt_root,
+        "read_sources_tsv": run.read_sources_tsv, "fasta_to_accession": fasta2acc,
+        "chunksize": chunksize,
+    } for taxonomy in TRU.TAXONOMIES]
+
+    procs = [ctx.Process(target=_truth_process_worker, args=(s, counter, result_q))
+             for s in specs]
+    for p in procs:
+        p.start()
+
+    # advance the bar from the shared counter while workers run
+    while any(p.is_alive() for p in procs):
+        with counter.get_lock():
+            done = counter.value
+        if pbar.n < done:
+            pbar.update(done - pbar.n)
+        time.sleep(0.2)
+    for p in procs:
+        p.join()
+
+    written = {}
+    while not result_q.empty():
+        taxonomy, entry = result_q.get()
+        if taxonomy == "__error__":
+            raise RuntimeError(f"per-read truth build failed ({entry})")
+        written[taxonomy] = entry
+    if len(written) != len(TRU.TAXONOMIES):
+        missing = set(TRU.TAXONOMIES) - set(written)
+        raise RuntimeError(f"per-read truth build failed for: {', '.join(missing)}")
+    return written
 
 
 def report_finish(args, run):
