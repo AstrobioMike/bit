@@ -23,13 +23,13 @@ def _write_gzip(path, payload):
         pass
     with gzip.open(path, "wb") as fh:
         fh.write(payload)
- 
- 
+
+
 def _truncate(path, fraction=0.5):
     data = Path(path).read_bytes()
     Path(path).write_bytes(data[: int(len(data) * fraction)])
- 
- 
+
+
 def _mock_response(status=200, content_type="application/octet-stream",
                    body=b"data", headers=None):
     resp = MagicMock()
@@ -163,7 +163,7 @@ def test_download_one_html_error_page(tmp_path):
     mock_resp.headers = {"Content-Type": "text/html"}
     with patch("bit.modules.ncbi.dl_ncbi_assemblies.requests.get", return_value=mock_resp):
         path, err, status = download_one("http://fake/file.gz", dest, retries=1)
-    assert status == "failed"
+    assert status == "failed_transient"
     assert "error page" in err
 
 
@@ -175,7 +175,7 @@ def test_download_one_xml_error_page(tmp_path):
     mock_resp.headers = {"Content-Type": "application/xml"}
     with patch("bit.modules.ncbi.dl_ncbi_assemblies.requests.get", return_value=mock_resp):
         path, err, status = download_one("http://fake/file.gz", dest, retries=1)
-    assert status == "failed"
+    assert status == "failed_transient"
     assert "error page" in err
 
 
@@ -188,7 +188,7 @@ def test_download_one_empty_file(tmp_path):
     mock_resp.iter_content.return_value = [b""]  # writes 0 bytes
     with patch("bit.modules.ncbi.dl_ncbi_assemblies.requests.get", return_value=mock_resp):
         path, err, status = download_one("http://fake/file.gz", dest, retries=1)
-    assert status == "failed"
+    assert status == "failed_transient"
     assert err == "Downloaded file was empty"
     assert not Path(dest).exists()
 
@@ -198,7 +198,7 @@ def test_download_one_request_exception(tmp_path):
     with patch("bit.modules.ncbi.dl_ncbi_assemblies.requests.get",
                side_effect=requests.RequestException("timeout")):
         path, err, status = download_one("http://fake/file.gz", dest, retries=2)
-    assert status == "failed"
+    assert status == "failed_transient"
     assert "timeout" in err
     assert not Path(dest).exists()
 
@@ -317,8 +317,8 @@ def test_valid_gzip_accepts_intact_file(tmp_path):
     p = tmp_path / "good.fasta.gz"
     _write_gzip(p, b"ACGT" * 100_000)  # ~400 KB payload, multi-block
     assert valid_gzip(str(p)) is True
- 
- 
+
+
 def test_valid_gzip_rejects_small_truncation(tmp_path):
     # a small payload truncated mid-stream raises EOFError internally; the function
     # must treat that as invalid (not crash). EOFError is not an OSError subclass,
@@ -327,8 +327,8 @@ def test_valid_gzip_rejects_small_truncation(tmp_path):
     _write_gzip(p, b"ACGT" * 100)  # ~400 B payload
     _truncate(p)
     assert valid_gzip(str(p)) is False
- 
- 
+
+
 def test_valid_gzip_rejects_large_truncation(tmp_path):
     # a large payload truncated mid-stream: reading only the first block would
     # succeed (the cut is far past block 1) and wrongly pass. The full read reaches
@@ -337,8 +337,8 @@ def test_valid_gzip_rejects_large_truncation(tmp_path):
     _write_gzip(p, b"ACGT" * 1_000_000)  # ~4 MB payload
     _truncate(p)
     assert valid_gzip(str(p)) is False
- 
- 
+
+
 def test_valid_gzip_rejects_corrupted_body(tmp_path):
     # valid gzip structure but a flipped mid-stream byte -> CRC32 mismatch at EOS
     p = tmp_path / "corrupt.fasta.gz"
@@ -347,25 +347,25 @@ def test_valid_gzip_rejects_corrupted_body(tmp_path):
     data[len(data) // 2] ^= 0xFF
     p.write_bytes(bytes(data))
     assert valid_gzip(str(p)) is False
- 
- 
+
+
 def test_valid_gzip_rejects_non_gzip_content(tmp_path):
     p = tmp_path / "junk.fasta.gz"
     p.write_bytes(b"this is not gzip data at all")
     assert valid_gzip(str(p)) is False
- 
- 
+
+
 def test_valid_gzip_passes_through_non_gz_paths(tmp_path):
     # non-.gz paths are not decompressed; the function returns True without reading
     p = tmp_path / "report.txt"
     p.write_text("some plain text")
     assert valid_gzip(str(p)) is True
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Tier 2a - sleep_backoff
 # ---------------------------------------------------------------------------
- 
+
 def test_sleep_backoff_honors_retry_after_header():
     resp = MagicMock()
     resp.headers = {"Retry-After": "0"}
@@ -373,8 +373,8 @@ def test_sleep_backoff_honors_retry_after_header():
         sleep_backoff(1, resp=resp)
     # slept exactly once, using the header value (0.0)
     mock_sleep.assert_called_once_with(0.0)
- 
- 
+
+
 def test_sleep_backoff_invalid_retry_after_falls_back_to_exponential():
     resp = MagicMock()
     resp.headers = {"Retry-After": "not-a-number"}
@@ -383,20 +383,20 @@ def test_sleep_backoff_invalid_retry_after_falls_back_to_exponential():
         sleep_backoff(3, resp=resp)
     # 2 ** (3 - 1) + 0.0 == 4.0
     mock_sleep.assert_called_once_with(4.0)
- 
- 
+
+
 def test_sleep_backoff_no_response_uses_exponential():
     with patch("bit.modules.ncbi.dl_ncbi_assemblies.time.sleep") as mock_sleep, \
          patch("bit.modules.ncbi.dl_ncbi_assemblies.random.uniform", return_value=0.0):
         sleep_backoff(1)
     # 2 ** 0 + 0.0 == 1.0
     mock_sleep.assert_called_once_with(1.0)
- 
- 
+
+
 # ---------------------------------------------------------------------------
 # Tier 2b - download_one retry branches
 # ---------------------------------------------------------------------------
- 
+
 def test_download_one_transient_then_success(tmp_path):
     dest = str(tmp_path / "a.gz")
     seq = [_mock_response(status=503), _mock_response(status=200)]
@@ -407,19 +407,19 @@ def test_download_one_transient_then_success(tmp_path):
     assert err is None
     # backed off once between the 503 and the 200
     assert mock_backoff.call_count == 1
- 
- 
+
+
 def test_download_one_transient_exhausts_retries(tmp_path):
     dest = str(tmp_path / "b.gz")
     with patch("bit.modules.ncbi.dl_ncbi_assemblies.requests.get",
                side_effect=[_mock_response(status=503)] * 3), \
          patch("bit.modules.ncbi.dl_ncbi_assemblies.sleep_backoff"):
         path, err, status = download_one("http://x/b.gz", dest, retries=3)
-    assert status == "failed"
+    assert status == "failed_transient"
     assert "503" in err
     assert "3 attempts" in err
- 
- 
+
+
 def test_download_one_error_page_then_success(tmp_path):
     dest = str(tmp_path / "c.gz")
     seq = [_mock_response(content_type="text/html"),
@@ -429,18 +429,18 @@ def test_download_one_error_page_then_success(tmp_path):
         path, err, status = download_one("http://x/c.gz", dest, retries=3)
     assert status == "downloaded"
     assert mock_backoff.call_count == 1
- 
- 
+
+
 def test_download_one_error_page_exhausts_retries(tmp_path):
     dest = str(tmp_path / "d.gz")
     with patch("bit.modules.ncbi.dl_ncbi_assemblies.requests.get",
                side_effect=[_mock_response(content_type="application/xml")] * 2), \
          patch("bit.modules.ncbi.dl_ncbi_assemblies.sleep_backoff"):
         path, err, status = download_one("http://x/d.gz", dest, retries=2)
-    assert status == "failed"
+    assert status == "failed_transient"
     assert "error page" in err
- 
- 
+
+
 def test_download_one_empty_then_success(tmp_path):
     dest = str(tmp_path / "e.gz")
     seq = [_mock_response(body=b""), _mock_response(body=b"data")]

@@ -474,7 +474,7 @@ def test_resolve_bare_list_defaults(tmp_path):
     assert a.mutation_mode == "off"
 
 
-# ─── reproducible-input.tsv ─────────────────────────────────────────────────
+# ─── reproducibility.tsv ─────────────────────────────────────────────────
 
 def test_write_reproducible_input_relative_with_mutation(tmp_path):
     merged = pd.DataFrame({"accession": ["GCF_1", "GCF_2"],
@@ -484,7 +484,7 @@ def test_write_reproducible_input_relative_with_mutation(tmp_path):
                           mutation_results={"GCF_1": {"rate": 0.02}, "GCF_2": {"rate": 0.02}})
     G.write_reproducible_input(
         SimpleNamespace(abundance_mode="relative", mutation_mode="uniform"), run)
-    df = pd.read_csv(tmp_path / "reproducible-input.tsv", sep="\t")
+    df = pd.read_csv(tmp_path / "reproducibility.tsv", sep="\t")
     # coverage (self-sufficient reproducer) + mutation_rate; rel_abundance omitted
     assert list(df.columns) == ["accession", "coverage", "mutation_rate"]
     assert "rel_abundance" not in df.columns
@@ -497,7 +497,7 @@ def test_write_reproducible_input_no_mutation(tmp_path):
     run = SimpleNamespace(merged=merged, out_dir=str(tmp_path), mutation_results={})
     G.write_reproducible_input(
         SimpleNamespace(abundance_mode="coverage", mutation_mode="off"), run)
-    df = pd.read_csv(tmp_path / "reproducible-input.tsv", sep="\t")
+    df = pd.read_csv(tmp_path / "reproducibility.tsv", sep="\t")
     assert list(df.columns) == ["accession", "coverage"]
     assert "rel_abundance" not in df.columns
     assert "mutation_rate" not in df.columns
