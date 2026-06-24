@@ -809,8 +809,8 @@ def phase_truth(args, run):
         # for true multi-core parallelism on the CPU-bound merge+gzip. A shared
         # counter drives one aggregate progress bar over both taxonomies' chunks.
         total = (n_chunks * len(TRU.TAXONOMIES)) if n_chunks else None
-        print("    Building per-read tables (gtdb, ncbi)...")
-        pbar = tqdm(total=total, desc="    Progress", unit=" chunk", ncols=78)
+        print("    Building per-read tables...")
+        pbar = tqdm(total=total, desc="      Progress", unit="chunk", ncols=76)
         written = _build_truth_processes(run, gt_root, fasta2acc, chunksize, pbar)
         run.truth_written.update(written)
         if pbar.total is not None:
