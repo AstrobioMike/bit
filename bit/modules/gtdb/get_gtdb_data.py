@@ -22,7 +22,7 @@ GTDB_BASE_URL = "https://data.ace.uq.edu.au/public/gtdb/data/releases/latest"
 # Used by default; `-f/--force-update` bypasses this and rebuilds from
 # GTDB_BASE_URL instead (gen_gtdb_tab). If this is empty or the download fails,
 # the default path falls back to that same upstream rebuild.
-GTDB_SLIM_TARBALL_URL = "https://github.com/AstrobioMike/bit/releases/download/gtdb-r232-slimmed-metadata/GTDB-r232-slimmed-metadata.tar.gz"
+GTDB_SLIM_TARBALL_URL = "https://github.com/AstrobioMike/bit/releases/download/gtdb-metadata-latest/GTDB-arc-and-bac-metadata.tar.gz"
 
 # the stored GTDB-arc-and-bac-metadata.tsv is slimmed to only the columns bit
 # uses anywhere (see gen_metagenome.GTDB_USED_COLUMNS, which this must stay in
@@ -229,7 +229,6 @@ def get_slim_gtdb_tab(location, quiet=False):
     print("")
 
 
-
 def gen_gtdb_tab(location):
     """ downloads and parses the GTDB info tables """
 
@@ -314,3 +313,73 @@ def gen_gtdb_tab(location):
         report_gtdb_unreachable(err)
     finally:
         socket.setdefaulttimeout(default_timeout)
+
+
+# names of the two files packaged inside the distributed tarball
+GTDB_TABLE_FILENAME = "GTDB-arc-and-bac-metadata.tsv"
+GTDB_VERSION_FILENAME = "GTDB-version-info.txt"
+
+
+def fetch_upstream_version(timeout=30):
+    """
+    return the current upstream GTDB VERSION.txt content as a string. Used by the
+    refresh Action to decide whether a new release is available (by comparing
+    against the version currently published alongside the hosted asset). Raises on
+    network error so the caller can decide how to handle it.
+    """
+    import urllib.request
+    req_url = f"{GTDB_BASE_URL}/VERSION.txt"
+    default_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(timeout)
+    try:
+        with urllib.request.urlopen(req_url) as resp:
+            return resp.read().decode("utf-8", errors="replace")
+    finally:
+        socket.setdefaulttimeout(default_timeout)
+
+
+def main(argv=None):
+    """
+    build the slim GTDB bundle for the refresh GitHub Action: download + slim the
+    metadata via gen_gtdb_tab, then package the table + version file into a single
+    .tar.gz, and (optionally) leave the version file alongside it so the Action can
+    upload it as a separate small asset for cheap weekly version checks.
+
+    Output in <out-dir>:
+      <archive-name>            (default GTDB-arc-and-bac-metadata.tar.gz)
+      GTDB-version-info.txt     (left in place for separate upload and rapid version check)
+    """
+    import argparse
+    import tarfile
+
+    ap = argparse.ArgumentParser(description="Build bit's slim GTDB bundle.")
+    ap.add_argument("-o", "--out-dir", default=".", help="output directory")
+    ap.add_argument("--archive-name", default="GTDB-arc-and-bac-metadata.tar.gz",
+                    help="name of the produced .tar.gz")
+    args = ap.parse_args(argv)
+
+    os.makedirs(args.out_dir, exist_ok=True)
+    table_path = os.path.join(args.out_dir, GTDB_TABLE_FILENAME)
+    version_path = os.path.join(args.out_dir, GTDB_VERSION_FILENAME)
+    archive_path = os.path.join(args.out_dir, args.archive_name)
+
+    # gen_gtdb_tab writes both GTDB-arc-and-bac-metadata.tsv (slimmed) and
+    # GTDB-version-info.txt into out-dir.
+    gen_gtdb_tab(args.out_dir)
+
+    print(f"Packaging -> {archive_path}", flush=True)
+    with tarfile.open(archive_path, "w:gz") as tar:
+        tar.add(table_path, arcname=GTDB_TABLE_FILENAME)
+        tar.add(version_path, arcname=GTDB_VERSION_FILENAME)
+
+    # remove the large uncompressed table; keep the version file loose so the
+    # workflow can upload it as a separate small asset.
+    if os.path.exists(table_path):
+        os.remove(table_path)
+
+    print("Done.", flush=True)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

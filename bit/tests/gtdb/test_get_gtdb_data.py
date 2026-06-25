@@ -440,3 +440,37 @@ def test_get_gtdb_data_returns_gtdb_dir(tmp_path, monkeypatch):
     (tmp_path / "GTDB-version-info.txt").write_text("v220")
     result = get_gtdb_data(force_update=False, quiet=True)
     assert result == str(tmp_path)
+
+
+################################################################################
+# main() bundle builder + fetch_upstream_version (for the refresh Action)
+################################################################################
+
+def test_main_builds_bundle_and_leaves_version_loose(tmp_path):
+    def fake_gen(location):
+        Path(location, "GTDB-arc-and-bac-metadata.tsv").write_text(
+            "accession\tdomain\tgenus\nRS_1\tBacteria\tEscherichia\n")
+        Path(location, "GTDB-version-info.txt").write_text(
+            "Genome Taxonomy Database (GTDB) v232\nReleased April 2025\n")
+    with patch.object(gtdb_mod, "gen_gtdb_tab", side_effect=fake_gen):
+        rc = gtdb_mod.main(["-o", str(tmp_path),
+                            "--archive-name", "GTDB-arc-and-bac-metadata.tar.gz"])
+    assert rc == 0
+    import tarfile
+    tgz = tmp_path / "GTDB-arc-and-bac-metadata.tar.gz"
+    assert tgz.exists()
+    # large uncompressed table removed; loose version file kept for separate upload
+    assert not (tmp_path / "GTDB-arc-and-bac-metadata.tsv").exists()
+    assert (tmp_path / "GTDB-version-info.txt").exists()
+    with tarfile.open(tgz, "r:gz") as t:
+        members = sorted(m.name for m in t.getmembers())
+    assert members == ["GTDB-arc-and-bac-metadata.tsv", "GTDB-version-info.txt"]
+
+
+def test_fetch_upstream_version_returns_body():
+    with patch("urllib.request.urlopen") as mock_open:
+        mock_open.return_value.__enter__.return_value.read.return_value = \
+            b"Genome Taxonomy Database (GTDB) v232\nReleased April 2025\n"
+        v = gtdb_mod.fetch_upstream_version()
+    assert "v232" in v
+    assert "Released" in v
