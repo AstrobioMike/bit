@@ -14,20 +14,15 @@ from bit.modules.general import (wprint, color_text,
 
 GTDB_BASE_URL = "https://data.ace.uq.edu.au/public/gtdb/data/releases/latest"
 
-# pre-slimmed table + version-info, packaged as a .tar.gz and uploaded to a bit
-# GitHub release, then split into fixed-size byte parts because the release
-# asset uploader rejects the whole file. The parts are named:
-#   <PARTS_PREFIX>000, <PARTS_PREFIX>001, <PARTS_PREFIX>002, ...
-# and are raw byte slices (NOT individually valid archives); concatenated in
-# order they reconstruct the original .tar.gz exactly. Set GTDB_SLIM_PARTS_URL
-# to the release-asset URL of part 000 with the trailing "000" removed (the
-# common prefix); the downloader appends 000, 001, ... and stops at the first 404.
-# The reconstructed archive contains exactly two files at the archive root:
+# pre-slimmed table + version-info, packaged as a single .tar.gz and hosted on a
+# bit GitHub release for a fast default download. The archive contains exactly
+# two files at its root:
 #   GTDB-arc-and-bac-metadata.tsv   (already slimmed to GTDB_KEPT_COLUMNS)
 #   GTDB-version-info.txt
 # Used by default; `-f/--force-update` bypasses this and rebuilds from
-# GTDB_BASE_URL instead (gen_gtdb_tab).
-GTDB_SLIM_PARTS_URL = "https://github.com/AstrobioMike/bit/releases/download/gtdb-r232-slimmed-metadata/gtdb-r232-slim.part"
+# GTDB_BASE_URL instead (gen_gtdb_tab). If this is empty or the download fails,
+# the default path falls back to that same upstream rebuild.
+GTDB_SLIM_TARBALL_URL = "https://github.com/AstrobioMike/bit/releases/download/gtdb-r232-slimmed-metadata/GTDB-r232-slimmed-metadata.tar.gz"
 
 # the stored GTDB-arc-and-bac-metadata.tsv is slimmed to only the columns bit
 # uses anywhere (see gen_metagenome.GTDB_USED_COLUMNS, which this must stay in
@@ -120,91 +115,51 @@ def report_gtdb_unreachable(err):
     sys.exit(1)
 
 
-def _download_slim_parts(parts_prefix, dest_tarball, quiet=False, max_parts=1000,
-                         attempts_per_part=4, retry_wait=3):
+def _download_with_retries(url, label, dest, quiet=False,
+                           attempts=4, retry_wait=3):
     """
-    download the split tarball parts (<parts_prefix>000, 001, 002, ...) in order,
-    concatenating them into dest_tarball, stopping at the first part that 404s.
-    Returns the number of parts written. Raises on any non-404 download error
-    that persists past attempts_per_part, or if zero parts were found (so the
-    caller can fall back to a rebuild).
-
-    Parts use a fixed 3-digit zero-padded suffix (000..999), matching how they
-    were uploaded with `split -a 3 -d`. 3 digits gives a consistent name width
-    regardless of part count (unlike split's default 2-digit width, which rolls
-    to 3 digits only after part 99).
-
-    Each part is retried up to attempts_per_part times on transient failures
-    (timeouts, connection resets, SSL handshake stalls, transient 5xx), with a
-    short wait between tries. A 404 is never retried -- it's the normal
-    end-of-parts signal. This keeps one flaky part from collapsing the whole
-    fast path to an upstream rebuild over a shaky connection.
+    download `url` to `dest`, retrying up to `attempts` times on transient
+    failures (timeouts, connection resets, SSL handshake stalls, transient 5xx),
+    with a short wait between tries. A 404 is not retried -- it's raised
+    immediately so the caller can treat a missing asset distinctly. Raises the
+    last error if all attempts fail.
     """
-    written = 0
-    with open(dest_tarball, "wb") as out:
-        for i in range(max_parts):
-            part_url = f"{parts_prefix}{i:03d}"
-            part_path = dest_tarball + f".part{i:03d}"
+    last_err = None
+    for attempt in range(1, attempts + 1):
+        try:
+            download_with_tqdm(url, label, dest)
+            return
+        except urllib.error.HTTPError as err:
+            if err.code == 404:
+                raise          # missing asset -> not transient, don't retry
+            last_err = err     # transient 5xx etc. -> retry
+        except (urllib.error.URLError, socket.timeout, TimeoutError,
+                ConnectionError, OSError) as err:
+            last_err = err     # timeout / reset / SSL stall -> retry
 
-            last_err = None
-            done_parts = False
-            for attempt in range(1, attempts_per_part + 1):
-                try:
-                    download_with_tqdm(
-                        part_url, f"        GTDB prepared data (part {i + 1})", part_path)
-                    last_err = None
-                    break
-                except urllib.error.HTTPError as err:
-                    if err.code == 404:
-                        done_parts = True   # no more parts -> normal stop
-                        break
-                    last_err = err          # transient 5xx etc. -> retry
-                except (urllib.error.URLError, socket.timeout, TimeoutError,
-                        ConnectionError, OSError) as err:
-                    last_err = err          # timeout / reset / SSL stall -> retry
+        if attempt < attempts:
+            if not quiet:
+                wprint(color_text(
+                    f"    download failed (attempt {attempt}/{attempts}); retrying...",
+                    "yellow"))
+            time.sleep(retry_wait)
 
-                if attempt < attempts_per_part:
-                    if not quiet:
-                        wprint(color_text(
-                            f"    part {i + 1} download failed (attempt {attempt}"
-                            f"/{attempts_per_part}); retrying...", "yellow"))
-                    time.sleep(retry_wait)
-
-            if done_parts:
-                break
-            if last_err is not None:
-                # exhausted retries for this part -> let the caller fall back
-                raise last_err
-
-            try:
-                with open(part_path, "rb") as src:
-                    shutil.copyfileobj(src, out)
-                written += 1
-            finally:
-                if os.path.exists(part_path):
-                    try:
-                        os.remove(part_path)
-                    except OSError:
-                        pass
-    if written == 0:
-        raise ValueError("no GTDB table parts found at the configured URL")
-    return written
+    raise last_err
 
 
 def get_slim_gtdb_tab(location, quiet=False):
     """
-    fast default path: download bit's pre-slimmed GTDB table (uploaded as a
-    split, multi-part .tar.gz), reconstruct it, and extract its two files (the
-    slimmed metadata table and the version-info file) into `location`. Falls
-    back to rebuilding from the upstream GTDB release (gen_gtdb_tab) if no parts
-    URL is configured or the download/reconstruct/extract fails, so the user
-    always ends up with a usable table.
+    fast default path: download bit's pre-slimmed GTDB tarball and extract its
+    two files (the slimmed metadata table and the version-info file) into
+    `location`. Falls back to rebuilding from the upstream GTDB release
+    (gen_gtdb_tab) if no tarball URL is configured or the download/extract fails,
+    so the user always ends up with a usable table.
     """
     metadata_path = os.path.join(location, "GTDB-arc-and-bac-metadata.tsv")
     version_info_path = os.path.join(location, "GTDB-version-info.txt")
 
-    if not GTDB_SLIM_PARTS_URL:
-        # no host configured yet -> rebuild from upstream
+    if not GTDB_SLIM_TARBALL_URL:
+        # no host configured -> rebuild from upstream
         gen_gtdb_tab(location)
         return
 
@@ -217,11 +172,13 @@ def get_slim_gtdb_tab(location, quiet=False):
     default_timeout = socket.getdefaulttimeout()
     socket.setdefaulttimeout(30)
     try:
-        _download_slim_parts(GTDB_SLIM_PARTS_URL, tarball_path, quiet=quiet)
+        _download_with_retries(
+            GTDB_SLIM_TARBALL_URL, "        GTDB prepared data", tarball_path,
+            quiet=quiet)
 
-        # a truncated/misordered/incomplete reconstruction fails here (full-stream
-        # read via getmembers), which trips the fallback below rather than writing
-        # a corrupt table.
+        # a truncated/corrupt download fails here (full-stream read via
+        # getmembers), which trips the fallback below rather than writing a
+        # corrupt table.
         with tarfile.open(tarball_path, "r:gz") as tar:
             members = tar.getmembers()
             # take only the two expected files, matched by basename, and guard
@@ -269,6 +226,8 @@ def get_slim_gtdb_tab(location, quiet=False):
                 os.remove(tarball_path)
             except OSError:
                 pass
+    print("")
+
 
 
 def gen_gtdb_tab(location):

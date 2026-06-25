@@ -1,7 +1,10 @@
 import gzip
 import io
 import os
+import shutil
+import socket
 import tarfile
+import urllib.error
 import pytest
 from pathlib import Path
 from unittest.mock import patch
@@ -70,7 +73,6 @@ def _build_slim_tarball(dest, *, include_metadata=True, include_version=True,
 def _mock_tarball_download(src_tarball):
     """download_with_tqdm side_effect that copies a prebuilt tarball to dest."""
     def _download(url, label, dest):
-        import shutil
         shutil.copy(src_tarball, dest)
         return dest
     return _download
@@ -278,6 +280,7 @@ def test_get_slim_gtdb_tab_download_error_falls_back(tmp_path):
 
     with patch.object(gtdb_mod, "GTDB_SLIM_TARBALL_URL", "https://example.test/x.tar.gz"), \
          patch("bit.modules.gtdb.get_gtdb_data.download_with_tqdm", side_effect=boom), \
+         patch("bit.modules.gtdb.get_gtdb_data.time.sleep"), \
          patch("bit.modules.gtdb.get_gtdb_data.gen_gtdb_tab") as mock_gen:
         get_slim_gtdb_tab(str(tmp_path), quiet=True)
     mock_gen.assert_called_once_with(str(tmp_path))
@@ -293,6 +296,96 @@ def test_get_slim_gtdb_tab_missing_file_in_archive_falls_back(tmp_path):
          patch("bit.modules.gtdb.get_gtdb_data.gen_gtdb_tab") as mock_gen:
         get_slim_gtdb_tab(str(tmp_path), quiet=True)
     mock_gen.assert_called_once_with(str(tmp_path))
+
+
+################################################################################
+# _download_with_retries
+################################################################################
+
+def _flaky_download(src_tarball, fail_times, exc=None):
+    """
+    download_with_tqdm side_effect that fails the first `fail_times` calls with a
+    transient error, then copies the prebuilt tarball through. If fail_times is
+    None it fails every call. Used to exercise the retry wrapper.
+    """
+    if exc is None:
+        exc = socket.timeout("handshake timed out")
+    seen = {"count": 0}
+
+    def _download(url, label, dest):
+        if fail_times is None or seen["count"] < fail_times:
+            seen["count"] += 1
+            raise exc
+        shutil.copy(src_tarball, dest)
+        return dest
+    return _download
+
+
+def test_get_slim_gtdb_tab_retries_transient_failure(tmp_path):
+    """A download that fails a couple times then succeeds should be retried and
+    the fetch should still complete via the fast path (no rebuild)."""
+    src = tmp_path / "src.tar.gz"
+    _build_slim_tarball(src)
+    flaky = _flaky_download(src, fail_times=2)
+    with patch.object(gtdb_mod, "GTDB_SLIM_TARBALL_URL", "https://example.test/x.tar.gz"), \
+         patch("bit.modules.gtdb.get_gtdb_data.download_with_tqdm", side_effect=flaky), \
+         patch("bit.modules.gtdb.get_gtdb_data.time.sleep"), \
+         patch("bit.modules.gtdb.get_gtdb_data.gen_gtdb_tab") as mock_gen:
+        get_slim_gtdb_tab(str(tmp_path), quiet=True)
+    mock_gen.assert_not_called()
+    assert (tmp_path / "GTDB-arc-and-bac-metadata.tsv").exists()
+    assert (tmp_path / "GTDB-version-info.txt").exists()
+
+
+def test_get_slim_gtdb_tab_exhausted_retries_falls_back(tmp_path):
+    """A download that fails every attempt exhausts retries and falls back to the
+    upstream rebuild rather than hanging."""
+    src = tmp_path / "src.tar.gz"
+    _build_slim_tarball(src)
+    always_fail = _flaky_download(src, fail_times=None)
+    with patch.object(gtdb_mod, "GTDB_SLIM_TARBALL_URL", "https://example.test/x.tar.gz"), \
+         patch("bit.modules.gtdb.get_gtdb_data.download_with_tqdm", side_effect=always_fail), \
+         patch("bit.modules.gtdb.get_gtdb_data.time.sleep"), \
+         patch("bit.modules.gtdb.get_gtdb_data.gen_gtdb_tab") as mock_gen:
+        get_slim_gtdb_tab(str(tmp_path), quiet=True)
+    mock_gen.assert_called_once_with(str(tmp_path))
+
+
+def test_download_with_retries_does_not_retry_404(tmp_path):
+    """A 404 is not transient and must not be retried; it raises immediately and
+    sleep is never called."""
+    def always_404(url, label, dest):
+        raise urllib.error.HTTPError(url, 404, "Not Found", hdrs=None, fp=None)
+
+    dest = str(tmp_path / "out.tar.gz")
+    calls = {"n": 0}
+
+    def counting(url, label, dest):
+        calls["n"] += 1
+        always_404(url, label, dest)
+
+    with patch("bit.modules.gtdb.get_gtdb_data.download_with_tqdm", side_effect=counting), \
+         patch("bit.modules.gtdb.get_gtdb_data.time.sleep") as mock_sleep:
+        with pytest.raises(urllib.error.HTTPError):
+            gtdb_mod._download_with_retries("https://example.test/x.tar.gz",
+                                            "label", dest, quiet=True)
+    assert calls["n"] == 1            # no retries on a 404
+    mock_sleep.assert_not_called()
+
+
+def test_download_with_retries_retries_then_succeeds(tmp_path):
+    """The retry wrapper retries a transient failure the expected number of times
+    before succeeding, sleeping between attempts."""
+    src = tmp_path / "src.tar.gz"
+    _build_slim_tarball(src)
+    flaky = _flaky_download(src, fail_times=2)
+    dest = str(tmp_path / "out.tar.gz")
+    with patch("bit.modules.gtdb.get_gtdb_data.download_with_tqdm", side_effect=flaky), \
+         patch("bit.modules.gtdb.get_gtdb_data.time.sleep") as mock_sleep:
+        gtdb_mod._download_with_retries("https://example.test/x.tar.gz",
+                                        "label", dest, quiet=True)
+    assert os.path.exists(dest)
+    assert mock_sleep.call_count == 2   # slept between the 2 failures, not after success
 
 
 ################################################################################
