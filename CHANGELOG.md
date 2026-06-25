@@ -14,7 +14,7 @@
 
 -->
 
-## v2.6.0 (NOT YET RELEASED)
+## v2.6.0 (25-Jun-2026)
 
 ### Added
 - `bit gen-metagenome`

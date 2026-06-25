@@ -414,16 +414,17 @@ def test_get_gtdb_data_default_uses_slim_path(tmp_path, monkeypatch):
     mock_gen.assert_not_called()
 
 
-def test_get_gtdb_data_force_update_rebuilds_from_upstream(tmp_path, monkeypatch):
-    """-f should rebuild from upstream (gen_gtdb_tab), bypassing the slim path."""
+def test_get_gtdb_data_force_update_forces_slim_fetch(tmp_path, monkeypatch):
+    """-f re-fetches the hosted asset even when local data already exists; it
+    does not rebuild from upstream directly (that's only the fallback)."""
     monkeypatch.setenv("GTDB_DIR", str(tmp_path))
     (tmp_path / "GTDB-arc-and-bac-metadata.tsv").write_text("data")
     (tmp_path / "GTDB-version-info.txt").write_text("v220")
     with patch("bit.modules.gtdb.get_gtdb_data.gen_gtdb_tab") as mock_gen, \
          patch("bit.modules.gtdb.get_gtdb_data.get_slim_gtdb_tab") as mock_slim:
-        get_gtdb_data(force_update=True)
-    mock_gen.assert_called_once_with(str(tmp_path))
-    mock_slim.assert_not_called()
+        get_gtdb_data(force_update=True, quiet=True)
+    mock_slim.assert_called_once_with(str(tmp_path), quiet=True)
+    mock_gen.assert_not_called()
 
 
 def test_get_gtdb_data_missing_triggers_slim_path(tmp_path, monkeypatch):

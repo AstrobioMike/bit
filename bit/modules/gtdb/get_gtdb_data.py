@@ -54,14 +54,12 @@ def get_gtdb_data(force_update=False, quiet=False):
             return GTDB_dir
         return GTDB_dir
     else:
-        # default: grab the pre-slimmed table from bit's host (fast). With
-        # -f/--force-update, skip that and rebuild from the upstream GTDB
-        # release. The fast path also falls back to an upstream rebuild if the
-        # download fails or no tarball URL is configured.
-        if force_update:
-            gen_gtdb_tab(GTDB_dir)
-        else:
-            get_slim_gtdb_tab(GTDB_dir, quiet=quiet)
+        # both default and -f/--force-update fetch the prepared slim table from
+        # bit's host; -f just forces a re-download even when local data already
+        # exists (to pick up a newer GTDB release). If the asset download fails or
+        # no tarball URL is configured, get_slim_gtdb_tab falls back to rebuilding
+        # from the upstream GTDB release.
+        get_slim_gtdb_tab(GTDB_dir, quiet=quiet)
         return GTDB_dir
 
 
