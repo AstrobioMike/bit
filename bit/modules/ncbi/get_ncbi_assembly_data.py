@@ -175,6 +175,7 @@ def get_slim_ncbi_assembly_data(location, quiet=False):
                 os.remove(tarball_path)
             except OSError:
                 pass
+    print("")
 
 
 def download_ncbi_assembly_summary_data(location):
