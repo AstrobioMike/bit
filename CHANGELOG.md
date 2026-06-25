@@ -31,7 +31,7 @@
 - `bit gen-reads`
   - read headers have been improved with regard to provenance tracking
   - initial fragments/reads now have a 50/50 chance to be drawn from +/- strand (relative to the ref)
-
+- `bit data get gtdb-data` now pulls a prepared, slimmed version from github first if possible (saves on download and reading time)
 
 ---
 
