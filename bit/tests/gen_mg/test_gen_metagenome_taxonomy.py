@@ -99,6 +99,66 @@ def test_assembly_info_taxid_map_reads_field_5(tmp_path):
     assert m["GCA_900"] == "4932"
 
 
+SLIM_AI_COLUMNS = [
+    "assembly_accession", "taxid", "organism_name", "infraspecific_name",
+    "version_status", "assembly_level", "asm_name", "ftp_path",
+]
+
+
+def test_assembly_info_taxid_map_reads_slim_header(tmp_path):
+    """The slim table has a clean header and taxid at column 1, not 5; the reader
+    must resolve it by name from the header."""
+    ai = tmp_path / "ncbi-assembly-info.tsv"
+    ai.write_text(
+        "\t".join(SLIM_AI_COLUMNS) + "\n" +
+        "GCA_900.1\t4932\tSaccharomyces cerevisiae\tNA\tlatest\tChromosome\tASM\tna\n"
+    )
+    m = TAX.assembly_info_taxid_map(["GCA_900.1"], str(ai))
+    assert m["GCA_900"] == "4932"
+
+
+def test_assembly_info_taxid_map_slim_and_legacy_agree(tmp_path):
+    """Same record in legacy positional vs slim header layout -> same taxid map."""
+    legacy = tmp_path / "legacy.tsv"
+    row = ["na"] * 23
+    row[0] = "GCA_900.1"
+    row[5] = "4932"
+    legacy.write_text("\t".join(row) + "\n")
+
+    slim = tmp_path / "slim.tsv"
+    slim.write_text(
+        "\t".join(SLIM_AI_COLUMNS) + "\n" +
+        "GCA_900.1\t4932\tSaccharomyces cerevisiae\tNA\tlatest\tChromosome\tASM\tna\n"
+    )
+    assert (TAX.assembly_info_taxid_map(["GCA_900.1"], str(legacy)) ==
+            TAX.assembly_info_taxid_map(["GCA_900.1"], str(slim)))
+
+
+def test_assembly_info_taxid_map_header_row_not_treated_as_data(tmp_path):
+    """The header row itself must never be emitted as a (bogus) mapping."""
+    ai = tmp_path / "ncbi-assembly-info.tsv"
+    ai.write_text(
+        "\t".join(SLIM_AI_COLUMNS) + "\n" +
+        "GCA_900.1\t4932\tYeast\tNA\tlatest\tChromosome\tASM\tna\n"
+    )
+    m = TAX.assembly_info_taxid_map(["GCA_900.1", "assembly_accession"], str(ai))
+    assert "assembly_accession" not in m
+    assert m == {"GCA_900": "4932"}
+
+
+def test_present_accessions_slim_header(tmp_path):
+    """present_accessions works on the slim header file and ignores the header
+    row (which would otherwise be a spurious 'present' check)."""
+    ai = tmp_path / "ncbi-assembly-info.tsv"
+    ai.write_text(
+        "\t".join(SLIM_AI_COLUMNS) + "\n" +
+        "GCA_000005845.2\t562\tE. coli\tNA\tlatest\tComplete Genome\tASM\tna\n"
+    )
+    # a GCF pick whose GCA twin (same digits) is present should count as live
+    present = TAX.present_accessions(["GCF_000005845.1"], str(ai))
+    assert present == {"GCF_000005845.1"}
+
+
 def test_assembly_info_taxid_map_missing_file():
     assert TAX.assembly_info_taxid_map(["GCA_1.1"], None) == {}
     assert TAX.assembly_info_taxid_map(["GCA_1.1"], "/no/such/file.tsv") == {}

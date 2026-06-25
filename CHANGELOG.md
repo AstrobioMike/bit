@@ -23,6 +23,7 @@
 - `bit gen-reads` 
   - has an optional `--source-tsv` option which will write out each read's source info (and when set, the headers no long hold all that info and are smaller)
   - can now take gzipped input fastas
+- added a github action to weekly rebuild the slimmed down ncbi assembly summary table
 
 ### Changed
 - `bit dl-ncbi-assemblies`
@@ -31,7 +32,8 @@
 - `bit gen-reads`
   - read headers have been improved with regard to provenance tracking
   - initial fragments/reads now have a 50/50 chance to be drawn from +/- strand (relative to the ref)
-- `bit data get gtdb-data` now pulls a prepared, slimmed version from github first if possible (saves on download and reading time)
+- `bit data get gtdb-data` and `bit data get ncbi-assembly-data` now both pull a prepared, slimmed version from github first if possible (saves on download and reading time)
+
 
 ---
 

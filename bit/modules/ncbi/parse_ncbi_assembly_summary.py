@@ -1,4 +1,5 @@
 import re
+import itertools
 
 def sanitize_assembly_name(name):
     sanitized = re.sub(r"[\s/,#()\[\]]", "_", name)
@@ -40,6 +41,34 @@ def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
         "stats":       ("_assembly_stats.txt",          "_assembly_stats.txt"),
     }
 
+    # column positions are resolved from the file's header row (the slim table
+    # written by slim_ncbi_assembly_summary carries a clean header). If the file
+    # has no header (a legacy positional NCBI summary, or an old cached copy),
+    # fall back to the fixed NCBI assembly_summary positions so existing data
+    # still parses. NAMES maps the logical fields this reader needs to their
+    # NCBI column names.
+    NAMES = {
+        "accession": "assembly_accession",
+        "assembly_name": "asm_name",
+        "taxid": "taxid",
+        "org_name": "organism_name",
+        "infra_name": "infraspecific_name",
+        "version_status": "version_status",
+        "assembly_level": "assembly_level",
+        "ftp_path": "ftp_path",
+    }
+    LEGACY_POS = {
+        "accession": 0, "assembly_name": 15, "taxid": 5, "org_name": 7,
+        "infra_name": 8, "version_status": 10, "assembly_level": 11,
+        "ftp_path": 19,
+    }
+
+    def _resolve_positions(header_line):
+        """header line (clean or '#'-prefixed) -> {logical: index}."""
+        names = header_line.lstrip("#").rstrip("\n").split("\t")
+        idx = {name: i for i, name in enumerate(names)}
+        return {logical: idx[col] for logical, col in NAMES.items()}
+
     with open(run_data.ncbi_sub_table_path, "w") as out_file:
 
         cols = ["input_accession", "found_accession", "assembly_name", "taxid", "organism_name", "infraspecific_name", "version_status", "assembly_level", "http_base_link"]
@@ -48,22 +77,38 @@ def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
         out_file.write("\t".join(cols) + "\n")
 
         with open(assembly_summary_file, "r") as assemblies:
-            for line in assemblies:
-                fields = line.strip().split("\t")
-                if not fields:
+            first = assemblies.readline()
+            first_stripped = first.lstrip("#").rstrip("\n")
+            if first_stripped.split("\t", 1)[0] == "assembly_accession":
+                pos = _resolve_positions(first)          # header present
+                remaining = assemblies                   # data starts next line
+            else:
+                pos = dict(LEGACY_POS)                    # headerless -> legacy
+                # the line we already read is data; chain it back on
+                remaining = itertools.chain([first], assemblies)
+
+            p_acc = pos["accession"]; p_name = pos["assembly_name"]
+            p_tax = pos["taxid"]; p_org = pos["org_name"]; p_infra = pos["infra_name"]
+            p_ver = pos["version_status"]; p_lvl = pos["assembly_level"]
+            p_ftp = pos["ftp_path"]
+            max_pos = max(pos.values())
+
+            for line in remaining:
+                fields = line.rstrip("\n").split("\t")
+                if not fields or len(fields) <= max_pos:
                     continue
-                root = fields[0].split(".")[0]
+                root = fields[p_acc].split(".")[0]
                 if root in wanted_dict:
                     found.add(wanted_dict[root])
 
-                    dl_acc = fields[0].strip() if fields[0].strip() else "NA"
-                    assembly_name = fields[15].strip() if len(fields) > 15 and fields[15].strip() else "NA"
-                    taxid = fields[5].strip() if len(fields) > 5 and fields[5].strip() else "NA"
-                    org_name = fields[7].strip() if len(fields) > 7 and fields[7].strip() else "NA"
-                    infra_name = fields[8].strip() if len(fields) > 8 and fields[8].strip() else "NA"
-                    version_status = fields[10].strip() if len(fields) > 10 and fields[10].strip() else "NA"
-                    assembly_level = fields[11].strip() if len(fields) > 11 and fields[11].strip() else "NA"
-                    ftp_path = fields[19].strip() if len(fields) > 19 else ""
+                    dl_acc = fields[p_acc].strip() if fields[p_acc].strip() else "NA"
+                    assembly_name = fields[p_name].strip() if fields[p_name].strip() else "NA"
+                    taxid = fields[p_tax].strip() if fields[p_tax].strip() else "NA"
+                    org_name = fields[p_org].strip() if fields[p_org].strip() else "NA"
+                    infra_name = fields[p_infra].strip() if fields[p_infra].strip() else "NA"
+                    version_status = fields[p_ver].strip() if fields[p_ver].strip() else "NA"
+                    assembly_level = fields[p_lvl].strip() if fields[p_lvl].strip() else "NA"
+                    ftp_path = fields[p_ftp].strip()
                     if ftp_path and ftp_path.lower() != "na":
                         http_path = ftp_path.replace("ftp://", "https://").rstrip("/") + "/"
                         dir_basename = http_path.rstrip("/").split("/")[-1]

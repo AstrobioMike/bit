@@ -137,23 +137,53 @@ def fill_gtdb_taxonomy(merged, gtdb_tab):
 
 # ---------------------------------------------------------------- NCBI ranks --
 
+def _assembly_info_taxid_index(fh):
+    """
+    Peek the first line of an open assembly-info file handle to locate the taxid
+    column. The slim table (slim_ncbi_assembly_summary) carries a clean header
+    row, so taxid is resolved by name; a legacy headerless NCBI summary has taxid
+    at fixed position 5. Returns (taxid_index, first_data_line_or_None) where the
+    second element is a data line already consumed from fh that the caller must
+    process (None if the first line was a header).
+    """
+    first = fh.readline()
+    if not first:
+        return 5, None
+    head = first.lstrip("#").rstrip("\n").split("\t")
+    if head and head[0] == "assembly_accession":
+        # header row present -> resolve by name, data starts on the next line
+        idx = head.index("taxid") if "taxid" in head else 5
+        return idx, None
+    # no header -> legacy positional layout; `first` is a data line
+    return 5, first
+
+
 def assembly_info_taxid_map(accessions, assembly_info_path):
-    """ accession(rootless) -> taxid from ncbi-assembly-info.tsv (field 5).
+    """ accession(rootless) -> taxid from ncbi-assembly-info.tsv.
+    The taxid column is resolved from the file's header when present (the slim
+    table) and falls back to the legacy NCBI position 5 for a headerless file.
     Only rows matching the wanted accessions are kept. """
     wanted = {_norm_key(a) for a in accessions}
     out = {}
     if not assembly_info_path or not os.path.exists(assembly_info_path):
         return out
     with open(assembly_info_path) as fh:
-        for line in fh:
+        tax_idx, first_data = _assembly_info_taxid_index(fh)
+
+        def _consume(line):
             if line.startswith("#") or not line.strip():
-                continue
+                return
             fields = line.rstrip("\n").split("\t")
-            if len(fields) <= 5:
-                continue
+            if len(fields) <= tax_idx:
+                return
             root = _norm_key(fields[0])
-            if root in wanted and fields[5].strip():
-                out[root] = fields[5].strip()
+            if root in wanted and fields[tax_idx].strip():
+                out[root] = fields[tax_idx].strip()
+
+        if first_data is not None:
+            _consume(first_data)
+        for line in fh:
+            _consume(line)
     return out
 
 
@@ -190,7 +220,10 @@ def present_accessions(accessions, assembly_info_path):
         for line in fh:
             if line.startswith("#") or not line.strip():
                 continue
-            d = _acc_digits(line.split("\t", 1)[0])
+            first_field = line.split("\t", 1)[0]
+            if first_field == "assembly_accession":
+                continue                  # clean header row of the slim table
+            d = _acc_digits(first_field)
             if d in wanted:
                 live.add(d)
     return {orig for d, orig in wanted.items() if d in live}

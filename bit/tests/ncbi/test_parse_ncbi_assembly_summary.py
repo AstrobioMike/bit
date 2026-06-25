@@ -1,7 +1,7 @@
 import pytest # type: ignore
 from pathlib import Path
 
-from bit.modules.ncbi.parse_ncbi_assembly_summary import (parse_ncbi_assembly_summary, 
+from bit.modules.ncbi.parse_ncbi_assembly_summary import (parse_ncbi_assembly_summary,
                                                           build_base_link,
                                                           sanitize_assembly_name)
 from bit.modules.ncbi.dl_ncbi_assemblies import RunData
@@ -212,3 +212,83 @@ def test_sanitize_assembly_name():
     assert sanitize_assembly_name("ASM584v2") == "ASM584v2"
     assert sanitize_assembly_name("Release 6 plus ISO1/MT") == "Release_6_plus_ISO1_MT"
     assert sanitize_assembly_name("weird#name (v2) [draft]") == "weird_name_v2_draft"
+
+
+################################################################################
+# header-based (slim table) parsing — equivalence with legacy positional format
+################################################################################
+
+SLIM_COLUMNS = [
+    "assembly_accession", "taxid", "organism_name", "infraspecific_name",
+    "version_status", "assembly_level", "asm_name", "ftp_path",
+]
+
+
+def _slim_line(acc, taxid="12345", org="Test organism", infra="NA",
+               version="latest", level="Chromosome", asm_name="TestAssembly_v1",
+               ftp_path="na"):
+    """A row in the slim (8-column, header-based) layout."""
+    return "\t".join([acc, taxid, org, infra, version, level, asm_name, ftp_path])
+
+
+def test_parse_slim_header_format_found(tmp_path):
+    summary = tmp_path / "slim.tsv"
+    summary.write_text(
+        "\t".join(SLIM_COLUMNS) + "\n" +
+        _slim_line("GCF_000005845.2", taxid="562", asm_name="ASM584v2",
+                   ftp_path="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2") + "\n"
+    )
+    run_data = _make_run_data(tmp_path, ["GCF_000005845.2"])
+    run_data = parse_ncbi_assembly_summary(summary, run_data)
+    assert run_data.num_found == 1
+    out = (tmp_path / "ncbi-info.tsv").read_text().splitlines()
+    # header + one data row
+    assert len(out) == 2
+    rec = dict(zip(out[0].split("\t"), out[1].split("\t")))
+    assert rec["found_accession"] == "GCF_000005845.2"
+    assert rec["taxid"] == "562"
+    assert rec["http_base_link"].endswith("GCF_000005845.2_ASM584v2/")
+
+
+def test_parse_slim_and_legacy_give_same_result(tmp_path):
+    """The header-based slim file and the legacy positional file must yield
+    identical parsed output for the same underlying record."""
+    ftp = "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2"
+
+    # legacy positional (23-field) file, no header
+    legacy = tmp_path / "legacy.tsv"
+    legacy.write_text(
+        _make_summary_line("GCF_000005845.2", assembly_name="ASM584v2",
+                           taxid="562", org="Escherichia coli", infra="strain=K-12",
+                           version="latest", level="Complete Genome",
+                           ftp_path=ftp) + "\n"
+    )
+    rd_legacy = _make_run_data(tmp_path, ["GCF_000005845.2"])
+    rd_legacy.ncbi_sub_table_path = tmp_path / "legacy-out.tsv"
+    parse_ncbi_assembly_summary(legacy, rd_legacy)
+
+    # slim header-based file with the same values
+    slim = tmp_path / "slim.tsv"
+    slim.write_text(
+        "\t".join(SLIM_COLUMNS) + "\n" +
+        _slim_line("GCF_000005845.2", taxid="562", org="Escherichia coli",
+                   infra="strain=K-12", version="latest", level="Complete Genome",
+                   asm_name="ASM584v2", ftp_path=ftp) + "\n"
+    )
+    rd_slim = _make_run_data(tmp_path, ["GCF_000005845.2"])
+    rd_slim.ncbi_sub_table_path = tmp_path / "slim-out.tsv"
+    parse_ncbi_assembly_summary(slim, rd_slim)
+
+    assert (tmp_path / "legacy-out.tsv").read_text() == (tmp_path / "slim-out.tsv").read_text()
+
+
+def test_parse_slim_not_found_recorded(tmp_path):
+    summary = tmp_path / "slim.tsv"
+    summary.write_text(
+        "\t".join(SLIM_COLUMNS) + "\n" +
+        _slim_line("GCF_000005845.2") + "\n"
+    )
+    run_data = _make_run_data(tmp_path, ["GCF_999999999.1"])
+    run_data = parse_ncbi_assembly_summary(summary, run_data)
+    assert run_data.num_found == 0
+    assert run_data.num_not_found == 1
