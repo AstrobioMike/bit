@@ -55,7 +55,7 @@ PROGRAM_GROUPS = [
         "programs": [
             {
                 "name": "gen-metagenome",
-                "desc": "generate an in silico metagenome with ground-truth tables",
+                "desc": "generate an in silico metagenome with GTDB and NCBI ground-truth tables",
             },
             {
                 "name": "gen-reads",
