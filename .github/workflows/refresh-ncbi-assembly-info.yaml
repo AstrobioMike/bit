@@ -55,28 +55,34 @@ jobs:
           test -s "$tgz"
           gzip -t "$tgz"
 
-          # checking archive holds the expected files
-          members=$(tar -tzf "$tgz" | sort | tr '\n' ' ')
+          # extracting to check the files
+          work=$(mktemp -d)
+          tar -xzf "$tgz" -C "$work"
+
+          # checking expected files present
+          members=$(cd "$work" && ls | sort | tr '\n' ' ')
           echo "members: $members"
           test "$members" = "date-retrieved.txt ncbi-assembly-info.tsv "
 
-          # header check
-          header=$(tar -xzOf "$tgz" ncbi-assembly-info.tsv | head -1)
+          # checking header
+          header=$(head -1 "$work/ncbi-assembly-info.tsv")
           echo "header: $header"
           case "$header" in
             assembly_accession*) : ;;
             *) echo "unexpected header"; exit 1 ;;
           esac
 
-          # minimum row check as a sanity check
-          rows=$(tar -xzOf "$tgz" ncbi-assembly-info.tsv | wc -l)
+          # checking for a reasonable amount of lines to minimally guard against a truncated build
+          rows=$(wc -l < "$work/ncbi-assembly-info.tsv")
           echo "rows (incl header): $rows"
           test "$rows" -gt 1000000
 
-          # date-retrieved.txt check
-          datestr=$(tar -xzOf "$tgz" date-retrieved.txt | head -1)
+          # checking date-retrieved.txt is a valid date string
+          datestr=$(head -1 "$work/date-retrieved.txt")
           echo "date-retrieved: $datestr"
           echo "$datestr" | grep -Eq '^[0-9]{4},[0-9]{2},[0-9]{2}$'
+
+          rm -rf "$work"
 
       - name: Upload / overwrite the release asset
         env:
