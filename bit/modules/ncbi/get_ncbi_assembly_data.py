@@ -1,9 +1,36 @@
 import sys
 import os
+import socket
+import shutil
+import tarfile
+import time
+import urllib
+import urllib.error
 from datetime import date
 from bit.modules.general import (wprint, color_text,
                                  report_message, notify_premature_exit,
                                  download_with_tqdm)
+from bit.modules.ncbi.slim_ncbi_assembly_summary import (
+    build_slim_assembly_summary,
+    write_date_retrieved,
+    GENBANK_URL,
+    REFSEQ_URL,
+    TABLE_FILENAME,
+    DATE_FILENAME,
+)
+
+
+# pre-slimmed, pre-combined NCBI assembly-info table + date-retrieved.txt,
+# packaged as a single .tar.gz and rebuilt weekly by the
+# refresh-ncbi-assembly-info GitHub Action, then re-hosted at this fixed asset
+# URL (a single release that holds only this asset, overwritten in place). The
+# archive holds exactly two files at its root:
+#   ncbi-assembly-info.tsv   (slim, clean-header; see slim_ncbi_assembly_summary)
+#   date-retrieved.txt       (build date, YYYY,MM,DD)
+# Used by default; `-f/--force-update` bypasses this and rebuilds the same slim
+# table directly from NCBI (download_ncbi_assembly_summary_data). If this is
+# empty or the download fails, the default path falls back to that rebuild.
+NCBI_ASSEMBLY_TARBALL_URL = "https://github.com/AstrobioMike/bit/releases/download/ncbi-assembly-info-latest/ncbi-assembly-info.tar.gz"
 
 
 def check_ncbi_assembly_info_location_var_is_set():
@@ -38,44 +65,156 @@ def check_if_data_present(location):
     return True
 
 
+def _download_with_retries(url, label, dest, quiet=False,
+                           attempts=4, retry_wait=3):
+    """
+    download `url` to `dest`, retrying up to `attempts` times on transient
+    failures (timeouts, connection resets, SSL handshake stalls, transient 5xx),
+    with a short wait between tries. A 404 is raised immediately (not retried).
+    Raises the last error if all attempts fail.
+    """
+    last_err = None
+    for attempt in range(1, attempts + 1):
+        try:
+            download_with_tqdm(url, label, dest)
+            return
+        except urllib.error.HTTPError as err:
+            if err.code == 404:
+                raise
+            last_err = err
+        except (urllib.error.URLError, socket.timeout, TimeoutError,
+                ConnectionError, OSError) as err:
+            last_err = err
+
+        if attempt < attempts:
+            if not quiet:
+                wprint(color_text(
+                    f"    download failed (attempt {attempt}/{attempts}); retrying...",
+                    "yellow"))
+            time.sleep(retry_wait)
+
+    raise last_err
+
+
+def get_slim_ncbi_assembly_data(location, quiet=False):
+    """
+    fast default path: download bit's pre-built slim NCBI assembly-info tarball
+    and extract its two files (the slim table and date-retrieved.txt) into
+    `location`. Falls back to rebuilding directly from NCBI
+    (download_ncbi_assembly_summary_data) if no tarball URL is configured or the
+    download/extract fails, so the user always ends up with a usable table.
+    """
+    table_path = os.path.join(location, TABLE_FILENAME)
+    date_path = os.path.join(location, DATE_FILENAME)
+
+    if not NCBI_ASSEMBLY_TARBALL_URL:
+        # no host configured -> rebuild from NCBI
+        download_ncbi_assembly_summary_data(location)
+        return
+
+    if not quiet:
+        print(color_text("\n    Downloading the prepared NCBI assembly-info table (only needs to be done once)...\n", "yellow"))
+
+    tarball_path = os.path.join(location, "ncbi-assembly-info.tar.gz")
+    expected = {TABLE_FILENAME, DATE_FILENAME}
+
+    default_timeout = socket.getdefaulttimeout()
+    socket.setdefaulttimeout(30)
+    try:
+        _download_with_retries(
+            NCBI_ASSEMBLY_TARBALL_URL, "        NCBI prepared data", tarball_path,
+            quiet=quiet)
+
+        # a truncated/corrupt download fails here (full-stream read via
+        # getmembers), tripping the fallback below rather than writing a corrupt
+        # table.
+        with tarfile.open(tarball_path, "r:gz") as tar:
+            members = tar.getmembers()
+            # take only the two expected files, matched by basename, guarding
+            # against path traversal / nested dirs by extracting to flat names.
+            wanted = {}
+            for m in members:
+                base = os.path.basename(m.name)
+                if base in expected and m.isfile():
+                    wanted[base] = m
+            missing = expected - set(wanted)
+            if missing:
+                raise ValueError(
+                    f"prepared NCBI archive is missing expected file(s): {', '.join(sorted(missing))}")
+
+            for base, m in wanted.items():
+                src = tar.extractfile(m)
+                if src is None:
+                    raise ValueError(f"could not read '{base}' from prepared NCBI archive")
+                dest = os.path.join(location, base)
+                with src, open(dest, "wb") as out:
+                    shutil.copyfileobj(src, out)
+
+    except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError,
+            tarfile.TarError, ValueError, OSError) as err:
+        # clean up partial artifacts, then fall back to rebuilding from NCBI
+        for p in (tarball_path, table_path, date_path):
+            if os.path.exists(p):
+                try:
+                    os.remove(p)
+                except OSError:
+                    pass
+        if not quiet:
+            print("")
+            wprint(color_text("  Couldn't get the prepared NCBI assembly-info table; "
+                              "rebuilding directly from NCBI instead.", "yellow"))
+            report_message(f"Underlying issue: {err}", initial_indent="    ",
+                           subsequent_indent="    ")
+            print("")
+        download_ncbi_assembly_summary_data(location)
+        return
+    finally:
+        socket.setdefaulttimeout(default_timeout)
+        if os.path.exists(tarball_path):
+            try:
+                os.remove(tarball_path)
+            except OSError:
+                pass
+
+
 def download_ncbi_assembly_summary_data(location):
-
-    """ downloads the needed ncbi assembly summary tables and combines them """
-
-    # setting links
-    genbank_link = "https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
-    refseq_link = "https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refseq.txt"
-
-    table_path = os.path.join(str(location), "ncbi-assembly-info.tsv")
-    refseq_temp_path = os.path.join(str(location), "refseq-assembly-info.tmp")
+    """
+    rebuild path (used by -f/--force-update and as the fallback): download the
+    GenBank + RefSeq assembly summaries directly from NCBI, combine and slim them
+    to the columns bit uses (identical layout to the hosted asset), and stamp
+    date-retrieved.txt with today's date.
+    """
+    genbank_temp = os.path.join(str(location), "assembly_summary_genbank.txt")
+    refseq_temp = os.path.join(str(location), "assembly_summary_refseq.txt")
+    table_path = os.path.join(str(location), TABLE_FILENAME)
+    date_path = os.path.join(str(location), DATE_FILENAME)
 
     print(color_text("\n    Downloading NCBI assembly summaries (only needs to be done once)...\n", "yellow"))
 
     try:
-        download_with_tqdm(genbank_link, "        Genbank assemblies summary", table_path)
-        download_with_tqdm(refseq_link, "        RefSeq assemblies summary", refseq_temp_path)
+        download_with_tqdm(GENBANK_URL, "        Genbank assemblies summary", genbank_temp)
+        download_with_tqdm(REFSEQ_URL, "        RefSeq assemblies summary", refseq_temp)
         print("")
     except Exception as e:
         report_message(f"Downloading the NCBI assembly summary tables failed with the following error:\n{e}", "red")
         notify_premature_exit()
+        return
 
-    # combining
-    with open (table_path, "a") as final_table:
-        with open(refseq_temp_path, "r") as refseq:
-            final_table.write(refseq.read())
+    # combine + slim to the columns bit uses (clean-header layout)
+    try:
+        build_slim_assembly_summary(genbank_temp, refseq_temp, table_path)
+    except Exception as e:
+        report_message(f"Combining/slimming the NCBI assembly summary tables failed with the following error:\n{e}", "red")
+        notify_premature_exit()
+        return
+    finally:
+        for p in (genbank_temp, refseq_temp):
+            if os.path.exists(p):
+                os.remove(p)
 
-    # removing temp
-    if os.path.exists(refseq_temp_path):
-        os.remove(refseq_temp_path)
+    # storing date retrieved (YYYY,MM,DD), matching the asset's build stamp
+    write_date_retrieved(date_path, when=date.today())
 
-    # storing date retrieved
-    date_retrieved = str(date.today()).replace("-", ",")
-    date_retrieved.replace("-", ",")
-
-    date_retrieved_path = os.path.join(str(location), "date-retrieved.txt")
-
-    with open(date_retrieved_path, "w") as outfile:
-        outfile.write(date_retrieved + "\n")
 
 def get_ncbi_assembly_data(force_update=False, quiet=False):
 
@@ -91,4 +230,4 @@ def get_ncbi_assembly_data(force_update=False, quiet=False):
             return
         return
     else:
-        download_ncbi_assembly_summary_data(ncbi_dir)
+        get_slim_ncbi_assembly_data(ncbi_dir, quiet=quiet)

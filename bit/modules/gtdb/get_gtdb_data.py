@@ -212,8 +212,8 @@ def get_slim_gtdb_tab(location, quiet=False):
                     pass
         if not quiet:
             print("")
-            wprint(color_text("  Couldn't get the prepared GTDB table; "
-                              "rebuilding from the upstream GTDB release instead.", "yellow"))
+            wprint(color_text("  Couldn't get the prepared GTDB table; "))
+            wprint(color_text("  rebuilding from the upstream GTDB release instead.", "yellow"))
             report_message(f"Underlying issue: {err}", initial_indent="    ",
                            subsequent_indent="    ")
             print("")
