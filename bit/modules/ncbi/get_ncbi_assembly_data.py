@@ -112,8 +112,7 @@ def get_slim_ncbi_assembly_data(location, quiet=False):
         download_ncbi_assembly_summary_data(location)
         return
 
-    if not quiet:
-        print(color_text("\n    Downloading the prepared NCBI assembly-info table (only needs to be done once)...\n", "yellow"))
+    print(color_text("\n    Downloading the prepared NCBI assembly-info table (only needs to be done once)...\n", "yellow"))
 
     tarball_path = os.path.join(location, "ncbi-assembly-info.tar.gz")
     expected = {TABLE_FILENAME, DATE_FILENAME}

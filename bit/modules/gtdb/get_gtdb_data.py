@@ -161,8 +161,8 @@ def get_slim_gtdb_tab(location, quiet=False):
         gen_gtdb_tab(location)
         return
 
-    if not quiet:
-        print(color_text("\n    Downloading the prepared GTDB table (only needs to be done once)...\n", "yellow"))
+
+    print(color_text("\n    Downloading the prepared GTDB table (only needs to be done once)...\n", "yellow"))
 
     tarball_path = os.path.join(location, "GTDB-slim.tar.gz")
     expected = {"GTDB-arc-and-bac-metadata.tsv", "GTDB-version-info.txt"}
