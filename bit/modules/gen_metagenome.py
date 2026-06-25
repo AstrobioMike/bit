@@ -18,7 +18,7 @@ from tqdm import tqdm  # type: ignore
 from bit.modules.general import (color_text, report_message,
                                  attempt_to_make_dir, check_files_are_found, spinner,
                                  log_command_run)
-from bit.modules.gtdb.get_gtdb_data import get_gtdb_data
+from bit.modules.gtdb.get_gtdb_data import get_gtdb_data, GTDB_KEPT_COLUMNS
 from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
 from bit.modules.ncbi.get_ncbi_tax_data import get_ncbi_tax_data
 from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data
@@ -179,21 +179,12 @@ def _read_gtdb_version(location):
 
 # ---- selection ----
 
-# columns gen-metagenome actually uses from the GTDB metadata table. The full
-# table is ~110 columns; reading only these (via usecols) skips parsing the rest,
-# which is both faster and far lighter in memory. Column names vary across GTDB
-# releases (e.g. checkm2_* vs checkm_*, and some composition columns absent in
-# older releases), so the read intersects this list with the columns actually
-# present rather than passing it verbatim (usecols errors on missing names).
-GTDB_USED_COLUMNS = [
-    "accession", "ncbi_genbank_assembly_accession", "ncbi_taxid",
-    "gtdb_representative", "ncbi_refseq_category",
-    "domain", "phylum", "class", "order", "family", "genus", "species",
-    "checkm2_completeness", "checkm2_contamination",
-    "checkm_completeness", "checkm_contamination",
-    "genome_size", "contig_count", "gc_count", "gc_percentage", "ambiguous_bases",
-    "coding_bases", "coding_density",
-]
+# columns gen-metagenome uses from the GTDB metadata table. This is exactly the
+# set the stored table is slimmed to at download time, so it's defined once in
+# get_gtdb_data (GTDB_KEPT_COLUMNS) and aliased here. The load still intersects
+# this with the columns actually present, so an older un-slimmed cached table
+# (or a release missing a column) reads correctly rather than erroring.
+GTDB_USED_COLUMNS = GTDB_KEPT_COLUMNS
 
 
 def _load_gtdb_table(args, run):
@@ -203,9 +194,10 @@ def _load_gtdb_table(args, run):
     caller wraps this in an appropriately-labeled spinner. GTDB version is
     recorded to the runlog here.
 
-    Only the columns gen-metagenome uses are read (see GTDB_USED_COLUMNS); the
-    full table has ~110 columns and skipping the unused ones at parse time is
-    markedly faster and lighter in memory.
+    Only the columns gen-metagenome uses are read (see GTDB_USED_COLUMNS). The
+    stored table is already slimmed to these columns at download time, so on a
+    current table the usecols intersect below is a no-op; it's retained so an
+    older, un-slimmed cached table (full ~110 columns) still reads correctly.
     """
     if getattr(run, "gtdb_tab", None) is not None:
         return run.gtdb_tab
