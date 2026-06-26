@@ -78,7 +78,7 @@ def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="pa
 DETECTION_DECIMALS = 2
 COVERAGE_DECIMALS = 2
 ABUNDANCE_DECIMALS = 2
-
+MUTATION_DECIMALS = 4
 
 def add_realized_columns(merged_df, read_stats):
     """
@@ -156,7 +156,7 @@ def build_per_genome_table(merged_df, mutation_results, taxonomy):
         subs.append(mr.get("num_substitutions", 0))
         indels.append(mr.get("num_indels", 0))
         totch.append(mr.get("num_total_changes", 0))
-    out["mutation_rate"] = rates
+    out["mutation_rate"] = [round(r, MUTATION_DECIMALS) for r in rates]
     out["num_substitutions"] = subs
     out["num_indels"] = indels
     out["num_total_changes"] = totch

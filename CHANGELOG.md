@@ -14,6 +14,13 @@
 
 -->
 
+## v2.7.1 (NOT RELEASED YET)
+
+### Changed
+- `bit gen-metagenome` per-genome-truth.tsv tables have mutation rate rounded to 4 decimals now
+
+---
+
 ## v2.7.0 (26-Jun-2026)
 
 ### Added
