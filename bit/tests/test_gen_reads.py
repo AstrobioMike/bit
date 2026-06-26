@@ -538,6 +538,41 @@ def test_coverage_cli_paired_end(tmp_path):
     assert R1_path.exists(), f"R1 file not found at {R1_path}"
     assert R2_path.exists(), f"R2 file not found at {R2_path}"
 
+    # standalone runs also write a per-genome summary
+    summary = tmp_path / "cov-reads-per-genome-summary.tsv"
+    assert summary.exists(), f"summary not found at {summary}"
+
+
+def test_per_genome_summary_columns_and_values(tmp_path):
+    shutil.copy(test_fasta, tmp_path / "input.fasta")
+
+    cmd = [
+        "bit", "gen-reads",
+        "-i", str(tmp_path / "input.fasta"),
+        "-o", str(tmp_path / "sum-reads"),
+        "-c", "30",
+        "-r", "100",
+        "-s", "1",
+    ]
+    run_cli(cmd)
+
+    summary = tmp_path / "sum-reads-per-genome-summary.tsv"
+    assert summary.exists()
+    with open(summary) as f:
+        header = f.readline().rstrip("\n").split("\t")
+        rows = [ln.rstrip("\n").split("\t") for ln in f if ln.strip()]
+
+    assert header == ["input_fasta", "genome_size", "reads_generated",
+                      "mean_coverage", "detection"]
+    assert len(rows) == 1                       # single input genome -> one row
+    row = dict(zip(header, rows[0]))
+    assert int(row["genome_size"]) > 0
+    assert int(row["reads_generated"]) > 0
+    # ~30x requested; realized is close. detection in (0, 1].
+    assert float(row["mean_coverage"]) == pytest.approx(30.0, abs=2.0)
+    det = float(row["detection"])
+    assert 0.0 < det <= 1.0
+
 
 def test_coverage_cli_single_end(tmp_path):
 

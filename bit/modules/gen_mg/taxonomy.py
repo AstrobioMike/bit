@@ -314,17 +314,34 @@ def fill_ncbi_taxonomy(merged, gtdb_tab, assembly_info_path,
                        use_datasets_fallback=True, _resolver=resolve_lineages):
     """ fill ncbi_* columns for every row, resolving each accession's NCBI tax_id
     (tiered sources) to a lineage. Only fills rows whose ncbi_* are still NA.
+
+    Also persists a `taxid` column for every row whose NCBI tax_id can be resolved
+    (the same tax_id is available for GTDB picks via the GTDB metadata table, so it
+    is populated in both taxonomy trees), defaulting to "NA" where none resolves.
+
     Returns the merged frame (modified copy). """
     out = merged.copy()
+
+    # resolve taxids for every accession (not just rows needing lineages) so the
+    # taxid column is populated wherever knowable, in both GTDB and NCBI trees.
+    all_accs = [out.iloc[i]["accession"] for i in range(len(out))]
+    all_taxids = gather_taxids(all_accs, gtdb_tab, assembly_info_path,
+                               use_datasets_fallback=use_datasets_fallback)
+    if "taxid" not in out.columns:
+        out["taxid"] = "NA"
+    for i in range(len(out)):
+        tid = all_taxids.get(_norm_key(out.iloc[i]["accession"]))
+        out.at[out.index[i], "taxid"] = str(tid) if tid else "NA"
 
     # which rows still need NCBI ranks
     need_idx = [i for i in range(len(out)) if str(out.iloc[i]["ncbi_domain"]) == "NA"]
     if not need_idx:
         return out
-    need_accs = [out.iloc[i]["accession"] for i in need_idx]
 
-    taxids = gather_taxids(need_accs, gtdb_tab, assembly_info_path,
-                           use_datasets_fallback=use_datasets_fallback)
+    # reuse already-gathered taxids for the rows needing lineages
+    need_accs = [out.iloc[i]["accession"] for i in need_idx]
+    taxids = {_norm_key(a): all_taxids[_norm_key(a)]
+              for a in need_accs if _norm_key(a) in all_taxids}
     if not taxids:
         return out
 

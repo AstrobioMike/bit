@@ -14,6 +14,16 @@
 
 -->
 
+## v2.7.0 (26-Jun-2026)
+
+### Added
+- to `bit gen-metagenome`
+  - taxid and detection columns in the per-genome truth tsvs
+- to `bit gen-reads`
+  - per-genome output tsv with info like number of reads generated, coverage, and detection
+
+---
+
 ## v2.6.0 (25-Jun-2026)
 
 ### Added
@@ -33,7 +43,6 @@
   - read headers have been improved with regard to provenance tracking
   - initial fragments/reads now have a 50/50 chance to be drawn from +/- strand (relative to the ref)
 - `bit data get gtdb-data` and `bit data get ncbi-assembly-data` now both pull a prepared, slimmed version from github first if possible (saves on download and reading time)
-
 
 ---
 

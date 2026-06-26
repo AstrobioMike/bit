@@ -267,9 +267,11 @@ def test_build_truth_for_taxonomy_per_read_both(tmp_path):
     }).to_csv(src, sep="\t", index=False, compression="gzip")
     accs = ["GCF_000000000.1", "GCF_000000001.1", "GCF_000000002.1"]
     merged = pd.DataFrame({
-        "accession": accs, "assigned_reads": [500, 500, 500],
-        "assigned_coverage": [1.0, 1.0, 1.0],
-        "assigned_rel_abundance": [0.34, 0.33, 0.33],
+        "accession": accs, "taxid": ["10", "20", "30"],
+        "reads_generated": [500, 500, 500],
+        "mean_coverage": [1.0, 1.0, 1.0],
+        "rel_abundance": [0.34, 0.33, 0.33],
+        "detection": [0.99, 0.98, 0.97],
         "used_genome_size": [1000, 1000, 1000],
         "downloaded_genome_size": [1000, 1000, 1000]})
     for r in ["domain", "phylum", "class", "order", "family", "genus", "species"]:
@@ -337,8 +339,10 @@ def _parallel_truth_inputs(tmp_path):
             fh.write(f"r{i}\t/g/GCF_{i%3:09d}.fasta.gz\tc0\t0\t150\t+\tfalse\n")
     accs = [f"GCF_{i:09d}" for i in range(3)]
     merged = pd.DataFrame({
-        "accession": accs, "assigned_reads": [n // 3] * 3,
-        "assigned_coverage": [1.0] * 3, "assigned_rel_abundance": [1/3] * 3,
+        "accession": accs, "taxid": ["10", "20", "30"],
+        "reads_generated": [n // 3] * 3,
+        "mean_coverage": [1.0] * 3, "rel_abundance": [1/3] * 3,
+        "detection": [0.99] * 3,
         "used_genome_size": [1000] * 3, "downloaded_genome_size": [1000] * 3})
     for r in ["domain", "phylum", "class", "order", "family", "genus", "species"]:
         merged["gtdb_" + r] = f"g_{r}"
@@ -472,6 +476,134 @@ def test_resolve_bare_list_defaults(tmp_path):
     CLI.resolve_input_driven_modes(a)
     assert a.abundance_mode == "relative"
     assert a.mutation_mode == "off"
+
+
+# ─── preflight_checks validation gauntlet ──────────────────────────────────
+
+def _preflight_args(**over):
+    """
+    A fully-formed args namespace as it looks BEFORE main() applies defaults:
+    unset numeric knobs are None, modes are None (resolved inside preflight from
+    the accessions columns), output_dir=None to skip the filesystem check, and
+    accessions=None so mode-resolution takes its no-columns path. num_genomes is
+    set so the 'nothing requested' guard passes by default.
+    """
+    base = dict(num_genomes=5, accessions=None, output_dir=None,
+                force_overwrite=False, jobs=10,
+                abundance_mode=None, mutation_mode=None, abundance_dist="lognormal",
+                total_reads=None, median_coverage=None, sigma=None,
+                mutation_rate=None, mutation_rate_min=None, mutation_rate_max=None,
+                ti_tv_ratio=None, indel_rate=None,
+                read_length=None, fragment_size=500, fragment_size_range=10,
+                long_read_length_range=50, type="paired-end")
+    base.update(over)
+    return SimpleNamespace(**base)
+
+
+def test_preflight_clean_args_pass():
+    # a minimal valid invocation must NOT exit
+    CLI.preflight_checks(_preflight_args())
+
+
+def test_preflight_requires_num_or_accessions():
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(_preflight_args(num_genomes=None, accessions=None))
+
+
+@pytest.mark.parametrize("over", [
+    dict(total_reads=10, abundance_mode="coverage"),        # reads in coverage mode
+    dict(median_coverage=30, abundance_mode="relative"),    # coverage in relative mode
+    dict(sigma=1.0, abundance_dist="even"),                 # sigma with even dist
+])
+def test_preflight_mode_param_contradictions(over):
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(_preflight_args(**over))
+
+
+def test_preflight_mutation_params_without_mode():
+    # mutation knobs set while mode resolves to 'off'
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(_preflight_args(mutation_rate=0.01, ti_tv_ratio=1.0))
+
+
+def test_preflight_uniform_rejects_varied_bounds():
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(_preflight_args(mutation_mode="uniform",
+                                             mutation_rate_min=0.001))
+
+
+def test_preflight_varied_rejects_uniform_rate():
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(_preflight_args(mutation_mode="varied",
+                                             mutation_rate=0.01))
+
+
+@pytest.mark.parametrize("over", [
+    dict(num_genomes=-1),                                   # negative count
+    dict(num_genomes=0),                                    # zero count
+    dict(jobs=0),                                           # zero jobs
+    dict(abundance_mode="coverage", median_coverage=0),    # non-positive coverage
+    dict(mutation_mode="uniform", mutation_rate=1.5),      # rate > 1
+    dict(mutation_mode="uniform", mutation_rate=-0.1),     # rate < 0
+    dict(indel_rate=2.0, mutation_mode="uniform", mutation_rate=0.01),  # indel > 1
+    dict(read_length=0),                                   # non-positive read length
+    dict(fragment_size_range=100),                         # range must be < 100
+    dict(long_read_length_range=100),                      # range must be < 100
+])
+def test_preflight_range_checks(over):
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(_preflight_args(**over))
+
+
+def test_preflight_varied_bounds_must_be_ordered():
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(_preflight_args(mutation_mode="varied",
+                                             mutation_rate_min=0.05,
+                                             mutation_rate_max=0.01))
+
+
+def test_preflight_paired_fragment_must_exceed_read():
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(_preflight_args(type="paired-end",
+                                             read_length=200, fragment_size=150))
+
+
+def test_preflight_output_dir_filesystem_check(tmp_path):
+    # with output_dir set and force_overwrite, an existing dir is allowed (no exit)
+    CLI.preflight_checks(_preflight_args(output_dir=str(tmp_path),
+                                         force_overwrite=True))
+
+
+# ─── _resolve_seed ─────────────────────────────────────────────────────────
+
+def test_resolve_seed_passthrough():
+    assert CLI._resolve_seed(42) == 42
+    assert CLI._resolve_seed("7") == 7        # coerced to int
+
+
+def test_resolve_seed_generates_clock_derived_int():
+    s = CLI._resolve_seed(None)
+    assert isinstance(s, int)
+    # hour*10000 + minute*100 + second has a max of 23*10000+59*100+59
+    assert 0 <= s <= 235959
+
+
+# ─── _inspect_accession_columns edge cases ─────────────────────────────────
+
+def test_inspect_accession_columns_missing_file():
+    info = CLI._inspect_accession_columns("/no/such/file.tsv")
+    assert info["has_rel_abundance"] is False
+    assert info["has_coverage"] is False
+    assert info["has_mutation_rate"] is False
+    assert info["mutation_value"] is None
+
+
+def test_inspect_accession_columns_bare_list(tmp_path):
+    p = tmp_path / "bare.txt"
+    p.write_text("GCF_1\nGCF_2\n")           # no 'accession' header -> no columns
+    info = CLI._inspect_accession_columns(str(p))
+    assert info["has_rel_abundance"] is False
+    assert info["has_coverage"] is False
 
 
 # ─── reproducibility.tsv ─────────────────────────────────────────────────

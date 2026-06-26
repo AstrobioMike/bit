@@ -172,7 +172,7 @@ def write_date_retrieved(path, when=None):
         fh.write(when.strftime("%Y,%m,%d") + "\n")
 
 
-def main(argv=None):
+def main(argv=None): # pragma: no cover
     """
     download the GenBank + RefSeq assembly summaries, build the slim combined
     table, stamp a build-date date-retrieved.txt, and package both into a single

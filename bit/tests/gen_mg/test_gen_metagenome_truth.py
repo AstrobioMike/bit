@@ -3,6 +3,7 @@ import pandas as pd # type: ignore
 import pytest # type: ignore
 
 from bit.modules.gen_mg.truth import (
+    add_realized_columns,
     build_gen_reads_args,
     build_per_genome_table,
     build_per_rank_tables,
@@ -23,28 +24,33 @@ def _ranks(prefix, vals):
 @pytest.fixture
 def merged():
     """
-    a normalized + abundance-assigned 3-genome table carrying BOTH taxonomies.
-    GCF_A / GCF_B are GTDB-resolved (gtdb_* and ncbi_* both populated); GCA_E is
-    a euk-style user genome with gtdb_* = NA but ncbi_* populated.
+    a 3-genome table as it looks after add_realized_columns: carrying BOTH
+    taxonomies, a taxid column, and the realized columns (rel_abundance,
+    mean_coverage, reads_generated, detection). GCF_A / GCF_B are GTDB-resolved
+    (gtdb_* and ncbi_* both populated); GCA_E is a euk-style user genome with
+    gtdb_* = NA but ncbi_* populated.
     """
     return pd.DataFrame([
-        dict(accession="GCF_A", user_supplied=False,
+        dict(accession="GCF_A", taxid="111", user_supplied=False,
              **_ranks("gtdb", ["Bacteria", "P", "C", "O", "F", "Genus_A", "sp A"]),
              **_ranks("ncbi", ["Bacteria", "Pn", "Cn", "On", "Fn", "Genus_A", "sp A"]),
              downloaded_genome_size=1_000_000, used_genome_size=1_000_000,
-             assigned_rel_abundance=0.5, assigned_coverage=10.0, assigned_reads=5000),
-        dict(accession="GCF_B", user_supplied=False,
+             rel_abundance=0.5, mean_coverage=10.0, reads_generated=5000,
+             detection=0.999),
+        dict(accession="GCF_B", taxid="222", user_supplied=False,
              **_ranks("gtdb", ["Bacteria", "P", "C", "O", "F", "Genus_B", "sp B"]),
              **_ranks("ncbi", ["Bacteria", "Pn", "Cn", "On", "Fn", "Genus_B", "sp B"]),
              downloaded_genome_size=500_000, used_genome_size=500_000,
-             assigned_rel_abundance=0.3, assigned_coverage=12.0, assigned_reads=3000),
-        dict(accession="GCA_E", user_supplied=True,
+             rel_abundance=0.3, mean_coverage=12.0, reads_generated=3000,
+             detection=0.998),
+        dict(accession="GCA_E", taxid="NA", user_supplied=True,
              **_ranks("gtdb", ["NA", "NA", "NA", "NA", "NA", "NA", "NA"]),
              **_ranks("ncbi", ["Eukaryota", "Ascomycota", "Saccharomycetes",
                                "Saccharomycetales", "Saccharomycetaceae",
                                "Saccharomyces", "Saccharomyces cerevisiae"]),
              downloaded_genome_size=300_000, used_genome_size=300_000,
-             assigned_rel_abundance=0.2, assigned_coverage=8.0, assigned_reads=2000),
+             rel_abundance=0.2, mean_coverage=8.0, reads_generated=2000,
+             detection=0.997),
     ])
 
 
@@ -66,6 +72,59 @@ def test_build_gen_reads_args_per_read_tsv_opt_in():
 def test_build_gen_reads_args_long_default_length():
     args = build_gen_reads_args(["a.fasta"], "cov.tsv", "pref", read_type="long")
     assert args.read_length == 5000
+
+
+# ─── realized columns from gen-reads stats ─────────────────────────────────
+
+def test_add_realized_columns_basic_math():
+    merged = pd.DataFrame({"accession": ["A", "B"],
+                           "used_genome_size": [1000, 2000]})
+    stats = {
+        "A": {"detection": 0.9999988, "genome_size": 1000,
+              "reads_generated": 300, "realized_bases": 45000},
+        "B": {"detection": 0.5, "genome_size": 2000,
+              "reads_generated": 100, "realized_bases": 15000},
+    }
+    out = add_realized_columns(merged, stats)
+    a = out[out["accession"] == "A"].iloc[0]
+    assert a["reads_generated"] == 300
+    assert a["mean_coverage"] == 45.0          # 45000 / 1000
+    assert a["rel_abundance"] == 0.75          # 300 / 400
+    assert a["detection"] == 0.999999          # rounded to 6 places
+    b = out[out["accession"] == "B"].iloc[0]
+    assert b["mean_coverage"] == 7.5           # 15000 / 2000
+    assert b["rel_abundance"] == 0.25
+    # realized rel_abundance sums to 1 across the community
+    assert abs(out["rel_abundance"].sum() - 1.0) < 1e-9
+
+
+def test_add_realized_columns_missing_genome_gets_zeros():
+    # a genome absent from stats (e.g. NA-coverage, produced no reads) -> zeros
+    merged = pd.DataFrame({"accession": ["A", "C"],
+                           "used_genome_size": [1000, 500]})
+    stats = {"A": {"detection": 1.0, "genome_size": 1000,
+                   "reads_generated": 200, "realized_bases": 30000}}
+    out = add_realized_columns(merged, stats)
+    c = out[out["accession"] == "C"].iloc[0]
+    assert c["reads_generated"] == 0
+    assert c["mean_coverage"] == 0.0
+    assert c["rel_abundance"] == 0.0
+    assert c["detection"] == 0.0
+
+
+def test_add_realized_columns_zero_total_reads_no_div_by_zero():
+    merged = pd.DataFrame({"accession": ["A"], "used_genome_size": [1000]})
+    out = add_realized_columns(merged, {})        # no stats at all
+    assert out.iloc[0]["rel_abundance"] == 0.0
+    assert out.iloc[0]["mean_coverage"] == 0.0
+
+
+def test_add_realized_columns_zero_genome_size_no_div_by_zero():
+    merged = pd.DataFrame({"accession": ["A"], "used_genome_size": [0]})
+    stats = {"A": {"detection": 0.0, "genome_size": 0,
+                   "reads_generated": 0, "realized_bases": 0}}
+    out = add_realized_columns(merged, stats)
+    assert out.iloc[0]["mean_coverage"] == 0.0
 
 
 # ─── per-genome truth ──────────────────────────────────────────────────────
@@ -91,6 +150,7 @@ def test_per_genome_table_emits_plain_rank_cols(merged):
     OTHER taxonomy's columns are not present in the output. """
     pg = build_per_genome_table(merged, {a: {"rate": 0.0} for a in merged["accession"]}, "gtdb")
     assert pg.columns[0] == "accession"
+    assert pg.columns[1] == "taxid"          # taxid sits right after accession
     for r in RANKS:
         assert r in pg.columns               # plain rank names
     assert "gtdb_genus" not in pg.columns    # source prefix stripped
@@ -99,6 +159,12 @@ def test_per_genome_table_emits_plain_rank_cols(merged):
     assert "metadata_genome_size" not in pg.columns
     assert "downloaded_genome_size" in pg.columns
     assert "used_genome_size" in pg.columns
+    # realized columns present under their plain names; assigned_* targets absent
+    for c in ("rel_abundance", "mean_coverage", "reads_generated", "detection"):
+        assert c in pg.columns
+    assert "assigned_rel_abundance" not in pg.columns
+    assert "assigned_coverage" not in pg.columns
+    assert "assigned_reads" not in pg.columns
 
 
 def test_per_genome_table_taxonomy_selects_source(merged):
@@ -132,8 +198,8 @@ def test_per_rank_groups_shared_taxa(merged):
     extra = merged.iloc[[0]].copy()
     extra["accession"] = "GCF_A2"
     extra["gtdb_species"] = "sp A2"
-    extra["assigned_rel_abundance"] = 0.1
-    merged.loc[0, "assigned_rel_abundance"] = 0.4
+    extra["rel_abundance"] = 0.1
+    merged.loc[0, "rel_abundance"] = 0.4
     pg = build_per_genome_table(pd.concat([merged, extra], ignore_index=True),
                                 {a: {"rate": 0.0} for a in list(merged["accession"]) + ["GCF_A2"]},
                                 "gtdb")
@@ -247,8 +313,6 @@ def test_write_truth_outputs_split_tree(merged, tmp_path):
 
 
 def test_build_read_truth_streams_large_input(merged, tmp_path):
-    """ a larger input streams through polars to a single gzipped output with the
-    header once and no rows lost/duplicated (memory is bounded by the engine). """
     import gzip
     pg = build_per_genome_table(merged, {a: {"rate": 0.0} for a in merged["accession"]}, "gtdb")
     n = 5000

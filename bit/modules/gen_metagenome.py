@@ -739,14 +739,27 @@ def phase_reads(args, run): # pragma: no cover
         long_read_length_range=args.long_read_length_range, seed=args.seed,
         include_Ns=args.include_Ns, genome_sizes=genome_sizes, jobs=args.jobs,
         per_read_tsv=args.per_read_tsv)
-    generate_reads(gr_args)
+    stats = generate_reads(gr_args)
     run.read_sources_tsv = f"{run.reads_prefix}-read-sources.tsv.gz"
+
+    # gen-reads returns per-fasta stats keyed by the working fasta path; re-key to
+    # accession so the truth phase can attach realized values (reads_generated,
+    # realized_bases -> mean_coverage, detection) to each genome row.
+    path_to_acc = {p: a for a, p in zip(run.merged["accession"], run.merged["_fasta_for_reads"])
+                   if p is not None and not pd.isna(p)}
+    run.read_stats = {path_to_acc[p]: s for p, s in (stats or {}).items() if p in path_to_acc}
     return run
 
 
 # ---- making truth outputs ----
 
 def phase_truth(args, run): # pragma: no cover
+    # fold gen-reads' realized per-genome stats (reads_generated, realized_bases ->
+    # mean_coverage, rel_abundance, detection) onto the merged table so every truth
+    # builder call below emits realized values. The assigned_* targets remain on
+    # run.merged untouched for reproducibility.tsv.
+    run.merged = TRU.add_realized_columns(run.merged, getattr(run, "read_stats", None))
+
     fasta2acc = None
     if args.per_read_tsv:
         fasta2acc = {}
@@ -766,8 +779,14 @@ def phase_truth(args, run): # pragma: no cover
     # memory; this value is the single source of truth for both.
     chunksize = 500_000
     # total chunks per taxonomy, for a determinate progress bar over the per-read
-    # build (rows == total reads, available from the assigned_reads column).
-    total_reads = int(run.merged["assigned_reads"].sum()) if "assigned_reads" in run.merged.columns else 0
+    # build (rows == total reads actually written, i.e. realized reads_generated;
+    # falls back to the assigned target if realized stats are unavailable).
+    if "reads_generated" in run.merged.columns:
+        total_reads = int(run.merged["reads_generated"].sum())
+    elif "assigned_reads" in run.merged.columns:
+        total_reads = int(run.merged["assigned_reads"].sum())
+    else:
+        total_reads = 0
     n_chunks = max(1, -(-total_reads // chunksize)) if total_reads else None  # ceil-div
 
     jobs = max(1, int(getattr(args, "jobs", 1) or 1))
@@ -929,7 +948,14 @@ def report_finish(args, run): # pragma: no cover
                    trailing_newline=True)
 
     num_genomes = len(run.merged)
-    total_reads = int(run.merged["assigned_reads"].sum()) if "assigned_reads" in run.merged.columns else 0
+    # report what was actually produced (realized reads_generated), falling back to
+    # the assigned target if realized stats are unavailable.
+    if "reads_generated" in run.merged.columns:
+        total_reads = int(run.merged["reads_generated"].sum())
+    elif "assigned_reads" in run.merged.columns:
+        total_reads = int(run.merged["assigned_reads"].sum())
+    else:
+        total_reads = 0
 
     if args.type == "paired-end":
         reads_line = f"{run.reads_prefix}_R1.fastq.gz, {run.reads_prefix}_R2.fastq.gz"

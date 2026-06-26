@@ -10,6 +10,7 @@ import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm # type: ignore
 from bit.modules.general import color_text, spinner
+from bit.modules.gen_reads_detection import DetectionTracker
 
 
 def parse_fasta(fasta_file):
@@ -30,13 +31,39 @@ def _status(args, msg):
         print(msg)
 
 
+def write_per_genome_summary(args, stats):
+    """
+    Write the standalone gen-reads per-genome summary TSV, one row per input fasta
+    (keyed by input path), to <output_prefix>-per-genome-summary.tsv. Columns:
+    input_fasta, genome_size, reads_generated, mean_coverage, detection.
+
+    mean_coverage is realized: total sequenced bases (summed actual read lengths)
+    divided by genome size, so it is exact even for long reads whose lengths vary.
+    detection is reported rounded for display; with fixed-length reads the final
+    bases of a contig are often uncovered, so a fully-sampled genome typically reads
+    as ~1.0 rather than exactly 1.0 (see gen_reads_detection module)
+    """
+    out_path = f"{args.output_prefix}-per-genome-summary.tsv"
+    with open(out_path, "w") as out:
+        out.write("input_fasta\tgenome_size\treads_generated\tmean_coverage\tdetection\n")
+        for fasta_file in args.input_fastas:
+            s = stats.get(fasta_file, {})
+            size = s.get("genome_size", 0)
+            n_reads = s.get("reads_generated", 0)
+            realized_bases = s.get("realized_bases", 0)
+            detection = s.get("detection", 0.0)
+            mean_cov = (realized_bases / size) if size else 0.0
+            out.write(f"{fasta_file}\t{size}\t{n_reads}\t{mean_cov:.4f}\t{detection:.6f}\n")
+    return out_path
+
+
 def generate_reads(args):
 
     preflight_checks(args)
 
     proportions = get_proportions(args)
 
-    gen_reads(args, proportions)
+    per_file_units, stats = gen_reads(args, proportions)
 
     # compression of large FASTQs is the slow tail after the progress bar; when
     # orchestrated (quiet) show a spinner so the wait isn't silent. Standalone
@@ -53,6 +80,16 @@ def generate_reads(args):
             print(f"    Per-read tsv written to:  {args.output_prefix}-read-sources.tsv.gz\n")
     else:
         print()
+
+    # standalone runs get a per-genome summary file on disk; when orchestrated
+    # (quiet, e.g., gen-metagenome) the caller consumes per-genome stats in-memory
+    # from the returned mapping and folds them into its own truth table instead.
+    if not getattr(args, "quiet", False):
+        summary_path = write_per_genome_summary(args, stats)
+        print(f"    Per-genome summary written to:  {summary_path}\n")
+
+    return stats
+
 
 def preflight_checks(args):
 
@@ -274,6 +311,25 @@ def reverse_complement(seq):
     return seq[::-1].translate(str.maketrans("ACGTacgt", "TGCAtgca"))
 
 
+def _record_span(tracker, contig_index, start, end, seq_length):
+    """
+    Feed one read's reference span to the detection tracker, splitting spans that
+    wrap the origin (possible only under --circularize) into their two in-bounds
+    pieces so each covered base is counted against its true position.
+
+    A non-wrapping span is added as-is. A wrapping span has end > seq_length (the
+    read runs off the contig end and continues from 0); it is recorded as
+    [start, seq_length) plus [0, end - seq_length).
+    """
+    if tracker is None:
+        return
+    if end <= seq_length:
+        tracker.add(contig_index, start, end)
+    else:
+        tracker.add(contig_index, start, seq_length)
+        tracker.add(contig_index, 0, end - seq_length)
+
+
 def apportion_units(input_fastas, total_units, proportions):
     """
     Apportion an integer number of `units` across files by their proportions using
@@ -394,9 +450,11 @@ def gen_reads(args, proportions):
     id_offsets = compute_id_offsets(args.input_fastas, per_file_units)
 
     if jobs == 1 or len(args.input_fastas) == 1:
-        _gen_reads_serial(args, per_file_units, id_offsets)
+        stats = _gen_reads_serial(args, per_file_units, id_offsets)
     else:
-        _gen_reads_parallel(args, per_file_units, id_offsets, jobs)
+        stats = _gen_reads_parallel(args, per_file_units, id_offsets, jobs)
+
+    return per_file_units, stats
 
 
 def _open_pair_writers(prefix):
@@ -407,7 +465,7 @@ def _open_pair_writers(prefix):
 
 
 def _open_per_read_tsv(prefix, write_header, gzipped=False):
-    """ 
+    """
     open a per-read provenance TSV, optionally gzip-compressed, optionally
     writing the header row. The final output is gzipped (large, one row per read);
     per-worker temp files stay plaintext since they're concatenated then removed
@@ -429,7 +487,10 @@ def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
     id_offset+1 so concatenated output keeps global r{N} numbering. Uses a private
     RNG seeded with local_seed for order-independent reproducibility.
 
-    Returns the number of reads written (== file_budget * 2).
+    Returns (reads_written, detection, genome_size, realized_bases) where
+    reads_written == file_budget * 2, detection is the fraction of this genome's
+    bases covered by >= 1 read, and realized_bases is the total sequenced bases
+    (sum of actual read lengths) used downstream to compute realized coverage.
     """
     rng = random.Random(local_seed)
 
@@ -441,10 +502,15 @@ def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
     contig_lengths = [len(r.seq) for r in records]
     per_contig = distribute_units_across_contigs(contig_lengths, file_budget)
 
+    # detection is tracked over every contig (indices align with `records`), so
+    # spans are keyed by the record's position even when some contigs get no reads
+    tracker = DetectionTracker(contig_lengths)
+
     read_count = id_offset
     reads_written = 0
+    realized_bases = 0
 
-    for record, entry_reads in zip(records, per_contig):
+    for contig_index, (record, entry_reads) in enumerate(zip(records, per_contig)):
         if entry_reads <= 0:
             continue
         seq_id = record.id
@@ -500,9 +566,17 @@ def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
                 write_source_row(per_read_tsv, read_id + "/1", fasta_file, seq_id, r1_start, r1_end, r1_strand, wrapped)
                 write_source_row(per_read_tsv, read_id + "/2", fasta_file, seq_id, r2_start, r2_end, r2_strand, wrapped)
 
+            # each mate covers its own reference span; record both for detection
+            _record_span(tracker, contig_index, r1_start, r1_end, seq_length)
+            _record_span(tracker, contig_index, r2_start, r2_end, seq_length)
+
+            # realized sequenced bases = actual lengths of both mates (mates can be
+            # shorter than read_length on short contigs), summed for realized coverage
+            realized_bases += len(forward_read) + len(reverse_read)
+
             reads_written += 2
 
-    return reads_written
+    return reads_written, tracker.detection(), tracker.genome_size(), realized_bases
 
 
 def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
@@ -512,7 +586,11 @@ def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
     the already-open handle (and optional source TSV). Read ids start at id_offset+1.
     Uses a private RNG seeded with local_seed.
 
-    Returns the number of reads written (== file_budget).
+    Returns (reads_written, detection, genome_size, realized_bases) where
+    reads_written == file_budget, detection is the fraction of this genome's bases
+    covered by >= 1 read, and realized_bases is the total sequenced bases (sum of
+    actual read lengths) used downstream to compute realized coverage. Long reads
+    vary in length, so realized_bases is summed rather than reads * nominal length.
     """
     rng = random.Random(local_seed)
 
@@ -525,10 +603,14 @@ def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
     contig_lengths = [len(r.seq) for r in records]
     per_contig = distribute_units_across_contigs(contig_lengths, file_budget)
 
+    # detection tracked over every contig; indices align with `records`
+    tracker = DetectionTracker(contig_lengths)
+
     read_count = id_offset
     reads_written = 0
+    realized_bases = 0
 
-    for record, entry_reads in zip(records, per_contig):
+    for contig_index, (record, entry_reads) in enumerate(zip(records, per_contig)):
         if entry_reads <= 0:
             continue
         seq_id = record.id
@@ -567,9 +649,16 @@ def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
             if per_read_tsv:
                 write_source_row(per_read_tsv, read_id, fasta_file, seq_id, start, read_end, strand, wrapped)
 
+            # the read covers [start, read_end); _record_span splits a wrap
+            _record_span(tracker, contig_index, start, read_end, seq_length)
+
+            # realized sequenced bases = actual read length (varies for long reads
+            # and is truncated on short contigs), summed for realized coverage
+            realized_bases += len(read)
+
             reads_written += 1
 
-    return reads_written
+    return reads_written, tracker.detection(), tracker.genome_size(), realized_bases
 
 
 def _progress_bar(args, total):
@@ -581,7 +670,9 @@ def _progress_bar(args, total):
 
 
 def _gen_reads_serial(args, per_file_units, id_offsets):
-    """ single-process path: generate each file in turn, writing to the final files """
+    """ single-process path: generate each file in turn, writing to the final files.
+    Returns {fasta_file: {detection, genome_size, reads_generated, realized_bases}}
+    for every input. """
 
     paired = args.type not in ("single-end", "long")
 
@@ -596,15 +687,22 @@ def _gen_reads_serial(args, per_file_units, id_offsets):
     print("")
     pbar = _progress_bar(args, len(args.input_fastas))
 
+    stats = {}
     try:
         for idx, fasta_file in enumerate(args.input_fastas):
             local_seed = _local_seed(args.seed, idx)
             if paired:
-                gen_one_file_paired(args, fasta_file, per_file_units[fasta_file],
+                reads_n, det, gsize, rbases = gen_one_file_paired(args, fasta_file, per_file_units[fasta_file],
                                     id_offsets[fasta_file], local_seed, fw, rw, per_read_tsv)
             else:
-                gen_one_file_single(args, fasta_file, per_file_units[fasta_file],
+                reads_n, det, gsize, rbases = gen_one_file_single(args, fasta_file, per_file_units[fasta_file],
                                     id_offsets[fasta_file], local_seed, fw, per_read_tsv)
+            stats[fasta_file] = {
+                "detection": det,
+                "genome_size": gsize,
+                "reads_generated": reads_n,
+                "realized_bases": rbases,
+            }
             pbar.update(1)
     finally:
         pbar.update(pbar.total - pbar.n)
@@ -614,6 +712,8 @@ def _gen_reads_serial(args, per_file_units, id_offsets):
             rw.close()
         if per_read_tsv:
             per_read_tsv.close()
+
+    return stats
 
 
 def _worker_generate_file(spec):
@@ -639,7 +739,7 @@ def _worker_generate_file(spec):
     if paired:
         fw, rw = _open_pair_writers(tmp_prefix)
         try:
-            gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
+            reads_n, detection, gsize, rbases = gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
                                 fw, rw, per_read_tsv)
         finally:
             fw.close()
@@ -651,11 +751,15 @@ def _worker_generate_file(spec):
             "r1": f"{tmp_prefix}_R1.fastq",
             "r2": f"{tmp_prefix}_R2.fastq",
             "source": f"{tmp_prefix}-read-sources.tsv" if args.per_read_tsv else None,
+            "detection": detection,
+            "genome_size": gsize,
+            "reads_generated": reads_n,
+            "realized_bases": rbases,
         }
     else:
         fw = open(f"{tmp_prefix}.fastq", "w")
         try:
-            gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
+            reads_n, detection, gsize, rbases = gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
                                 fw, per_read_tsv)
         finally:
             fw.close()
@@ -665,6 +769,10 @@ def _worker_generate_file(spec):
             "index": idx,
             "reads": f"{tmp_prefix}.fastq",
             "source": f"{tmp_prefix}-read-sources.tsv" if args.per_read_tsv else None,
+            "detection": detection,
+            "genome_size": gsize,
+            "reads_generated": reads_n,
+            "realized_bases": rbases,
         }
 
 
@@ -680,7 +788,8 @@ def _gen_reads_parallel(args, per_file_units, id_offsets, jobs):
     """
     multi-process path: each file is generated independently into temp files, then
     concatenated in input order. Deterministic given a seed (per-file seeds), and
-    independent of which worker finishes first.
+    independent of which worker finishes first. Returns
+    {fasta_file: {detection, genome_size, reads_generated, realized_bases}}.
     """
 
     paired = args.type not in ("single-end", "long")
@@ -734,8 +843,21 @@ def _gen_reads_parallel(args, per_file_units, id_offsets, jobs):
                 for r in ordered:
                     with open(r["source"], "r") as src:
                         shutil.copyfileobj(src, out)
+
+        # per-fasta stats keyed by input fasta, in input order (before tmp cleanup)
+        stats = {
+            args.input_fastas[i]: {
+                "detection": results[i]["detection"],
+                "genome_size": results[i]["genome_size"],
+                "reads_generated": results[i]["reads_generated"],
+                "realized_bases": results[i]["realized_bases"],
+            }
+            for i in range(len(args.input_fastas))
+        }
     finally:
         shutil.rmtree(tmp_dir, ignore_errors=True)
+
+    return stats
 
 
 def compress_with_pigz(output_prefix, read_type="paired-end", quiet=False):

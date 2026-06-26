@@ -69,6 +69,65 @@ def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="pa
     )
 
 
+# ---------- realized values from gen-reads output ----------
+
+# decimal places for display rounding of the realized truth-table columns. This is
+# cosmetic (nothing downstream consumes these numbers) and is deliberately kept
+# separate from reproducibility.tsv's round-trip formatting, which must stay
+# precise enough to regenerate the same community.
+DETECTION_DECIMALS = 6
+COVERAGE_DECIMALS = 4
+ABUNDANCE_DECIMALS = 6
+
+
+def add_realized_columns(merged_df, read_stats):
+    """
+    Attach realized per-genome columns to merged_df from gen-reads' output stats,
+    returning a new frame. read_stats maps accession -> {detection, genome_size,
+    reads_generated, realized_bases}.
+
+    Realized columns (what was actually produced, distinct from the assigned_*
+    targets):
+      - reads_generated: reads gen-reads actually wrote for this genome
+      - mean_coverage:   realized_bases / used_genome_size (exact for long reads,
+                         whose lengths vary, since realized_bases is summed)
+      - rel_abundance:   reads_generated / total reads_generated across the run
+      - detection:       fraction of genome bases covered by >= 1 read
+
+    Values are rounded for display. Genomes absent from read_stats (e.g. NA-coverage
+    rows that produced no reads) get zeros.
+    """
+    out = merged_df.copy()
+    read_stats = read_stats or {}
+
+    reads = []
+    bases = []
+    dets = []
+    for acc in out["accession"]:
+        s = read_stats.get(acc, {})
+        reads.append(int(s.get("reads_generated", 0) or 0))
+        bases.append(int(s.get("realized_bases", 0) or 0))
+        dets.append(float(s.get("detection", 0.0) or 0.0))
+
+    total_reads = sum(reads)
+
+    rel = []
+    cov = []
+    for i, acc in enumerate(out["accession"]):
+        size = out.iloc[i].get("used_genome_size")
+        if size is not None and pd.notna(size) and float(size) > 0:
+            cov.append(round(bases[i] / float(size), COVERAGE_DECIMALS))
+        else:
+            cov.append(0.0)
+        rel.append(round(reads[i] / total_reads, ABUNDANCE_DECIMALS) if total_reads else 0.0)
+
+    out["reads_generated"] = reads
+    out["mean_coverage"] = cov
+    out["rel_abundance"] = rel
+    out["detection"] = [round(d, DETECTION_DECIMALS) for d in dets]
+    return out
+
+
 # ---------- per-genome truth ----------
 
 def build_per_genome_table(merged_df, mutation_results, taxonomy):
@@ -77,8 +136,14 @@ def build_per_genome_table(merged_df, mutation_results, taxonomy):
     source's rank columns are emitted under plain rank names (domain..species).
 
     merged_df: normalized + abundance-assigned genome table (one row per genome),
-               carrying gtdb_* and ncbi_* rank columns.
+               carrying gtdb_* and ncbi_* rank columns, a `taxid` column, and the
+               realized columns (rel_abundance, mean_coverage, reads_generated,
+               detection) added by add_realized_columns from gen-reads' output.
     mutation_results: dict accession -> {rate, num_substitutions, ...}.
+
+    The reported abundance/coverage/read columns are the realized values (what was
+    actually produced), distinct from the abundance engine's assigned_* targets,
+    which feed reproducibility.tsv instead.
     """
     if taxonomy not in TAXONOMIES:
         raise ValueError(f"taxonomy must be one of {TAXONOMIES}, got '{taxonomy}'")
@@ -102,10 +167,10 @@ def build_per_genome_table(merged_df, mutation_results, taxonomy):
         if src in out.columns:
             out[plain] = out[src]
 
-    cols = (["accession"] + RANKS +
+    cols = (["accession", "taxid"] + RANKS +
             ["downloaded_genome_size", "used_genome_size",
-             "assigned_rel_abundance", "assigned_coverage",
-             "assigned_reads", "mutation_rate", "num_substitutions", "num_indels",
+             "reads_generated", "rel_abundance", "mean_coverage",
+             "detection", "mutation_rate", "num_substitutions", "num_indels",
              "num_total_changes", "user_supplied"])
     cols = [c for c in cols if c in out.columns]
     return out[cols]
@@ -115,17 +180,17 @@ def build_per_genome_table(merged_df, mutation_results, taxonomy):
 
 def build_per_rank_tables(per_genome_df):
     """
-    Collapse assigned_rel_abundance to each rank. Expects plain rank columns
-    (as produced by build_per_genome_table for a given taxonomy). Returns
-    dict rank -> dataframe [<rank>, rel_abundance]. 'NA' genomes group under 'NA'.
+    Collapse realized rel_abundance to each rank. Expects plain rank columns and a
+    rel_abundance column (as produced by build_per_genome_table for a given
+    taxonomy). Returns dict rank -> dataframe [<rank>, rel_abundance]. 'NA' genomes
+    group under 'NA'.
     """
     tables = {}
     for rank in RANKS:
         if rank not in per_genome_df.columns:
             continue
-        grp = (per_genome_df.groupby(rank, dropna=False)["assigned_rel_abundance"]
+        grp = (per_genome_df.groupby(rank, dropna=False)["rel_abundance"]
                .sum().reset_index()
-               .rename(columns={"assigned_rel_abundance": "rel_abundance"})
                .sort_values("rel_abundance", ascending=False)
                .reset_index(drop=True))
         tables[rank] = grp

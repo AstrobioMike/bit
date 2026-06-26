@@ -12,7 +12,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
     desc = """
         Build a mock metagenome with ground-truth tables. Genomes are selected
         from GTDB and/or supplied directly as accessions, downloaded,
-        optionally mutated to set per-genome ANI, and then reads are generated at a
+        optionally mutated to specified per-genome values, and then reads are generated at a
         chosen abundance distribution. Outputs include reads and per-genome, per-rank, and
         (optionally) per-read truth tables.
         """
@@ -355,7 +355,7 @@ def _inspect_accession_columns(path):
        'rel_abundance_sum' (float|None)}.
     A bare one-per-line file (no 'accession' header) has no columns.
     """
-    import pandas as pd
+    import pandas as pd # type: ignore
     info = {"has_rel_abundance": False, "has_coverage": False,
             "has_mutation_rate": False, "mutation_uniform": None,
             "mutation_value": None, "rel_abundance_sum": None}
