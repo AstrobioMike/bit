@@ -51,7 +51,7 @@ def build_parser(parent_subparsers=None):
         "--jobs",
         metavar="<INT>",
         help="Number of downloads you'd like to run concurrently. NCBI can become unhappy with many requests,\
-             so a max of 10 will be used even if more are requested (default: 10)",
+             so a max of 20 will be used even if more are requested (default: 10)",
         default=10,
         type=int,
     )

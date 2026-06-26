@@ -75,9 +75,9 @@ def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="pa
 # cosmetic (nothing downstream consumes these numbers) and is deliberately kept
 # separate from reproducibility.tsv's round-trip formatting, which must stay
 # precise enough to regenerate the same community.
-DETECTION_DECIMALS = 6
-COVERAGE_DECIMALS = 4
-ABUNDANCE_DECIMALS = 6
+DETECTION_DECIMALS = 2
+COVERAGE_DECIMALS = 2
+ABUNDANCE_DECIMALS = 2
 
 
 def add_realized_columns(merged_df, read_stats):
@@ -137,7 +137,7 @@ def build_per_genome_table(merged_df, mutation_results, taxonomy):
 
     merged_df: normalized + abundance-assigned genome table (one row per genome),
                carrying gtdb_* and ncbi_* rank columns, a `taxid` column, and the
-               realized columns (rel_abundance, mean_coverage, reads_generated,
+               realized columns (reads_generated, rel_abundance, mean_coverage,
                detection) added by add_realized_columns from gen-reads' output.
     mutation_results: dict accession -> {rate, num_substitutions, ...}.
 

@@ -10,11 +10,11 @@ from bit.modules.gen_metagenome import gen_metagenome
 def build_parser(parent_subparsers=None, show_fine=False):
 
     desc = """
-        Build a mock metagenome with ground-truth tables. Genomes are selected
-        from GTDB and/or supplied directly as accessions, downloaded,
-        optionally mutated to specified per-genome values, and then reads are generated at a
-        chosen abundance distribution. Outputs include reads and per-genome, per-rank, and
-        (optionally) per-read truth tables.
+        Build a mock metagenome with ground-truth tables. Genomes are: selected
+        from GTDB and/or supplied directly as accessions; downloaded;
+        optionally mutated to specified per-genome values; and then reads are generated at
+        chosen abundance or coverage distributions. Outputs include reads and per-genome,
+        per-rank, and (optionally) per-read truth tables with GTDB and NCBI taxonomy info.
         """
 
     if parent_subparsers is not None:
@@ -54,9 +54,9 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "-a",
         "--accessions",
         metavar="<FILE>",
-        help=wrap_help("File of NCBI accessions to include (one per line), or a TSV "
-                       "with an 'accession' column plus optional 'rel_abundance', "
-                       "'coverage', and 'mutation_rate' columns to pin per-genome "
+        help=wrap_help("File of NCBI accessions to include (one per line), or a tsv "
+                       "with an 'accession' column and optional 'rel_abundance', "
+                       "'coverage', and/or 'mutation_rate' columns to specify per-genome "
                        "values")
         )
 
@@ -92,27 +92,19 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<INT>",
         type=int,
         default=10,
-        help=wrap_help("Number of jobs to run in parallel where possible (capped at 10 for download step; default: 10)")
+        help=wrap_help("Number of jobs to run in parallel where possible (capped at 20 for the download step; default: 10)")
     )
 
     general.add_argument(
         "-s",
         "--seed",
         metavar="<INT>",
-        # help=h("Set the random seed if wanting control over the random number generator (default: None)"),
         help=("Set the random seed if wanting control over the random number generator (default: None)"),
         type=int,
         default=None,
     )
 
     add_help(general)
-
-    # general.add_argument(
-    #     "-H",
-    #     "--detailed-help",
-    #     action="store_true",
-    #     help="Show detailed help, including fine-tuning parameters"
-    # )
 
     add_version_arg(general)
 
@@ -123,7 +115,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "--domain",
         default="both",
         choices=["bacteria", "archaea", "both"],
-        help=wrap_help("Domain(s) to draw genomes from "
+        help=wrap_help("Domain(s) to randomly draw genomes from "
                        "(default: both), eukaryotes can be specified via --accessions")
     )
 
@@ -133,7 +125,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         choices=["domain", "phylum", "class", "order", "family", "genus",
                  "species", "off"],
         help=wrap_help("Keep at most one genome per unique taxon at this rank "
-                       "(default: species), 'off' selects randomly with no "
+                       "(default: species); 'off' selects randomly with no "
                        "taxonomic dereplication")
     )
 
@@ -144,8 +136,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
         default=None,  # 'relative' set later (None lets the input TSV's columns
                        # auto-select the mode, and conflicts be detected, first)
         choices=["relative", "coverage"],
-        help=wrap_help("Whether the distribution describes relative abundance "
-                       "(uses --total-reads) or per-genome fold-coverage (uses "
+        help=wrap_help("Specifies if genome abundance is governed by relative abundance "
+                       "(which uses --total-reads) or coverage (which uses "
                        "--median-coverage) (default: relative)")
     )
 
@@ -153,7 +145,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "--abundance-dist",
         default="lognormal",
         choices=["lognormal", "even"],
-        help=wrap_help("Shape of the abundance/coverage distribution "
+        help=wrap_help("Specifies the type of abundance/coverage distribution "
                        "(default: lognormal)")
     )
 
@@ -163,7 +155,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<INT>",
         type=int,
         default=None, # 10,000,000 set later
-        help=wrap_help("Number of total reads to generate in 'relative' abundance mode (default: 10,000,000)")
+        help=wrap_help("Number of total reads (NOT read-pairs) to generate in 'relative' "
+                       "abundance mode (default: 10,000,000)")
     )
 
     abundance.add_argument(
@@ -172,9 +165,9 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<FLOAT>",
         type=float,
         default=None,  # 30 set later
-        help=wrap_help("Median per-genome coverage in 'coverage' abundance mode; scales the "
-                         "distribution so 'even' gives this coverage to every genome and "
-                         "'lognormal' centers around it (default: 30)")
+        help=wrap_help("Median per-genome coverage in 'coverage' abundance mode; "
+                       "'even' gives this coverage to every genome and "
+                       "'lognormal' centers around it (default: 30)")
         )
 
     abundance.add_argument(
@@ -194,9 +187,9 @@ def build_parser(parent_subparsers=None, show_fine=False):
                        # input TSV auto-enable mutation, and conflicts be detected)
         choices=["off", "uniform", "varied"],
         help=wrap_help("Mutate genomes before read generation: "
-                       "'uniform' where all are done at --mutation-rate; "
-                       "'varied' with each drawn between --mutation-rate-min and --mutation-rate-max; "
-                       "(default: off)")
+                       "'uniform' means all are done at the set --mutation-rate; "
+                       "'varied' means each is drawn between the set --mutation-rate-min "
+                       "and --mutation-rate-max; (default: off)")
         )
 
     mutation.add_argument(

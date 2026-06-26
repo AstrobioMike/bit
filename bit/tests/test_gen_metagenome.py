@@ -635,6 +635,38 @@ def test_write_reproducible_input_no_mutation(tmp_path):
     assert "mutation_rate" not in df.columns
 
 
+def test_write_reproducible_input_rounds_to_six_decimals(tmp_path):
+    # long raw floats must be rounded to REPRODUCIBILITY_DECIMALS (6) places so the
+    # file is readable; the rounding is fine enough to still reproduce the community
+    merged = pd.DataFrame({"accession": ["GCA_934513205.1", "GCF_2"],
+                           "assigned_coverage": [645.705627109305, 30.0]})
+    run = SimpleNamespace(merged=merged, out_dir=str(tmp_path),
+                          mutation_results={"GCA_934513205.1": {"rate": 0.0123456789},
+                                            "GCF_2": {"rate": 0.0123456789}})
+    G.write_reproducible_input(
+        SimpleNamespace(abundance_mode="coverage", mutation_mode="uniform"), run)
+    # read raw strings to check the on-disk text, not pandas' float re-parse
+    lines = (tmp_path / "reproducibility.tsv").read_text().splitlines()
+    rows = [ln.split("\t") for ln in lines[1:]]
+    cov0 = rows[0][1]
+    assert cov0 == "645.705627"                  # 6 dp, no 12-digit tail
+    mut0 = rows[0][2]
+    assert mut0 == "0.012346"                     # 6 dp
+
+
+def test_write_reproducible_input_preserves_na_mutation(tmp_path):
+    # a genome with no mutation result keeps NA (not rounded to 0.0)
+    merged = pd.DataFrame({"accession": ["GCF_1", "GCF_2"],
+                           "assigned_coverage": [50.0, 30.0]})
+    run = SimpleNamespace(merged=merged, out_dir=str(tmp_path),
+                          mutation_results={"GCF_1": {"rate": 0.02}})  # GCF_2 absent
+    G.write_reproducible_input(
+        SimpleNamespace(abundance_mode="coverage", mutation_mode="uniform"), run)
+    df = pd.read_csv(tmp_path / "reproducibility.tsv", sep="\t")
+    assert df.loc[df["accession"] == "GCF_1", "mutation_rate"].iloc[0] == 0.02
+    assert pd.isna(df.loc[df["accession"] == "GCF_2", "mutation_rate"].iloc[0])
+
+
 def test_load_user_accessions_skips_bare_header(tmp_path):
     p = tmp_path / "accs.txt"
     p.write_text("GCF_000005845.2\nGCF_000009999.1\n")

@@ -82,7 +82,7 @@ def test_add_realized_columns_basic_math():
     stats = {
         "A": {"detection": 0.9999988, "genome_size": 1000,
               "reads_generated": 300, "realized_bases": 45000},
-        "B": {"detection": 0.5, "genome_size": 2000,
+        "B": {"detection": 0.5004, "genome_size": 2000,
               "reads_generated": 100, "realized_bases": 15000},
     }
     out = add_realized_columns(merged, stats)
@@ -90,10 +90,11 @@ def test_add_realized_columns_basic_math():
     assert a["reads_generated"] == 300
     assert a["mean_coverage"] == 45.0          # 45000 / 1000
     assert a["rel_abundance"] == 0.75          # 300 / 400
-    assert a["detection"] == 0.999999          # rounded to 6 places
+    assert a["detection"] == 1.0               # 0.9999988 -> 1.0 at 3 places
     b = out[out["accession"] == "B"].iloc[0]
     assert b["mean_coverage"] == 7.5           # 15000 / 2000
     assert b["rel_abundance"] == 0.25
+    assert b["detection"] == 0.5               # 0.5004 -> 0.500 at 3 places
     # realized rel_abundance sums to 1 across the community
     assert abs(out["rel_abundance"].sum() - 1.0) < 1e-9
 
@@ -313,6 +314,8 @@ def test_write_truth_outputs_split_tree(merged, tmp_path):
 
 
 def test_build_read_truth_streams_large_input(merged, tmp_path):
+    """ a larger input streams through polars to a single gzipped output with the
+    header once and no rows lost/duplicated (memory is bounded by the engine). """
     import gzip
     pg = build_per_genome_table(merged, {a: {"rate": 0.0} for a in merged["accession"]}, "gtdb")
     n = 5000

@@ -53,7 +53,7 @@ def write_per_genome_summary(args, stats):
             realized_bases = s.get("realized_bases", 0)
             detection = s.get("detection", 0.0)
             mean_cov = (realized_bases / size) if size else 0.0
-            out.write(f"{fasta_file}\t{size}\t{n_reads}\t{mean_cov:.4f}\t{detection:.6f}\n")
+            out.write(f"{fasta_file}\t{size}\t{n_reads}\t{mean_cov:.2f}\t{detection:.2f}\n")
     return out_path
 
 
@@ -77,16 +77,14 @@ def generate_reads(args):
 
     if args.per_read_tsv:
         if not getattr(args, "quiet", False):
-            print(f"    Per-read tsv written to:  {args.output_prefix}-read-sources.tsv.gz\n")
-    else:
-        print()
+            print(f"    Per-read tsv:        {args.output_prefix}-read-sources.tsv.gz")
 
     # standalone runs get a per-genome summary file on disk; when orchestrated
     # (quiet, e.g., gen-metagenome) the caller consumes per-genome stats in-memory
     # from the returned mapping and folds them into its own truth table instead.
     if not getattr(args, "quiet", False):
         summary_path = write_per_genome_summary(args, stats)
-        print(f"    Per-genome summary written to:  {summary_path}\n")
+        print(f"    Per-genome summary:  {summary_path}\n")
 
     return stats
 
@@ -869,7 +867,7 @@ def compress_with_pigz(output_prefix, read_type="paired-end", quiet=False):
         try:
             subprocess.run(["pigz", "-f", reads_file], check = True)
             if not quiet:
-                print(f"\n    Compressed file written: {reads_file}.gz\n")
+                print(f"\n    Compressed reads:    {reads_file}.gz\n")
         except FileNotFoundError:
             print("pigz not found. You're on your own for compression!")
         except subprocess.CalledProcessError as e:
@@ -885,7 +883,7 @@ def compress_with_pigz(output_prefix, read_type="paired-end", quiet=False):
             subprocess.run(["pigz", "-f", forward_reads_file], check = True)
             subprocess.run(["pigz", "-f", reverse_reads_file], check = True)
             if not quiet:
-                print(f"\n    Compressed files written: {forward_reads_file}.gz, {reverse_reads_file}.gz")
+                print(f"\n    Compressed reads:    {forward_reads_file}.gz, {reverse_reads_file}.gz")
         except FileNotFoundError:
             print("pigz not found. You're on your own for compression!")
         except subprocess.CalledProcessError as e:

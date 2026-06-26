@@ -29,6 +29,14 @@ from bit.modules.gen_mg import truth as TRU
 from bit.modules.gen_mg import taxonomy as TAX
 
 
+# decimal places for the reproducibility.tsv coverage / mutation_rate columns.
+# This is a round-trip-faithful precision (fine enough that feeding the file back
+# reproduces the same read and substitution counts), NOT a display rounding; it is
+# intentionally kept separate from the cosmetic rounding of the realized truth
+# tables in gen_mg/truth.py.
+REPRODUCIBILITY_DECIMALS = 6
+
+
 def gen_metagenome(args): # pragma: no cover
 
     run = setup(args)
@@ -919,18 +927,31 @@ def write_reproducible_input(args, run):
     Fed back as a pure --accessions file (no --num-genomes), it recreates this
     community's composition. Identical reads additionally require the same --seed
     (recorded in runlog.txt)
+
+    coverage and mutation_rate are rounded to REPRODUCIBILITY_DECIMALS places.
+    This is a *round-trip-faithful* rounding, not a cosmetic one: at 6 decimals
+    the most the value can shift is ~5e-7, which moves the derived read count
+    (coverage * genome_size / read_length) and substitution count by far less than
+    one whole unit, so feeding the file back reproduces the same community. It is
+    deliberately separate from the display rounding of the realized truth tables.
     """
     merged = run.merged
     if merged is None or len(merged) == 0:
         return
 
+    def _round_keep_na(val):
+        # preserve NA/None; round real numbers to the reproduction precision
+        if val is None or pd.isna(val):
+            return val
+        return round(float(val), REPRODUCIBILITY_DECIMALS)
+
     cols = {"accession": list(merged["accession"])}
     if "assigned_coverage" in merged.columns:
-        cols["coverage"] = list(merged["assigned_coverage"])
+        cols["coverage"] = [_round_keep_na(v) for v in merged["assigned_coverage"]]
 
     if args.mutation_mode != "off" and run.mutation_results:
         cols["mutation_rate"] = [
-            run.mutation_results.get(a, {}).get("rate", pd.NA)
+            _round_keep_na(run.mutation_results.get(a, {}).get("rate", pd.NA))
             for a in merged["accession"]
         ]
 
