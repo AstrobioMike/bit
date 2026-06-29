@@ -635,7 +635,7 @@ def phase_mutate(args, run): # pragma: no cover
     else:
         print()
         mut_dir = os.path.join(run.out_dir, "mutated-genomes")
-        with tqdm(total=len(accs), desc="    Mutating", ncols=78, unit=" genome") as pbar:
+        with tqdm(total=len(accs), desc="    Progress", ncols=78, unit=" genome") as pbar:
             run.mutation_results = MUT.run_mutation(
                 run.genome_paths, rates, mut_dir, ti_tv_ratio=args.ti_tv_ratio,
                 indel_rate=args.indel_rate, seed=args.seed, progress=pbar)
