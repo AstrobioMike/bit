@@ -1010,3 +1010,202 @@ def test_distribute_units_across_contigs_sums_to_budget():
 def test_distribute_units_handles_zero_budget_and_empty():
     assert distribute_units_across_contigs([1000, 2000], 0) == [0, 0]
     assert distribute_units_across_contigs([0, 0], 10) == [0, 0]
+
+
+# ─── ground-truth-assembly (GTA) ──────────────────────────────────────────────
+
+from bit.modules.gen_reads_detection import DetectionTracker
+from bit.modules.gen_reads import write_gta_records
+import io
+
+
+class _Rec:
+    """ minimal stand-in for a parsed fasta record (id + seq). """
+    def __init__(self, rid, seq):
+        self.id = rid
+        self.seq = seq
+
+
+def _gta_headers(text):
+    return [l for l in text.splitlines() if l.startswith(">")]
+
+
+def _gta_seq_for(text, header_suffix):
+    """ pull the sequence under the header whose line ends with header_suffix. """
+    lines = text.splitlines()
+    idx = next(i for i, l in enumerate(lines)
+               if l.startswith(">") and l.endswith(header_suffix))
+    seq = ""
+    j = idx + 1
+    while j < len(lines) and not lines[j].startswith(">"):
+        seq += lines[j]
+        j += 1
+    return seq
+
+
+def test_gta_linear_splits_on_uncovered_gaps():
+    seq = "".join("ACGT"[i % 4] for i in range(100))
+    rec = _Rec("c1", seq)
+    tr = DetectionTracker([100])
+    tr.add(0, 10, 30)
+    tr.add(0, 60, 75)
+    buf = io.StringIO()
+    n = write_gta_records(buf, "g.fasta", [rec], tr, circularize=False)
+    assert n == 2
+    assert _gta_headers(buf.getvalue()) == [
+        ">g__c1:10-30", ">g__c1:60-75"]
+    # sequence is sliced exactly from the reference
+    assert _gta_seq_for(buf.getvalue(), "c1:10-30") == seq[10:30]
+
+
+def test_gta_uncovered_contig_emits_nothing():
+    seq = "ACGT" * 25
+    rec = _Rec("c1", seq)
+    tr = DetectionTracker([100])          # no reads added
+    buf = io.StringIO()
+    n = write_gta_records(buf, "g.fasta", [rec], tr, circularize=False)
+    assert n == 0
+    assert buf.getvalue() == ""
+
+
+def test_gta_provenance_header_uses_source_basename():
+    seq = "ACGT" * 25
+    rec = _Rec("contigX", seq)
+    tr = DetectionTracker([100])
+    tr.add(0, 0, 100)
+    buf = io.StringIO()
+    write_gta_records(buf, "/some/dir/mygenome.fasta", [rec], tr)
+    assert _gta_headers(buf.getvalue()) == [">mygenome__contigX:0-100"]
+
+
+def test_gta_strips_fasta_suffixes_in_header():
+    from bit.modules.gen_reads import _strip_fasta_suffix
+    # every recognized suffix -> stripped to the bare accession
+    for suf in (".fasta.gz", ".fasta", ".fna.gz", ".fna", ".fa.gz", ".fa"):
+        assert _strip_fasta_suffix("GCA_1.2" + suf) == "GCA_1.2"
+    # case-insensitive
+    assert _strip_fasta_suffix("GCA_1.2.FASTA.GZ") == "GCA_1.2"
+    # only the trailing suffix goes; internal dots (incl. accession version) stay
+    assert _strip_fasta_suffix("weird.name.fasta.gz") == "weird.name"
+    assert _strip_fasta_suffix("GCA_1.2") == "GCA_1.2"      # no suffix -> unchanged
+    # a bare .gz that is not a fasta suffix is left alone
+    assert _strip_fasta_suffix("something.gz") == "something.gz"
+
+
+def test_gta_header_from_gzipped_source(tmp_path):
+    # end-to-end style: a compressed source basename should appear suffix-free
+    seq = "ACGT" * 25
+    rec = _Rec("CAZNLJ010000001.1", seq)
+    tr = DetectionTracker([100])
+    tr.add(0, 0, 100)
+    buf = io.StringIO()
+    write_gta_records(buf, "GCA_964573725.1.fasta.gz", [rec], tr)
+    assert _gta_headers(buf.getvalue()) == [
+        ">GCA_964573725.1__CAZNLJ010000001.1:0-100"]
+
+
+def test_gta_circular_stitches_origin_spanning_run():
+    seq = "".join("ACGT"[i % 4] for i in range(100))
+    rec = _Rec("c1", seq)
+    tr = DetectionTracker([100])
+    tr.add(0, 80, 100)     # end
+    tr.add(0, 0, 30)       # start  -> wraps with the end under circular
+    tr.add(0, 50, 60)      # middle island
+    buf = io.StringIO()
+    n = write_gta_records(buf, "g.fasta", [rec], tr, circularize=True)
+    assert n == 2
+    headers = _gta_headers(buf.getvalue())
+    # origin-spanning contig has end < start (80-30); middle stays linear
+    assert ">g__c1:80-30" in headers
+    assert ">g__c1:50-60" in headers
+    # stitched sequence is seq[80:100] + seq[0:30]
+    assert _gta_seq_for(buf.getvalue(), "c1:80-30") == seq[80:100] + seq[0:30]
+
+
+def test_gta_circular_same_data_stays_split_when_linear():
+    seq = "".join("ACGT"[i % 4] for i in range(100))
+    rec = _Rec("c1", seq)
+    tr = DetectionTracker([100])
+    tr.add(0, 80, 100)
+    tr.add(0, 0, 30)
+    buf = io.StringIO()
+    n = write_gta_records(buf, "g.fasta", [rec], tr, circularize=False)
+    assert n == 2
+    assert _gta_headers(buf.getvalue()) == [
+        ">g__c1:0-30", ">g__c1:80-100"]
+
+
+def test_gta_circular_full_contig_stays_single_piece():
+    seq = "".join("ACGT"[i % 4] for i in range(100))
+    rec = _Rec("c1", seq)
+    tr = DetectionTracker([100])
+    tr.add(0, 0, 100)
+    buf = io.StringIO()
+    n = write_gta_records(buf, "g.fasta", [rec], tr, circularize=True)
+    assert n == 1
+    assert _gta_headers(buf.getvalue()) == [">g__c1:0-100"]
+
+
+def test_gta_circular_start_only_does_not_wrap():
+    seq = "".join("ACGT"[i % 4] for i in range(100))
+    rec = _Rec("c1", seq)
+    tr = DetectionTracker([100])
+    tr.add(0, 0, 30)       # touches start but not the end
+    tr.add(0, 50, 70)
+    buf = io.StringIO()
+    n = write_gta_records(buf, "g.fasta", [rec], tr, circularize=True)
+    assert n == 2
+    assert _gta_headers(buf.getvalue()) == [
+        ">g__c1:0-30", ">g__c1:50-70"]
+
+
+def test_gta_multi_genome_keeps_origins_distinct():
+    # two genomes with distinct contig ids -> combined GTA tags each by source
+    seqA = "".join("ACGT"[i % 4] for i in range(60))
+    seqB = "".join("TGCA"[i % 4] for i in range(60))
+    trA = DetectionTracker([60]); trA.add(0, 0, 60)
+    trB = DetectionTracker([60]); trB.add(0, 0, 60)
+    buf = io.StringIO()
+    write_gta_records(buf, "A.fasta", [_Rec("cA", seqA)], trA)
+    write_gta_records(buf, "B.fasta", [_Rec("cB", seqB)], trB)
+    headers = _gta_headers(buf.getvalue())
+    assert ">A__cA:0-60" in headers
+    assert ">B__cB:0-60" in headers
+
+
+def test_gta_cli_paired_end_writes_file(tmp_path):
+    shutil.copy(test_fasta, tmp_path / "input.fasta")
+    out = tmp_path / "gta-reads"
+    run_cli([
+        "bit", "gen-reads",
+        "-i", str(tmp_path / "input.fasta"),
+        "-o", str(out),
+        "-c", "20", "-r", "150",
+        "--type", "paired-end",
+        "--ground-truth-assembly",
+        "-j", "1", "-s", "9",
+    ])
+    gta = tmp_path / "gta-reads-ground-truth-assembly.fasta"
+    assert gta.exists(), f"GTA file not found at {gta}"
+    text = gta.read_text()
+    headers = _gta_headers(text)
+    assert headers, "GTA has no contigs"
+    # every GTA piece is a substring of the source contig it names
+    src_seq = _read_fasta_seq(str(tmp_path / "input.fasta"))
+    for h in headers:
+        piece = _gta_seq_for(text, h.split("__", 1)[1])
+        assert piece.upper() in src_seq, f"GTA piece {h} not found in source"
+
+
+def test_gta_cli_off_by_default(tmp_path):
+    shutil.copy(test_fasta, tmp_path / "input.fasta")
+    out = tmp_path / "noreq"
+    run_cli([
+        "bit", "gen-reads",
+        "-i", str(tmp_path / "input.fasta"),
+        "-o", str(out),
+        "-c", "5", "-r", "150",
+        "--type", "paired-end",
+        "-j", "1", "-s", "9",
+    ])
+    assert not (tmp_path / "noreq-ground-truth-assembly.fasta").exists()

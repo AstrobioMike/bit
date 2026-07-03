@@ -1,5 +1,5 @@
 """
-gen-metagenome abundance/coverage layer
+gen-mg abundance/coverage layer
 
 Given a normalized genome table (needs 'accession', 'used_genome_size', and the pinned
 override columns), assign each genome a relative abundance, a target coverage, and

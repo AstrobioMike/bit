@@ -124,6 +124,13 @@ def build_parser(parent_subparsers=None):
         default=False,
     )
 
+    general.add_argument(
+        "--ground-truth-assembly",
+        help="Add this flag to write out a ground-truth assembly fasta (genomes may be fragmented if reads are generated with low coverage)",
+        action="store_true",
+        default=False,
+    )
+
     add_seed(general)
     add_help(general)
     add_version_arg(general)

@@ -68,7 +68,7 @@ You can see an overview of available programs like below by running `bit` by its
 
 | Program | Purpose |
 | ------- | ------- |
-| `bit gen-metagenome` | generate an in silico metagenome with ground-truth tables |
+| `bit gen-mg` | generate an in silico metagenome with ground-truth tables in GTDB and NCBI taxonomies |
 | `bit gen-reads` | generate reads from fasta files |
 | `bit mutate-seqs` | introduce point mutations (substitutions/indels) into nucleotide or amino-acid fasta files |
 | `bit add-insertion` | add insertions into nucleotide or amino-acid fasta sequences |

@@ -13,18 +13,19 @@ def build_parser(parent_subparsers=None, show_fine=False):
         Build a mock metagenome with ground-truth tables. Genomes are: selected
         from GTDB and/or supplied directly as accessions; downloaded;
         optionally mutated to specified per-genome values; and then reads are generated at
-        chosen abundance or coverage distributions. Outputs include reads and per-genome,
-        per-rank, and (optionally) per-read truth tables with GTDB and NCBI taxonomy info.
+        chosen abundance or coverage distributions. Outputs include reads, a 
+        ground-truth assembly fasta, and per-genome, per-rank, and (optionally) 
+        per-read truth tables with GTDB and NCBI taxonomy info.
         """
 
     if parent_subparsers is not None:
         parser = parent_subparsers.add_parser(
-            "gen-metagenome", description=desc,
+            "gen-mg", description=desc,
             formatter_class=CustomRichHelpFormatter, add_help=False)
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit gen-metagenome -n 20`",
+            epilog="Ex. usage: `bit gen-mg -n 20`",
             formatter_class=CustomRichHelpFormatter, add_help=False)
 
     # toggles whether detailed (fine-tuning) args show real help or are hidden
@@ -171,11 +172,12 @@ def build_parser(parent_subparsers=None, show_fine=False):
         )
 
     abundance.add_argument(
-        "--sigma",
+        "--spread",
         metavar="<FLOAT>",
         type=float,
         default=None,  # 1.0 set later
-        help=(wrap_help("Sigma (spread) for the lognormal distribution; higher means "
+        dest="sigma",
+        help=(wrap_help("Spread (sigma) for the lognormal distribution; higher means "
                          "a longer abundance tail (default: 1.0)"))
         )
 
@@ -411,6 +413,15 @@ def resolve_input_driven_modes(args):
                  "conflicts with `--abundance-mode coverage`. Use relative mode "
                  "(or omit `--abundance-mode`) to honor the column.")
         args.abundance_mode = "relative"
+
+    # --median-coverage is only meaningful in coverage mode; supplying it (without
+    # an explicit relative mode) implies coverage mode, same as a `coverage` column.
+    if getattr(args, "median_coverage", None) is not None:
+        if args.abundance_mode == "relative":
+            fail("`--median-coverage` conflicts with `--abundance-mode relative`. "
+                "Omit `--abundance-mode` (or set it to coverage) to use it.")
+        args.abundance_mode = "coverage"
+
     # both columns or neither -> fall through to default below; the resolved mode
     # picks which column is honored (the other is ignored).
     if args.abundance_mode is None:
@@ -470,13 +481,8 @@ def preflight_checks(args):
                        initial_indent="    ", subsequent_indent="    ")
         notify_premature_exit()
 
-    if args.median_coverage and args.abundance_mode == "relative":
-        report_message("Parameter `--median-coverage` is incompatible with `--abundance-mode relative`.",
-                       initial_indent="    ", subsequent_indent="    ")
-        notify_premature_exit()
-
     if args.sigma and args.abundance_dist == "even":
-        report_message("Parameter `--sigma` is incompatible with `--abundance-dist even`.",
+        report_message("Parameter `--spread` is incompatible with `--abundance-dist even`.",
                        initial_indent="    ", subsequent_indent="    ")
         notify_premature_exit()
 
@@ -529,7 +535,7 @@ def preflight_checks(args):
     _check_range(args.total_reads, "--total-reads", lo=0, lo_inclusive=False)
     _check_range(args.jobs, "--jobs", lo=0, lo_inclusive=False)
 
-    # coverage / spread must be positive
+    # coverage / spread (sigma) must be positive
     _check_range(args.median_coverage, "--median-coverage", lo=0, lo_inclusive=False)
     _check_range(args.sigma, "--sigma", lo=0, lo_inclusive=False)
     _check_range(args.ti_tv_ratio, "--ti-tv-ratio", lo=0, lo_inclusive=False)

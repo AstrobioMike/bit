@@ -1,5 +1,5 @@
 """
-gen-metagenome reads + truth-table assembly.
+gen-mg reads + truth-table assembly.
 
 Calls bit's gen-reads (in-process) across all genome fastas using a coverage TSV,
 with per-read provenance on, then assembles the ground-truth outputs.
@@ -34,17 +34,22 @@ def _src_rank_cols(taxonomy):
 def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="paired-end",
                          read_length=None, fragment_size=500, fragment_size_range=10,
                          long_read_length_range=50, seed=None, circularize=False,
-                         include_Ns=False, genome_sizes=None, jobs=10, per_read_tsv=False):
+                         include_Ns=False, genome_sizes=None, jobs=10, per_read_tsv=False,
+                         ground_truth_assembly=False):
     """
     Construct an args-like object matching what bit.modules.gen_reads.generate_reads
     expects. Coverage mode is used (the coverage TSV drives per-genome read counts).
 
     per_read_tsv: whether gen-reads should emit its per-read source TSV. This is an
     intermediate consumed by build_read_truth to make the per-read truth tables,
-    so gen-metagenome only needs it when --per-read-tsv is set.
+    so gen-mg only needs it when --per-read-tsv is set.
+
+    ground_truth_assembly: whether gen-reads should also write the ground-truth
+    assembly fasta (the perfect assembly the reads support). Passed straight
+    through from gen-mg's --ground-truth-assembly flag.
 
     genome_sizes: optional {fasta_path: measured_size} so gen-reads can skip
-    re-measuring genomes gen-metagenome already sized
+    re-measuring genomes gen-mg already sized
     """
     if read_length is None:
         read_length = 5000 if read_type == "long" else 150
@@ -52,9 +57,9 @@ def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="pa
         input_fastas=list(fasta_paths),
         output_prefix=output_prefix,
         type=read_type,
-        num_reads=1_000_000,          # overridden internally by coverage mode
+        num_reads=1_000_000,
         read_length=read_length,
-        coverage=coverage_tsv,        # path -> coverage-specified mode
+        coverage=coverage_tsv,
         proportions_file=None,
         circularize=circularize,
         include_Ns=include_Ns,
@@ -63,6 +68,7 @@ def build_gen_reads_args(fasta_paths, coverage_tsv, output_prefix, read_type="pa
         fragment_size_range=fragment_size_range,
         long_read_length_range=long_read_length_range,
         per_read_tsv=per_read_tsv,
+        ground_truth_assembly=ground_truth_assembly,
         genome_sizes=genome_sizes or {},
         quiet=True,
         jobs=jobs
@@ -228,7 +234,7 @@ def build_read_truth(read_sources_tsv, fasta_to_accession, per_genome_df, out_pa
 
     tax = per_genome_df.set_index("accession")
     rank_cols = [r for r in RANKS if r in tax.columns]
-    # 'wrapped' is intentionally omitted from the truth table: gen-metagenome
+    # 'wrapped' is intentionally omitted from the truth table: gen-mg
     # never circularizes (gen-reads' circularize stays False), so it is uniformly
     # 'false' and carries no information here. It still exists in gen-reads' own
     # output for standalone circularized runs. We skip it at parse time (usecols)

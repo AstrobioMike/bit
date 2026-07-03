@@ -60,6 +60,7 @@ def test_build_gen_reads_args_defaults():
     args = build_gen_reads_args(["a.fasta", "b.fasta"], "cov.tsv", "pref")
     assert args.coverage == "cov.tsv"          # coverage-specified mode
     assert args.per_read_tsv is False          # intermediate; off unless per-read wanted
+    assert args.ground_truth_assembly is False # off unless explicitly requested
     assert args.read_length == 150
     assert args.type == "paired-end"
 
@@ -67,6 +68,12 @@ def test_build_gen_reads_args_defaults():
 def test_build_gen_reads_args_per_read_tsv_opt_in():
     args = build_gen_reads_args(["a.fasta"], "cov.tsv", "pref", per_read_tsv=True)
     assert args.per_read_tsv is True
+
+
+def test_build_gen_reads_args_ground_truth_assembly_opt_in():
+    args = build_gen_reads_args(["a.fasta"], "cov.tsv", "pref",
+                                ground_truth_assembly=True)
+    assert args.ground_truth_assembly is True
 
 
 def test_build_gen_reads_args_long_default_length():
@@ -242,7 +249,7 @@ def test_read_truth_joins_taxonomy(merged, tmp_path):
     assert (rt[rt["accession"] == "GCA_E"]["genus"] == "NA").all()
     # coordinates carried through, and appear before the rank columns
     assert set(["contig", "start", "end", "strand"]).issubset(rt.columns)
-    # 'wrapped' is intentionally dropped from the truth table (gen-metagenome
+    # 'wrapped' is intentionally dropped from the truth table (gen-mg
     # never circularizes, so it would be uniformly 'false')
     assert "wrapped" not in rt.columns
     cols = list(rt.columns)

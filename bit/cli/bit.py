@@ -8,7 +8,7 @@ SUBCOMMAND_MAP = {
     "get-accs-from-gtdb":  "bit.cli.get_accessions_from_gtdb",
     "get-accs-from-ncbi":  "bit.cli.get_accessions_from_ncbi",
     "dl-ncbi-assemblies":  "bit.cli.dl_ncbi_assemblies",
-    "gen-metagenome":      "bit.cli.gen_metagenome",
+    "gen-mg":              "bit.cli.gen_metagenome",
     "gen-reads":           "bit.cli.gen_reads",
     "mutate-seqs":         "bit.cli.mutate_seqs",
     "add-insertion":       "bit.cli.add_insertion",
@@ -54,7 +54,7 @@ PROGRAM_GROUPS = [
         "title": "Sequence simulation and manipulation",
         "programs": [
             {
-                "name": "gen-metagenome",
+                "name": "gen-mg",
                 "desc": "generate an in silico metagenome with GTDB and NCBI ground-truth tables",
             },
             {

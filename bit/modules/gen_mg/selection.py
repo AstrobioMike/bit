@@ -1,5 +1,5 @@
 """
-gen-metagenome selection layer: produce one normalized genome table from
+gen-mg selection layer: produce one normalized genome table from
 GTDB-generative selection and/or user-supplied accessions (GTDB- or NCBI-sourced).
 
 Normalized schema (one row per selected genome) carries BOTH taxonomies side by

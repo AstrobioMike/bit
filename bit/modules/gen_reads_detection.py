@@ -133,3 +133,35 @@ class DetectionTracker:
     def genome_size(self):
         """ Total bases across all contigs (the detection denominator). """
         return self._total
+
+    def covered_intervals(self, contig_index):
+        """
+        Return this contig's covered spans as a list of (start, end) tuples,
+        0-based and end-exclusive, sorted and disjoint. These are the complement
+        of the remaining gaps within [0, length): the maximal contiguous runs of
+        bases hit by >= 1 read. Adjacent/overlapping read spans have already been
+        merged by the gap logic, so each returned interval is a maximal covered
+        run -- exactly the pieces a ground-truth assembly (perfect assembly of
+        the reads) would recover for this contig.
+
+        A fully covered contig returns [(0, length)]; a wholly uncovered contig
+        returns []. Zero-length contigs return [].
+        """
+        length = self._lengths[contig_index]
+        if length == 0:
+            return []
+
+        gap_starts = self._gap_starts[contig_index]
+        gap_ends = self._gap_ends[contig_index]
+
+        # covered = [0, length) minus the disjoint, sorted gaps. Walk the gaps
+        # and emit the spans between them.
+        covered = []
+        cursor = 0
+        for g_s, g_e in zip(gap_starts, gap_ends):
+            if cursor < g_s:
+                covered.append((cursor, g_s))
+            cursor = g_e
+        if cursor < length:
+            covered.append((cursor, length))
+        return covered

@@ -1,5 +1,5 @@
 """
-gen-metagenome mutation layer.
+gen-mg mutation layer.
 
 Assigns a per-genome mutation rate and applies it, producing mutated genome fastas
 and a per-genome mutation summary for the truth table. Drives bit's own

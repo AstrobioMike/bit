@@ -187,7 +187,7 @@ def _read_gtdb_version(location):
 
 # ---- selection ----
 
-# columns gen-metagenome uses from the GTDB metadata table. This is exactly the
+# columns gen-mg uses from the GTDB metadata table. This is exactly the
 # set the stored table is slimmed to at download time, so it's defined once in
 # get_gtdb_data (GTDB_KEPT_COLUMNS) and aliased here. The load still intersects
 # this with the columns actually present, so an older un-slimmed cached table
@@ -202,7 +202,7 @@ def _load_gtdb_table(args, run):
     caller wraps this in an appropriately-labeled spinner. GTDB version is
     recorded to the runlog here.
 
-    Only the columns gen-metagenome uses are read (see GTDB_USED_COLUMNS). The
+    Only the columns gen-mg uses are read (see GTDB_USED_COLUMNS). The
     stored table is already slimmed to these columns at download time, so on a
     current table the usecols intersect below is a no-op; it's retained so an
     older, un-slimmed cached table (full ~110 columns) still reads correctly.
@@ -746,9 +746,20 @@ def phase_reads(args, run): # pragma: no cover
         fragment_size=args.fragment_size, fragment_size_range=args.fragment_size_range,
         long_read_length_range=args.long_read_length_range, seed=args.seed,
         include_Ns=args.include_Ns, genome_sizes=genome_sizes, jobs=args.jobs,
-        per_read_tsv=args.per_read_tsv)
+        per_read_tsv=args.per_read_tsv,
+        ground_truth_assembly=True)
     stats = generate_reads(gr_args)
     run.read_sources_tsv = f"{run.reads_prefix}-read-sources.tsv.gz"
+
+    run.gta_path = None
+    gta_src = f"{run.reads_prefix}-ground-truth-assembly.fasta"
+    if os.path.exists(gta_src):
+        gt_root = os.path.join(run.out_dir, "ground-truth")
+        attempt_to_make_dir(gt_root)
+        gta_dst = os.path.join(
+            gt_root, f"{args.output_prefix}-ground-truth-assembly.fasta")
+        os.replace(gta_src, gta_dst)
+        run.gta_path = gta_dst
 
     # gen-reads returns per-fasta stats keyed by the working fasta path; re-key to
     # accession so the truth phase can attach realized values (reads_generated,
@@ -998,7 +1009,9 @@ def report_finish(args, run): # pragma: no cover
 
     print(f"      Reads:                 {reads_line}")
     gt_root = os.path.join(run.out_dir, "ground-truth")
-    print(f"      Ground-truth files:    {gt_root}{os.sep}")
-    print(f"                                 gtdb{os.sep}  (GTDB-taxonomy truth tables)")
-    print(f"                                 ncbi{os.sep}  (NCBI-taxonomy truth tables)")
+    print(f"      Ground-truth files:    {gt_root}/")
+    if getattr(run, "gta_path", None):
+        print(f"                                 {os.path.basename(run.gta_path)}")
+    print(f"                                 gtdb/")
+    print(f"                                 ncbi/")
     print("")

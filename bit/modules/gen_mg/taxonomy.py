@@ -1,5 +1,5 @@
 """
-gen-metagenome taxonomy-resolution layer.
+gen-mg taxonomy-resolution layer.
 
 Fills BOTH taxonomy rank sets (gtdb_* and ncbi_*) on the merged genome table,
 regardless of how each genome entered the community:

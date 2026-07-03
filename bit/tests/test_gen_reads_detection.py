@@ -142,3 +142,87 @@ def test_randomized_matches_brute_force():
         assert tr.detection() == pytest.approx(ref_det)
         assert tr.done == ref_done
         assert tr.covered_bases() == round(ref_det * sum(lengths))
+
+
+# ─── covered_intervals (the complement of the gap list; basis of the GTA) ──────
+
+def _brute_intervals(length, spans):
+    """ reference covered intervals via a per-base bitmap. """
+    if length == 0:
+        return []
+    bits = bytearray(length)
+    for s, e in spans:
+        for x in range(s, e):
+            bits[x] = 1
+    out = []
+    i = 0
+    while i < length:
+        if bits[i]:
+            j = i
+            while j < length and bits[j]:
+                j += 1
+            out.append((i, j))
+            i = j
+        else:
+            i += 1
+    return out
+
+
+def test_covered_intervals_empty_when_no_reads():
+    tr = DetectionTracker([50])
+    assert tr.covered_intervals(0) == []
+
+
+def test_covered_intervals_full_contig():
+    tr = DetectionTracker([20])
+    tr.add(0, 0, 20)
+    assert tr.covered_intervals(0) == [(0, 20)]
+
+
+def test_covered_intervals_zero_length_contig():
+    tr = DetectionTracker([0, 5])
+    tr.add(1, 0, 5)
+    assert tr.covered_intervals(0) == []
+    assert tr.covered_intervals(1) == [(0, 5)]
+
+
+def test_covered_intervals_merges_adjacent_and_overlapping():
+    tr = DetectionTracker([100])
+    tr.add(0, 10, 30)
+    tr.add(0, 25, 40)   # overlaps previous -> merge to (10, 40)
+    tr.add(0, 40, 50)   # abuts previous    -> merge to (10, 50)
+    tr.add(0, 70, 80)   # separate island
+    assert tr.covered_intervals(0) == [(10, 50), (70, 80)]
+
+
+def test_covered_intervals_matches_covered_bases():
+    tr = DetectionTracker([200])
+    for s, e in [(5, 15), (14, 30), (60, 61), (100, 180)]:
+        tr.add(0, s, e)
+    total = sum(e - s for s, e in tr.covered_intervals(0))
+    assert total == tr.covered_bases()
+
+
+def test_covered_intervals_randomized_matches_brute_force():
+    rng = random.Random(99)
+    for _ in range(300):
+        ncontigs = rng.randint(1, 4)
+        lengths = [rng.randint(1, 200) for _ in range(ncontigs)]
+        spans_by_contig = [[] for _ in range(ncontigs)]
+        flat = []
+        for _ in range(rng.randint(0, 80)):
+            ci = rng.randrange(ncontigs)
+            length = lengths[ci]
+            s = rng.randint(0, length - 1)
+            e = min(length, s + rng.randint(1, 30))
+            spans_by_contig[ci].append((s, e))
+            flat.append((ci, s, e))
+
+        tr = DetectionTracker(lengths)
+        rng.shuffle(flat)                 # order independence
+        for ci, s, e in flat:
+            tr.add(ci, s, e)
+
+        for ci in range(ncontigs):
+            assert tr.covered_intervals(ci) == _brute_intervals(
+                lengths[ci], spans_by_contig[ci])

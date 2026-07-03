@@ -14,10 +14,15 @@
 
 -->
 
-## v2.7.1 (NOT RELEASED YET)
+## v2.8.0 (3-Jul-2026)
+
+### Added 
+- `bit gen-reads`
+  - now has option to create a ground-truth assembly (which may be fragmented input genomes if generated with low coverage)
 
 ### Changed
-- `bit gen-metagenome` per-genome-truth.tsv tables have mutation rate rounded to 4 decimals now
+- `bit gen-metagenome` -> `bit gen-mg`
+  - per-genome-truth.tsv tables have mutation rate rounded to 4 decimals now
 
 ---
 

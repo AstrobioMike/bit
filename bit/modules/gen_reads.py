@@ -26,7 +26,7 @@ def parse_fasta(fasta_file):
         handle.close()
 
 def _status(args, msg):
-    """ print a status line unless the caller (e.g., gen-metagenome) set quiet """
+    """ print a status line unless the caller (e.g., gen-mg) set quiet """
     if not getattr(args, "quiet", False):
         print(msg)
 
@@ -77,15 +77,18 @@ def generate_reads(args):
 
     if args.per_read_tsv:
         if not getattr(args, "quiet", False):
-            print(f"    Per-read tsv:        {args.output_prefix}-read-sources.tsv.gz")
+            print(f"    Per-read tsv:           {args.output_prefix}-read-sources.tsv.gz")
 
     # standalone runs get a per-genome summary file on disk; when orchestrated
-    # (quiet, e.g., gen-metagenome) the caller consumes per-genome stats in-memory
+    # (quiet, e.g., gen-mg) the caller consumes per-genome stats in-memory
     # from the returned mapping and folds them into its own truth table instead.
     if not getattr(args, "quiet", False):
         summary_path = write_per_genome_summary(args, stats)
-        print(f"    Per-genome summary:  {summary_path}\n")
-
+        print(f"    Per-genome summary:     {summary_path}")
+        if args.ground_truth_assembly:
+            print(f"    Ground-truth assembly:  {args.output_prefix}-ground-truth-assembly.fasta\n")
+        else:
+            print()
     return stats
 
 
@@ -143,7 +146,7 @@ def compute_reads_from_coverage(args):
     # compute reads needed per genome: coverage * genome_size / read_length
     reads_per_file = {}
 
-    # gen-metagenome already measures every genome; if it passed those sizes
+    # gen-mg already measures every genome; if it passed those sizes
     # through (keyed by the fasta path), we reuse them
     known_sizes = getattr(args, "genome_sizes", None) or {}
 
@@ -462,6 +465,87 @@ def _open_pair_writers(prefix):
     return fw, rw
 
 
+_FASTA_SUFFIXES = (".fasta.gz", ".fna.gz", ".fa.gz",
+                   ".fasta", ".fna", ".fa")
+def _strip_fasta_suffix(name):
+    """ drop one trailing fasta suffix (longest/compound match first) if present. """
+    lower = name.lower()
+    for suf in _FASTA_SUFFIXES:
+        if lower.endswith(suf):
+            return name[: -len(suf)]
+    return name
+
+
+def _write_gta_contig(gta_fh, src, contig_id, start, end, seq_pieces):
+    """Write one GTA fasta record. seq_pieces is a list of sequence strings that
+    are concatenated to form the contig (one piece normally; two when a covered
+    run wraps the origin of a circular contig). Coordinates in the header are the
+    covered span's [start, end); for a wrapped contig end < start signals the
+    origin-spanning join (e.g. contig1:1850-40 means 1850..len then 0..40)."""
+    seq = "".join(seq_pieces)
+    gta_fh.write(f">{src}__{contig_id}:{start}-{end}\n")
+    gta_fh.write(seq + "\n")
+
+
+def write_gta_records(gta_fh, source_fasta, records, tracker, circularize=False):
+    """
+    Write this genome's ground-truth-assembly contigs to an already-open FASTA
+    handle. The GTA is the perfect assembly the simulated reads support: for each
+    contig, every maximal run of bases covered by >= 1 read becomes one GTA contig
+    (uncovered stretches split the contig, exactly as a perfect assembler could
+    only reconstruct what the reads span). Sequence is sliced straight from the
+    reference, so with our error-free reads the GTA is exact.
+
+    Circular handling: when `circularize` is set, contigs are treated as circular
+    (matching read generation, where fragments may wrap the origin). A covered run
+    that reaches the contig end AND a covered run that starts at 0 are then the
+    same contiguous run across the origin, so they are stitched into a single GTA
+    contig whose sequence is seq[wrap_start:] + seq[:wrap_end]. Its header uses the
+    form '<contig>:<wrap_start>-<wrap_end>' with wrap_end < wrap_start marking the
+    origin-spanning join. A fully covered circular contig stays one piece.
+
+    Headers carry full provenance so each GTA piece is traceable to its origin:
+        >{source_fasta_basename}__{contig_id}:{start}-{end}
+    with 0-based, end-exclusive coordinates from the source contig.
+
+    Contigs with no covered bases contribute nothing. Returns the number of GTA
+    contigs written.
+    """
+    src = _strip_fasta_suffix(os.path.basename(source_fasta))
+    written = 0
+    for contig_index, record in enumerate(records):
+        seq = str(record.seq)
+        length = len(seq)
+        intervals = tracker.covered_intervals(contig_index)
+        if not intervals:
+            continue
+
+        # circular: if coverage reaches the end and also starts at 0, the last and
+        # first intervals are one run across the origin -> stitch them
+        wrap = (circularize and length > 0
+                and intervals[0][0] == 0 and intervals[-1][1] == length
+                and len(intervals) >= 2)
+
+        if wrap:
+            first_s, first_e = intervals[0]
+            last_s, last_e = intervals[-1]
+            # stitched origin-spanning contig: seq[last_s:length] + seq[0:first_e]
+            _write_gta_contig(gta_fh, src, record.id, last_s, first_e,
+                              [seq[last_s:length], seq[0:first_e]])
+            written += 1
+            # untouched middle intervals stay linear pieces
+            for (start, end) in intervals[1:-1]:
+                _write_gta_contig(gta_fh, src, record.id, start, end,
+                                  [seq[start:end]])
+                written += 1
+        else:
+            for (start, end) in intervals:
+                _write_gta_contig(gta_fh, src, record.id, start, end,
+                                  [seq[start:end]])
+                written += 1
+    return written
+
+
 def _open_per_read_tsv(prefix, write_header, gzipped=False):
     """
     open a per-read provenance TSV, optionally gzip-compressed, optionally
@@ -478,7 +562,7 @@ def _open_per_read_tsv(prefix, write_header, gzipped=False):
 
 
 def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
-                        fw, rw, per_read_tsv):
+                        fw, rw, per_read_tsv, gta_fh=None):
     """
     Generate `file_budget` fragments (2 reads each) from a single fasta, writing to
     the already-open R1/R2 handles (and optional source TSV). Read ids start at
@@ -574,11 +658,14 @@ def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
 
             reads_written += 2
 
+    if gta_fh is not None:
+        write_gta_records(gta_fh, fasta_file, records, tracker, args.circularize)
+
     return reads_written, tracker.detection(), tracker.genome_size(), realized_bases
 
 
 def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
-                        fw, per_read_tsv):
+                        fw, per_read_tsv, gta_fh=None):
     """
     Generate `file_budget` reads (single-end or long) from a single fasta, writing to
     the already-open handle (and optional source TSV). Read ids start at id_offset+1.
@@ -656,6 +743,9 @@ def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
 
             reads_written += 1
 
+    if gta_fh is not None:
+        write_gta_records(gta_fh, fasta_file, records, tracker, args.circularize)
+
     return reads_written, tracker.detection(), tracker.genome_size(), realized_bases
 
 
@@ -681,6 +771,7 @@ def _gen_reads_serial(args, per_file_units, id_offsets):
         rw = None
 
     per_read_tsv = _open_per_read_tsv(args.output_prefix, write_header=True, gzipped=True) if args.per_read_tsv else None
+    gta_fh = open(f"{args.output_prefix}-ground-truth-assembly.fasta", "w") if getattr(args, "ground_truth_assembly", False) else None
 
     print("")
     pbar = _progress_bar(args, len(args.input_fastas))
@@ -691,10 +782,10 @@ def _gen_reads_serial(args, per_file_units, id_offsets):
             local_seed = _local_seed(args.seed, idx)
             if paired:
                 reads_n, det, gsize, rbases = gen_one_file_paired(args, fasta_file, per_file_units[fasta_file],
-                                    id_offsets[fasta_file], local_seed, fw, rw, per_read_tsv)
+                                    id_offsets[fasta_file], local_seed, fw, rw, per_read_tsv, gta_fh)
             else:
                 reads_n, det, gsize, rbases = gen_one_file_single(args, fasta_file, per_file_units[fasta_file],
-                                    id_offsets[fasta_file], local_seed, fw, per_read_tsv)
+                                    id_offsets[fasta_file], local_seed, fw, per_read_tsv, gta_fh)
             stats[fasta_file] = {
                 "detection": det,
                 "genome_size": gsize,
@@ -710,6 +801,8 @@ def _gen_reads_serial(args, per_file_units, id_offsets):
             rw.close()
         if per_read_tsv:
             per_read_tsv.close()
+        if gta_fh is not None:
+            gta_fh.close()
 
     return stats
 
@@ -733,22 +826,28 @@ def _worker_generate_file(spec):
     tmp_prefix = os.path.join(tmp_dir, f"part_{idx:06d}")
 
     per_read_tsv = _open_per_read_tsv(tmp_prefix, write_header=False) if args.per_read_tsv else None
+    want_gta = getattr(args, "ground_truth_assembly", False)
+    gta_fh = open(f"{tmp_prefix}-gta.fasta", "w") if want_gta else None
+    gta_path = f"{tmp_prefix}-gta.fasta" if want_gta else None
 
     if paired:
         fw, rw = _open_pair_writers(tmp_prefix)
         try:
             reads_n, detection, gsize, rbases = gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
-                                fw, rw, per_read_tsv)
+                                fw, rw, per_read_tsv, gta_fh)
         finally:
             fw.close()
             rw.close()
             if per_read_tsv:
                 per_read_tsv.close()
+            if gta_fh is not None:
+                gta_fh.close()
         return {
             "index": idx,
             "r1": f"{tmp_prefix}_R1.fastq",
             "r2": f"{tmp_prefix}_R2.fastq",
             "source": f"{tmp_prefix}-read-sources.tsv" if args.per_read_tsv else None,
+            "gta": gta_path,
             "detection": detection,
             "genome_size": gsize,
             "reads_generated": reads_n,
@@ -758,15 +857,18 @@ def _worker_generate_file(spec):
         fw = open(f"{tmp_prefix}.fastq", "w")
         try:
             reads_n, detection, gsize, rbases = gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
-                                fw, per_read_tsv)
+                                fw, per_read_tsv, gta_fh)
         finally:
             fw.close()
             if per_read_tsv:
                 per_read_tsv.close()
+            if gta_fh is not None:
+                gta_fh.close()
         return {
             "index": idx,
             "reads": f"{tmp_prefix}.fastq",
             "source": f"{tmp_prefix}-read-sources.tsv" if args.per_read_tsv else None,
+            "gta": gta_path,
             "detection": detection,
             "genome_size": gsize,
             "reads_generated": reads_n,
@@ -812,7 +914,7 @@ def _gen_reads_parallel(args, per_file_units, id_offsets, jobs):
             })
 
         # use 'spawn' rather than the default 'fork': gen-reads can be called from
-        # multi-threaded contexts (e.g. gen-metagenome), where forking risks deadlocks
+        # multi-threaded contexts (e.g. gen-mg), where forking risks deadlocks
         # and emits a DeprecationWarning on Python 3.12+. spawn re-imports this module
         # in each worker, which is fine since the worker and its helpers are top-level.
         mp_ctx = multiprocessing.get_context("spawn")
@@ -842,6 +944,10 @@ def _gen_reads_parallel(args, per_file_units, id_offsets, jobs):
                     with open(r["source"], "r") as src:
                         shutil.copyfileobj(src, out)
 
+        if getattr(args, "ground_truth_assembly", False):
+            _concat_files([r["gta"] for r in ordered],
+                          f"{args.output_prefix}-ground-truth-assembly.fasta")
+
         # per-fasta stats keyed by input fasta, in input order (before tmp cleanup)
         stats = {
             args.input_fastas[i]: {
@@ -867,7 +973,7 @@ def compress_with_pigz(output_prefix, read_type="paired-end", quiet=False):
         try:
             subprocess.run(["pigz", "-f", reads_file], check = True)
             if not quiet:
-                print(f"\n    Compressed reads:    {reads_file}.gz\n")
+                print(f"\n    Compressed reads:       {reads_file}.gz\n")
         except FileNotFoundError:
             print("pigz not found. You're on your own for compression!")
         except subprocess.CalledProcessError as e:
@@ -883,7 +989,7 @@ def compress_with_pigz(output_prefix, read_type="paired-end", quiet=False):
             subprocess.run(["pigz", "-f", forward_reads_file], check = True)
             subprocess.run(["pigz", "-f", reverse_reads_file], check = True)
             if not quiet:
-                print(f"\n    Compressed reads:    {forward_reads_file}.gz, {reverse_reads_file}.gz")
+                print(f"\n    Compressed reads:       {forward_reads_file}.gz, {reverse_reads_file}.gz")
         except FileNotFoundError:
             print("pigz not found. You're on your own for compression!")
         except subprocess.CalledProcessError as e:
