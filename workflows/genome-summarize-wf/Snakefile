@@ -119,13 +119,13 @@ if config["is_euk"]:
             assembly_extension = config["assembly_extension"]
         resources:
             cpus = config["threads"],
-            mem_mb = config["CAT_memory_resources"]
+            mem_mb = config["CAT_memory_resources"]        
         log:
             config["logs_dir"] + "{genome_ID}-CAT.log"
         output:
             "{genome_ID}-tax.tsv"
         shell:
-            """
+            r"""
             CAT bin -b {input.genome} -p {input.AA_seqs} -d {params.cat_db} -t {params.cat_tax} -n {params.num_threads} -o {params.tmp_out_prefix} -f 0.5 -r 3 --top 4 --I_know_what_Im_doing > {log} 2>&1
 
             # adding names
@@ -291,7 +291,7 @@ rule setup_checkm2_db:
             # so will be set when the conda environment is started from now on
         mkdir -p ${{CONDA_PREFIX}}/etc/conda/activate.d/
         echo 'export CHECKM2DB={params.checkm2_db_dir}/{params.checkm2_db_filename}' >> ${{CONDA_PREFIX}}/etc/conda/activate.d/set_env_vars.sh
-
+        
         # downloading ref db (will move to where we want it next)
         checkm2 database --download > {log} 2>&1
 
