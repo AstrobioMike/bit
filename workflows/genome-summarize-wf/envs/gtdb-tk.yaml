@@ -6,3 +6,4 @@ channels:
 dependencies:
     - gtdbtk=2.4.0
     - numpy=1.23.1
+    - wget

@@ -1,6 +1,6 @@
 ###################################################################################################
 ## Snakefile for the "bit" genome summarize workflow.                                            ##
-## Version 1.0.4                                                                                 ##
+## Version 1.0.5                                                                                 ##
 ## bit: https://github.com/AstrobioMike/bit                                                      ##
 ##                                                                                               ##
 ## If you use this workflow in a publication, please consider citing :)                          ##
