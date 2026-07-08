@@ -8,59 +8,9 @@ if [ "${CONDA_DEFAULT_ENV}" != "bit-dev" ]; then
     return 1 2>/dev/null || exit 1
 fi
 
-## the below should be handled by conftest.py now
-# if coverage isn't tracking properly, i may need to set this variable to point at the .coveragerc on whatever system i am working on, e.g.:
-# export COVERAGE_PROCESS_START=/Users/michael.lee/Documents/github/bit/.coveragerc
-# if [[ -z "$COVERAGE_PROCESS_START" ]]; then
-#     conda env config vars set COVERAGE_PROCESS_START="/Users/michael.lee/Documents/github/bit/.coveragerc" --name bit-dev > /dev/null 2>&1
-#     cda bit-dev
-# fi
-
 rm -rf build/ bit.egg-info/
 
-BIN_DIR=$(dirname $(which python))
-
-# removing stale symlinks that point into bit/scripts/
-# (these conflict with pyproject.toml entry points)
-# for f in ${BIN_DIR}/*; do
-#     target=$(readlink "$f" 2>/dev/null)
-#     if [[ "$target" == *"bit/scripts"* ]]; then
-#         rm -f "$f"
-#     fi
-# done
-
 pip install --no-build-isolation -e .
-
-# printf "\n\n  Linking unported scripts to ${BIN_DIR}/ for dev...\n\n\n"
-
-# for script in bit/scripts/*; do
-#     name=$(basename "${script}")
-#     # skip if pip already created an entry point for this name
-#     if [ -f "${BIN_DIR}/${name}" ]; then
-#         continue
-#     fi
-#     ln -sf "$(realpath "${script}")" "${BIN_DIR}/${name}"
-# done
-
-# setting up tab-completion for the bit commands with subcommands
-# ARGCOMPLETE_COMMANDS=(
-#     bit
-#     bit-data
-#     bit-ez-screen
-#     bit-fasta
-#     bit-genbank
-#     bit-go
-#     bit-itol
-#     bit-kraken2
-#     bit-lineage
-#     bit-table
-# )
-
-# for cmd in "${ARGCOMPLETE_COMMANDS[@]}"; do
-#     if command -v "$cmd" >/dev/null 2>&1; then
-#         eval "$(register-python-argcomplete "$cmd")"
-#     fi
-# done
 
 if command -v register-python-argcomplete >/dev/null 2>&1; then
     eval "$(register-python-argcomplete bit)"
@@ -68,4 +18,4 @@ fi
 
 ## if changing conda versions and wanting to install locally entirely (rather than using a prior official conda install of bit)
 # conda build -c conda-forge -c bioconda conda-recipe/
-# conda create -n bit-dev --use-local bit
+# conda create -n bit-dev -c conda-forge -c bioconda --use-local bit

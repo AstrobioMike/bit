@@ -1,9 +1,9 @@
 #!/bin/bash
 set -e
 
-################################################################################################################
-### This is expected to be run after the version currently listed in setup.py is already released on github. ###
-################################################################################################################
+######################################################################################################################
+### This is expected to be run after the version currently listed in pyproject.toml is already released on github. ###
+######################################################################################################################
 
 # this script as written expects the base conda directory to be located at ~/miniconda3/
 
@@ -41,27 +41,16 @@ if [ "${CONDA_DEFAULT_ENV}" != "base" ]; then
     exit 1
 fi
 
-### getting started ###
-
-## getting current version from setup.py (now pyproject.toml)
-# version=$(grep "version" setup.py | cut -f 2 -d '=' | tr -d '",')
+program=$(grep "^name" pyproject.toml | cut -f 2 -d "=" | tr -d '" ')
 version=$(grep -w "^version" pyproject.toml | cut -f 2 -d '=' | tr -d '" ')
-## getting current build from meta.yaml
 build=$(grep -A 1 ^build ${recipe_dir}/meta.yaml | grep number | cut -f 2 -d ":" | tr -s " " "\t" | cut -f 2)
 
-
-## conda way
 conda-build -c conda-forge -c bioconda -c defaults ${recipe_dir}/
 
-program=$(grep "^name" pyproject.toml | cut -f 2 -d "=" | tr -d '" ')
-
-## converting to other platforms
 conda convert --platform linux-64 ~/miniconda3/conda-bld/osx-64/${program}-${version}-*_${build}.tar.bz2 -o ~/miniconda3/conda-bld/
 # conda convert --platform osx-arm64 ~/miniconda3/conda-bld/osx-64/${program}-${version}-*_${build}.tar.bz2 -o ~/miniconda3/conda-bld/
     # i am leaving off the new mac chip way because most of the dependencies still don't have arm64 versions
 
-
-## uploading to anaconda
 anaconda upload ~/miniconda3/conda-bld/osx-64/${program}-${version}-*_${build}.tar.bz2
 anaconda upload ~/miniconda3/conda-bld/linux-64/${program}-${version}-*_${build}.tar.bz2
 # anaconda upload ~/miniconda3/conda-bld/osx-arm64/${program}-${version}-*_${build}.tar.bz2
