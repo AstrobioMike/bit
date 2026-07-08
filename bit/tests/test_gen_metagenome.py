@@ -402,7 +402,9 @@ def _acc_file(tmp_path, content):
 
 def _mode_args(tmp_path, content, **over):
     base = dict(accessions=_acc_file(tmp_path, content), abundance_mode=None,
-                mutation_mode=None, num_genomes=None, mutation_rate=None)
+                mutation_mode=None, num_genomes=None, mutation_rate=None,
+                abundance_dist="lognormal", abundance_dist_explicit=False,
+                median_coverage=None)
     base.update(over)
     return SimpleNamespace(**base)
 
@@ -478,6 +480,41 @@ def test_resolve_bare_list_defaults(tmp_path):
     assert a.mutation_mode == "off"
 
 
+def test_resolve_single_genome_coverage_flips_to_even(tmp_path):
+    # one accession + coverage mode, dist left at default -> auto-flip to even
+    a = _mode_args(tmp_path, "accession\tcoverage\nGCF_1\t50\n")
+    CLI.resolve_input_driven_modes(a)
+    assert a.abundance_mode == "coverage"
+    assert a.abundance_dist == "even"
+    assert a.auto_even_single is True
+
+
+def test_resolve_single_genome_coverage_respects_explicit_lognormal(tmp_path):
+    # explicit --abundance-dist lognormal is not overridden
+    a = _mode_args(tmp_path, "accession\tcoverage\nGCF_1\t50\n",
+                   abundance_dist="lognormal", abundance_dist_explicit=True)
+    CLI.resolve_input_driven_modes(a)
+    assert a.abundance_dist == "lognormal"
+    assert a.auto_even_single is False
+
+
+def test_resolve_multi_genome_coverage_stays_lognormal(tmp_path):
+    # two genomes -> no flip
+    a = _mode_args(tmp_path, "accession\tcoverage\nGCF_1\t50\nGCF_2\t30\n")
+    CLI.resolve_input_driven_modes(a)
+    assert a.abundance_dist == "lognormal"
+    assert a.auto_even_single is False
+
+
+def test_resolve_single_genome_relative_no_flip(tmp_path):
+    # single accession but relative mode -> dist untouched
+    a = _mode_args(tmp_path, "GCF_1\n")
+    CLI.resolve_input_driven_modes(a)
+    assert a.abundance_mode == "relative"
+    assert a.abundance_dist == "lognormal"
+    assert a.auto_even_single is False
+
+
 # ─── preflight_checks validation gauntlet ──────────────────────────────────
 
 def _preflight_args(**over):
@@ -536,6 +573,15 @@ def test_preflight_varied_rejects_uniform_rate():
     with pytest.raises(SystemExit):
         CLI.preflight_checks(_preflight_args(mutation_mode="varied",
                                              mutation_rate=0.01))
+
+
+def test_preflight_single_genome_spread_targeted_message(tmp_path):
+    # -n 1 -c with --spread: exits, and the auto_even path is what triggered it
+    acc = tmp_path / "one.txt"; acc.write_text("GCF_1\n")
+    args = _preflight_args(num_genomes=None, accessions=str(acc),
+                           median_coverage=50, sigma=2.0)
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(args)
 
 
 @pytest.mark.parametrize("over", [
