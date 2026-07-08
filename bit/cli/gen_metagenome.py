@@ -299,6 +299,11 @@ def main():
 
     args = parser.parse_args()
 
+    # tracking whether the user explicitly set --abundance-dist before any
+    # auto-resolution flips it; used so a single-genome coverage run only flips
+    # to 'even' when the user left the dist at its default
+    args.abundance_dist_explicit = "--abundance-dist" in argv
+
     preflight_checks(args)
 
     # these are all set to None above and ultimately set here so that any
@@ -331,14 +336,33 @@ def main():
 
 
 def _resolve_seed(input_seed):
-    """ return the user's seed, or a pseudo-random one derived from the clock when
+    """
+    return the user's seed, or a pseudo-random one derived from the clock when
     unset — so a concrete seed always exists to log and reproduce the run (mirrors
-    set_seed in mutate-seqs / add-insertion). """
+    set_seed in mutate-seqs / add-insertion)
+    """
     if input_seed is not None:
         return int(input_seed)
     import datetime
     now = datetime.datetime.now()
     return now.hour * 10000 + now.minute * 100 + now.second
+
+
+def _count_accessions(path):
+    """
+    number of accession rows in the input file (0 if none/unreadable); handles
+    both a bare one-per-line list and a tsv with an 'accession' header (which is
+    not counted)
+    """
+    if not path:
+        return 0
+    try:
+        lines = [ln.strip() for ln in open(path) if ln.strip()]
+    except OSError:
+        return 0
+    if lines and "accession" in lines[0].lower():
+        return len(lines) - 1   # drop header row
+    return len(lines)
 
 
 def _inspect_accession_columns(path):
@@ -458,6 +482,20 @@ def resolve_input_driven_modes(args):
     if args.mutation_mode is None:
         args.mutation_mode = "off"
 
+    # ---- single-genome coverage runs -> even distribution ----
+    # with exactly one genome in coverage mode, 'lognormal' --abundance-dist would apply 
+    # a random multiplier to the single coverage the user asked for. Setting 'even' so
+    # that genome gets exactly --median-coverage, unless the user explicitly chose
+    # a dist. The auto_even_single flag lets preflight_checks give a clearer message if
+    # --spread was also supplied (since the user never typed `even` themselves)
+    args.auto_even_single = False
+    total_genomes = (args.num_genomes or 0) + _count_accessions(args.accessions)
+    if (total_genomes == 1 and args.abundance_mode == "coverage"
+            and not getattr(args, "abundance_dist_explicit", False)
+            and args.abundance_dist != "even"):
+        args.abundance_dist = "even"
+        args.auto_even_single = True
+
 
 def preflight_checks(args):
 
@@ -482,8 +520,17 @@ def preflight_checks(args):
         notify_premature_exit()
 
     if args.sigma and args.abundance_dist == "even":
-        report_message("Parameter `--spread` is incompatible with `--abundance-dist even`.",
-                       initial_indent="    ", subsequent_indent="    ")
+        # a single-genome coverage run auto-flips the dist to 'even' (unless explicitly set), 
+        # so the generic "spread incompatible with even" message would be
+        # confusing here; giving a clearer one instead
+        if getattr(args, "auto_even_single", False):
+            report_message("Parameter `--spread` has no effect on a single-genome coverage run "
+                           "(the lone genome is given exactly `--median-coverage`, so the "
+                           "distribution is set to 'even'). Drop `--spread` to proceed.",
+                           initial_indent="    ", subsequent_indent="    ")
+        else:
+            report_message("Parameter `--spread` is incompatible with `--abundance-dist even`.",
+                           initial_indent="    ", subsequent_indent="    ")
         notify_premature_exit()
 
     if args.mutation_mode == "off" and (args.mutation_rate or args.mutation_rate_min

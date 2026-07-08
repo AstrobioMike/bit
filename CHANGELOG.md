@@ -14,6 +14,14 @@
 
 -->
 
+## v2.8.1 (NOT YET RELEASED)
+
+### Changed 
+- `bit gen-mg`
+  - if generating for only one genome AND specifying a `--median-coverage|-c` value, `--abundance-dist even` is now automatically set so the individual genome gets the specified coverage
+
+---
+
 ## v2.8.0 (3-Jul-2026)
 
 ### Added 
