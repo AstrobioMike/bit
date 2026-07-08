@@ -21,3 +21,13 @@ bit = ["tests/data/*", "smk/*.smk", "smk/envs/*"]
 
 [project.scripts]
 bit = "bit.cli.bit:main"
+
+[tool.pytest.ini_options]
+testpaths = ["bit/tests"]
+addopts = [
+    "--cov",
+    "--cov-context=test",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+    "--cov-config=.coveragerc",
+]
