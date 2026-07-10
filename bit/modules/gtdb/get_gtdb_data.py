@@ -3,7 +3,6 @@ import os
 import socket
 import shutil
 import tarfile
-import time
 import pandas as pd # type: ignore
 import urllib
 import urllib.error
@@ -113,38 +112,6 @@ def report_gtdb_unreachable(err):
     sys.exit(1)
 
 
-def _download_with_retries(url, label, dest, quiet=False,
-                           attempts=4, retry_wait=3):
-    """
-    download `url` to `dest`, retrying up to `attempts` times on transient
-    failures (timeouts, connection resets, SSL handshake stalls, transient 5xx),
-    with a short wait between tries. A 404 is not retried -- it's raised
-    immediately so the caller can treat a missing asset distinctly. Raises the
-    last error if all attempts fail.
-    """
-    last_err = None
-    for attempt in range(1, attempts + 1):
-        try:
-            download_with_tqdm(url, label, dest)
-            return
-        except urllib.error.HTTPError as err:
-            if err.code == 404:
-                raise          # missing asset -> not transient, don't retry
-            last_err = err     # transient 5xx etc. -> retry
-        except (urllib.error.URLError, socket.timeout, TimeoutError,
-                ConnectionError, OSError) as err:
-            last_err = err     # timeout / reset / SSL stall -> retry
-
-        if attempt < attempts:
-            if not quiet:
-                wprint(color_text(
-                    f"    download failed (attempt {attempt}/{attempts}); retrying...",
-                    "yellow"))
-            time.sleep(retry_wait)
-
-    raise last_err
-
-
 def get_slim_gtdb_tab(location, quiet=False):
     """
     fast default path: download bit's pre-slimmed GTDB tarball and extract its
@@ -170,9 +137,7 @@ def get_slim_gtdb_tab(location, quiet=False):
     default_timeout = socket.getdefaulttimeout()
     socket.setdefaulttimeout(30)
     try:
-        _download_with_retries(
-            GTDB_SLIM_TARBALL_URL, "        GTDB prepared data", tarball_path,
-            quiet=quiet)
+        download_with_tqdm(GTDB_SLIM_TARBALL_URL, "        GTDB prepared data", tarball_path, speed_gate=True)
 
         # a truncated/corrupt download fails here (full-stream read via
         # getmembers), which trips the fallback below rather than writing a

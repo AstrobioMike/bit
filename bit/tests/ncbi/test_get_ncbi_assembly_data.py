@@ -47,7 +47,7 @@ def _write_ncbi_summary(path, accs):
         "\n".join(_ncbi_row(a) for a in accs) + "\n")
 
 
-def _mock_ncbi_download(link, label, dest):
+def _mock_ncbi_download(link, label, dest, **kwargs):
     """download_with_tqdm side effect writing fake NCBI-format summaries."""
     if "genbank" in link:
         _write_ncbi_summary(dest, ["GCA_000001.1", "GCA_000002.1"])
@@ -73,7 +73,7 @@ def _build_tarball(path, *, include_table=True, include_date=True,
 
 
 def _mock_tarball_download(src):
-    def _dl(url, label, dest):
+    def _dl(url, label, dest, **kwargs):
         import shutil
         shutil.copy(src, dest)
         return dest
@@ -193,11 +193,10 @@ def test_slim_path_no_url_falls_back_to_rebuild(tmp_path):
 
 
 def test_slim_path_download_error_falls_back(tmp_path):
-    def boom(url, label, dest):
+    def boom(url, label, dest, **kwargs):
         raise ConnectionError("server down")
     with patch.object(mod, "NCBI_ASSEMBLY_TARBALL_URL", "https://example.test/x.tar.gz"), \
          patch("bit.modules.ncbi.get_ncbi_assembly_data.download_with_tqdm", side_effect=boom), \
-         patch("bit.modules.ncbi.get_ncbi_assembly_data.time.sleep"), \
          patch("bit.modules.ncbi.get_ncbi_assembly_data.download_ncbi_assembly_summary_data") as mock_rb:
         get_slim_ncbi_assembly_data(str(tmp_path), quiet=True)
     mock_rb.assert_called_once_with(str(tmp_path))
@@ -213,25 +212,6 @@ def test_slim_path_missing_file_in_archive_falls_back(tmp_path):
          patch("bit.modules.ncbi.get_ncbi_assembly_data.download_ncbi_assembly_summary_data") as mock_rb:
         get_slim_ncbi_assembly_data(str(tmp_path), quiet=True)
     mock_rb.assert_called_once_with(str(tmp_path))
-
-
-def test_slim_path_retries_then_succeeds(tmp_path):
-    src = tmp_path / "src.tar.gz"
-    _build_tarball(src)
-    import shutil
-    seen = {"n": 0}
-    def flaky(url, label, dest):
-        if seen["n"] < 2:
-            seen["n"] += 1
-            raise __import__("socket").timeout("stall")
-        shutil.copy(src, dest)
-    with patch.object(mod, "NCBI_ASSEMBLY_TARBALL_URL", "https://example.test/x.tar.gz"), \
-         patch("bit.modules.ncbi.get_ncbi_assembly_data.download_with_tqdm", side_effect=flaky), \
-         patch("bit.modules.ncbi.get_ncbi_assembly_data.time.sleep"), \
-         patch("bit.modules.ncbi.get_ncbi_assembly_data.download_ncbi_assembly_summary_data") as mock_rb:
-        get_slim_ncbi_assembly_data(str(tmp_path), quiet=True)
-    mock_rb.assert_not_called()
-    assert (tmp_path / "ncbi-assembly-info.tsv").exists()
 
 
 ################################################################################

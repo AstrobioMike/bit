@@ -1,13 +1,17 @@
 import os
 import sys
 import gzip
+import socket
+import urllib.error
 from unittest import mock
 import pytest # type: ignore
+import bit.modules.general as general_mod
 from bit.modules.general import (tee, report_failure, color_text, wprint,
                                  report_message, check_files_are_found,
                                  check_if_output_dir_exists, notify_premature_exit,
                                  is_gzipped, sniff_delimiter, colnames,
-                                 log_command_run, report_version)
+                                 log_command_run, report_version,
+                                 download_with_tqdm, _TooSlow)
 
 
 def test_tee_removes_ansi_and_logs(tmp_path):
@@ -265,3 +269,131 @@ def test_report_failure_output_and_exit(capsys):
 
     assert "Test error message" in captured.out
     assert "Exiting for now :(" in captured.out
+
+
+################################################################################
+# download_with_tqdm (retries + speed-gate now live inside this function)
+################################################################################
+
+def _fake_stream(fail_times, exc=None, dest_content=b"ok"):
+    """
+    _stream_once side effect: raise `exc` on the first `fail_times` calls, then
+    "download" by writing dest_content to `filename`. fail_times=None fails every
+    call. Signature mirrors _stream_once(url, filename, desc, total, leave,
+    floor_bytes_per_s, probe_seconds).
+    """
+    if exc is None:
+        exc = socket.timeout("handshake timed out")
+    seen = {"count": 0}
+
+    def _stream(url, filename, desc, total, leave, floor_bytes_per_s, probe_seconds):
+        if fail_times is None or seen["count"] < fail_times:
+            seen["count"] += 1
+            raise exc
+        with open(filename, "wb") as out:
+            out.write(dest_content)
+    return _stream
+
+
+def test_download_with_tqdm_returns_path_on_success(tmp_path):
+    """A clean download returns the destination path (callers feed it to pandas)."""
+    dest = str(tmp_path / "out.bin")
+    with mock.patch.object(general_mod, "_stream_once",
+                           side_effect=_fake_stream(fail_times=0)), \
+         mock.patch("bit.modules.general.urllib.request.urlopen"):
+        result = download_with_tqdm("https://example.test/x", "label", dest)
+    assert result == dest
+    assert os.path.exists(dest)
+
+
+def test_download_with_tqdm_urlopen_returns_response():
+    """urlopen=True short-circuits and returns the response object."""
+    sentinel = object()
+    with mock.patch("bit.modules.general.urllib.request.urlopen",
+                    return_value=sentinel), \
+         mock.patch("bit.modules.general.urllib.request.build_opener"), \
+         mock.patch("bit.modules.general.urllib.request.install_opener"):
+        result = download_with_tqdm("https://example.test/x", "label",
+                                    urlopen=True)
+    assert result is sentinel
+
+
+def test_download_with_tqdm_retries_then_succeeds(tmp_path):
+    """A transient failure is retried the expected number of times, sleeping
+    between attempts, then succeeds and returns the path."""
+    dest = str(tmp_path / "out.bin")
+    with mock.patch.object(general_mod, "_stream_once",
+                           side_effect=_fake_stream(fail_times=2)), \
+         mock.patch("bit.modules.general.urllib.request.urlopen"), \
+         mock.patch("bit.modules.general.time.sleep") as mock_sleep:
+        result = download_with_tqdm("https://example.test/x", "label", dest)
+    assert result == dest
+    assert mock_sleep.call_count == 2   # slept between the 2 failures, not after success
+
+
+def test_download_with_tqdm_does_not_retry_404(tmp_path):
+    """A 404 is not transient and must not be retried; it raises at once and
+    sleep is never called."""
+    dest = str(tmp_path / "out.bin")
+    err = urllib.error.HTTPError("https://example.test/x", 404, "Not Found",
+                                 hdrs=None, fp=None)
+    with mock.patch.object(general_mod, "_stream_once",
+                           side_effect=_fake_stream(fail_times=None, exc=err)), \
+         mock.patch("bit.modules.general.urllib.request.urlopen"), \
+         mock.patch("bit.modules.general.time.sleep") as mock_sleep:
+        with pytest.raises(urllib.error.HTTPError):
+            download_with_tqdm("https://example.test/x", "label", dest,
+                               attempts=4)
+    mock_sleep.assert_not_called()
+
+
+def test_download_with_tqdm_exhausts_retries_and_raises(tmp_path):
+    """When every attempt fails transiently, the last error propagates after
+    exhausting the attempts budget."""
+    dest = str(tmp_path / "out.bin")
+    with mock.patch.object(general_mod, "_stream_once",
+                           side_effect=_fake_stream(fail_times=None)), \
+         mock.patch("bit.modules.general.urllib.request.urlopen"), \
+         mock.patch("bit.modules.general.time.sleep"):
+        with pytest.raises(socket.timeout):
+            download_with_tqdm("https://example.test/x", "label", dest,
+                               attempts=3)
+
+
+def test_download_with_tqdm_no_retries_is_single_shot(tmp_path):
+    """retries=False collapses to a single attempt: a transient error is raised
+    immediately without sleeping."""
+    dest = str(tmp_path / "out.bin")
+    with mock.patch.object(general_mod, "_stream_once",
+                           side_effect=_fake_stream(fail_times=None)), \
+         mock.patch("bit.modules.general.urllib.request.urlopen"), \
+         mock.patch("bit.modules.general.time.sleep") as mock_sleep:
+        with pytest.raises(socket.timeout):
+            download_with_tqdm("https://example.test/x", "label", dest,
+                               retries=False)
+    mock_sleep.assert_not_called()
+
+
+def test_download_with_tqdm_speed_gate_rerolls_then_completes(tmp_path):
+    """With speed_gate on, a _TooSlow on a non-final attempt rerolls (no sleep)
+    and a subsequent good attempt completes."""
+    dest = str(tmp_path / "out.bin")
+    calls = {"n": 0}
+
+    def _stream(url, filename, desc, total, leave, floor_bytes_per_s, probe_seconds):
+        calls["n"] += 1
+        if calls["n"] == 1:
+            # first attempt is gated (floor enforced) and judged too slow
+            assert floor_bytes_per_s > 0
+            raise _TooSlow(0.5)
+        with open(filename, "wb") as out:
+            out.write(b"ok")
+
+    with mock.patch.object(general_mod, "_stream_once", side_effect=_stream), \
+         mock.patch("bit.modules.general.urllib.request.urlopen"), \
+         mock.patch("bit.modules.general.time.sleep") as mock_sleep:
+        result = download_with_tqdm("https://example.test/x", "label", dest,
+                                    speed_gate=True)
+    assert result == dest
+    assert calls["n"] == 2
+    mock_sleep.assert_not_called()   # slow-route reroll waits no time

@@ -3,7 +3,6 @@ import os
 import socket
 import shutil
 import tarfile
-import time
 import urllib
 import urllib.error
 from datetime import date
@@ -65,37 +64,6 @@ def check_if_data_present(location):
     return True
 
 
-def _download_with_retries(url, label, dest, quiet=False,
-                           attempts=4, retry_wait=3):
-    """
-    download `url` to `dest`, retrying up to `attempts` times on transient
-    failures (timeouts, connection resets, SSL handshake stalls, transient 5xx),
-    with a short wait between tries. A 404 is raised immediately (not retried).
-    Raises the last error if all attempts fail.
-    """
-    last_err = None
-    for attempt in range(1, attempts + 1):
-        try:
-            download_with_tqdm(url, label, dest)
-            return
-        except urllib.error.HTTPError as err:
-            if err.code == 404:
-                raise
-            last_err = err
-        except (urllib.error.URLError, socket.timeout, TimeoutError,
-                ConnectionError, OSError) as err:
-            last_err = err
-
-        if attempt < attempts:
-            if not quiet:
-                wprint(color_text(
-                    f"    download failed (attempt {attempt}/{attempts}); retrying...",
-                    "yellow"))
-            time.sleep(retry_wait)
-
-    raise last_err
-
-
 def get_slim_ncbi_assembly_data(location, quiet=False):
     """
     fast default path: download bit's pre-built slim NCBI assembly-info tarball
@@ -120,9 +88,7 @@ def get_slim_ncbi_assembly_data(location, quiet=False):
     default_timeout = socket.getdefaulttimeout()
     socket.setdefaulttimeout(30)
     try:
-        _download_with_retries(
-            NCBI_ASSEMBLY_TARBALL_URL, "        NCBI prepared data", tarball_path,
-            quiet=quiet)
+        download_with_tqdm(NCBI_ASSEMBLY_TARBALL_URL, "        NCBI prepared data", tarball_path, speed_gate=True)
 
         # a truncated/corrupt download fails here (full-stream read via
         # getmembers), tripping the fallback below rather than writing a corrupt
