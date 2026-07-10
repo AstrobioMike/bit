@@ -247,30 +247,45 @@ def _stream_once(url, filename, desc, total, leave, floor_bytes_per_s,
     start = time.monotonic()
     probed = False
     req = urllib.request.Request(url, headers={'User-Agent': 'curl/8.0'})
-    with urllib.request.urlopen(req, timeout=connect_timeout) as resp, open(filename, "wb") as out, \
-         tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1,
-              desc=desc, ncols=90, leave=leave, total=total) as bar:
-        downloaded = 0
-        while True:
-            buf = resp.read(chunk)
-            if not buf:
-                break
-            out.write(buf)
-            downloaded += len(buf)
-            if total is not None:
-                bar.update(min(downloaded, total) - bar.n)
-            else:
-                bar.update(len(buf))
-            if floor_bytes_per_s > 0 and not probed:
-                elapsed = time.monotonic() - start
-                if elapsed >= probe_seconds:
-                    probed = True
-                    rate = downloaded / elapsed if elapsed > 0 else 0.0
-                    if rate < floor_bytes_per_s:
-                        bar.close()
-                        raise _TooSlow(rate / (1024 * 1024))
-        if total is not None and bar.n < total:
-            bar.update(total - bar.n)
+    # Write to a temp file alongside the destination and atomically rename into
+    # place only on a fully successful read, so an interrupted download (network
+    # drop, Ctrl-C, _TooSlow on the final attempt, process kill) never leaves a
+    # truncated file at `filename` that a later "does it exist" check would
+    # mistake for a complete download.
+    tmp = f"{filename}.part"
+    try:
+        with urllib.request.urlopen(req, timeout=connect_timeout) as resp, open(tmp, "wb") as out, \
+             tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1,
+                  desc=desc, ncols=90, leave=leave, total=total) as bar:
+            downloaded = 0
+            while True:
+                buf = resp.read(chunk)
+                if not buf:
+                    break
+                out.write(buf)
+                downloaded += len(buf)
+                if total is not None:
+                    bar.update(min(downloaded, total) - bar.n)
+                else:
+                    bar.update(len(buf))
+                if floor_bytes_per_s > 0 and not probed:
+                    elapsed = time.monotonic() - start
+                    if elapsed >= probe_seconds:
+                        probed = True
+                        rate = downloaded / elapsed if elapsed > 0 else 0.0
+                        if rate < floor_bytes_per_s:
+                            bar.close()
+                            raise _TooSlow(rate / (1024 * 1024))
+            if total is not None and bar.n < total:
+                bar.update(total - bar.n)
+        os.replace(tmp, filename)
+    except BaseException:
+        # BaseException so Ctrl-C (KeyboardInterrupt) also cleans up the partial
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def attempt_to_make_dir(dir_path):

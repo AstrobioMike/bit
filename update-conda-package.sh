@@ -45,7 +45,7 @@ program=$(grep "^name" pyproject.toml | cut -f 2 -d "=" | tr -d '" ')
 version=$(grep -w "^version" pyproject.toml | cut -f 2 -d '=' | tr -d '" ')
 build=$(grep -A 1 ^build ${recipe_dir}/meta.yaml | grep number | cut -f 2 -d ":" | tr -s " " "\t" | cut -f 2)
 
-conda-build -c conda-forge -c bioconda -c defaults ${recipe_dir}/
+conda-build -c conda-forge -c bioconda ${recipe_dir}/
 
 conda convert --platform linux-64 ~/miniconda3/conda-bld/osx-64/${program}-${version}-*_${build}.tar.bz2 -o ~/miniconda3/conda-bld/
 # conda convert --platform osx-arm64 ~/miniconda3/conda-bld/osx-64/${program}-${version}-*_${build}.tar.bz2 -o ~/miniconda3/conda-bld/
