@@ -544,3 +544,90 @@ def test_download_with_tqdm_speed_gate_reroll_then_final_completes(tmp_path):
             speed_gate=True, min_mbps=10.0)
     assert result == dest
     assert Path(dest).read_bytes() == payload
+
+
+################################################################################
+# _stream_once atomic-write guarantee (real streaming loop)
+################################################################################
+# An interrupted download must not leave a truncated file at the destination
+# (which a later "does it exist" gate would trust) nor a stray .part alongside
+# it. These drive the real _stream_once so a regression to a direct
+# open(filename, "wb") write would fail them.
+
+class _FailingResponse:
+    """Fake urlopen response that yields some bytes then raises mid-stream."""
+    def __init__(self, payload: bytes, fail_after: int, exc):
+        self._buf = io.BytesIO(payload)
+        self._fail_after = fail_after
+        self._exc = exc
+        self._reads = 0
+        self.headers = {"Content-Length": str(len(payload) + 1_000_000)}
+
+    def read(self, n=-1):
+        self._reads += 1
+        if self._reads > self._fail_after:
+            raise self._exc
+        return self._buf.read(1024)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        self._buf.close()
+        return False
+
+
+def test_stream_once_interrupted_leaves_no_file_or_part(tmp_path):
+    """A mid-stream network error leaves neither the destination nor its .part."""
+    payload = os.urandom(8 * 1024)
+    dest = str(tmp_path / "out.bin")
+
+    def _fake(url_or_req, *a, **k):
+        return _FailingResponse(payload, fail_after=2,
+                                exc=ConnectionResetError("mid-stream boom"))
+
+    with mock.patch("bit.modules.general.urllib.request.urlopen", _fake):
+        with pytest.raises(ConnectionResetError):
+            _stream_once("https://example.test/x", dest, "label",
+                         total=None, leave=False,
+                         floor_bytes_per_s=0.0, probe_seconds=5.0)
+
+    assert not Path(dest).exists()            # no truncated file left to be trusted
+    assert not Path(dest + ".part").exists()  # temp cleaned up
+
+
+def test_stream_once_too_slow_leaves_no_file_or_part(tmp_path):
+    """A _TooSlow abort from inside the real loop also leaves nothing behind."""
+    payload = os.urandom(40_000)
+    dest = str(tmp_path / "out.bin")
+    with mock.patch("bit.modules.general.urllib.request.urlopen",
+                    _patch_urlopen(payload, known_length=True,
+                                   per_read_delay=0.05, max_read=1024)):
+        with pytest.raises(_TooSlow):
+            _stream_once("https://example.test/x", dest, "label",
+                         total=len(payload), leave=False,
+                         floor_bytes_per_s=10 * 1024 * 1024, probe_seconds=0.05)
+
+    assert not Path(dest).exists()
+    assert not Path(dest + ".part").exists()
+
+
+def test_download_with_tqdm_all_attempts_fail_leaves_no_file_or_part(tmp_path):
+    """End-to-end: every attempt fails transiently -> the destination is clean
+    (no truncated file, no .part) so the next run won't trust a partial."""
+    payload = os.urandom(8 * 1024)
+    dest = str(tmp_path / "out.bin")
+
+    def _fake(url_or_req, *a, **k):
+        # size probe reads headers only; stream attempts fail mid-body
+        return _FailingResponse(payload, fail_after=2,
+                                exc=ConnectionResetError("boom"))
+
+    with mock.patch("bit.modules.general.urllib.request.urlopen", _fake), \
+         mock.patch("bit.modules.general.time.sleep"):
+        with pytest.raises(ConnectionResetError):
+            download_with_tqdm("https://example.test/x", "label", dest,
+                               leave=False, attempts=3)
+
+    assert not Path(dest).exists()
+    assert not Path(dest + ".part").exists()
