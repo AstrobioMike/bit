@@ -14,7 +14,7 @@
 
 -->
 
-## v2.8.1 (NOT YET RELEASED)
+## v2.8.1 (10-Jul-2026)
 
 ### Added
 - robustness improvements to all downloads
