@@ -189,7 +189,7 @@ def download_with_tqdm(url, target, filename=None, urlopen=False, leave=True,
             # performance failure: reroll immediately, no wait
             last_err = e
             report_message(
-                f"that was a slow route, trying to get a faster one... (try {attempt}/{attempts - 1})",
+                f"that was a slow route (try {attempt}/{attempts - 1}), trying to get a faster one...",
                 "yellow", initial_indent="          ", subsequent_indent="          ",
                 width=90)
             print()
