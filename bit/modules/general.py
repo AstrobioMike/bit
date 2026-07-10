@@ -130,10 +130,14 @@ class _TooSlow(Exception):
 
 def download_with_tqdm(url, target, filename=None, urlopen=False, leave=True,
                        retries=True, attempts=6, retry_wait=3,
-                       speed_gate=False, min_mbps=2.0, probe_seconds=5.0):
+                       speed_gate=False, min_mbps=2.0, probe_seconds=5.0,
+                       probe_timeout=30):
     """
     Download `url` to `filename`, showing a tqdm progress bar, with optional
-    transient-error retries and optional speed-gated route rerolling
+    transient-error retries and optional speed-gated route rerolling. Both are
+    handled by a single unified attempt loop sharing one `attempts` budget.
+
+    `target` is the tqdm bar label (desc); `filename` is the destination path.
 
     retries=True (default): transient failures (timeouts, connection resets,
     transient HTTP/URL errors) are retried up to `attempts` times, waiting
@@ -149,6 +153,9 @@ def download_with_tqdm(url, target, filename=None, urlopen=False, leave=True,
     accepts whatever speed it gets and runs to completion, so a persistently
     slow network still succeeds.
 
+    On success returns the downloaded path (so callers can hand it straight to
+    pandas etc.). `urlopen=True` short-circuits and returns the response object.
+
     Raises the last underlying error if every attempt fails.
     """
     if urlopen:
@@ -162,10 +169,12 @@ def download_with_tqdm(url, target, filename=None, urlopen=False, leave=True,
         attempts = 1
 
     # resolve total size up front so the bar is bounded/persistent (a plain GET
-    # carries Content-Length through GitHub's redirect more reliably than HEAD)
+    # carries Content-Length through GitHub's redirect more reliably than HEAD).
+    # Bounded by probe_timeout so a stalled connection fails fast here rather
+    # than hanging before the retry loop can even begin.
     total = None
     try:
-        with urllib.request.urlopen(url) as r:
+        with urllib.request.urlopen(url, timeout=probe_timeout) as r:
             cl = r.headers.get("Content-Length")
             total = int(cl) if cl else None
     except Exception:
@@ -180,7 +189,8 @@ def download_with_tqdm(url, target, filename=None, urlopen=False, leave=True,
         floor = 0.0 if is_final else floor_bytes_per_s
 
         try:
-            _stream_once(url, filename, target, total, leave, floor, probe_seconds)
+            _stream_once(url, filename, target, total, leave, floor,
+                         probe_seconds, connect_timeout=probe_timeout)
             if leave:
                 sys.stderr.write("\n")
             return filename
@@ -224,17 +234,20 @@ def download_with_tqdm(url, target, filename=None, urlopen=False, leave=True,
         raise last_err
 
 
-def _stream_once(url, filename, desc, total, leave, floor_bytes_per_s, probe_seconds):
+def _stream_once(url, filename, desc, total, leave, floor_bytes_per_s,
+                 probe_seconds, connect_timeout=30):
     """
     Stream url->filename with a tqdm bar. If floor_bytes_per_s > 0, measure
     throughput over the first `probe_seconds` and raise _TooSlow if under floor.
-    Network/HTTP errors propagate to the caller's attempt loop.
+    `connect_timeout` bounds the connect/read so a stalled server surfaces as a
+    transient error rather than hanging. Network/HTTP errors propagate to the
+    caller's attempt loop.
     """
     chunk = 1024 * 256  # 256 KB reads
     start = time.monotonic()
     probed = False
     req = urllib.request.Request(url, headers={'User-Agent': 'curl/8.0'})
-    with urllib.request.urlopen(req) as resp, open(filename, "wb") as out, \
+    with urllib.request.urlopen(req, timeout=connect_timeout) as resp, open(filename, "wb") as out, \
          tqdm(unit='B', unit_scale=True, unit_divisor=1024, miniters=1,
               desc=desc, ncols=90, leave=leave, total=total) as bar:
         downloaded = 0
@@ -327,7 +340,7 @@ def report_version():
 
 
 @contextmanager
-def spinner(in_progress_msg, complete_msg, indent="    "):
+def spinner(in_progress_msg, complete_msg, indent="    "): # pragma: no cover
     """Show a spinner while a block runs; report elapsed time only if >= 60 s."""
     done = threading.Event()
     elapsed = [0.0]
@@ -359,7 +372,7 @@ def spinner(in_progress_msg, complete_msg, indent="    "):
         t.join()
 
 
-def check_bam_file_is_indexed(bam_file):
+def check_bam_file_is_indexed(bam_file): # pragma: no cover
 
     header_result = subprocess.run(
         ["samtools", "view", "-H", bam_file],
