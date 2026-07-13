@@ -14,6 +14,17 @@
 
 -->
 
+## v2.9.0 (NOT YET RELEASED)
+
+### Added
+- 
+
+### Changed 
+- mostly internal changes
+  - gtdb and ncbi data tables are stored as parquets now (smaller/faster downloads, less user storage needed)
+
+---
+
 ## v2.8.1 (10-Jul-2026)
 
 ### Added
