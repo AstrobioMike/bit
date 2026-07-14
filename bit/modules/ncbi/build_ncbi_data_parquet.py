@@ -1,15 +1,18 @@
 """
 Build the slim NCBI assembly-info table WITH full 7-rank lineages, as a single
-sorted, zstd-compressed Parquet file.
+sorted, compressed Parquet file.
 
-This runs on a GitHub Actions runner (see .github/workflows/refresh-ncbi-assembly-info.yaml),
-NOT on user machines. The taxid -> lineage join is done here, once, at build
-time, against the taxdump that was live at the same time the assembly summaries
-were pulled. That keeps accession <-> taxid <-> lineage internally.
+This runs on a GitHub Actions runner, not on user machines.
+
+Output: ncbi-data.parquet
+  assembly_accession, taxid, organism_name, infraspecific_name, version_status,
+  assembly_level, asm_name, ftp_path,
+  domain, phylum, class, order, family, genus, species,
+  domain_taxid, ... , species_taxid
 
 The table is sorted by lineage before writing so that (a) Parquet row-group
 statistics allow whole-row-group skipping on rank predicates, and (b) the
-dictionary-encoded lineage columns compress even better (identical values become
+dictionary-encoded lineage columns compress far better (identical values become
 contiguous).
 """
 
@@ -19,9 +22,13 @@ import os
 import sys
 import tarfile
 import urllib.request
+
 import pyarrow as pa # type: ignore
 import pyarrow.parquet as pq # type: ignore
-from bit.modules.taxonomy.tax_ranks import RANKS, NA, LINEAGE_NAME_COLUMNS, LINEAGE_TAXID_COLUMNS
+
+from bit.modules.taxonomy.tax_ranks import (RANKS, NA, accession_core,
+                                            LINEAGE_NAME_COLUMNS,
+                                            LINEAGE_TAXID_COLUMNS)
 
 
 GENBANK_URL = "https://ftp.ncbi.nlm.nih.gov/genomes/genbank/assembly_summary_genbank.txt"
@@ -29,7 +36,6 @@ REFSEQ_URL = "https://ftp.ncbi.nlm.nih.gov/genomes/refseq/assembly_summary_refse
 TAXDUMP_URL = "https://ftp.ncbi.nih.gov/pub/taxonomy/taxdump.tar.gz"
 CHECKM_URL = "https://ftp.ncbi.nlm.nih.gov/genomes/ASSEMBLY_REPORTS/CheckM_report_prokaryotes.txt"
 
-# columns taken from NCBI's assembly_summary_*.txt, in output order
 ASSEMBLY_COLUMNS = [
     "assembly_accession",
     "taxid",
@@ -45,7 +51,6 @@ ASSEMBLY_COLUMNS = [
     "contig_count",
 ]
 
-# joined from NCBI's bulk CheckM report (see CHECKM_URL). NOT in assembly_summary.
 CHECKM_COLUMNS = ["checkm_completeness", "checkm_contamination"]
 
 RANK_ALIASES = {
@@ -66,6 +71,8 @@ PARQUET_FILENAME = "ncbi-data.parquet"
 DATE_FILENAME = "date-retrieved.txt"
 
 _NCBI_HEADER_LEAD = "#assembly_accession"
+
+_EXCLUDED_VERSION_STATUS = {"suppressed", "replaced"}
 
 
 # ---------------------------------------------------------------------------
@@ -119,9 +126,11 @@ def resolve_lineage(taxid, nodes, names):
     """
     Walk the parent chain from `taxid` to the root, collecting the 7 standard
     ranks. Returns (names_tuple, taxids_tuple), each length 7, coarse -> fine,
-    with "NA" filled for any rank absent from the lineage
+    with "NA" filled for any rank absent from the lineage (very common in NCBI:
+    candidate phyla, unclassified/environmental clades, etc.).
 
-    Unknown taxids resolve to all-NA
+    Unknown/dangling taxids resolve to all-NA rather than raising, so one bad
+    row can never fail the whole build.
     """
     found_names = {r: NA for r in RANKS}
     found_taxids = {r: NA for r in RANKS}
@@ -130,16 +139,17 @@ def resolve_lineage(taxid, nodes, names):
     current = str(taxid).strip()
 
     while current and current not in seen and current in nodes:
-        seen.add(current)
+        seen.add(current)  # cycle guard; taxdump shouldn't have any, but be safe
         parent, rank = nodes[current]
 
         slot = RANK_ALIASES.get(rank)
-
+        # first (deepest) occurrence of a rank wins; walking upward means we
+        # would otherwise overwrite species with a parent that shares a rank
         if slot is not None and found_taxids[slot] == NA:
             found_taxids[slot] = current
             found_names[slot] = names.get(current, NA)
 
-        if current == parent:
+        if current == parent:      # root (taxid 1 is its own parent)
             break
         current = parent
 
@@ -150,6 +160,7 @@ def resolve_lineage(taxid, nodes, names):
 
 
 def resolve_lineages_for(taxids, nodes, names):
+    """{taxid: (names_tuple, taxids_tuple)} for an iterable of unique taxids."""
     return {t: resolve_lineage(t, nodes, names) for t in taxids}
 
 
@@ -198,7 +209,8 @@ def iter_assembly_rows(path, keep_columns=None):
                         raise ValueError(
                             f"{path} is missing expected column(s): {', '.join(missing)}")
                     idx = [header.index(c) for c in keep_columns]
-                    max_needed = max(idx)
+                    vs_i = header.index("version_status") if "version_status" in header else None
+                    max_needed = max(idx + ([vs_i] if vs_i is not None else []))
                     continue
                 raise ValueError(f"no header found in {path} before data rows")
 
@@ -208,6 +220,9 @@ def iter_assembly_rows(path, keep_columns=None):
             fields = s.split("\t")
             if len(fields) <= max_needed:
                 continue
+            if vs_i is not None and fields[vs_i].strip().lower() in _EXCLUDED_VERSION_STATUS:
+                continue
+
             yield [fields[i] for i in idx]
 
         if header is None:
@@ -218,10 +233,10 @@ def iter_assembly_rows(path, keep_columns=None):
 # CheckM report
 # ---------------------------------------------------------------------------
 
-# accepted values for column names
-_CHECKM_ACC_KEYS = ("genbank_accession", "refseq_accession")
-_CHECKM_COMP_KEYS = ("checkm_completeness")
-_CHECKM_CONT_KEYS = ("checkm_contamination")
+_CHECKM_ACC_KEYS = ("genbank_accession", "refseq_accession", "assembly_accession",
+                    "accession")
+_CHECKM_COMP_KEYS = ("checkm_completeness", "completeness")
+_CHECKM_CONT_KEYS = ("checkm_contamination", "contamination")
 
 
 def _norm_header_name(name):
@@ -253,19 +268,6 @@ def _find_all_cols(header, candidates):
 
 
 def parse_checkm_report(path):
-    """
-    NCBI's CheckM_report_prokaryotes.txt -> {assembly_core: (completeness, contamination)}
-
-    Keyed on the numeric assembly core so it matches whether the report uses a
-    GCA_ or GCF_ accession, and regardless of version suffix.
-
-    Both the genbank- AND refseq-accession columns are indexed. They share a numeric
-    core, so they collapse to the same key -- but indexing both means a row where one
-    of them is 'na' still resolves.
-
-    Returns {} if the file can't be parsed -- a checkm join failure just leaves NAs for
-    checkm values rather than failing the whole weekly build
-    """
     out = {}
     try:
         with _open_maybe_gzip(path) as fh:
@@ -290,7 +292,7 @@ def parse_checkm_report(path):
                 comp = fields[ci].strip() or NA
                 cont = fields[xi].strip() or NA
                 for ai in acc_idx:
-                    core = _acc_core(fields[ai])
+                    core = accession_core(fields[ai])
                     if core:
                         out[core] = (comp, cont)
     except OSError as e:
@@ -300,21 +302,6 @@ def parse_checkm_report(path):
     return out
 
 
-def _acc_core(acc):
-    """
-    Numeric core of an assembly accession -- GCA/GCF and version agnostic.
-    'RS_GCF_000006155.2' / 'GCA_000006155.2' -> '000006155'
-
-    Returns "" for anything that isn't a GC[AF]_ accession (the CheckM report uses
-    'na' where an assembly has no paired GenBank/RefSeq counterpart, and that must
-    not become a dictionary key).
-    """
-    s = str(acc).strip()
-    if s.startswith(("RS_", "GB_")):
-        s = s[3:]
-    if not s.upper().startswith(("GCA_", "GCF_")):
-        return ""
-    return s.split(".")[0].split("_")[-1]
 
 
 # ---------------------------------------------------------------------------
@@ -365,7 +352,7 @@ def build_table(genbank_path, refseq_path, nodes_path, names_path,
         for c, v in zip(ASSEMBLY_COLUMNS, r):
             cols[c].append(v)
 
-        comp, cont = checkm.get(_acc_core(r[acc_pos]), (NA, NA))
+        comp, cont = checkm.get(accession_core(r[acc_pos]), (NA, NA))
         if comp != NA:
             n_checkm_hit += 1
         cols["checkm_completeness"].append(comp)
@@ -400,8 +387,8 @@ def write_parquet(table, out_path, compression_level=9, row_group_size=256_000):
         out_path,
         compression="zstd",
         compression_level=compression_level,
-        use_dictionary=True,       # lineage cols repeat ~16x -> huge win
-        write_statistics=True,     # row-group min/max -> predicate pushdown
+        use_dictionary=True,
+        write_statistics=True,
         row_group_size=row_group_size,
     )
     return os.path.getsize(out_path)
@@ -460,6 +447,7 @@ def main(argv=None):
     taxdump = args.taxdump or download(
         TAXDUMP_URL, os.path.join(args.work_dir, "taxdump.tar.gz"))
 
+    # fail SOFT: a checkm hiccup must not take down the whole weekly asset
     checkm = args.checkm
     if not checkm:
         try:

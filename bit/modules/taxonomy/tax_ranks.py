@@ -1,22 +1,10 @@
-"""
-Single source of truth for the taxonomic-rank contract shared by BOTH the GTDB
-and NCBI Parquet assets.
-
-The whole point of building the two assets to a common lineage schema is that
-downstream selection (`--wanted-ref-tax`, `--derep-rank`,
-`--ref-source gtdb|ncbi`) can be ONE code path over two files. If the rank column
-names ever drift apart between the two builders, that unification silently breaks
--- so both import from here rather than each defining their own list.
-"""
-
-# coarse -> fine. This ordering is load-bearing: it is what lets us validate that
-# a --derep-rank rank is not COARSER than the --wanted-ref-tax rank
-# (index must be >=).
+# this is used to validate that a --derep-rank rank is not COARSER than the --wanted-ref-tax rank
 RANKS = ["domain", "phylum", "class", "order", "family", "genus", "species"]
 
-# fill value for a rank that is absent from a lineage. Extremely common in NCBI
-# (candidate phyla, unclassified/environmental clades); rare but possible in GTDB.
+# fill value for a rank that is absent from a lineage
 NA = "NA"
+
+REFERENCE_VALUE = "reference genome"
 
 LINEAGE_NAME_COLUMNS = list(RANKS)
 LINEAGE_TAXID_COLUMNS = [f"{r}_taxid" for r in RANKS]
@@ -31,7 +19,6 @@ def accession_core(acc):
         'RS_GCF_000005845.2' -> '000005845'
         'GCA_000005845.3'    -> '000005845'
         'na' / '' / junk     -> ''
-
     """
     s = str(acc).strip()
     if s.startswith(("RS_", "GB_")):
@@ -62,6 +49,6 @@ def validate_derep_rank(wanted_rank, derep_rank):
     d = rank_index(derep_rank)
     if d < w:
         return (f"--derep-rank '{derep_rank}' is a broader rank than "
-                f"the target taxon's rank '{wanted_rank}'. The derep rank must "
-                f"be the same or finer (e.g. target 'domain' + derep rank 'class').")
+                f"the target taxon's rank '{wanted_rank}'. The per-rank rank must "
+                f"be the same or finer (e.g., target 'domain' + per-rank 'class').")
     return None

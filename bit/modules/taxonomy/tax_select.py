@@ -1,29 +1,33 @@
 """
-Taxon-based genome selection from the GTDB / NCBI Parquet assets
+Taxon-based genome/accession selection from the GTDB / NCBI Parquet assets
 
-This is the code path behind:
-  - `bit get-accs-from-gtdb` / `bit get-accs-from-ncbi`
+This is the code:
+  - `bit get-accs-from-gtdb`  / `bit get-accs-from-ncbi`
   - `bit gen-mg` genome selection (gen_mg/selection.py)
 """
 
+import hashlib
+
 import pyarrow.compute as pc # type: ignore
-import pyarrow.dataset as ds # type: ignore
 import pyarrow.parquet as pq # type: ignore
 
-from bit.modules.taxonomy.tax_ranks import RANKS, NA, rank_index, validate_derep_rank
+from bit.modules.taxonomy.tax_ranks import (RANKS, NA, REFERENCE_VALUE,
+                                            accession_core, rank_index,
+                                            validate_derep_rank)
 
 
 class SourceSpec:
     """Per-source column names. The only thing that differs between GTDB and NCBI."""
 
     def __init__(self, name, acc_col, rep_filter, quality_cols,
-                 ref_col, level_col=None, contig_col=None, size_col=None,
-                 size_fallback_col=None):
+                 ref_col, default_reps_only, level_col=None, contig_col=None,
+                 size_col=None, size_fallback_col=None):
         self.name = name
         self.acc_col = acc_col
         self.rep_filter = rep_filter
         self.quality_cols = quality_cols
         self.ref_col = ref_col
+        self.default_reps_only = default_reps_only
         self.level_col = level_col
         self.contig_col = contig_col
         self.size_col = size_col
@@ -37,6 +41,7 @@ SOURCES = {
         rep_filter=("gtdb_representative", "t"),
         quality_cols=("checkm2_completeness", "checkm2_contamination"),
         ref_col="ncbi_refseq_category",
+        default_reps_only=True,
         size_col="genome_size",
         contig_col="contig_count",
     ),
@@ -46,6 +51,7 @@ SOURCES = {
         rep_filter=("refseq_category", "reference genome"),
         quality_cols=("checkm_completeness", "checkm_contamination"),
         ref_col="refseq_category",
+        default_reps_only=False,
         level_col="assembly_level",
         contig_col="contig_count",
         size_col="genome_size_ungapped",
@@ -55,7 +61,6 @@ SOURCES = {
 
 REFERENCE_VALUE = "reference genome"
 
-# ranks genomes with NO checkm
 ASSEMBLY_LEVEL_ORDER = {
     "complete genome": 4,
     "chromosome": 3,
@@ -63,39 +68,54 @@ ASSEMBLY_LEVEL_ORDER = {
     "contig": 1,
 }
 
-# A RefSeq "reference genome" is preferred over a merely higher-checkm genome --
-# but only if it is not actually bad. These gates are deliberately loose: they exist to
-# catch junk, not to bump a reference genome that is slightly lower than another
+# A RefSeq "reference genome" is preferred over a merely higher-checkm genome,
+# but only if it is not actually bad. These gates are deliberately loose, here to
+# catch junk, not to replace all "reference" genomes
 REF_MIN_COMPLETENESS = 85.0
 REF_MAX_CONTAMINATION = 10.0
 
 MISSING_CONTAMINATION = float("inf")
 
 
-# Default dereplication rank, as a function of the TARGET taxon's rank: two ranks
-# finer than the target, clamped at species.
+# How many ranks FINER than the target the default derep-rank
+DEREP_STEPS = 2
+
+# The default derep rank is DERIVED, not hand-written, from one rule:
 #
-# I did this instead of a fixed 'species' default because derep at species level is fine for a genus wanted taxon
-# but not great for a domain. E.g.:
+#     "two ranks finer than the target, clamped at species, and off if that lands
+#      on species"
+#
+# The second half of that rule is the important half. Dereplicating at the SAME rank as
+# the target always yields exactly ONE genome (there is only one group: the target
+# itself). That is true at EVERY rank, not just species:
+#
+#     --wanted-ref-tax Bacteria            --derep-rank domain  -> 1 genome
+#     --wanted-ref-tax Alphaproteobacteria --derep-rank class   -> 1 genome
+#     --wanted-ref-tax Escherichia         --derep-rank genus   -> 1 genome
+#
+# I went with this instead of a fixed derep-rank default because, e.g., 'species' is
+# good for a genus but bad for a domain, e.g.:
 #
 #   target                 full pool   fixed 'species'   2-lower
 #   Bacteria (domain)        878,998         189,801        574   <- class
 #   Pseudomonadota (phylum)  324,613          46,828        413   <- order
 #   Alphaproteobacteria (cl)  51,346          21,473        428   <- family
 #   Escherichia (genus)       37,464              13         13   <- species
-#
-DEFAULT_DEREP_BY_TARGET_RANK = {
-    "domain":  "class",
-    "phylum":  "order",
-    "class":   "family",
-    "order":   "genus",
-    "family":  "species",
-    "genus":   "species",
-    "species": None,
-}
 
-# counts outside this band get a nudge toward modifying --derep-rank
-SANE_LOW, SANE_HIGH = 20, 5000
+
+def _derive_default_derep(target_rank):
+    """Two ranks finer, clamped at species; None if that would be the target's own rank."""
+    i = rank_index(target_rank)
+    j = min(i + DEREP_STEPS, len(RANKS) - 1)
+    return None if j == i else RANKS[j]
+
+
+DEFAULT_DEREP_BY_TARGET_RANK = {r: _derive_default_derep(r) for r in RANKS}
+#   domain->class  phylum->order  class->family  order->genus
+#   family->species  genus->species (clamped)  species->None (degenerate -> off)
+
+# counts outside this band get a nudge toward overriding --derep-rank
+SANE_LOW, SANE_HIGH = 10, 5000
 
 
 class TaxonNotFound(Exception):
@@ -144,9 +164,8 @@ def resolve_taxon(path, taxon, rank=None):
     Resolve a user-supplied taxon (+ optional explicit rank) to (canonical, rank).
 
     Raises AmbiguousTaxon if the name lives at multiple ranks and no rank was
-    given -- e.g. a name used as both an order and a family. This is the homonym
-    case; on the NCBI side a caller can sidestep it entirely by passing a taxid
-    (see select_by_taxid; though i might drop this, revist, Mike...)
+    given. E.g., a name used as both an order and a family. On the NCBI side a user can
+    sidestep this entirely by passing a taxid for now (though i might remove this; revisit Mike)
     """
     canonical, found = find_ranks_for_taxon(path, taxon)
 
@@ -197,9 +216,7 @@ def select_accessions(path, source, rank, taxon, reps_only=False):
 
 def select_by_taxid(path, rank, taxid):
     """
-    NCBI only: select by a lineage TAXID rather than a name. Unambiguous by
-    construction -- this is why the NCBI
-    asset carries domain_taxid..species_taxid (for now)
+    NCBI only: select by a lineage TAXID rather than a name
     """
     col = f"{rank}_taxid"
     tab = pq.read_table(path, columns=["assembly_accession"],
@@ -208,29 +225,18 @@ def select_by_taxid(path, rank, taxid):
 
 
 # ---------------------------------------------------------------------------
-# liveness screening (suppressed / removed assemblies)
+# liveness screening (suppressed / removed / version-drifted assemblies)
 # ---------------------------------------------------------------------------
-
-def _acc_core(acc):
-    """
-    Canonical key for an assembly, agnostic to GTDB's RS_/GB_ prefix, the
-    GCA_/GCF_ pairing, and the version suffix. 'RS_GCF_000005845.2' -> '000005845'
-    """
-    s = str(acc)
-    if s.startswith(("RS_", "GB_")):
-        s = s[3:]
-    return s.split(".")[0].split("_")[-1]
-
 
 def live_accession_cores(ncbi_table_path):
     """
-    The set of assembly cores currently present in the NCBI assembly summary.
+    The set of assembly core accs currently present in the NCBI assembly summary
 
-    NCBI drops suppressed/removed assemblies from that file entirely, so
-    ABSENCE == suppressed / removed. GTDB is a snapshot so still has some of them
+    NCBI drops suppressed/removed assemblies from the assembly summary files, so
+    ABSENCE == suppressed / removed. GTDB is a snapshot and can still have them
     """
     tab = pq.read_table(ncbi_table_path, columns=["assembly_accession"])
-    return {_acc_core(a) for a in tab.column("assembly_accession").to_pylist() if a}
+    return {accession_core(a) for a in tab.column("assembly_accession").to_pylist() if a}
 
 
 # ---------------------------------------------------------------------------
@@ -262,8 +268,11 @@ def resolve_derep_rank(wanted_rank, derep_rank="auto"):
         eff = DEFAULT_DEREP_BY_TARGET_RANK[w_rank]
         if eff is None:
             warnings.append(
-                "Target taxon is at species rank, so dereplication was turned off "
-                "(one genome per species within a species returns a single genome).")
+                f"Dereplication is off by default for a target at '{w_rank}' rank: the "
+                f"default derep rank would be '{w_rank}' itself, which returns a single "
+                f"genome. For this run, all genomes under the taxon will be used. If you DID want a "
+                f"single best representative (e.g., as an outgroup), pass "
+                f"--derep-rank {w_rank} explicitly.")
         return eff, warnings
 
     problem = validate_derep_rank(wanted_rank, derep_rank)
@@ -275,19 +284,35 @@ def resolve_derep_rank(wanted_rank, derep_rank="auto"):
 
 def size_advice(n_selected, wanted_rank, derep_rank):
     """
-    Nudge at the tails. 2-lower keeps most cases in a sane band, but small phyla
-    can under-sample (Cyanobacteriota -> 37 orders) and an explicit fine derep on a
-    broad taxon can explode (Bacteria + species -> ~190k).
+    Nudge at the tails.
+
+    The 2-rank-lower default derep-rank keeps most cases in a sane band
+      - small phyla may have very few orders
+      - an explicit fine derep on a broad taxon can explode (e.g., Bacteria + species -> ~190k)
+      - and derep OFF can explode, e.g., `--wanted-ref-tax "Escherichia coli"`
+        defaults to derep off and can return tens of thousands of genomes
     """
     if derep_rank is None:
+        if n_selected > SANE_HIGH:
+            w = rank_index(wanted_rank)
+            if w == len(RANKS) - 1:
+                return [f"{n_selected:,} reference genomes selected with dereplication "
+                        f"off. That is a very large tree. There is no rank finer than "
+                        f"'{wanted_rank}' to group by, so the options are all of them like this, or "
+                        f"a single best representative (--derep-rank {wanted_rank})."]
+            suggestion = DEFAULT_DEREP_BY_TARGET_RANK[RANKS[w]]
+            return [f"{n_selected:,} reference genomes selected with dereplication off. "
+                    f"That is a very large tree. Consider --derep-rank "
+                    f"'{suggestion}'."]
         return []
+
     d = rank_index(derep_rank)
     if n_selected > SANE_HIGH and d > 0:
-        return [f"{n_selected:,} reference genomes selected -- that is a very large "
-                f"tree. Consider a coarser --derep-rank (e.g. '{RANKS[d - 1]}')."]
+        return [f"{n_selected:,} reference genomes selected. That is a very large "
+                f"tree. Consider a coarser --derep-rank (e.g., '{RANKS[d - 1]}')."]
     if n_selected < SANE_LOW and d < len(RANKS) - 1:
         return [f"Only {n_selected:,} reference genome(s) selected. Consider a finer "
-                f"--derep-rank (e.g. '{RANKS[d + 1]}') for more resolution."]
+                f"--derep-rank (e.g., '{RANKS[d + 1]}') for more genomes to be included."]
     return []
 
 
@@ -306,26 +331,67 @@ def _num(value, default=None):
 
 def mean_contig_length(row, spec):
     """
-    genome_size_ungapped / contig_count -- an N50 proxy that is normalised for genome
-    size, unlike a raw contig count.
-
-    Returns 0.0 (i.e. "worst") when it can't be computed, so a row with missing size
-    or count never outranks one we can actually assess.
+    genome_size_ungapped / contig_count for a proxy of quality for those with no checkm values
     """
     if not spec.contig_col or not spec.size_col:
         return 0.0
 
     contigs = _num(row.get(spec.contig_col))
-    if not contigs or contigs <= 0:          # missing, zero, or junk
+    if not contigs or contigs <= 0:
         return 0.0
 
     size = _num(row.get(spec.size_col))
     if size is None and spec.size_fallback_col:
-        size = _num(row.get(spec.size_fallback_col))   # genome_size includes N-gaps
+        size = _num(row.get(spec.size_fallback_col))
     if size is None or size <= 0:
         return 0.0
 
     return size / contigs
+
+
+def first_key(row, spec):
+    """Cheapest possible picker: first row in lineage-sorted order. Deterministic."""
+    return (row.get(spec.acc_col) or "",)
+
+
+def seeded_random_picker(seed, prefer_references=True):
+    """
+    gen_mg's pick policy, as a picker you can hand to derep(pick=...).
+
+    gen_mg does NOT want the best genome per group, we want an
+    unbiased draw within the group
+    """
+    def pick(row, spec):
+        acc = row.get(spec.acc_col) or ""
+        h = hashlib.blake2b(f"{seed}:{acc}".encode(), digest_size=8).digest()
+        r = int.from_bytes(h, "big")
+
+        if prefer_references:
+            is_ref = str(row.get(spec.ref_col) or "").strip().lower() == REFERENCE_VALUE
+            return (0 if is_ref else 1, r, acc)
+        return (r, acc)
+
+    return pick
+
+
+#: pickers addressable by name from a CLI flag if i want
+PICKERS = {
+    "quality": None,
+    "first": first_key,
+}
+
+
+def resolve_picker(pick):
+    """
+    `pick` may be a NAME ("quality" / "first") or a CALLABLE (row, spec) -> sort key
+    """
+    if callable(pick):
+        return pick
+    if isinstance(pick, str) and pick in PICKERS:
+        return PICKERS[pick]
+    raise ValueError(
+        f"unknown pick policy {pick!r}. Pass one of {sorted(PICKERS)}, or a callable "
+        f"(row, spec) -> sort key (see seeded_random_picker).")
 
 
 def quality_key(row, spec):
@@ -334,38 +400,18 @@ def quality_key(row, spec):
 
     Ordering rationale:
 
-    1. RefSeq REFERENCE genomes first (gated on not being junk). These are curated
-       and recognisable -- having E. coli K-12 represent its group makes a tree far
-       easier to read than an arbitrary accession. At the top end, a 99.5% vs 98.8%
-       checkm difference is noise for SCG recovery, so interpretability wins. The
-       gate exists so that a pathological reference cannot beat a good non-reference.
+    1. RefSeq REFERENCE genomes first (gated on not being too crappy)
 
-    2. Genomes WITH checkm before genomes without. Prokaryotes have checkm; euks and
-       viruses do not (NCBI's report is prokaryotes-only). In practice a group is
-       taxonomically homogeneous so this rarely bites, but a mixed group must not
-       rank a euk above a prokaryote just because its NA sorted low.
+    2. Genomes WITH checkm before genomes without. Prokaryotes have checkm and euks don't.
+       In practice a group is shouldn't span those, so this should never matter, but a mixed group
+       shouldn't rank a euk above a prokaryote just because its NA sorted low
 
-    3. checkm: highest completeness, then lowest contamination.
+    3. checkm: highest completeness, then lowest contamination
 
-    4. NO checkm (euks/viruses): best assembly_level (Complete > Chromosome >
-       Scaffold > Contig), then LONGEST MEAN CONTIG. assembly_level alone is far too
-       coarse for euks -- most sit at "Scaffold".
+    4. NO checkm (euks): best assembly_level (Complete > Chromosome >
+       Scaffold > Contig), then LONGEST MEAN CONTIG
 
-       Mean contig length, NOT raw contig count: a 12 Mb fungal genome in 200 contigs
-       is better assembled than a 2 Mb genome in 150, so a bare count is confounded
-       by genome size. NCBI's assembly_summary carries no N50 (the metric you'd
-       actually want), so mean contig length is the best available proxy.
-
-       It is also the mechanistically right quantity HERE. GToTree recovers SCGs by
-       calling genes and HMM-searching them; a gene straddling a contig break gets
-       truncated and missed, and the genome then loses hits and may be dropped by the
-       genome-hits cutoff. The chance any given gene is broken scales with break
-       DENSITY (contigs per base) -- whose reciprocal is exactly mean contig length.
-
-       Numerator is genome_size_ungapped: contigs contain no N-gaps by definition,
-       whereas genome_size includes scaffolding gaps. Falls back to genome_size.
-
-    5. accession, purely so the result is stable/reproducible.
+    5. accession, so the result is stable/reproducible
     """
     comp_col, cont_col = spec.quality_cols
     comp = _num(row.get(comp_col))
@@ -374,7 +420,6 @@ def quality_key(row, spec):
 
     is_ref = str(row.get(spec.ref_col) or "").strip().lower() == REFERENCE_VALUE
     if is_ref and has_checkm:
-        # only trust the reference flag if the genome isn't junk
         is_ref = (comp >= REF_MIN_COMPLETENESS
                   and (cont is None or cont <= REF_MAX_CONTAMINATION))
 
@@ -382,73 +427,77 @@ def quality_key(row, spec):
         str(row.get(spec.level_col) or "").strip().lower(), 0) if spec.level_col else 0
 
     return (
-        0 if is_ref else 1,           # 1. reference genomes first
-        0 if has_checkm else 1,       # 2. checkm'd (prokaryotes) before not
-        -(comp if has_checkm else 0.0),       # 3. completeness (negated: higher better)
-        (cont if cont is not None                #    contamination (lower better;
-         else (MISSING_CONTAMINATION if has_checkm else 0.0)),
-                                              #    unknown sorts WORST, not best)
-        -lvl,                         # 4. euk fallback: assembly level
-        -mean_contig_length(row, spec),  #    ...then longest mean contig
-        row.get(spec.acc_col) or "",  # 5. stable tiebreak
+        0 if is_ref else 1,                                      # 1. reference genomes first
+        0 if has_checkm else 1,                                  # 2. checkm'd before not
+        -(comp if has_checkm else 0.0),                          # 3. completeness (higher bette)
+        (cont if cont is not None                                #    contamination (lower better)
+         else (MISSING_CONTAMINATION if has_checkm else 0.0)),   #    unknown sorts worst)
+        -lvl,                                                    # 4. euk fallback, assembly level
+        -mean_contig_length(row, spec),                          #    then longest mean contig
+        row.get(spec.acc_col) or "",                             # 5. accession tiebreak
     )
 
 
-def derep_rank(path, source, wanted_rank, wanted_taxon, per_rank,
-                 reps_only=True, pick="quality", screen_against=None):
-    """
-    One genome per unique value of `per_rank`, within `wanted_taxon`.
+PICKERS["quality"] = quality_key
 
-    E.g. --wanted-ref-taxon bacteria --one-genome-per-rank class
-         -> one genome for each bacterial class.
+
+def derep(path, source, wanted_rank, wanted_taxon, derep_rank,
+          reps_only=None, pick="quality", screen_against=None):
+    """
+    One genome per unique value of `derep_rank`, within `wanted_taxon`
+
+    E.g. --wanted-ref-tax bacteria --derep-rank class
+         -> one genome for each bacterial class
 
     reps_only:
-        GTDB -- keep True. GTDB representatives are comprehensive (~one per species
-        cluster), so one-per-class over the rep pool gives excellent coverage.
+        None (default) -> use the SOURCE's default: True for GTDB, False for NCBI.
 
-        NCBI -- consider False. RefSeq "reference genomes" are SPARSE (a few
-        thousand genome-wide), so many classes have zero and the result silently
-        under-covers. With reps_only=False the pool is all genomes, ranked by
-        assembly_level instead.
+        This must not be a plain True. GTDB representatives are comprehensive, but
+        RefSeq "reference genomes" are sparse
 
     pick:
-        "quality" -- deterministic best-per-group (GToTree: a fragmentary genome
-                     just loses SCG hits and gets filtered out anyway).
-        "first"   -- first in lineage-sorted order; cheap and deterministic.
+        A picker NAME or a CALLABLE (row, spec) -> sort key (lowest wins).
 
-        gen_mg wants a *seeded random* pick preferring RefSeq reference genomes
-        instead; that's a different policy, so it passes its own picker rather
-        than reusing these.
+        "quality" (default) -- best-per-group
+        "first"             -- first in lineage-sorted order
+        callable            -- gen_mg uses `seeded_random_picker(seed)`: references first, then
+                               uniformly RANDOM within a tier, because for metagenome
+                               simulation we want an unbiased draw rather than
+                               systematically the most-complete things
+
 
     screen_against:
         Path to the NCBI Parquet asset. When given, the candidate pool is
         pre-filtered to assemblies that still exist at NCBI BEFORE grouping.
 
-        This matters MUCH more here than in the un-dereplicated case: losing 1 of
-        8,830 Cyanobacteriota genomes is noise, but if the single genome chosen to
-        represent an entire class has been suppressed, that whole class silently
-        vanishes from the tree.
-
-        Because the pick is DETERMINISTIC, pre-filtering the pool is equivalent to
-        backfilling a dead pick -- no iterative re-draw loop is needed (gen_mg
-        needs one only because it picks randomly and must return exactly N).
-
     Returns (accessions, groups_seen, warnings).
     """
     warnings = []
 
-    problem = validate_one_per_rank(wanted_rank, per_rank)
+    problem = validate_derep_rank(wanted_rank, derep_rank)
     if problem:
         raise ValueError(problem)
 
-    if rank_index(per_rank) == rank_index(wanted_rank):
-        warnings.append(
-            f"--one-genome-per-rank '{per_rank}' is the same rank as the target "
-            f"taxon, so this will return a single genome.")
+    if rank_index(derep_rank) == rank_index(wanted_rank):
+        # Sometimes may be wanted, as in "the single best genome for taxon X" is
+        # how you could pick an OUTGROUP. But it is also an easy mis-type for
+        # someone who wanted a tree SPANNING the taxon, and the difference is 1 genome
+        # vs hundreds. So mentioning either way
+        finer = RANKS[rank_index(derep_rank) + 1] \
+            if rank_index(derep_rank) < len(RANKS) - 1 else None
+        msg = (f"--derep-rank '{derep_rank}' is the SAME rank as the target taxon, so "
+               f"exactly ONE genome will be selected (the single best genome for "
+               f"'{wanted_taxon}').")
+        if finer:
+            msg += (f" If you wanted a tree spanning '{wanted_taxon}', use a finer "
+                    f"--derep-rank (e.g. '{finer}').")
+        warnings.append(msg)
 
     spec = SOURCES[source]
+    if reps_only is None:
+        reps_only = spec.default_reps_only
 
-    cols = [spec.acc_col, per_rank, spec.ref_col] + list(spec.quality_cols)
+    cols = [spec.acc_col, derep_rank, spec.ref_col] + list(spec.quality_cols)
     for extra in (spec.level_col, spec.contig_col, spec.size_col,
                   spec.size_fallback_col):
         if extra and extra not in cols:
@@ -461,7 +510,7 @@ def derep_rank(path, source, wanted_rank, wanted_taxon, per_rank,
         live = live_accession_cores(screen_against)
         before = tab.num_rows
         rows = [r for r in tab.to_pylist()
-                if r.get(spec.acc_col) and _acc_core(r[spec.acc_col]) in live]
+                if r.get(spec.acc_col) and accession_core(r[spec.acc_col]) in live]
         n_dead = before - len(rows)
         if n_dead:
             warnings.append(
@@ -476,25 +525,22 @@ def derep_rank(path, source, wanted_rank, wanted_taxon, per_rank,
                         + (" in the representatives pool." if reps_only else "."))
         return [], 0, warnings
 
+    keyfn = resolve_picker(pick)
+
     best = {}
     n_na_group = 0
     for row in rows:
-        group = row.get(per_rank)
-        # a genome whose per_rank is unnamed must NOT become its own "NA" group --
-        # that would silently allocate a genome to a group that isn't real.
+        group = row.get(derep_rank)
         if not group or group == NA:
             n_na_group += 1
             continue
-        if pick == "first":
-            best.setdefault(group, row)
-            continue
-        k = quality_key(row, spec)
-        if group not in best or k < quality_key(best[group], spec):
+        k = keyfn(row, spec)
+        if group not in best or k < keyfn(best[group], spec):
             best[group] = row
 
     if n_na_group:
         warnings.append(
-            f"{n_na_group:,} genome(s) have no assigned '{per_rank}' and were "
+            f"{n_na_group:,} genome(s) have no assigned '{derep_rank}' and were "
             f"skipped (unnamed/unclassified at that rank).")
 
     accs = [best[g][spec.acc_col] for g in sorted(best)]

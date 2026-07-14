@@ -1,9 +1,10 @@
 """
 Build the slim GTDB metadata table as a single sorted, zstd-compressed Parquet
-file, on the same lineage schema as the NCBI asset.
+file, on the SAME lineage schema as the NCBI asset.
 
-This runs on a GitHub Actions runner (see .github/workflows/check-gtdb-metadata.yaml),
-NOT on user machines.
+This runs on a GitHub Actions runner, not on user machines.
+
+Output: gtdb-data.parquet, VERSION.txt
 """
 
 import argparse
@@ -23,7 +24,7 @@ BAC_FILENAME = "bac120_metadata.tsv.gz"
 VERSION_URL = f"{GTDB_BASE_URL}/VERSION.txt"
 
 PARQUET_FILENAME = "gtdb-data.parquet"
-VERSION_FILENAME = "GTDB-version-info.txt"
+VERSION_FILENAME = "VERSION.txt"
 
 GTDB_KEPT_COLUMNS = [
     "accession", "ncbi_genbank_assembly_accession", "ncbi_taxid",
@@ -44,6 +45,9 @@ RANK_PREFIXES = ["d__", "p__", "c__", "o__", "f__", "g__", "s__"]
 # ---------------------------------------------------------------------------
 
 def split_gtdb_taxonomy(taxonomy_string):
+    """
+    'd__Bacteria;p__Pseudomonadota;...;s__Escherichia coli'  ->  7 names
+    """
     parts = [p.strip() for p in str(taxonomy_string).split(";")]
     if len(parts) != 7:
         raise ValueError(
@@ -74,13 +78,7 @@ def _open_maybe_gzip(path):
 def iter_gtdb_rows(path, keep_columns=None):
     """
     Yield rows as dicts of {kept_column: value} plus the 7 split rank columns,
-    from one upstream GTDB metadata table.
-
-    Columns are located BY NAME in the file's own header. A kept column absent
-    from a given release is filled with NA rather than failing the build (GTDB
-    has churned column names across releases -- e.g. checkm -> checkm2) -- but
-    the two columns we cannot proceed without (`accession`, `gtdb_taxonomy`)
-    raise.
+    from one upstream GTDB metadata table
     """
     keep_columns = list(keep_columns) if keep_columns else list(GTDB_KEPT_COLUMNS)
 
@@ -175,8 +173,7 @@ def resolve_version_file(out_dir, work_dir, version_file=None):
     """
     Produce the GTDB version file that gets published alongside the Parquet.
 
-    This file is load-bearing: next week's workflow compares upstream's VERSION.txt
-    against the published one to decide whether to rebuild.
+    This is compared to see whether the upstream release has changed, to decide whether to rebuild.
     """
     dest = os.path.join(out_dir, VERSION_FILENAME)
 
@@ -198,7 +195,7 @@ def main(argv=None):
     ap.add_argument("--bac", help="local bac120_metadata.tsv.gz (skips download)")
     ap.add_argument("--version-file",
                     help="local VERSION.txt (skips download; the workflow passes the "
-                         "one it already fetched)")
+                         "one it already fetched, which removes a rebuild race)")
     ap.add_argument("--no-version-file", action="store_true",
                     help="don't produce a version file at all (local/dev builds)")
     args = ap.parse_args(argv)
