@@ -45,13 +45,9 @@ jobs:
       run: conda run -n bit bit -v
 
 
-    - name: Debug mosdepth
+    - name: Check conda info
       run: |
-        uname -m
-        which -a mosdepth || true
-        conda run -n bit bash -c 'file $CONDA_PREFIX/bin/mosdepth; ls -l $CONDA_PREFIX/bin/mosdepth'
-        conda run -n bit bash -c 'lipo -archs $CONDA_PREFIX/bin/mosdepth || true'
-        conda run -n bit conda list mosdepth
+        conda run -n bit conda list --explicit
 
 
     - name: Run pytest
