@@ -308,11 +308,16 @@ def test_build_truth_for_taxonomy_per_read_both(tmp_path):
         assert df["genus"].iloc[0] == ("g_genus" if t == "gtdb" else "n_genus")
 
 
-# ─── _load_gtdb_table reads only used columns (usecols intersect) ───────────
+# ─── _load_gtdb_table reads only used columns (Parquet column pushdown) ─────
 
 def test_load_gtdb_table_usecols_intersect(tmp_path, monkeypatch):
     """ only the used columns are read; extras are dropped and columns absent in
-    older GTDB releases (coding_density, checkm2_*) don't raise. """
+    older GTDB releases (coding_density, checkm2_*) don't raise. Now a Parquet
+    read: get_gtdb_data returns the .parquet PATH, and the version-info file sits
+    beside it. """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
     gd = tmp_path / "gtdb"; gd.mkdir()
     cols = ["accession", "ncbi_genbank_assembly_accession", "ncbi_taxid",
             "gtdb_representative", "ncbi_refseq_category",
@@ -324,11 +329,12 @@ def test_load_gtdb_table_usecols_intersect(tmp_path, monkeypatch):
     row = ["RS_GCF_000000001.1", "GCA_000000001.1", "123", "t", "reference genome",
            "Bacteria", "p", "c", "o", "f", "g", "s", "98.0", "1.0",
            "3000000", "1", "1500000", "50.0", "0", "2700000", "junk", "junk"]
-    (gd / "GTDB-arc-and-bac-metadata.tsv").write_text(
-        "\t".join(cols) + "\n" + "\t".join(row) + "\n")
+
+    gtdb_path = gd / "gtdb-data.parquet"
+    pq.write_table(pa.table({c: pa.array([v]) for c, v in zip(cols, row)}), str(gtdb_path))
     (gd / "GTDB-version-info.txt").write_text("r220\n2024-04-24\n")
 
-    monkeypatch.setattr(G, "get_gtdb_data", lambda quiet=True: str(gd))
+    monkeypatch.setattr(G, "get_gtdb_data", lambda quiet=True: str(gtdb_path))
     run = SimpleNamespace(log_file=None)
     tab = G._load_gtdb_table(SimpleNamespace(), run)
 

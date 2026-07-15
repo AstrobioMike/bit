@@ -1,20 +1,28 @@
 import sys
 import os
-import shutil
-import pandas as pd # type: ignore
+import pyarrow.parquet as pq # type: ignore
 from bit.modules.general import color_text, wprint
 from bit.modules.gtdb.get_gtdb_data import get_gtdb_data
+from bit.modules.taxonomy.tax_ranks import RANKS
+from bit.modules.taxonomy.tax_select import (resolve_taxon, select,
+                                             TaxonNotFound, AmbiguousTaxon)
+
+
+_RANK_COLUMNS = list(RANKS)
+
+
+def _all_columns(gtdb_path):
+    return pq.ParquetFile(gtdb_path).schema_arrow.names
 
 
 def get_accessions_from_gtdb(args):
 
-    GTDB_dir = get_gtdb_data(quiet=True)
+    gtdb_path = get_gtdb_data(quiet=True)
 
     if args.get_table:
-        copy_gtdb_table(GTDB_dir)
+        copy_gtdb_table(gtdb_path)
         sys.exit(0)
 
-    # some checks to prevent things that either should be provided together, or should be mutually exclusive
     if args.get_taxon_counts and not args.target_taxon:
         print("")
         wprint(color_text("A specific taxon needs to also be provided to the `-t` flag in order to use `--get-taxon-counts`.", "yellow"))
@@ -29,121 +37,139 @@ def get_accessions_from_gtdb(args):
         print("")
         sys.exit(0)
 
-    # reading in the GTDB table
-    gtdb_tab = read_gtdb_tab(GTDB_dir)
-
-    gtdb_rep_tab = None
-    representatives_source = None
+    _report_gtdb_version(gtdb_path)
 
     if args.gtdb_representatives_only:
-        gtdb_rep_tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
         representatives_source = "GTDB"
-
-    if args.refseq_reference_genomes_only:
-        gtdb_rep_tab = gtdb_tab[gtdb_tab["ncbi_refseq_category"] == "reference genome"]
+    elif args.refseq_reference_genomes_only:
         representatives_source = "RefSeq"
-
-    # resolve taxon name case-insensitively if provided
-    target_taxon = resolve_taxon_name(args.target_taxon, gtdb_tab) if args.target_taxon else None
+    else:
+        representatives_source = None
 
     if args.get_rank_counts:
-        get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab, representatives_source=representatives_source)
+        full = _read_rank_columns(gtdb_path)
+        rep = _apply_reps_filter(gtdb_path, representatives_source)
+        get_unique_taxa_counts_of_all_ranks(full, rep, representatives_source=representatives_source)
         sys.exit(0)
+
+    if not args.target_taxon:
+        return
+
+    target_taxon, resolved_rank = _resolve_or_exit(gtdb_path, args.target_taxon, args.target_rank)
 
     if args.get_taxon_counts:
-        get_unique_taxon_counts(target_taxon, gtdb_tab, gtdb_rep_tab, representatives_source=representatives_source)
+        if target_taxon == "all":
+            full = _read_rank_columns(gtdb_path)
+            rep = _apply_reps_filter(gtdb_path, representatives_source)
+        else:
+            full = _read_rank_columns(gtdb_path)
+            rep = _apply_reps_filter(gtdb_path, representatives_source) if representatives_source else None
+        get_unique_taxon_counts(target_taxon, full, rep, representatives_source=representatives_source)
         sys.exit(0)
 
-    if target_taxon:
-        get_accessions(target_taxon, gtdb_tab, gtdb_rep_tab, rank=args.target_rank, representatives_source=representatives_source)
+    working, rank = _read_taxon_full_slice(gtdb_path, target_taxon, resolved_rank,
+                                           representatives_source)
+    _write_accessions(target_taxon, working, rank,
+                      representatives_source=representatives_source)
+    sys.exit(0)
+
+
+def _read_rank_columns(gtdb_path):
+    return pq.read_table(gtdb_path, columns=_RANK_COLUMNS).to_pandas()
+
+
+def _apply_reps_filter(gtdb_path, representatives_source):
+    if not representatives_source:
+        return None
+    if representatives_source == "GTDB":
+        filt = [("gtdb_representative", "=", "t")]
+    else:
+        filt = [("ncbi_refseq_category", "=", "reference genome")]
+    return pq.read_table(gtdb_path, columns=_RANK_COLUMNS, filters=filt).to_pandas()
+
+
+def _read_taxon_full_slice(gtdb_path, taxon, resolved_rank, representatives_source):
+    reps_only = representatives_source is not None
+    cols = _all_columns(gtdb_path)
+
+    if taxon == "all":
+        if reps_only:
+            filt = [("gtdb_representative", "=", "t")] if representatives_source == "GTDB" \
+                else [("ncbi_refseq_category", "=", "reference genome")]
+            tab = pq.read_table(gtdb_path, columns=cols, filters=filt).to_pandas()
+        else:
+            tab = pq.read_table(gtdb_path, columns=cols).to_pandas()
+        return tab, None
+
+    tbl = select(gtdb_path, "gtdb", resolved_rank, taxon,
+                 reps_only=reps_only, columns=cols)
+    return tbl.to_pandas(), resolved_rank
+
+
+def _resolve_or_exit(gtdb_path, taxon, rank=None):
+    if taxon.lower() == "all":
+        return "all", None
+    try:
+        canonical, resolved_rank = resolve_taxon(gtdb_path, taxon, rank)
+    except AmbiguousTaxon:
+        wprint(color_text("Since '" + str(taxon) + "' occurs at more than 1 rank, we'll need to specify "
+               "which rank is wanted as well before we pull the accessions. This can be specified with the `-r` flag.", "yellow"))
+        print("")
         sys.exit(0)
+    except TaxonNotFound:
+        wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any rank :(", "yellow"))
+        print("")
+        sys.exit(0)
+    if canonical != taxon:
+        wprint(color_text("Matched input '" + taxon + "' to GTDB taxon '" + canonical + "'.", "yellow"))
+        print("")
+    return canonical, resolved_rank
+
+
+def _report_gtdb_version(gtdb_path):
+    report_gtdb_version_info(os.path.dirname(gtdb_path))
 
 
 def report_gtdb_version_info(location):
-    """ reporting GTDB version info """
-
+    """ reporting GTDB version info (reads GTDB-version-info.txt from `location`) """
     version_info = []
-
     with open(os.path.join(location, "GTDB-version-info.txt")) as version_info_file:
         for line in version_info_file:
             line = line.strip()
             if line != "":
                 version_info.append(line)
-
     gtdb_version = version_info[0]
     gtdb_release_date = version_info[1]
-
     print("    Using GTDB " + gtdb_version + ": " + gtdb_release_date + "\n")
 
 
-def copy_gtdb_table(GTDB_dir):
-    """ copies the GTDB metadata table to the current directory """
+def copy_gtdb_table(gtdb_path):
+    """
+    Materialize the full GTDB metadata table (all columns in the asset) to the
+    current directory as a TSV -- the `--get-table` escape hatch. Reads the hosted
+    Parquet and writes it out; the version file sits beside the Parquet.
+    """
+    report_gtdb_version_info(os.path.dirname(gtdb_path))
 
-    report_gtdb_version_info(GTDB_dir)
-
-    shutil.copy(os.path.join(GTDB_dir, "GTDB-arc-and-bac-metadata.tsv"), "GTDB-arc-and-bac-metadata.tsv")
-    print("")
-    report_gtdb_version_info(GTDB_dir)
-    wprint("GTDB table copied to:")
-    print(color_text("    GTDB-arc-and-bac-metadata.tsv\n"))
-
-
-def read_gtdb_tab(GTDB_dir):
-    """ reads in file with gtdb info """
+    out_name = "GTDB-arc-and-bac-metadata.tsv"
+    df = pq.read_table(gtdb_path).to_pandas()
+    df.to_csv(out_name, sep="\t", index=False)
 
     print("")
-    wprint(color_text("Reading in the GTDB info table...", "yellow"))
-
-    report_gtdb_version_info(GTDB_dir)
-
-    gtdb_tab = pd.read_csv(os.path.join(GTDB_dir, "GTDB-arc-and-bac-metadata.tsv"), sep="\t", low_memory=False)
-
-    return gtdb_tab
-
-
-def resolve_taxon_name(taxon, gtdb_tab):
-    """ resolves user-provided taxon to canonical GTDB name via case-insensitive matching """
-
-    if taxon.lower() == "all":
-        return "all"
-
-    ranks = ['domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
-
-    # build a lookup of lowercase -> canonical name across all rank columns
-    canonical_names = {}
-    for rank in ranks:
-        for name in gtdb_tab[rank].unique():
-            canonical_names[name.lower()] = name
-
-    taxon_lower = taxon.lower()
-
-    if taxon_lower in canonical_names:
-        canonical = canonical_names[taxon_lower]
-        if canonical != taxon:
-            wprint(color_text("Matched input '" + taxon + "' to GTDB taxon '" + canonical + "'.", "yellow"))
-            print("")
-        return canonical
-
-    wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any rank :(", "yellow"))
-    print("")
-    sys.exit(0)
+    wprint("GTDB table written to:")
+    print(color_text("    " + out_name + "\n"))
 
 
 def find_ranks_for_taxon(taxon, tab):
-    """ returns list of ranks that contain the given taxon """
-
-    ranks = ['domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
-    return [rank for rank in ranks if taxon in tab[rank].unique()]
+    """ ranks (of the 7) whose column contains `taxon`, within a DataFrame """
+    return [rank for rank in RANKS if taxon in tab[rank].unique()]
 
 
 def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representatives_source=None):
-    """ get accessions based on specified taxon, if the provided taxon is in more than one rank, will require specified rank """
-
-    # figure out which table to pull from
+    """ write accessions (+ metadata TSV) for a taxon, from a DataFrame """
     working_tab = gtdb_rep_tab if representatives_source else gtdb_tab
 
     if taxon == "all":
-
         if representatives_source:
             tab_out_filename = "GTDB-arc-and-bac-refseq-rep-metadata.tsv"
             acc_out_filename = "GTDB-arc-and-bac-refseq-rep-accessions.txt"
@@ -151,9 +177,7 @@ def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representative
         else:
             acc_out_filename = "GTDB-arc-and-bac-accessions.txt"
             tab_out_filename = None
-
     else:
-
         ranks_found_in = find_ranks_for_taxon(taxon, working_tab)
 
         if len(ranks_found_in) == 0:
@@ -174,7 +198,6 @@ def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representative
 
         working_tab = working_tab[working_tab[rank] == taxon]
 
-        # swapping spaces for dashes in case it's a species taxon
         taxon_for_filename = taxon.replace(" ", "-")
 
         if representatives_source:
@@ -186,16 +209,13 @@ def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representative
 
         working_tab.to_csv(tab_out_filename, sep="\t", index=False)
 
-    # write accessions
     target_accs = working_tab["ncbi_genbank_assembly_accession"].tolist()
 
     with open(acc_out_filename, "w") as out:
         for acc in target_accs:
             out.write(acc + "\n")
 
-    # report results
     print("")
-
     wprint(f"Wrote {len(target_accs):,} accession(s) to:")
     wprint("  " + color_text(acc_out_filename))
     print("")
@@ -208,24 +228,29 @@ def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representative
         print("")
 
 
-def get_unique_taxon_counts(taxon, gtdb_tab, gtdb_rep_tab=None, representatives_source=None):
-    """ get counts of specific taxa """
+def _write_accessions(taxon, working_df, rank, representatives_source=None):
+    """ thin orchestrator->worker adapter: working_df is already the taxon slice """
+    if representatives_source:
+        get_accessions(taxon, None, gtdb_rep_tab=working_df, rank=rank,
+                       representatives_source=representatives_source)
+    else:
+        get_accessions(taxon, working_df, rank=rank)
 
+
+def get_unique_taxon_counts(taxon, gtdb_tab, gtdb_rep_tab=None, representatives_source=None):
+    """ counts of a specific taxon (or all) per rank, from a DataFrame """
     if taxon == "all":
         count = len(gtdb_tab.index)
         print("")
         wprint("  There are " + str(count) + " total genomes in the database.")
         print("")
-
         if representatives_source:
             count = len(gtdb_rep_tab.index)
             wprint(color_text("In considering only " + representatives_source + " representative genomes:", "yellow"))
             print("")
             wprint("  There are " + str(count) + " total representative genomes in the database.")
             print("")
-
     else:
-
         ranks_found_in = find_ranks_for_taxon(taxon, gtdb_tab)
 
         for rank in ranks_found_in:
@@ -240,17 +265,13 @@ def get_unique_taxon_counts(taxon, gtdb_tab, gtdb_rep_tab=None, representatives_
         print("")
 
         if representatives_source:
-
             ranks_found_in_rep = find_ranks_for_taxon(taxon, gtdb_rep_tab)
-
             wprint(color_text("In considering only " + representatives_source + " representative genomes:", "yellow"))
             print("")
-
             for rank in ranks_found_in_rep:
                 count = len(gtdb_rep_tab[gtdb_rep_tab[rank] == taxon].index)
                 wprint("  The rank '" + rank + "' has " + str(count) + " " + taxon + " representative genome entries.")
                 print("")
-
             if len(ranks_found_in_rep) == 0:
                 wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any rank as a representative genome :(", "yellow"))
                 print("")
@@ -258,24 +279,16 @@ def get_unique_taxon_counts(taxon, gtdb_tab, gtdb_rep_tab=None, representatives_
 
 
 def get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab=None, representatives_source=None):
-    """ get counts of unique taxa at each rank """
-
-    ranks = ['domain', 'phylum', 'class', 'order', 'family', 'genus', 'species']
-
+    """ counts of unique taxa at each rank, from a DataFrame """
     print("\n    {:<10} {:}".format("Rank", "Num. Unique Taxa"))
-    for rank in ranks:
+    for rank in RANKS:
         print("    {:<10} {:}".format(rank, str(gtdb_tab[rank].nunique())))
-
     print("")
 
-    # below only needed for RefSeq, because if it is GTDB, it is equivalent (i.e., they have 1 rep genome for each unique rank in their system)
     if representatives_source == "RefSeq":
-
         wprint(color_text("In considering only " + representatives_source + " representative genomes:", "yellow"))
         print("")
-
         print("    {:<10} {:}".format("Rank", "Num. Unique Rep. Taxa"))
-        for rank in ranks:
+        for rank in RANKS:
             print("    {:<10} {:}".format(rank, str(gtdb_rep_tab[rank].nunique())))
-
         print("")

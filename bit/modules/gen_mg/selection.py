@@ -61,7 +61,8 @@ OFF_MODE_MAX_CONTAMINATION = 10.0
 def _select_gtdb_one_per_rank(gtdb_tab, derep_rank="species", domains=None,
                               num_genomes=None, seed=None, exclude_groups=None,
                               exclude_accessions=None):
-    """ one GTDB genome per unique value at derep_rank; strict one-per-group.
+    """
+    one GTDB genome per unique value at derep_rank; strict one-per-group.
 
     When derep_rank == 'off', dereplication is fully disabled: the pool is the
     FULL GTDB table (all genomes, so multiple strains per species are possible),

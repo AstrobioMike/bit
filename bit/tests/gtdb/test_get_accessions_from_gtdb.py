@@ -1,5 +1,7 @@
-import pytest
-import pandas as pd
+import pytest # type: ignore
+import pandas as pd # type: ignore
+import pyarrow as pa # type: ignore
+import pyarrow.parquet as pq # type: ignore
 from argparse import Namespace
 from pathlib import Path
 from unittest.mock import patch
@@ -7,13 +9,12 @@ from unittest.mock import patch
 from bit.modules.gtdb.get_accessions_from_gtdb import (
     report_gtdb_version_info,
     copy_gtdb_table,
-    read_gtdb_tab,
-    resolve_taxon_name,
     find_ranks_for_taxon,
     get_accessions,
     get_unique_taxon_counts,
     get_unique_taxa_counts_of_all_ranks,
     get_accessions_from_gtdb,
+    _resolve_or_exit
 )
 
 
@@ -84,10 +85,21 @@ def gtdb_tab():
 
 @pytest.fixture
 def gtdb_dir(tmp_path):
-    """A tmp directory with the two files that GTDB helper functions need."""
+    """A tmp directory holding just the GTDB version-info file (for the version reader)."""
     (tmp_path / "GTDB-version-info.txt").write_text("R220\n2024-04-24\n")
-    pd.DataFrame(ROWS).to_csv(tmp_path / "GTDB-arc-and-bac-metadata.tsv", sep="\t", index=False)
     return tmp_path
+
+@pytest.fixture
+def gtdb_parquet(tmp_path):
+    """
+    The real R4 contract: get_gtdb_data returns the .parquet PATH, with the
+    version-info file sitting beside it. Orchestrator tests use this.
+    """
+    (tmp_path / "GTDB-version-info.txt").write_text("R220\n2024-04-24\n")
+    df = pd.DataFrame(ROWS)
+    path = tmp_path / "gtdb-data.parquet"
+    pq.write_table(pa.Table.from_pandas(df, preserve_index=False), str(path))
+    return str(path)
 
 
 # ─── report_gtdb_version_info ─────────────────────────────────────────────────
@@ -99,40 +111,12 @@ def test_report_gtdb_version_info_prints_version(gtdb_dir, capsys):
 
 # ─── copy_gtdb_table ──────────────────────────────────────────────────────────
 
-def test_copy_gtdb_table_copies_file(gtdb_dir, tmp_path, monkeypatch):
+def test_copy_gtdb_table_copies_file(gtdb_parquet, tmp_path, monkeypatch):
     out_dir = tmp_path / "output"
     out_dir.mkdir()
     monkeypatch.chdir(out_dir)
-    copy_gtdb_table(str(gtdb_dir))
+    copy_gtdb_table(gtdb_parquet)
     assert (out_dir / "GTDB-arc-and-bac-metadata.tsv").exists()
-
-
-# ─── read_gtdb_tab ────────────────────────────────────────────────────────────
-
-def test_read_gtdb_tab_returns_dataframe(gtdb_dir):
-    result = read_gtdb_tab(str(gtdb_dir))
-    assert isinstance(result, pd.DataFrame)
-    assert len(result) == 5
-    assert "domain" in result.columns
-
-
-# ─── resolve_taxon_name ───────────────────────────────────────────────────────
-
-def test_resolve_taxon_name_all(gtdb_tab):
-    assert resolve_taxon_name("all", gtdb_tab) == "all"
-
-
-def test_resolve_taxon_name_exact_match(gtdb_tab):
-    assert resolve_taxon_name("Escherichia", gtdb_tab) == "Escherichia"
-
-
-def test_resolve_taxon_name_case_insensitive_returns_canonical(gtdb_tab):
-    assert resolve_taxon_name("escherichia", gtdb_tab) == "Escherichia"
-
-
-def test_resolve_taxon_name_not_found_exits(gtdb_tab):
-    with pytest.raises(SystemExit):
-        resolve_taxon_name("NonExistentTaxon", gtdb_tab)
 
 
 # ─── find_ranks_for_taxon ─────────────────────────────────────────────────────
@@ -279,12 +263,12 @@ def test_get_unique_taxa_counts_of_all_ranks_with_refseq_rep(gtdb_tab, capsys):
 
 # ─── get_accessions_from_gtdb (orchestrator) ──────────────────────────────────
 
-def test_orchestrator_get_table_copies_file_and_exits(gtdb_dir, tmp_path, monkeypatch):
+def test_orchestrator_get_table_copies_file_and_exits(gtdb_parquet, tmp_path, monkeypatch):
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     monkeypatch.chdir(out_dir)
     with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
-               return_value=str(gtdb_dir)):
+               return_value=gtdb_parquet):
         with pytest.raises(SystemExit):
             get_accessions_from_gtdb(make_args(get_table=True))
     assert (out_dir / "GTDB-arc-and-bac-metadata.tsv").exists()
@@ -307,39 +291,39 @@ def test_orchestrator_conflicting_rep_flags_exits(tmp_path):
             ))
 
 
-def test_orchestrator_get_rank_counts_exits(gtdb_dir, capsys):
+def test_orchestrator_get_rank_counts_exits(gtdb_parquet, capsys):
     with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
-               return_value=str(gtdb_dir)):
+               return_value=gtdb_parquet):
         with pytest.raises(SystemExit):
             get_accessions_from_gtdb(make_args(get_rank_counts=True))
     assert "domain" in capsys.readouterr().out
 
 
-def test_orchestrator_get_taxon_counts_exits(gtdb_dir, capsys):
+def test_orchestrator_get_taxon_counts_exits(gtdb_parquet, capsys):
     with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
-               return_value=str(gtdb_dir)):
+               return_value=gtdb_parquet):
         with pytest.raises(SystemExit):
             get_accessions_from_gtdb(make_args(get_taxon_counts=True, target_taxon="Escherichia"))
     assert "2" in capsys.readouterr().out
 
 
-def test_orchestrator_get_accessions_exits(gtdb_dir, tmp_path, monkeypatch):
+def test_orchestrator_get_accessions_exits(gtdb_parquet, tmp_path, monkeypatch):
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     monkeypatch.chdir(out_dir)
     with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
-               return_value=str(gtdb_dir)):
+               return_value=gtdb_parquet):
         with pytest.raises(SystemExit):
             get_accessions_from_gtdb(make_args(target_taxon="Escherichia"))
     assert (out_dir / "GTDB-Escherichia-genus-accs.txt").exists()
 
 
-def test_orchestrator_gtdb_rep_only_filters_to_rep_genomes(gtdb_dir, tmp_path, monkeypatch):
+def test_orchestrator_gtdb_rep_only_filters_to_rep_genomes(gtdb_parquet, tmp_path, monkeypatch):
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     monkeypatch.chdir(out_dir)
     with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
-               return_value=str(gtdb_dir)):
+               return_value=gtdb_parquet):
         with pytest.raises(SystemExit):
             get_accessions_from_gtdb(make_args(
                 target_taxon="Escherichia",
@@ -349,12 +333,12 @@ def test_orchestrator_gtdb_rep_only_filters_to_rep_genomes(gtdb_dir, tmp_path, m
     assert len(accs) == 1
 
 
-def test_orchestrator_refseq_ref_only_filters_to_ref_genomes(gtdb_dir, tmp_path, monkeypatch):
+def test_orchestrator_refseq_ref_only_filters_to_ref_genomes(gtdb_parquet, tmp_path, monkeypatch):
     out_dir = tmp_path / "out"
     out_dir.mkdir()
     monkeypatch.chdir(out_dir)
     with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
-               return_value=str(gtdb_dir)):
+               return_value=gtdb_parquet):
         with pytest.raises(SystemExit):
             get_accessions_from_gtdb(make_args(
                 target_taxon="Escherichia",
@@ -362,3 +346,61 @@ def test_orchestrator_refseq_ref_only_filters_to_ref_genomes(gtdb_dir, tmp_path,
             ))
     accs = (out_dir / "GTDB-Escherichia-genus-RefSeq-rep-accs.txt").read_text().splitlines()
     assert len(accs) == 1
+
+
+# ─── deliberate-read orchestrator path (new: reads only what each path needs) ──
+
+def test_orchestrator_taxon_slice_matches_full_filter(gtdb_parquet, tmp_path, monkeypatch):
+    """
+    The deliberate taxon-slice read must yield the SAME accessions as loading the
+    whole table and filtering in pandas (guards the resolve->select seam that
+    silently mis-sliced when resolve_taxon's rank was treated as a list).
+    """
+    monkeypatch.chdir(tmp_path)
+    with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
+               return_value=gtdb_parquet):
+        with pytest.raises(SystemExit):
+            get_accessions_from_gtdb(make_args(target_taxon="Escherichia"))
+
+    new_accs = sorted((tmp_path / "GTDB-Escherichia-genus-accs.txt").read_text().split())
+    full = pd.DataFrame(ROWS)
+    old_accs = sorted(full[full["genus"] == "Escherichia"]["ncbi_genbank_assembly_accession"].tolist())
+    assert new_accs == old_accs
+
+
+def test_orchestrator_metadata_tsv_carries_all_asset_columns(gtdb_parquet, tmp_path, monkeypatch):
+    """The metadata TSV should carry every column in the parquet asset."""
+    monkeypatch.chdir(tmp_path)
+    with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
+               return_value=gtdb_parquet):
+        with pytest.raises(SystemExit):
+            get_accessions_from_gtdb(make_args(target_taxon="Escherichia"))
+
+    meta = pd.read_csv(tmp_path / "GTDB-Escherichia-genus-metadata.tsv", sep="\t")
+    asset_cols = set(pq.ParquetFile(gtdb_parquet).schema_arrow.names)
+    assert set(meta.columns) == asset_cols
+
+
+def test_resolve_or_exit_returns_canonical_and_rank(gtdb_parquet):
+    """_resolve_or_exit returns (canonical, rank) -- rank is a single string, not a list."""
+    canonical, rank = _resolve_or_exit(gtdb_parquet, "escherichia")
+    assert canonical == "Escherichia"
+    assert rank == "genus"
+
+
+def test_resolve_or_exit_all_returns_none_rank(gtdb_parquet):
+    assert _resolve_or_exit(gtdb_parquet, "all") == ("all", None)
+
+
+def test_resolve_or_exit_ambiguous_exits(gtdb_parquet, tmp_path):
+    """A name at multiple ranks with no -r must print-and-exit, not raise."""
+    rows = [{
+        "accession": "x", "domain": "Bacteria", "phylum": "P", "class": "Dup",
+        "order": "O", "family": "Dup", "genus": "G", "species": "G s",
+        "gtdb_representative": "t", "ncbi_refseq_category": "na",
+        "ncbi_genbank_assembly_accession": "GCA_1.1",
+    }]
+    p = tmp_path / "amb.parquet"
+    pq.write_table(pa.Table.from_pandas(pd.DataFrame(rows), preserve_index=False), str(p))
+    with pytest.raises(SystemExit):
+        _resolve_or_exit(str(p), "Dup")

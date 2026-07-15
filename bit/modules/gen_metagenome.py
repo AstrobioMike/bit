@@ -200,27 +200,20 @@ GTDB_USED_COLUMNS = GTDB_KEPT_COLUMNS
 def _load_gtdb_table(args, run):
     """
     load the GTDB metadata table once (needed for generative selection and/or
-    GTDB-taxonomy resolution of user accessions). Cached on run. Silent — the
-    caller wraps this in an appropriately-labeled spinner. GTDB version is
+    GTDB-taxonomy resolution of user accessions). Cached on run. GTDB version is
     recorded to the runlog here.
-
-    Only the columns gen-mg uses are read (see GTDB_USED_COLUMNS). The
-    stored table is already slimmed to these columns at download time, so on a
-    current table the usecols intersect below is a no-op; it's retained so an
-    older, un-slimmed cached table (full ~110 columns) still reads correctly.
     """
     if getattr(run, "gtdb_tab", None) is not None:
         return run.gtdb_tab
-    gtdb_dir = get_gtdb_data(quiet=True)
-    gtdb_version, gtdb_release_date = _read_gtdb_version(gtdb_dir)
+
+    import pyarrow.parquet as pq # type: ignore
+
+    gtdb_path = get_gtdb_data(quiet=True)
+    gtdb_version, gtdb_release_date = _read_gtdb_version(os.path.dirname(gtdb_path))
     log_data_source(run, "GTDB version", f"{gtdb_version} ({gtdb_release_date})")
-    gtdb_path = os.path.join(gtdb_dir, "GTDB-arc-and-bac-metadata.tsv")
-    # intersect the desired columns with those actually present (column sets vary
-    # by GTDB release), so usecols never errors on an absent name.
-    present = pd.read_csv(gtdb_path, sep="\t", nrows=0).columns
+    present = set(pq.ParquetFile(gtdb_path).schema_arrow.names)
     usecols = [c for c in GTDB_USED_COLUMNS if c in present]
-    run.gtdb_tab = pd.read_csv(
-        gtdb_path, sep="\t", low_memory=False, usecols=usecols)
+    run.gtdb_tab = pq.read_table(gtdb_path, columns=usecols).to_pandas()
     return run.gtdb_tab
 
 

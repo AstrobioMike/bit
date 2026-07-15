@@ -1,189 +1,169 @@
+import os
 import sys
-import subprocess
-import pandas as pd # type: ignore
-from io import StringIO
+import pyarrow as pa # type: ignore
+import pyarrow.compute as pc # type: ignore
+import pyarrow.parquet as pq # type: ignore
 from bit.modules.general import color_text, wprint, report_message
+from bit.modules.ncbi.get_ncbi_assembly_data import (
+    PARQUET_FILENAME,
+    check_ncbi_assembly_info_location_var_is_set,
+    get_ncbi_assembly_data,
+)
+from bit.modules.taxonomy.tax_select import (
+    AmbiguousTaxon,
+    TaxonNotFound,
+    resolve_taxon,
+    select,
+)
 
 
-FIELD_MAP = {
-    "accession": "accession",
-    "organism-name": "organism_name",
-    "organism-tax-id": "tax_id",
-    "assminfo-name": "assembly_name",
-    "assminfo-level": "assembly_level",
-    "assminfo-refseq-category": "refseq_category",
-    "assmstats-total-sequence-len": "total_sequence_length",
-    "checkm-completeness": "checkm_completeness",
-    "checkm-contamination": "checkm_contamination",
-    "source_database": "source_database",
+_COLUMNS = [
+    "assembly_accession",
+    "organism_name",
+    "taxid",
+    "asm_name",
+    "assembly_level",
+    "refseq_category",
+    "checkm_completeness",
+    "checkm_contamination",
+    "genome_size",
+    "domain", "phylum", "class", "order", "family", "genus", "species",
+]
+
+_ASSEMBLY_LEVELS = {
+    "complete": "Complete Genome",
+    "chromosome": "Chromosome",
+    "scaffold": "Scaffold",
+    "contig": "Contig",
 }
+
+
+def parse_assembly_levels(value):
+    if not value:
+        return []
+    if isinstance(value, str):
+        parts = [v.strip().lower() for v in value.split(",") if v.strip()]
+    else:
+        parts = [str(v).strip().lower() for v in value]
+
+    unknown = [p for p in parts if p not in _ASSEMBLY_LEVELS]
+    if unknown:
+        raise ValueError(
+            f"unrecognised --assembly-level value(s): {', '.join(unknown)}. "
+            f"Choose from: {', '.join(_ASSEMBLY_LEVELS)}")
+    return [_ASSEMBLY_LEVELS[p] for p in parts]
+
+
+def ncbi_table_path(force_update=False, quiet=True):
+    get_ncbi_assembly_data(force_update=force_update, quiet=quiet)
+    ncbi_dir = check_ncbi_assembly_info_location_var_is_set()
+    return os.path.join(ncbi_dir, PARQUET_FILENAME)
+
 
 def get_accessions_from_ncbi(args):
 
+    table_path = ncbi_table_path()
+
+    if str(args.target_taxon).isdigit():
+        tab = _select_by_taxid(table_path, str(args.target_taxon))
+        label = f"taxid {args.target_taxon}"
+    else:
+        try:
+            canonical, rank = resolve_taxon(table_path, args.target_taxon,
+                                            rank=getattr(args, "target_rank", None))
+        except AmbiguousTaxon as e:
+            report_message(
+                f"'{e.taxon}' occurs at more than one rank "
+                f"({', '.join(e.ranks_found)}). Specify which with `-r`, or pass "
+                f"the NCBI taxid to `-t` instead.", "yellow")
+            print("")
+            sys.exit(0)
+        except TaxonNotFound:
+            report_message(f"Input taxon '{args.target_taxon}' doesn't seem to "
+                           f"exist at any rank :(", "yellow")
+            print("")
+            sys.exit(0)
+
+        if canonical != args.target_taxon:
+            wprint(color_text(f"Matched input '{args.target_taxon}' to NCBI taxon "
+                              f"'{canonical}'.", "yellow"))
+            print("")
+
+        tab = select(table_path, "ncbi", rank, canonical,
+                     reps_only=args.reference_genomes_only, columns=_COLUMNS)
+        label = f"{rank} '{canonical}'"
+
+    tab = _apply_filters(tab, args)
+
     if args.get_taxon_counts:
-        get_taxon_count(args)
+        report_message(f"There are {tab.num_rows:,} genome(s) under {label} with "
+                       "the specified filters.", "none",
+                       initial_indent="    ", subsequent_indent="    ",
+                       trailing_newline=True)
         sys.exit(0)
 
-    get_accessions(args)
-    sys.exit(0)
-
-
-def build_summary_command(args):
-
-    cmd = ["datasets", "summary", "genome", "taxon", str(args.target_taxon),
-           "--as-json-lines"]
-
-    if args.source == "refseq":
-        cmd += ["--assembly-source", "RefSeq"]
-    elif args.source == "genbank":
-        cmd += ["--assembly-source", "GenBank"]
-
-    if args.reference_genomes_only:
-        cmd += ["--reference"]
-
-    if args.assembly_level:
-        cmd += ["--assembly-level", ",".join(args.assembly_level)]
-
-    if args.annotated_only:
-        cmd += ["--annotated"]
-
-    return cmd
-
-
-def run_ncbi_summary(args):
-    """ 
-    runs `datasets summary ... | dataformat tsv genome ...` and returns a parsed DataFrame
-    """
-
-    summary_cmd = build_summary_command(args)
-    dataformat_cmd = ["dataformat", "tsv", "genome", "--fields", ",".join(FIELD_MAP.keys())]
-
-    report_message(f"Querying NCBI for genomes under target '{args.target_taxon}'...", "yellow")
-
-    summary_proc = subprocess.Popen(summary_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    dataformat_proc = subprocess.Popen(dataformat_cmd, stdin=summary_proc.stdout,
-                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-
-    summary_proc.stdout.close()
-
-    out, dataformat_err = dataformat_proc.communicate()
-    summary_err = summary_proc.stderr.read()
-    summary_proc.stderr.close()
-    summary_proc.wait()
-
-    out_text = out.decode("utf-8", errors="replace")
-    summary_err_text = summary_err.decode("utf-8", errors="replace") if summary_err else ""
-    dataformat_err_text = dataformat_err.decode("utf-8", errors="replace") if dataformat_err else ""
-
-    # a field-name mismatch (or other dataformat problem) shows up as a non-zero exit from
-    # dataformat with a message on its stderr. printing that error out if it happens
-    if dataformat_proc.returncode != 0:
-        report_message("The NCBI `dataformat` step failed:", "red")
+    if tab.num_rows == 0:
+        report_message(f"No genomes were found under {label} with the specified "
+                       "filters.", "none",
+                       initial_indent="    ", subsequent_indent="    ")
         print("")
-        wprint(dataformat_err_text.strip() if dataformat_err_text.strip() else
-               "(no error message was returned)")
-        print("")
-        sys.exit(1)
+        sys.exit(0)
 
-    if summary_proc.returncode != 0 and not out_text.strip():
+    _write_outputs(tab, args, label)
 
-        lowered = summary_err_text.lower()
-        if "is not recognized" in lowered or "is not exact" in lowered:
-            return pd.DataFrame(columns=list(FIELD_MAP.values()))
 
-        report_message("The NCBI `datasets` query failed:", "red")
-        print("")
-        wprint(summary_err_text.strip() if summary_err_text.strip() else
-               "(no error message was returned)")
-        print("")
-        sys.exit(1)
+def _select_by_taxid(table_path, taxid):
+    from bit.modules.taxonomy.tax_ranks import RANKS
 
-    if not out_text.strip():
-        return pd.DataFrame(columns=list(FIELD_MAP.values()))
+    for rank in RANKS:
+        tab = pq.read_table(table_path, columns=_COLUMNS,
+                            filters=[(f"{rank}_taxid", "=", str(taxid))])
+        if tab.num_rows:
+            return tab
 
-    tab = pd.read_csv(StringIO(out_text), sep="\t", dtype=str, low_memory=False)
+    return pq.read_table(table_path, columns=_COLUMNS,
+                         filters=[("taxid", "=", str(taxid))])
 
-    if len(tab.columns) == len(FIELD_MAP):
-        tab.columns = list(FIELD_MAP.values())
-    else:
-        report_message("The columns returned by `dataformat` didn't match what was "
-                       "expected. The installed NCBI Datasets version may use different "
-                       "field names. Got these columns:", "red")
-        print("")
-        wprint(", ".join(str(c) for c in tab.columns))
-        print("")
-        sys.exit(1)
 
-    def normalize_cell(value):
-        if pd.isna(value):
-            return "NA"
-        stripped = str(value).strip()
-        if stripped == "" or stripped.lower() == "na":
-            return "NA"
-        return stripped
+def _apply_filters(tab, args):
+    source = getattr(args, "source", "refseq")
+    if source in ("refseq", "genbank"):
+        prefix = "GCF_" if source == "refseq" else "GCA_"
+        acc = tab.column("assembly_accession")
+        tab = tab.filter(pc.starts_with(acc, prefix))
 
-    tab = tab.apply(lambda col: col.map(normalize_cell))
-
-    if "source_database" in tab.columns:
-        source_db_map = {
-            "SOURCE_DATABASE_GENBANK": "genbank",
-            "SOURCE_DATABASE_REFSEQ": "refseq",
-        }
-        tab["source_database"] = tab["source_database"].map(
-            lambda value: source_db_map.get(value, value)
-        )
-
+    wanted = parse_assembly_levels(getattr(args, "assembly_level", None))
+    if wanted:
+        tab = tab.filter(pc.is_in(tab.column("assembly_level"),
+                                  value_set=pa.array(wanted, type=pa.string())))
     return tab
 
 
-def get_accessions(args):
-    """ 
-    pulls accessions + metadata for the target taxon and writes the two output files
-    """
-
-    tab = run_ncbi_summary(args)
-
-    if tab.empty:
-        report_message(f"No genomes were found under taxon '{args.target_taxon}' with the "
-                       "specified filters.", "none", initial_indent="    ", subsequent_indent="    ")
-        print("")
-        sys.exit(0)
-
-    # build output filenames from the (filesystem-safe) taxon
+def _write_outputs(tab, args, label):
     taxon_for_filename = str(args.target_taxon).replace(" ", "-").replace("/", "-")
 
     suffix_bits = []
     if args.reference_genomes_only:
         suffix_bits.append("refseq-ref")
-    elif args.source != "both":
+    elif getattr(args, "source", "refseq") != "both":
         suffix_bits.append(args.source.lower())
     suffix = ("-" + "-".join(suffix_bits)) if suffix_bits else ""
 
-    acc_out_filename = f"NCBI-{taxon_for_filename}{suffix}-accessions.txt"
-    tab_out_filename = f"NCBI-{taxon_for_filename}{suffix}-metadata.tsv"
+    acc_out = f"NCBI-{taxon_for_filename}{suffix}-accessions.txt"
+    tab_out = f"NCBI-{taxon_for_filename}{suffix}-metadata.tsv"
 
-    tab.to_csv(tab_out_filename, sep="\t", index=False)
+    df = tab.to_pandas()
+    df.to_csv(tab_out, sep="\t", index=False)
 
-    target_accs = tab["accession"].tolist()
-    with open(acc_out_filename, "w") as out:
-        for acc in target_accs:
+    accs = df["assembly_accession"].tolist()
+    with open(acc_out, "w") as out:
+        for acc in accs:
             out.write(acc + "\n")
 
     print("")
-    wprint(f"Wrote {len(target_accs):,} accession(s) to:")
-    wprint("  " + color_text(acc_out_filename))
+    wprint(f"Wrote {len(accs):,} accession(s) to:")
+    wprint("  " + color_text(acc_out))
     print("")
-    wprint("Associated metadata of these targets written to:")
-    wprint("  " + color_text(tab_out_filename))
+    wprint("Associated taxonomy and metadata of these targets written to:")
+    wprint("  " + color_text(tab_out))
     print("")
-
-
-def get_taxon_count(args):
-
-    tab = run_ncbi_summary(args)
-
-    count = len(tab.index)
-
-    report_message(f"There are {count:,} genome(s) under target '{args.target_taxon}' with the "
-                    "specified filters.", "none", initial_indent="    ", subsequent_indent="    ",
-                    trailing_newline=True)
