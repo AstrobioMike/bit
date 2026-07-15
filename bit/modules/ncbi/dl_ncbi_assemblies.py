@@ -217,7 +217,7 @@ def run_download_pass(targets, run_data, desc="Progress"):
         else:
             desc_buffer = "      "
             ncols = 70
-        with tqdm(total=len(targets), desc=f"{desc_buffer}{desc}", unit=" file", ncols=ncols) as pbar:
+        with tqdm(total=len(targets), desc=f"{desc_buffer}{desc}", unit=" file", ncols=ncols, smoothing=0.05) as pbar:
             for future in as_completed(futures):
                 dest, error, status = future.result()
                 if status == "failed":
