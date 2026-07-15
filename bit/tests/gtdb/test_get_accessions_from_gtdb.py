@@ -3,9 +3,7 @@ import pandas as pd # type: ignore
 import pyarrow as pa # type: ignore
 import pyarrow.parquet as pq # type: ignore
 from argparse import Namespace
-from pathlib import Path
 from unittest.mock import patch
-
 from bit.modules.gtdb.get_accessions_from_gtdb import (
     report_gtdb_version_info,
     copy_gtdb_table,
@@ -16,6 +14,7 @@ from bit.modules.gtdb.get_accessions_from_gtdb import (
     get_accessions_from_gtdb,
     _resolve_or_exit
 )
+from bit.modules.gtdb.build_gtdb_data_parquet import PARQUET_FILENAME, VERSION_FILENAME
 
 
 # ─── helpers / fixtures ───────────────────────────────────────────────────────
@@ -86,7 +85,7 @@ def gtdb_tab():
 @pytest.fixture
 def gtdb_dir(tmp_path):
     """A tmp directory holding just the GTDB version-info file (for the version reader)."""
-    (tmp_path / "GTDB-version-info.txt").write_text("R220\n2024-04-24\n")
+    (tmp_path / VERSION_FILENAME).write_text("R220\n2024-04-24\n")
     return tmp_path
 
 @pytest.fixture
@@ -95,9 +94,9 @@ def gtdb_parquet(tmp_path):
     The real R4 contract: get_gtdb_data returns the .parquet PATH, with the
     version-info file sitting beside it. Orchestrator tests use this.
     """
-    (tmp_path / "GTDB-version-info.txt").write_text("R220\n2024-04-24\n")
+    (tmp_path / VERSION_FILENAME).write_text("R220\n2024-04-24\n")
     df = pd.DataFrame(ROWS)
-    path = tmp_path / "gtdb-data.parquet"
+    path = tmp_path / PARQUET_FILENAME
     pq.write_table(pa.Table.from_pandas(df, preserve_index=False), str(path))
     return str(path)
 

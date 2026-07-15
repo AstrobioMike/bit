@@ -1,12 +1,6 @@
-"""
-Tests for the non-trivial *logic* that lives in the gen_metagenome orchestrator
-(accession normalization, downloaded-fasta matching, the suppression-screen
-backfill loop, the GTDB info summary, and small parsing helpers). The phase
-functions themselves are thin wiring over already-tested modules and are not
-unit-tested here.
-"""
 import os
 import pandas as pd # type: ignore
+from bit.modules.gtdb.build_gtdb_data_parquet import PARQUET_FILENAME, VERSION_FILENAME
 import pytest # type: ignore
 from types import SimpleNamespace
 
@@ -94,8 +88,8 @@ def _ai_file(tmp_path, live_accs):
     write the same core columns the real asset carries so the schema is representative.
     An empty live_accs still produces a typed, empty table (not a schema-less file).
     """
-    import pyarrow as pa
-    import pyarrow.parquet as pq
+    import pyarrow as pa # type: ignore
+    import pyarrow.parquet as pq # type: ignore
 
     cols = ["assembly_accession", "taxid", "organism_name", "infraspecific_name",
             "version_status", "assembly_level", "asm_name", "ftp_path"]
@@ -311,12 +305,14 @@ def test_build_truth_for_taxonomy_per_read_both(tmp_path):
 # ─── _load_gtdb_table reads only used columns (Parquet column pushdown) ─────
 
 def test_load_gtdb_table_usecols_intersect(tmp_path, monkeypatch):
-    """ only the used columns are read; extras are dropped and columns absent in
+    """
+    only the used columns are read; extras are dropped and columns absent in
     older GTDB releases (coding_density, checkm2_*) don't raise. Now a Parquet
     read: get_gtdb_data returns the .parquet PATH, and the version-info file sits
-    beside it. """
-    import pyarrow as pa
-    import pyarrow.parquet as pq
+    beside it
+    """
+    import pyarrow as pa # type: ignore
+    import pyarrow.parquet as pq # type: ignore
 
     gd = tmp_path / "gtdb"; gd.mkdir()
     cols = ["accession", "ncbi_genbank_assembly_accession", "ncbi_taxid",
@@ -330,9 +326,9 @@ def test_load_gtdb_table_usecols_intersect(tmp_path, monkeypatch):
            "Bacteria", "p", "c", "o", "f", "g", "s", "98.0", "1.0",
            "3000000", "1", "1500000", "50.0", "0", "2700000", "junk", "junk"]
 
-    gtdb_path = gd / "gtdb-data.parquet"
+    gtdb_path = gd / PARQUET_FILENAME
     pq.write_table(pa.table({c: pa.array([v]) for c, v in zip(cols, row)}), str(gtdb_path))
-    (gd / "GTDB-version-info.txt").write_text("r220\n2024-04-24\n")
+    (gd / VERSION_FILENAME).write_text("r220\n2024-04-24\n")
 
     monkeypatch.setattr(G, "get_gtdb_data", lambda quiet=True: str(gtdb_path))
     run = SimpleNamespace(log_file=None)

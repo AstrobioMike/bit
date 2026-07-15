@@ -104,9 +104,8 @@ def get_slim_ncbi_assembly_data(location, quiet=False):
 
 def _verify_parquet(path):
     """
-    Cheap integrity check: open the Parquet metadata (footer) and confirm the file
-    has a schema and at least one row group. This reads only the footer, not the
-    whole table, and turns a truncated/corrupt download into a clean failure.
+    Cheap integrity check: open the Parquet footer and confirm the file has a schema
+    and at least one row group. This reads only the footer, not the whole table.
     """
     import pyarrow.parquet as pq # type: ignore
     md = pq.ParquetFile(path).metadata

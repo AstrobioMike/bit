@@ -18,7 +18,8 @@ from tqdm import tqdm  # type: ignore
 from bit.modules.general import (color_text, report_message,
                                  attempt_to_make_dir, check_files_are_found, spinner,
                                  log_command_run)
-from bit.modules.gtdb.get_gtdb_data import get_gtdb_data, GTDB_KEPT_COLUMNS
+from bit.modules.gtdb.get_gtdb_data import get_gtdb_data, report_gtdb_version_info
+from bit.modules.gtdb.build_gtdb_data_parquet import OUT_COLUMNS as GTDB_KEPT_COLUMNS
 from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
 from bit.modules.ncbi.get_ncbi_tax_data import get_ncbi_tax_data
 from bit.modules.ncbi.get_ncbi_assembly_data import (get_ncbi_assembly_data,
@@ -174,17 +175,7 @@ def _read_retrieved_date(data_dir):
         return line.replace(",", "-")
 
 def _read_gtdb_version(location):
-    """ read GTDB version + release date from the version-info file (no printing;
-    the value goes to the runlog and the console shows only a spinner). """
-    version_info = []
-    with open(os.path.join(location, "GTDB-version-info.txt")) as version_info_file:
-        for line in version_info_file:
-            line = line.strip()
-            if line != "":
-                version_info.append(line)
-    gtdb_version = version_info[0]
-    gtdb_release_date = version_info[1]
-    return gtdb_version, gtdb_release_date
+    return report_gtdb_version_info(location)
 
 
 # ---- selection ----
@@ -205,15 +196,16 @@ def _load_gtdb_table(args, run):
     """
     if getattr(run, "gtdb_tab", None) is not None:
         return run.gtdb_tab
-
-    import pyarrow.parquet as pq # type: ignore
-
-    gtdb_path = get_gtdb_data(quiet=True)
-    gtdb_version, gtdb_release_date = _read_gtdb_version(os.path.dirname(gtdb_path))
+    gtdb_dir = get_gtdb_data(quiet=True)
+    gtdb_version, gtdb_release_date = _read_gtdb_version(gtdb_dir)
     log_data_source(run, "GTDB version", f"{gtdb_version} ({gtdb_release_date})")
-    present = set(pq.ParquetFile(gtdb_path).schema_arrow.names)
+    gtdb_path = os.path.join(gtdb_dir, "GTDB-arc-and-bac-metadata.tsv")
+    # intersect the desired columns with those actually present (column sets vary
+    # by GTDB release), so usecols never errors on an absent name.
+    present = pd.read_csv(gtdb_path, sep="\t", nrows=0).columns
     usecols = [c for c in GTDB_USED_COLUMNS if c in present]
-    run.gtdb_tab = pq.read_table(gtdb_path, columns=usecols).to_pandas()
+    run.gtdb_tab = pd.read_csv(
+        gtdb_path, sep="\t", low_memory=False, usecols=usecols)
     return run.gtdb_tab
 
 

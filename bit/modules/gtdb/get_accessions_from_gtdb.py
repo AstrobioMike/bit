@@ -2,7 +2,8 @@ import sys
 import os
 import pyarrow.parquet as pq # type: ignore
 from bit.modules.general import color_text, wprint
-from bit.modules.gtdb.get_gtdb_data import get_gtdb_data
+from bit.modules.gtdb.get_gtdb_data import (get_gtdb_data,
+                                            report_gtdb_version_info as _read_gtdb_version_info)
 from bit.modules.taxonomy.tax_ranks import RANKS
 from bit.modules.taxonomy.tax_select import (resolve_taxon, select,
                                              TaxonNotFound, AmbiguousTaxon)
@@ -131,17 +132,10 @@ def _report_gtdb_version(gtdb_path):
 
 
 def report_gtdb_version_info(location):
-    """ reporting GTDB version info (reads GTDB-version-info.txt from `location`) """
-    version_info = []
-    with open(os.path.join(location, "GTDB-version-info.txt")) as version_info_file:
-        for line in version_info_file:
-            line = line.strip()
-            if line != "":
-                version_info.append(line)
-    gtdb_version = version_info[0]
-    gtdb_release_date = version_info[1]
+    """ print the GTDB version line, reading version + date via the shared reader """
+    gtdb_version, gtdb_release_date = _read_gtdb_version_info(location)
     print("    Using GTDB " + gtdb_version + ": " + gtdb_release_date + "\n")
-
+ 
 
 def copy_gtdb_table(gtdb_path):
     """
