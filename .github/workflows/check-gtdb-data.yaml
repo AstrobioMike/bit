@@ -93,7 +93,7 @@ jobs:
       - name: Build GTDB Parquet
         if: steps.decide.outputs.need_rebuild == 'true'
         run: |
-          python -m bit.modules.gtdb.build_gtdb_parquet \
+          python -m bit.modules.gtdb.build_gtdb_data_parquet \
             --out-dir build --work-dir work \
             --version-file upstream-version.txt
           ls -lh build

@@ -41,7 +41,7 @@ jobs:
 
       - name: Build lineage-joined Parquet
         run: |
-          python -m bit.modules.ncbi.build_assembly_lineage_parquet \
+          python -m bit.modules.ncbi.build_ncbi_data_parquet \
             --out-dir build --work-dir work
           ls -lh build
 
