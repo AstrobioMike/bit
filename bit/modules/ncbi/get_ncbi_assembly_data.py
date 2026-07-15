@@ -6,15 +6,13 @@ import urllib.error
 from bit.modules.general import (wprint, color_text,
                                  report_message, notify_premature_exit,
                                  download_with_tqdm)
-
+from bit.modules.ncbi.build_ncbi_data_parquet import PARQUET_FILENAME, DATE_FILENAME
 
 
 _RELEASE_BASE = "https://github.com/AstrobioMike/bit/releases/download/ncbi-assembly-info-latest"
 
-TABLE_FILENAME = "ncbi-data.parquet"
-DATE_FILENAME = "date-retrieved.txt"
 
-NCBI_DATA_URL = f"{_RELEASE_BASE}/{TABLE_FILENAME}"
+NCBI_DATA_URL = f"{_RELEASE_BASE}/{PARQUET_FILENAME}"
 NCBI_DATE_URL = f"{_RELEASE_BASE}/{DATE_FILENAME}"
 
 
@@ -35,12 +33,12 @@ def check_ncbi_assembly_info_location_var_is_set():
 def ncbi_data_table_path(location=None):
     if location is None:
         location = check_ncbi_assembly_info_location_var_is_set()
-    return os.path.join(str(location), TABLE_FILENAME)
+    return os.path.join(str(location), PARQUET_FILENAME)
 
 
 def check_if_data_present(location):
 
-    table_path = os.path.join(str(location), TABLE_FILENAME)
+    table_path = os.path.join(str(location), PARQUET_FILENAME)
     date_retrieved_path = os.path.join(str(location), DATE_FILENAME)
 
     def is_nonempty_file(p):
@@ -64,13 +62,13 @@ def _report_unavailable(err):
            "often works. If it persists, the table can be fetched manually from:")
     print(f"        {color_text(NCBI_DATA_URL)}")
     print(f"        {color_text(NCBI_DATE_URL)}")
-    wprint(f"and placed (as '{TABLE_FILENAME}' and '{DATE_FILENAME}') in the directory "
+    wprint(f"and placed (as '{PARQUET_FILENAME}' and '{DATE_FILENAME}') in the directory "
            "shown by `bit data locations check`.")
     print("")
 
 
 def get_slim_ncbi_assembly_data(location, quiet=False):
-    table_path = os.path.join(location, TABLE_FILENAME)
+    table_path = os.path.join(location, PARQUET_FILENAME)
     date_path = os.path.join(location, DATE_FILENAME)
 
     print(color_text("\n    Downloading the prepared NCBI assembly-info table (only needs to be done once)...\n", "yellow"))

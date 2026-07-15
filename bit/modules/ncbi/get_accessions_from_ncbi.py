@@ -5,10 +5,10 @@ import pyarrow.compute as pc # type: ignore
 import pyarrow.parquet as pq # type: ignore
 from bit.modules.general import color_text, wprint, report_message
 from bit.modules.ncbi.get_ncbi_assembly_data import (
-    PARQUET_FILENAME,
     check_ncbi_assembly_info_location_var_is_set,
     get_ncbi_assembly_data,
 )
+from bit.modules.ncbi.build_ncbi_data_parquet import PARQUET_FILENAME
 from bit.modules.taxonomy.tax_select import (
     AmbiguousTaxon,
     TaxonNotFound,

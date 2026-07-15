@@ -22,7 +22,7 @@ from bit.modules.gtdb.get_gtdb_data import get_gtdb_data, GTDB_KEPT_COLUMNS
 from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
 from bit.modules.ncbi.get_ncbi_tax_data import get_ncbi_tax_data
 from bit.modules.ncbi.get_ncbi_assembly_data import (get_ncbi_assembly_data,
-                                                     TABLE_FILENAME as NCBI_TABLE_FILENAME)
+                                                     PARQUET_FILENAME as NCBI_PARQUET_FILENAME)
 
 from bit.modules.gen_mg import selection as SEL
 from bit.modules.gen_mg import abundance as ABD
@@ -221,7 +221,7 @@ def _assembly_info_path():
     base = os.environ.get("NCBI_assembly_data_dir")
     if not base:
         return None
-    p = os.path.join(base, NCBI_TABLE_FILENAME)
+    p = os.path.join(base, NCBI_PARQUET_FILENAME)
     return p if os.path.exists(p) else None
 
 
