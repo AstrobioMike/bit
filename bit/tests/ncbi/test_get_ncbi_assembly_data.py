@@ -4,11 +4,8 @@ import pyarrow as pa # type: ignore
 import pyarrow.parquet as pq # type: ignore
 import pytest  # type: ignore
 from unittest.mock import patch
-
 import bit.modules.ncbi.get_ncbi_assembly_data as mod
 from bit.modules.ncbi.get_ncbi_assembly_data import (
-    TABLE_FILENAME,
-    DATE_FILENAME,
     NCBI_DATA_URL,
     NCBI_DATE_URL,
     check_ncbi_assembly_info_location_var_is_set,
@@ -17,7 +14,7 @@ from bit.modules.ncbi.get_ncbi_assembly_data import (
     get_slim_ncbi_assembly_data,
     get_ncbi_assembly_data,
 )
-
+from bit.modules.ncbi.build_ncbi_data_parquet import PARQUET_FILENAME, DATE_FILENAME
 
 # --- helpers --------------------------------------------------------------
 
@@ -57,14 +54,14 @@ def test_location_var_exits_if_missing(monkeypatch):
 
 def test_table_path_derives_from_the_single_filename_constant(monkeypatch, tmp_path):
     monkeypatch.setenv("NCBI_assembly_data_dir", str(tmp_path))
-    assert ncbi_data_table_path() == str(tmp_path / TABLE_FILENAME)
-    assert ncbi_data_table_path("/somewhere") == f"/somewhere/{TABLE_FILENAME}"
+    assert ncbi_data_table_path() == str(tmp_path / PARQUET_FILENAME)
+    assert ncbi_data_table_path("/somewhere") == f"/somewhere/{PARQUET_FILENAME}"
 
 
 # --- check_if_data_present ------------------------------------------------
 
 def test_present_when_both_files_nonempty(tmp_path):
-    (tmp_path / TABLE_FILENAME).write_text("x")
+    (tmp_path / PARQUET_FILENAME).write_text("x")
     (tmp_path / DATE_FILENAME).write_text("2026,01,01")
     assert check_if_data_present(str(tmp_path)) is True
 
@@ -75,21 +72,21 @@ def test_absent_when_table_missing(tmp_path):
 
 
 def test_absent_when_date_missing(tmp_path):
-    (tmp_path / TABLE_FILENAME).write_text("x")
+    (tmp_path / PARQUET_FILENAME).write_text("x")
     assert check_if_data_present(str(tmp_path)) is False
 
 
 def test_a_half_present_pair_is_cleaned_up(tmp_path):
-    (tmp_path / TABLE_FILENAME).write_text("x")
+    (tmp_path / PARQUET_FILENAME).write_text("x")
     assert check_if_data_present(str(tmp_path)) is False
-    assert not (tmp_path / TABLE_FILENAME).exists()
+    assert not (tmp_path / PARQUET_FILENAME).exists()
 
 
 def test_empty_files_count_as_absent_and_are_removed(tmp_path):
-    (tmp_path / TABLE_FILENAME).write_text("")
+    (tmp_path / PARQUET_FILENAME).write_text("")
     (tmp_path / DATE_FILENAME).write_text("")
     assert check_if_data_present(str(tmp_path)) is False
-    assert not (tmp_path / TABLE_FILENAME).exists()
+    assert not (tmp_path / PARQUET_FILENAME).exists()
     assert not (tmp_path / DATE_FILENAME).exists()
 
 
@@ -99,7 +96,7 @@ def test_download_writes_table_and_date(tmp_path):
     with patch("bit.modules.ncbi.get_ncbi_assembly_data.download_with_tqdm",
                _fake_downloader()):
         get_slim_ncbi_assembly_data(str(tmp_path), quiet=True)
-    assert (tmp_path / TABLE_FILENAME).exists()
+    assert (tmp_path / PARQUET_FILENAME).exists()
     assert (tmp_path / DATE_FILENAME).exists()
 
 
@@ -129,7 +126,7 @@ def test_a_malformed_date_stamp_is_rejected(tmp_path):
          patch("bit.modules.ncbi.get_ncbi_assembly_data.notify_premature_exit") as mock_exit:
         get_slim_ncbi_assembly_data(str(tmp_path), quiet=True)
     # table and date both cleaned up, and no stray .part left behind
-    assert not (tmp_path / TABLE_FILENAME).exists()
+    assert not (tmp_path / PARQUET_FILENAME).exists()
     assert not (tmp_path / DATE_FILENAME).exists()
     assert not (tmp_path / (DATE_FILENAME + ".part")).exists()
     mock_exit.assert_called_once()
@@ -147,7 +144,7 @@ def test_a_truncated_parquet_is_rejected_and_cleaned_up(tmp_path):
     with patch("bit.modules.ncbi.get_ncbi_assembly_data.download_with_tqdm", _bad), \
          patch("bit.modules.ncbi.get_ncbi_assembly_data.notify_premature_exit") as mock_exit:
         get_slim_ncbi_assembly_data(str(tmp_path), quiet=True)
-    assert not (tmp_path / TABLE_FILENAME).exists()
+    assert not (tmp_path / PARQUET_FILENAME).exists()
     assert not (tmp_path / DATE_FILENAME).exists()
     mock_exit.assert_called_once()
 
@@ -158,7 +155,7 @@ def test_download_failure_exits_without_a_local_rebuild(tmp_path):
     with patch("bit.modules.ncbi.get_ncbi_assembly_data.download_with_tqdm", boom), \
          patch("bit.modules.ncbi.get_ncbi_assembly_data.notify_premature_exit") as mock_exit:
         get_slim_ncbi_assembly_data(str(tmp_path), quiet=True)
-    assert not (tmp_path / TABLE_FILENAME).exists()
+    assert not (tmp_path / PARQUET_FILENAME).exists()
     mock_exit.assert_called_once()
 
 
@@ -174,12 +171,12 @@ def test_socket_timeout_is_restored_after_download(tmp_path):
 
 def test_present_data_skips_download_but_still_returns_path(tmp_path, monkeypatch):
     monkeypatch.setenv("NCBI_assembly_data_dir", str(tmp_path))
-    (tmp_path / TABLE_FILENAME).write_text("x")
+    (tmp_path / PARQUET_FILENAME).write_text("x")
     (tmp_path / DATE_FILENAME).write_text("2026,01,01")
     with patch("bit.modules.ncbi.get_ncbi_assembly_data.get_slim_ncbi_assembly_data") as mock_dl:
         result = get_ncbi_assembly_data(quiet=True)
     mock_dl.assert_not_called()
-    assert result == str(tmp_path / TABLE_FILENAME)
+    assert result == str(tmp_path / PARQUET_FILENAME)
 
 
 def test_missing_data_triggers_download_then_returns_path(tmp_path, monkeypatch):
@@ -187,14 +184,14 @@ def test_missing_data_triggers_download_then_returns_path(tmp_path, monkeypatch)
     with patch("bit.modules.ncbi.get_ncbi_assembly_data.get_slim_ncbi_assembly_data") as mock_dl:
         result = get_ncbi_assembly_data(quiet=True)
     mock_dl.assert_called_once()
-    assert result == str(tmp_path / TABLE_FILENAME)
+    assert result == str(tmp_path / PARQUET_FILENAME)
 
 
 def test_force_update_downloads_even_when_present(tmp_path, monkeypatch):
     monkeypatch.setenv("NCBI_assembly_data_dir", str(tmp_path))
-    (tmp_path / TABLE_FILENAME).write_text("x")
+    (tmp_path / PARQUET_FILENAME).write_text("x")
     (tmp_path / DATE_FILENAME).write_text("2026,01,01")
     with patch("bit.modules.ncbi.get_ncbi_assembly_data.get_slim_ncbi_assembly_data") as mock_dl:
         result = get_ncbi_assembly_data(force_update=True, quiet=True)
     mock_dl.assert_called_once()
-    assert result == str(tmp_path / TABLE_FILENAME)
+    assert result == str(tmp_path / PARQUET_FILENAME)
