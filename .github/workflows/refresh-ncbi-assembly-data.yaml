@@ -53,6 +53,8 @@ jobs:
           import pyarrow.parquet as pq
           import pyarrow.compute as pc
 
+          from bit.modules.ncbi.build_ncbi_data_parquet import OUT_COLUMNS
+
           path = "build/ncbi-data.parquet"
           pf = pq.ParquetFile(path)
           md = pf.metadata
@@ -60,14 +62,10 @@ jobs:
           print(f"rows={md.num_rows:,} row_groups={md.num_row_groups} cols={len(cols)}")
 
           # 1. checking schema is as expected
-          expected = [
-              "assembly_accession","taxid","organism_name","infraspecific_name",
-              "version_status","assembly_level","asm_name","ftp_path",
-              "domain","phylum","class","order","family","genus","species",
-              "domain_taxid","phylum_taxid","class_taxid","order_taxid",
-              "family_taxid","genus_taxid","species_taxid",
-          ]
-          assert cols == expected, f"schema drift!\n got: {cols}\n want: {expected}"
+          assert cols == list(OUT_COLUMNS), (
+              "schema drift between the built asset and the builder's OUT_COLUMNS!\n"
+              f" built:       {cols}\n"
+              f" OUT_COLUMNS: {list(OUT_COLUMNS)}")
 
           # 2. guard against a truncated build
           assert md.num_rows > 1_000_000, f"suspiciously few rows: {md.num_rows}"
