@@ -41,14 +41,12 @@ jobs:
         conda run -n bit conda install bit -y
         conda run -n bit pip install -e . # the editable pip install is so test coverages make sense
 
-    - name: Check installed version
+    - name: Print installed bit version
       run: conda run -n bit bit -v
 
-
-    - name: Check conda info
+    - name: Print conda info
       run: |
         conda run -n bit conda list --explicit
-
 
     - name: Run pytest
       run: conda run -n bit pytest

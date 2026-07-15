@@ -37,6 +37,7 @@ requirements:
     - pigz
     - pip
     - pulp=2.7.0
+    - pyarrow=24
     - pybedtools
     - pyfastx
     - pytest

@@ -1,0 +1,165 @@
+name: check-gtdb-metadata
+
+# Weekly version-gated refresh of bit's GTDB metadata, published as a
+# single sorted, compressed Parquet file
+#
+# This checks if GTDB has been updated and rebuilds only when needed
+#   1. fetch upstream GTDB VERSION.txt
+#   2. fetch the version currently published
+#   3. if they match -> stop
+#   4. if they differ -> download + parse the full GTDB metadata, build the
+#      Parquet, and clobber both assets (parquet + the loose version file)
+#
+# The asset URL (never changes):
+#   https://github.com/AstrobioMike/bit/releases/download/gtdb-metadata-latest/gtdb-data.parquet
+
+on:
+  schedule:
+    # 07:00 UTC every Monday
+    - cron: "0 7 * * 1"
+  workflow_dispatch:
+    inputs:
+      force_rebuild:
+        description: "Rebuild even if the version is unchanged"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: check-gtdb-metadata
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: gtdb-metadata-latest
+  ASSET_NAME: gtdb-data.parquet
+  VERSION_ASSET_NAME: VERSION.txt
+  GTDB_VERSION_URL: https://data.ace.uq.edu.au/public/gtdb/data/releases/latest/VERSION.txt
+
+jobs:
+  check-and-refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Determine whether a rebuild is needed
+        id: decide
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          curl -fsSL "$GTDB_VERSION_URL" -o upstream-version.txt
+          echo "----- upstream VERSION.txt -----"
+          cat upstream-version.txt
+
+          published=""
+          if gh release download "$RELEASE_TAG" --repo "${{ github.repository }}" \
+               --pattern "$VERSION_ASSET_NAME" --dir published 2>/dev/null; then
+            published="published/${VERSION_ASSET_NAME}"
+            echo "----- published GTDB-version-info.txt -----"
+            cat "$published"
+          else
+            echo "No published version asset found."
+          fi
+
+          norm() { sed -e 's/[[:space:]]*$//' -e '/^$/d' "$1" | tr -d '\r'; }
+
+          need_rebuild=true
+          if [ -n "$published" ] && diff -q <(norm upstream-version.txt) <(norm "$published") >/dev/null; then
+            need_rebuild=false
+          fi
+
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] && \
+             [ "${{ inputs.force_rebuild }}" = "true" ]; then
+            echo "force_rebuild requested -> rebuilding regardless"
+            need_rebuild=true
+          fi
+
+          echo "need_rebuild=$need_rebuild" >> "$GITHUB_OUTPUT"
+          echo "Decision: need_rebuild=$need_rebuild"
+
+      - name: Install build deps
+        if: steps.decide.outputs.need_rebuild == 'true'
+        run: python -m pip install --quiet pyarrow
+
+      - name: Build GTDB Parquet
+        if: steps.decide.outputs.need_rebuild == 'true'
+        run: |
+          python -m bit.modules.gtdb.build_gtdb_parquet \
+            --out-dir build --work-dir work \
+            --version-file upstream-version.txt
+          ls -lh build
+
+      - name: Sanity-check the built asset
+        if: steps.decide.outputs.need_rebuild == 'true'
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import pyarrow.parquet as pq
+          import pyarrow.compute as pc
+          from bit.modules.taxonomy.tax_ranks import RANKS, NA
+
+          path = "build/GTDB-arc-and-bac-metadata.parquet"
+          pf = pq.ParquetFile(path)
+          md = pf.metadata
+          cols = pf.schema_arrow.names
+          print(f"rows={md.num_rows:,} row_groups={md.num_row_groups} cols={len(cols)}")
+
+          # 1. checking the lineage is as expected
+          assert [c for c in cols if c in RANKS] == RANKS, f"lineage schema drift: {cols}"
+
+          # 2. checking the columns --derep-rank depends on
+          for needed in ("gtdb_representative", "ncbi_genbank_assembly_accession",
+                         "checkm2_completeness", "checkm2_contamination"):
+              assert needed in cols, f"missing required column: {needed}"
+
+          # 3. guard against a truncated build
+          assert md.num_rows > 500_000, f"suspiciously few rows: {md.num_rows}"
+
+          # 4. checking row-group statistics exist
+          assert md.row_group(0).column(0).statistics is not None, "no row-group stats"
+
+          # 5. checking tax looks normal
+          dom = pq.read_table(path, columns=["domain"]).column("domain")
+          n_na = pc.sum(pc.equal(dom, NA)).as_py() or 0
+          print(f"domain == NA: {n_na:,}")
+          assert n_na == 0, "GTDB rows with no domain -- taxonomy split is broken"
+
+          doms = set(pc.unique(dom).to_pylist())
+          assert doms == {"Bacteria", "Archaea"}, f"unexpected domains: {doms}"
+
+          # 6. checking representatives pool looks normal
+          rep = pq.read_table(path, columns=["gtdb_representative"]).column("gtdb_representative")
+          n_rep = pc.sum(pc.equal(rep, "t")).as_py() or 0
+          print(f"GTDB representatives: {n_rep:,}")
+          assert n_rep > 50_000, "representative pool looks wrong"
+
+          # 7. spot-checking a stable lineage
+          ec = pq.read_table(path, columns=["domain","phylum","genus","species"],
+                             filters=[("genus","=","Escherichia")])
+          assert ec.num_rows > 0, "no Escherichia found"
+          print("spot-check:", {k: v[0] for k, v in ec.to_pydict().items()})
+
+          print("all checks passed")
+          PY
+
+      - name: Upload / overwrite the release assets
+        if: steps.decide.outputs.need_rebuild == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            "build/${ASSET_NAME}" "build/${VERSION_ASSET_NAME}" \
+            --clobber --repo "${{ github.repository }}"
+
+      - name: No update needed
+        if: steps.decide.outputs.need_rebuild != 'true'
+        run: echo "GTDB version unchanged; nothing to do."

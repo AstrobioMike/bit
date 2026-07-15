@@ -1,0 +1,125 @@
+name: refresh-ncbi-assembly-info
+
+# Weekly rebuild of the slim NCBI assembly-info table, with full 7-rank
+# lineages added (names + lineage taxids), published as a single sorted, compressed
+# Parquet file
+#
+# The asset URL (never changes)
+#   https://github.com/AstrobioMike/bit/releases/download/ncbi-assembly-info-latest/ncbi-data.parquet
+
+on:
+  schedule:
+    # 06:00 UTC every Monday
+    - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: refresh-ncbi-assembly-info
+  cancel-in-progress: false
+
+env:
+  RELEASE_TAG: ncbi-assembly-info-latest
+  ASSET_NAME: ncbi-data.parquet
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+
+      - name: Install build deps
+        run: python -m pip install --quiet pyarrow
+
+      - name: Build lineage-joined Parquet
+        run: |
+          python -m bit.modules.ncbi.build_assembly_lineage_parquet \
+            --out-dir build --work-dir work
+          ls -lh build
+
+      - name: Sanity-check the built asset
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import sys
+          import pyarrow.parquet as pq
+          import pyarrow.compute as pc
+
+          path = "build/ncbi-assembly-info.parquet"
+          pf = pq.ParquetFile(path)
+          md = pf.metadata
+          cols = pf.schema_arrow.names
+          print(f"rows={md.num_rows:,} row_groups={md.num_row_groups} cols={len(cols)}")
+
+          # 1. checking schema is as expected
+          expected = [
+              "assembly_accession","taxid","organism_name","infraspecific_name",
+              "version_status","assembly_level","asm_name","ftp_path",
+              "domain","phylum","class","order","family","genus","species",
+              "domain_taxid","phylum_taxid","class_taxid","order_taxid",
+              "family_taxid","genus_taxid","species_taxid",
+          ]
+          assert cols == expected, f"schema drift!\n got: {cols}\n want: {expected}"
+
+          # 2. guard against a truncated build
+          assert md.num_rows > 1_000_000, f"suspiciously few rows: {md.num_rows}"
+
+          # 3. checking row-group statistics exist
+          assert md.row_group(0).column(0).statistics is not None, "no row-group stats"
+
+          # 4. checking the lineage join worked
+          dom = pq.read_table(path, columns=["domain"]).column("domain")
+          n_na = pc.sum(pc.equal(dom, "NA")).as_py() or 0
+          frac_na = n_na / md.num_rows
+          print(f"domain == NA: {n_na:,} ({frac_na:.1%})")
+          assert frac_na < 0.10, f"too many unresolved lineages ({frac_na:.1%}) -- taxdump join likely broken"
+
+          # 5. spot-checking a (presumably) lineage
+          ec = pq.read_table(path, columns=["assembly_accession","domain","phylum","genus","species","genus_taxid"],
+                             filters=[("assembly_accession","=","GCF_000005845.2")])
+          assert ec.num_rows == 1, "E. coli K-12 reference row missing"
+          row = {k: v[0] for k, v in ec.to_pydict().items()}
+          print("spot-check:", row)
+          assert row["domain"] == "Bacteria"
+          assert row["genus"] == "Escherichia"
+          assert row["genus_taxid"] == "561"
+
+          # 6. checking a slice
+          arch = pq.read_table(path, columns=["assembly_accession"],
+                               filters=[("domain","=","Archaea")])
+          print(f"Archaea rows: {arch.num_rows:,}")
+          assert arch.num_rows > 1000
+
+          # 7. PER-RANK NA rates (just to have an eye on them because it can affect some programs in bit and gtotree)
+          ranks = ["domain","phylum","class","order","family","genus","species"]
+          lin = pq.read_table(path, columns=ranks)
+          print("\nper-rank NA (genomes skipped if you derep at that rank):")
+          for r in ranks:
+              n = pc.sum(pc.equal(lin.column(r), "NA")).as_py() or 0
+              print(f"  {r:<9} {n:>10,}  ({n/md.num_rows:6.1%})")
+
+          # 8. checking checkm incorporated
+          cm = pq.read_table(path, columns=["checkm_completeness"]).column(0)
+          n_cm = md.num_rows - (pc.sum(pc.equal(cm, "NA")).as_py() or 0)
+          print(f"\ncheckm present on {n_cm:,} rows ({n_cm/md.num_rows:.1%}; prokaryotes only)")
+          if n_cm == 0:
+              print("WARNING: no checkm values joined -- report may have moved or changed format")
+
+          print("\nall checks passed")
+          PY
+
+      - name: Upload / overwrite the release asset
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "$RELEASE_TAG" \
+            "build/${ASSET_NAME}" "build/date-retrieved.txt" \
+            --clobber --repo "${{ github.repository }}"
