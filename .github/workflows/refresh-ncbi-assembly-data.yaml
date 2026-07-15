@@ -53,7 +53,7 @@ jobs:
           import pyarrow.parquet as pq
           import pyarrow.compute as pc
 
-          path = "build/ncbi-assembly-info.parquet"
+          path = "build/ncbi-data.parquet"
           pf = pq.ParquetFile(path)
           md = pf.metadata
           cols = pf.schema_arrow.names

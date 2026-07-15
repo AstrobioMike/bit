@@ -107,7 +107,7 @@ jobs:
           import pyarrow.compute as pc
           from bit.modules.taxonomy.tax_ranks import RANKS, NA
 
-          path = "build/GTDB-arc-and-bac-metadata.parquet"
+          path = "build/gtdb-data.parquet"
           pf = pq.ParquetFile(path)
           md = pf.metadata
           cols = pf.schema_arrow.names
