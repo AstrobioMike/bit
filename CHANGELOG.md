@@ -21,7 +21,7 @@
 
 ### Changed 
 - mostly internal changes
-  - gtdb and ncbi data tables are stored as parquets now (smaller/faster downloads, less user storage needed)
+  - gtdb and ncbi data tables are stored as parquets now (smaller/faster downloads, less user storage needed, and should be faster when accessed and searched)
 
 ---
 

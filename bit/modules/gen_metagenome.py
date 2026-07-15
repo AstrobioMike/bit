@@ -21,7 +21,9 @@ from bit.modules.general import (color_text, report_message,
 from bit.modules.gtdb.get_gtdb_data import get_gtdb_data, GTDB_KEPT_COLUMNS
 from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
 from bit.modules.ncbi.get_ncbi_tax_data import get_ncbi_tax_data
-from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data
+from bit.modules.ncbi.get_ncbi_assembly_data import (get_ncbi_assembly_data,
+                                                     TABLE_FILENAME as NCBI_TABLE_FILENAME)
+
 from bit.modules.gen_mg import selection as SEL
 from bit.modules.gen_mg import abundance as ABD
 from bit.modules.gen_mg import mutation as MUT
@@ -223,11 +225,10 @@ def _load_gtdb_table(args, run):
 
 
 def _assembly_info_path():
-    """ path to bit's stored NCBI assembly-info table (taxid source), if set. """
     base = os.environ.get("NCBI_assembly_data_dir")
     if not base:
         return None
-    p = os.path.join(base, "ncbi-assembly-info.tsv")
+    p = os.path.join(base, NCBI_TABLE_FILENAME)
     return p if os.path.exists(p) else None
 
 
@@ -503,7 +504,7 @@ def _rename_if_exists(src, dst):
 # columns for the per-genome GTDB info summary written to genomes/
 GTDB_SUMMARY_EXTRA = ["genome_size", "contig_count", "gc_count", "gc_percentage", "ambiguous_bases", "checkm2_completeness", "checkm2_contamination",
                       "coding_bases", "coding_density"]
-GTDB_SUMMARY_RANKS = ["domain", "phylum", "class", "order", "family", "genus", "species"]
+from bit.modules.taxonomy.tax_ranks import RANKS as GTDB_SUMMARY_RANKS
 
 
 def write_gtdb_summary(run):

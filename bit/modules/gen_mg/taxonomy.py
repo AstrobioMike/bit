@@ -137,53 +137,31 @@ def fill_gtdb_taxonomy(merged, gtdb_tab):
 
 # ---------------------------------------------------------------- NCBI ranks --
 
-def _assembly_info_taxid_index(fh):
-    """
-    Peek the first line of an open assembly-info file handle to locate the taxid
-    column. The slim table (slim_ncbi_assembly_summary) carries a clean header
-    row, so taxid is resolved by name; a legacy headerless NCBI summary has taxid
-    at fixed position 5. Returns (taxid_index, first_data_line_or_None) where the
-    second element is a data line already consumed from fh that the caller must
-    process (None if the first line was a header).
-    """
-    first = fh.readline()
-    if not first:
-        return 5, None
-    head = first.lstrip("#").rstrip("\n").split("\t")
-    if head and head[0] == "assembly_accession":
-        # header row present -> resolve by name, data starts on the next line
-        idx = head.index("taxid") if "taxid" in head else 5
-        return idx, None
-    # no header -> legacy positional layout; `first` is a data line
-    return 5, first
-
-
 def assembly_info_taxid_map(accessions, assembly_info_path):
-    """ accession(rootless) -> taxid from ncbi-assembly-info.tsv.
-    The taxid column is resolved from the file's header when present (the slim
-    table) and falls back to the legacy NCBI position 5 for a headerless file.
-    Only rows matching the wanted accessions are kept. """
+    """ accession(rootless) -> taxid from the NCBI assembly-info Parquet table.
+    Only the accession and taxid columns are read, and only rows matching the
+    wanted accessions are kept.
+
+    NOTE: this is part of the taxid-resolution cascade that Phase 3 of the Parquet
+    migration removes entirely (with lineages as columns, no per-accession taxid
+    lookup is needed). It's converted to Parquet here only so it keeps working in
+    the meantime rather than trying to open a .tsv that no longer exists.
+    """
     wanted = {_norm_key(a) for a in accessions}
     out = {}
     if not assembly_info_path or not os.path.exists(assembly_info_path):
         return out
-    with open(assembly_info_path) as fh:
-        tax_idx, first_data = _assembly_info_taxid_index(fh)
 
-        def _consume(line):
-            if line.startswith("#") or not line.strip():
-                return
-            fields = line.rstrip("\n").split("\t")
-            if len(fields) <= tax_idx:
-                return
-            root = _norm_key(fields[0])
-            if root in wanted and fields[tax_idx].strip():
-                out[root] = fields[tax_idx].strip()
-
-        if first_data is not None:
-            _consume(first_data)
-        for line in fh:
-            _consume(line)
+    import pyarrow.parquet as pq # type: ignore
+    tbl = pq.read_table(assembly_info_path, columns=["assembly_accession", "taxid"])
+    accs = tbl.column("assembly_accession")
+    taxids = tbl.column("taxid")
+    for acc, taxid in zip(accs, taxids):
+        root = _norm_key(acc.as_py())
+        if root in wanted:
+            t = (taxid.as_py() or "").strip()
+            if t:
+                out[root] = t
     return out
 
 
@@ -201,31 +179,28 @@ def _acc_digits(acc):
 
 
 def present_accessions(accessions, assembly_info_path):
-    """ subset of `accessions` whose assembly is present in the NCBI
+    """
+    subset of `accessions` whose assembly is present in the NCBI
     assembly-summary file. NCBI drops suppressed/removed assemblies from that
     file entirely, so absence == suppressed/removed/version-drifted. Returns a
     set of the ORIGINAL accession strings that are present (live).
 
-    The file concatenates GenBank (GCA) and RefSeq (GCF) summaries as separate
-    rows; matching is on the numeric core so a GCF pick is 'present' if its GCA
-    twin is in the file (and vice versa).
+    Matching is on the numeric core (via _acc_digits), so a GCF pick counts as
+    'present' if its GCA twin is in the table (and vice versa)
     """
     if not assembly_info_path or not os.path.exists(assembly_info_path):
         return set()
-    wanted = {}                       # digits -> original accession
+    wanted = {}
     for a in accessions:
         wanted.setdefault(_acc_digits(a), a)
+
+    import pyarrow.parquet as pq # type: ignore
     live = set()
-    with open(assembly_info_path) as fh:
-        for line in fh:
-            if line.startswith("#") or not line.strip():
-                continue
-            first_field = line.split("\t", 1)[0]
-            if first_field == "assembly_accession":
-                continue                  # clean header row of the slim table
-            d = _acc_digits(first_field)
-            if d in wanted:
-                live.add(d)
+    col = pq.read_table(assembly_info_path, columns=["assembly_accession"]).column(0)
+    for acc in col:
+        d = _acc_digits(acc.as_py())
+        if d in wanted:
+            live.add(d)
     return {orig for d, orig in wanted.items() if d in live}
 
 

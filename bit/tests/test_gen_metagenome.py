@@ -88,11 +88,26 @@ def screen_pool():
 
 
 def _ai_file(tmp_path, live_accs):
-    ai = tmp_path / "ncbi-assembly-info.tsv"
-    with open(ai, "w") as fh:
-        fh.write("#header\n")
-        for a in live_accs:
-            fh.write(a + "\t" + "\t".join(["x"] * 22) + "\n")
+    """
+    Write the NCBI assembly-info fixture as Parquet (the format present_accessions now
+    reads). Only the accession column is needed for the suppression screen, but we
+    write the same core columns the real asset carries so the schema is representative.
+    An empty live_accs still produces a typed, empty table (not a schema-less file).
+    """
+    import pyarrow as pa
+    import pyarrow.parquet as pq
+
+    cols = ["assembly_accession", "taxid", "organism_name", "infraspecific_name",
+            "version_status", "assembly_level", "asm_name", "ftp_path"]
+    data = {c: [] for c in cols}
+    for a in live_accs:
+        data["assembly_accession"].append(a)
+        for c in cols[1:]:
+            data[c].append("na")
+
+    ai = tmp_path / "ncbi-data.parquet"
+    pq.write_table(pa.table({c: pa.array(data[c], type=pa.string()) for c in cols}),
+                   str(ai))
     return str(ai)
 
 

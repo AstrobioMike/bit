@@ -87,91 +87,70 @@ def test_fill_gtdb_taxonomy_leaves_non_gtdb_na(gtdb_tab):
     assert out["gtdb_genus"].iloc[0] == "NA"
 
 
-# ─── assembly-info taxid map ───────────────────────────────────────────────
+# ─── assembly-info taxid map (Parquet) ─────────────────────────────────────
 
-def test_assembly_info_taxid_map_reads_field_5(tmp_path):
-    ai = tmp_path / "ncbi-assembly-info.tsv"
-    row = ["na"] * 23
-    row[0] = "GCA_900.1"
-    row[5] = "4932"
-    ai.write_text("\t".join(row) + "\n")
-    m = TAX.assembly_info_taxid_map(["GCA_900.1"], str(ai))
-    assert m["GCA_900"] == "4932"
+# The assembly-info table is now a Parquet file with named columns, so the old
+# format concerns (legacy positional vs. slim header, header-row-as-data) no longer
+# exist -- those tests are replaced by the behavioural checks below. Columns are read
+# by name via pushdown.
 
+import pyarrow as _pa  # noqa: E402
+import pyarrow.parquet as _pq  # noqa: E402
 
-SLIM_AI_COLUMNS = [
+_AI_COLUMNS = [
     "assembly_accession", "taxid", "organism_name", "infraspecific_name",
     "version_status", "assembly_level", "asm_name", "ftp_path",
 ]
 
 
-def test_assembly_info_taxid_map_reads_slim_header(tmp_path):
-    """The slim table has a clean header and taxid at column 1, not 5; the reader
-    must resolve it by name from the header."""
-    ai = tmp_path / "ncbi-assembly-info.tsv"
-    ai.write_text(
-        "\t".join(SLIM_AI_COLUMNS) + "\n" +
-        "GCA_900.1\t4932\tSaccharomyces cerevisiae\tNA\tlatest\tChromosome\tASM\tna\n"
-    )
+def _write_ai_parquet(path, rows):
+    """rows: list of (accession, taxid). Other columns filled with 'na'."""
+    data = {c: [] for c in _AI_COLUMNS}
+    for acc, taxid in rows:
+        data["assembly_accession"].append(acc)
+        data["taxid"].append(taxid)
+        for c in _AI_COLUMNS[2:]:
+            data[c].append("na")
+    _pq.write_table(_pa.table({c: _pa.array(data[c]) for c in _AI_COLUMNS}), str(path))
+
+
+def test_assembly_info_taxid_map_reads_taxid_by_name(tmp_path):
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [("GCA_900.1", "4932")])
     m = TAX.assembly_info_taxid_map(["GCA_900.1"], str(ai))
     assert m["GCA_900"] == "4932"
 
 
-def test_assembly_info_taxid_map_slim_and_legacy_agree(tmp_path):
-    """Same record in legacy positional vs slim header layout -> same taxid map."""
-    legacy = tmp_path / "legacy.tsv"
-    row = ["na"] * 23
-    row[0] = "GCA_900.1"
-    row[5] = "4932"
-    legacy.write_text("\t".join(row) + "\n")
-
-    slim = tmp_path / "slim.tsv"
-    slim.write_text(
-        "\t".join(SLIM_AI_COLUMNS) + "\n" +
-        "GCA_900.1\t4932\tSaccharomyces cerevisiae\tNA\tlatest\tChromosome\tASM\tna\n"
-    )
-    assert (TAX.assembly_info_taxid_map(["GCA_900.1"], str(legacy)) ==
-            TAX.assembly_info_taxid_map(["GCA_900.1"], str(slim)))
-
-
-def test_assembly_info_taxid_map_header_row_not_treated_as_data(tmp_path):
-    """The header row itself must never be emitted as a (bogus) mapping."""
-    ai = tmp_path / "ncbi-assembly-info.tsv"
-    ai.write_text(
-        "\t".join(SLIM_AI_COLUMNS) + "\n" +
-        "GCA_900.1\t4932\tYeast\tNA\tlatest\tChromosome\tASM\tna\n"
-    )
-    m = TAX.assembly_info_taxid_map(["GCA_900.1", "assembly_accession"], str(ai))
-    assert "assembly_accession" not in m
+def test_assembly_info_taxid_map_only_keeps_wanted_rows(tmp_path):
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [("GCA_900.1", "4932"), ("GCA_111.1", "999")])
+    m = TAX.assembly_info_taxid_map(["GCA_900.1"], str(ai))
     assert m == {"GCA_900": "4932"}
 
 
-def test_present_accessions_slim_header(tmp_path):
-    """present_accessions works on the slim header file and ignores the header
-    row (which would otherwise be a spurious 'present' check)."""
-    ai = tmp_path / "ncbi-assembly-info.tsv"
-    ai.write_text(
-        "\t".join(SLIM_AI_COLUMNS) + "\n" +
-        "GCA_000005845.2\t562\tE. coli\tNA\tlatest\tComplete Genome\tASM\tna\n"
-    )
+def test_assembly_info_taxid_map_skips_blank_taxid(tmp_path):
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [("GCA_900.1", "")])
+    assert TAX.assembly_info_taxid_map(["GCA_900.1"], str(ai)) == {}
+
+
+def test_present_accessions_reads_parquet(tmp_path):
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [("GCA_000005845.2", "562")])
     # a GCF pick whose GCA twin (same digits) is present should count as live
-    present = TAX.present_accessions(["GCF_000005845.1"], str(ai))
-    assert present == {"GCF_000005845.1"}
+    assert TAX.present_accessions(["GCF_000005845.1"], str(ai)) == {"GCF_000005845.1"}
 
 
 def test_assembly_info_taxid_map_missing_file():
     assert TAX.assembly_info_taxid_map(["GCA_1.1"], None) == {}
-    assert TAX.assembly_info_taxid_map(["GCA_1.1"], "/no/such/file.tsv") == {}
+    assert TAX.assembly_info_taxid_map(["GCA_1.1"], "/no/such/file.parquet") == {}
 
 
 # ─── tiered gather_taxids ──────────────────────────────────────────────────
 
 def test_gather_taxids_prefers_gtdb_then_assembly_info(gtdb_tab, tmp_path):
-    ai = tmp_path / "ncbi-assembly-info.tsv"
-    row = ["na"] * 23
-    row[0] = "GCA_900.1"     # a euk, not in GTDB
-    row[5] = "4932"
-    ai.write_text("\t".join(row) + "\n")
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [("GCA_900.1", "4932")])     # a euk, not in GTDB
 
     taxids = TAX.gather_taxids(
         ["GCF_000005845.2", "GCA_900.1"], gtdb_tab, str(ai),
@@ -215,11 +194,8 @@ def merged_mixed(gtdb_tab):
 
 
 def test_resolve_all_fills_both_taxonomies(gtdb_tab, merged_mixed, tmp_path):
-    ai = tmp_path / "ncbi-assembly-info.tsv"
-    row = ["na"] * 23
-    row[0] = "GCA_900.1"
-    row[5] = "4932"
-    ai.write_text("\t".join(row) + "\n")
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [("GCA_900.1", "4932")])
 
     resolver = make_resolver({
         "511145": "Bacteria;Pseudomonadota;Gammaproteobacteria;Enterobacterales;"
@@ -241,11 +217,8 @@ def test_resolve_all_fills_both_taxonomies(gtdb_tab, merged_mixed, tmp_path):
 
 def test_resolve_all_no_datasets_calls(gtdb_tab, merged_mixed, tmp_path, monkeypatch):
     """ in the normal path, the datasets CLI fallback is never invoked. """
-    ai = tmp_path / "ncbi-assembly-info.tsv"
-    row = ["na"] * 23
-    row[0] = "GCA_900.1"
-    row[5] = "4932"
-    ai.write_text("\t".join(row) + "\n")
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [("GCA_900.1", "4932")])
 
     called = {"datasets": False}
     def _boom(accessions):
@@ -266,14 +239,11 @@ def test_resolve_all_no_datasets_calls(gtdb_tab, merged_mixed, tmp_path, monkeyp
 # ─── present_accessions (suppression screen) ───────────────────────────────
 
 def _write_ai(path, accessions):
-    with open(path, "w") as fh:
-        fh.write("#header\n")
-        for a in accessions:
-            fh.write(a + "\t" + "\t".join(["x"] * 22) + "\n")
+    _write_ai_parquet(path, [(a, "999") for a in accessions])
 
 
 def test_present_accessions_detects_absence(tmp_path):
-    ai = tmp_path / "ncbi-assembly-info.tsv"
+    ai = tmp_path / "ncbi-data.parquet"
     _write_ai(ai, ["GCA_000000003.1", "GCA_000000004.1"])   # 002 absent (suppressed)
     live = TAX.present_accessions(
         ["GCA_000000002.1", "GCA_000000003.1", "GCA_000000004.1"], str(ai))
@@ -281,20 +251,20 @@ def test_present_accessions_detects_absence(tmp_path):
 
 
 def test_present_accessions_matches_gca_gcf_twin(tmp_path):
-    # file has the GenBank (GCA) row; a GCF query must still register present
-    ai = tmp_path / "ncbi-assembly-info.tsv"
+    # table has the GenBank (GCA) row; a GCF query must still register present
+    ai = tmp_path / "ncbi-data.parquet"
     _write_ai(ai, ["GCA_000005845.2"])
     live = TAX.present_accessions(["GCF_000005845.2"], str(ai))
     assert live == {"GCF_000005845.2"}
 
 
 def test_present_accessions_version_tolerant(tmp_path):
-    ai = tmp_path / "ncbi-assembly-info.tsv"
-    _write_ai(ai, ["GCA_000005845.3"])           # newer version in file
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai(ai, ["GCA_000005845.3"])           # newer version in table
     live = TAX.present_accessions(["GCA_000005845.1"], str(ai))   # older queried
     assert live == {"GCA_000005845.1"}
 
 
 def test_present_accessions_missing_file():
     assert TAX.present_accessions(["GCA_000000001.1"], None) == set()
-    assert TAX.present_accessions(["GCA_000000001.1"], "/no/such.tsv") == set()
+    assert TAX.present_accessions(["GCA_000000001.1"], "/no/such.parquet") == set()

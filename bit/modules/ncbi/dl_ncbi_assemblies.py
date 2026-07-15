@@ -11,7 +11,7 @@ from tqdm import tqdm # type: ignore
 from bit.modules.general import (color_text, check_files_are_found,
                                  attempt_to_make_dir)
 from bit.modules.ncbi.parse_ncbi_assembly_summary import parse_ncbi_assembly_summary
-from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data
+from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data, ncbi_data_table_path
 
 
 TRANSIENT_STATUS = {429, 500, 502, 503, 504}
@@ -68,7 +68,7 @@ def parse_main_assembly_table(run_data):
     if not run_data.quiet:
         print(color_text(f"\n    Targeting {run_data.num_wanted} accession(s) in {run_data.wanted_format} format...\n", "yellow"))
 
-    assembly_summary_file = Path(os.environ['NCBI_assembly_data_dir']) / "ncbi-assembly-info.tsv"
+    assembly_summary_file = ncbi_data_table_path()
 
     run_data = parse_ncbi_assembly_summary(assembly_summary_file, run_data)
 
