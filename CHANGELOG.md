@@ -17,7 +17,7 @@
 ## v2.9.0 (NOT YET RELEASED)
 
 ### Added
-- `bit get-accs-from-ncbi`
+- more flags to `bit get-accs-from-ncbi` to make it better mirror its gtdb counterpart
   - `--target-rank` added for disambiguation of wanted taxon if needed
   - `--get-taxon-counts` added
   - `--get-rank-counts` added

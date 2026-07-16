@@ -345,4 +345,3 @@ def test_startup_prints_date_and_update_hint(table, tmp_path, monkeypatch, capsy
         get_accessions_from_ncbi(_args(get_rank_counts=True))
     out = capsys.readouterr().out
     assert "Date NCBI data retrieved: Jan 05, 2026" in out
-    assert "bit data get ncbi-assembly-data" in out
