@@ -135,6 +135,22 @@ def _validate_date_file(path):
         raise ValueError(f"date-retrieved.txt is not a 'YYYY,MM,DD' stamp: {first!r}")
 
 
+def read_date_retrieved(location):
+    """
+    Read date-retrieved.txt (a 'YYYY,MM,DD' stamp) from `location` and return it
+    formatted like 'Jan 05, 2026'. Returns the raw string if it can't be parsed.
+    """
+    import datetime
+
+    with open(os.path.join(location, DATE_FILENAME)) as fh:
+        stamp = fh.readline().strip()
+    try:
+        y, m, d = (int(p) for p in stamp.split(","))
+        return datetime.date(y, m, d).strftime("%b %d, %Y")
+    except (ValueError, TypeError):
+        return stamp
+
+
 def get_ncbi_assembly_data(force_update=False, quiet=False):
     """
     Ensure the NCBI Parquet table is present locally, and return its path

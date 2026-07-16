@@ -1,6 +1,7 @@
 import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help, add_version_arg
+from bit.modules.general import report_message
 from bit.modules.gtdb.get_accessions_from_gtdb import get_accessions_from_gtdb
 
 
@@ -10,8 +11,8 @@ def build_parser(parent_subparsers=None):
         This is a helper program to facilitate using taxonomy and genomes from
         the Genome Taxonomy Database (gtdb.ecogenomic.org). It primarily returns
         NCBI accessions and GTDB summary tables based on GTDB-taxonomy searches,
-        which could then be passed to, e.g., `bit dl-ncbi-assemblies`. It will
-        cache the GTDB metadata tables. If you want to update them, run
+        which could then be passed to, e.g., `bit dl-ncbi-assemblies`. bit
+        caches the GTDB metadata. If you want to update it, run
         `bit data get gtdb-data -f`.
         """
 
@@ -37,7 +38,8 @@ def build_parser(parent_subparsers=None):
         "-t",
         "--target-taxon",
         metavar="<STR>",
-        help=wrap_help("Target taxon (enter 'all' for all)"),
+        help=wrap_help("Target taxon (enter 'all' for all). "
+                       "Not needed with `--get-rank-counts`."),
         action="store",
     )
 
@@ -50,12 +52,10 @@ def build_parser(parent_subparsers=None):
     )
 
     optional.add_argument(
-        "--get-table",
+        "--get-taxon-counts",
         action="store_true",
-        help=wrap_help("Provide just this flag alone to download and parse a GTDB metadata "
-                       "table. Archaea and Bacteria tables pulled from here "
-                       "(https://data.ace.uq.edu.au/public/gtdb/data/releases/latest/) and combined, and the "
-                       "GTDB taxonomy column is split for easier manual searching if wanted."),
+        help=wrap_help("Add this flag along with a specified taxon to the `-t` parameter "
+                       "to see how many of that taxon are in the database."),
     )
 
     optional.add_argument(
@@ -66,28 +66,28 @@ def build_parser(parent_subparsers=None):
     )
 
     optional.add_argument(
-        "--get-taxon-counts",
-        action="store_true",
-        help=wrap_help("Add this flag along with a specified taxon to the `-t` parameter "
-                       "to see how many of that taxon are in the database."),
-    )
-
-    optional.add_argument(
+        "-G",
         "--gtdb-representatives-only",
         action="store_true",
-        help=wrap_help("Add this flag along with a specified taxon to the `-t` parameter "
-                       "to pull accessions only for genomes designated as GTDB species "
-                       "representatives (see e.g.: https://gtdb.ecogenomic.org/faq#gtdb_species_clusters)."),
+        help=wrap_help("Add this flag to only pull accessions for genomes "
+                       "designated as GTDB species representatives (see, e.g., "
+                       "https://gtdb.ecogenomic.org/faq#gtdb_species_clusters)."),
     )
 
     optional.add_argument(
+        "-R",
         "--refseq-reference-genomes-only",
         action="store_true",
-        help=wrap_help("Add this flag along with a specified taxon to the `-t` parameter "
-                       "to pull accessions only for genomes designated as RefSeq \"reference\" "
-                       "genomes (these used to be called \"representative\" genomes, see e.g.: "
-                       "https://www.ncbi.nlm.nih.gov/refseq/about/prokaryotes/#reference_genomes). "
-                       "(Useful for subsetting to a view across a broad level of diversity.)"),
+        help=wrap_help("Add this flag to only pull accessions for genomes designated as "
+                       "RefSeq \"reference\" genomes (these used to be called \"representative\" genomes, see, e.g., "
+                       "https://www.ncbi.nlm.nih.gov/refseq/about/prokaryotes/#reference_genomes)."),
+    )
+
+    optional.add_argument(
+        "--get-table",
+        action="store_true",
+        help=wrap_help("Provide just this flag alone to write out a tsv of bit's GTDB metadata "
+                       "table."),
     )
 
     add_help(optional)
@@ -106,4 +106,15 @@ def main():
 
     args = parser.parse_args()
 
+    preflight_checks(args)
+
     get_accessions_from_gtdb(args)
+
+
+def preflight_checks(args):
+
+    if not args.get_rank_counts and not args.target_taxon:
+        report_message("A target must be provided to `-t` (a taxon name), "
+                       "unless you're using `--get-rank-counts`.",
+                       trailing_newline=True)
+        sys.exit()

@@ -17,10 +17,15 @@
 ## v2.9.0 (NOT YET RELEASED)
 
 ### Added
-- 
+- `bit get-accs-from-ncbi`
+  - `--target-rank` added for disambiguation of wanted taxon if needed
+  - `--get-taxon-counts` added
+  - `--get-rank-counts` added
 
-### Changed 
+### Changed
+- `bit get-accs-from-ncbi` and `bit get-accs-from-gtdb` now share primarly all the same code for finding accessions based on tax (due to change noted below about ncbi's tables being prebuilt with full lineages baked in)
 - mostly internal changes
+  - the github action that builds the slimmed down ncbi assembly summary data object now builds in full lineages also (so that info is more easily available and always syncd with the cached assembly summary data)
   - gtdb and ncbi data tables are stored as parquets now (smaller/faster downloads, less user storage needed, and should be faster when accessed and searched)
 
 ---

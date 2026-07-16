@@ -132,9 +132,8 @@ def _report_gtdb_version(gtdb_path):
 
 
 def report_gtdb_version_info(location):
-    """ print the GTDB version line, reading version + date via the shared reader """
     gtdb_version, gtdb_release_date = _read_gtdb_version_info(location)
-    print("    Using GTDB " + gtdb_version + ": " + gtdb_release_date + "\n")
+    print("\n    Using GTDB " + gtdb_version + ": " + gtdb_release_date)
  
 
 def copy_gtdb_table(gtdb_path):
@@ -279,10 +278,12 @@ def get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab=None, representat
         print("    {:<10} {:}".format(rank, str(gtdb_tab[rank].nunique())))
     print("")
 
-    if representatives_source == "RefSeq":
-        wprint(color_text("In considering only " + representatives_source + " representative genomes:", "yellow"))
+    if representatives_source:
+        rep_type = "representative" if representatives_source == "GTDB" else "reference"
+        rep_type_abr = "Rep." if representatives_source == "GTDB" else "Ref."
+        wprint(color_text("In considering only " + representatives_source + " " + rep_type + " genomes:", "yellow"))
         print("")
-        print("    {:<10} {:}".format("Rank", "Num. Unique Rep. Taxa"))
+        print("    {:<10} {:}".format("Rank", f"Num. Unique {rep_type_abr} Taxa"))
         for rank in RANKS:
             print("    {:<10} {:}".format(rank, str(gtdb_rep_tab[rank].nunique())))
         print("")

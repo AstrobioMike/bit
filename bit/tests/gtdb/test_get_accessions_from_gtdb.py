@@ -105,7 +105,9 @@ def gtdb_parquet(tmp_path):
 
 def test_report_gtdb_version_info_prints_version(gtdb_dir, capsys):
     report_gtdb_version_info(str(gtdb_dir))
-    assert "R220" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "R220" in out
+    assert "bit data get gtdb-data" in out          # update hint
 
 
 # ─── copy_gtdb_table ──────────────────────────────────────────────────────────
@@ -255,9 +257,22 @@ def test_get_unique_taxa_counts_of_all_ranks_prints_all_ranks(gtdb_tab, capsys):
 
 
 def test_get_unique_taxa_counts_of_all_ranks_with_refseq_rep(gtdb_tab, capsys):
-    rep_tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
+    rep_tab = gtdb_tab[gtdb_tab["ncbi_refseq_category"] == "reference genome"]
     get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="RefSeq")
-    assert "RefSeq" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "RefSeq reference genomes" in out
+    assert "Num. Unique Rep. Taxa" in out
+
+
+def test_get_unique_taxa_counts_of_all_ranks_with_gtdb_rep(gtdb_tab, capsys):
+    """GTDB representatives must ALSO get the reps sub-table (regression: the worker
+    previously gated this on RefSeq only, so --gtdb-representatives-only silently
+    printed no reps table)."""
+    rep_tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
+    get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="GTDB")
+    out = capsys.readouterr().out
+    assert "GTDB representative genomes" in out
+    assert "Num. Unique Rep. Taxa" in out
 
 
 # ─── get_accessions_from_gtdb (orchestrator) ──────────────────────────────────
@@ -296,6 +311,19 @@ def test_orchestrator_get_rank_counts_exits(gtdb_parquet, capsys):
         with pytest.raises(SystemExit):
             get_accessions_from_gtdb(make_args(get_rank_counts=True))
     assert "domain" in capsys.readouterr().out
+
+
+def test_orchestrator_rank_counts_gtdb_reps_shows_subtable(gtdb_parquet, capsys):
+    """Full command path: --get-rank-counts --gtdb-representatives-only must show
+    the reps sub-table (the bug this covers made it silently absent)."""
+    with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
+               return_value=gtdb_parquet):
+        with pytest.raises(SystemExit):
+            get_accessions_from_gtdb(make_args(get_rank_counts=True,
+                                               gtdb_representatives_only=True))
+    out = capsys.readouterr().out
+    assert "GTDB representative genomes" in out
+    assert "Num. Unique Rep. Taxa" in out
 
 
 def test_orchestrator_get_taxon_counts_exits(gtdb_parquet, capsys):
@@ -403,3 +431,4 @@ def test_resolve_or_exit_ambiguous_exits(gtdb_parquet, tmp_path):
     pq.write_table(pa.Table.from_pandas(pd.DataFrame(rows), preserve_index=False), str(p))
     with pytest.raises(SystemExit):
         _resolve_or_exit(str(p), "Dup")
+    
