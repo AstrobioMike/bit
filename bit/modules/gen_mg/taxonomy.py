@@ -1,35 +1,11 @@
 """
 gen-mg taxonomy-resolution layer.
 
-Fills BOTH taxonomy rank sets (gtdb_* and ncbi_*) on the merged genome table,
-regardless of how each genome entered the community:
-
-  - GTDB ranks: looked up by accession in the GTDB metadata table. GTDB-selected
-    genomes are already filled at normalization; this catches user accessions
-    that happen to be in GTDB.
-
-  - NCBI ranks: resolved from each genome's NCBI tax_id via taxonkit. Tax_ids are
-    gathered cheaply from local tables first, falling back to the `datasets` CLI
-    only for accessions found in neither:
-        1. GTDB metadata table   (ncbi_taxid column)        -- covers GTDB picks
-        2. ncbi-assembly-info.tsv (taxid, field 5)          -- covers most others
-        3. datasets summary CLI                              -- last-resort fallback
-
-A single taxonkit pass then resolves all gathered tax_ids to lineages at once.
-
-Pure-ish logic: no printing. File/subprocess use is confined to the taxid
-gathering and the taxonkit call, both injectable/mocked in tests.
+Fills BOTH taxonomy rank sets (gtdb_* and ncbi_*) on the merged genome table
 """
 import os
-import re
-import subprocess
-import tempfile
-from io import StringIO
-
 import pandas as pd # type: ignore
-
 from bit.modules.gen_mg.selection import RANKS, GTDB_RANKS, NCBI_RANKS
-from bit.modules.ncbi.get_lineage_from_taxids import get_lineage_from_taxids
 
 
 def _root_acc(acc):
@@ -138,14 +114,10 @@ def fill_gtdb_taxonomy(merged, gtdb_tab):
 # ---------------------------------------------------------------- NCBI ranks --
 
 def assembly_info_taxid_map(accessions, assembly_info_path):
-    """ accession(rootless) -> taxid from the NCBI assembly-info Parquet table.
+    """
+    accession(rootless) -> taxid from the NCBI assembly-info Parquet table.
     Only the accession and taxid columns are read, and only rows matching the
-    wanted accessions are kept.
-
-    NOTE: this is part of the taxid-resolution cascade that Phase 3 of the Parquet
-    migration removes entirely (with lineages as columns, no per-accession taxid
-    lookup is needed). It's converted to Parquet here only so it keeps working in
-    the meantime rather than trying to open a .tsv that no longer exists.
+    wanted accessions are kept
     """
     wanted = {_norm_key(a) for a in accessions}
     out = {}
@@ -204,37 +176,11 @@ def present_accessions(accessions, assembly_info_path):
     return {orig for d, orig in wanted.items() if d in live}
 
 
-def datasets_taxid_map(accessions):
-    """ fallback: accession(rootless) -> taxid via the NCBI `datasets` CLI.
-    Queries only the given (already-narrowed) accessions. """
-    if not accessions:
-        return {}
-    fields = ["accession", "organism-tax-id"]
-    try:
-        summary = subprocess.Popen(
-            ["datasets", "summary", "genome", "accession", *accessions, "--as-json-lines"],
-            stdout=subprocess.PIPE)
-        fmt = subprocess.Popen(
-            ["dataformat", "tsv", "genome", "--fields", ",".join(fields)],
-            stdin=summary.stdout, stdout=subprocess.PIPE)
-        summary.stdout.close()
-        out, _ = fmt.communicate()
-    except (OSError, subprocess.SubprocessError):
-        return {}
-    tab = pd.read_csv(StringIO(out.decode()), sep="\t", dtype=str)
-    if tab.shape[1] < 2:
-        return {}
-    tab.columns = ["accession", "taxid"][:tab.shape[1]]
-    res = {}
-    for acc, tid in zip(tab["accession"], tab["taxid"]):
-        if pd.notna(acc) and pd.notna(tid) and str(tid).strip():
-            res[_norm_key(acc)] = str(tid).strip()
-    return res
-
-
-def gather_taxids(accessions, gtdb_tab, assembly_info_path, use_datasets_fallback=True):
-    """ accession(rootless) -> taxid, sourced tiered: GTDB table, then
-    assembly-info.tsv, then (optionally) the datasets CLI for leftovers. """
+def gather_taxids(accessions, gtdb_tab, assembly_info_path):
+    """
+    accession(rootless) -> taxid, sourced tiered: GTDB table first, then the
+    NCBI Parquet (ncbi-data.parquet) for the rest
+    """
     acc_roots = [_norm_key(a) for a in accessions]
     taxids = {}
 
@@ -248,60 +194,56 @@ def gather_taxids(accessions, gtdb_tab, assembly_info_path, use_datasets_fallbac
         amap = assembly_info_taxid_map(missing, assembly_info_path)
         taxids.update(amap)
 
-    missing = [a for a in acc_roots if a not in taxids]
-    if missing and use_datasets_fallback:
-        dmap = datasets_taxid_map(missing)
-        taxids.update(dmap)
-
     return taxids
 
 
-def resolve_lineages(taxids, _runner=get_lineage_from_taxids):
-    """ taxid -> 7-rank ';'-joined lineage string, via one taxonkit pass.
-    `taxids` is an iterable of taxid strings. `_runner` is injectable for tests. """
-    uniq = sorted({str(t).strip() for t in taxids if str(t).strip()})
-    if not uniq:
-        return {}
-    with tempfile.TemporaryDirectory() as td:
-        tin = os.path.join(td, "taxids.txt")
-        tout = os.path.join(td, "lineages.tsv")
-        with open(tin, "w") as fh:
-            fh.write("\n".join(uniq) + "\n")
-        _runner(tin, tout)
+def parquet_lineage_resolver(assembly_info_path):
+    """
+    Build a resolver: taxids -> {taxid: 'd;p;c;o;f;g;s'} by reading the NCBI ranks
+    straight out of the NCBI Parquet
+    """
+    def _resolve(taxids):
+        uniq = {str(t).strip() for t in taxids if str(t).strip()}
+        if not uniq or not assembly_info_path or not os.path.exists(assembly_info_path):
+            return {}
+
+        import pyarrow.parquet as pq # type: ignore
+
+        ranks = list(RANKS)
+        # push the taxid filter into the read (only rows for wanted taxids), then
+        # collapse to one row per taxid IN ARROW before touching Python -- taxid
+        # isn't unique per row (many assemblies share a taxid), so a naive
+        # row-by-row Python loop over the filtered result is what makes this slow.
+        tbl = pq.read_table(assembly_info_path, columns=["taxid"] + ranks,
+                            filters=[("taxid", "in", list(uniq))])
+        if tbl.num_rows == 0:
+            return {}
+        uniq_tbl = tbl.group_by("taxid").aggregate([(r, "min") for r in ranks])
+
+        taxid_vals = uniq_tbl.column("taxid").to_pylist()
+        rank_vals = {r: uniq_tbl.column(f"{r}_min").to_pylist() for r in ranks}
         lineages = {}
-        with open(tout) as fh:
-            header = fh.readline().rstrip("\n").split("\t")
-            idx = {c: i for i, c in enumerate(header)}
-            for line in fh:
-                f = line.rstrip("\n").split("\t")
-                if not f or not f[0].strip():
-                    continue
-                taxid = f[0]
-                ranks = []
-                for r in RANKS:
-                    j = idx.get(r)
-                    ranks.append(f[j] if (j is not None and j < len(f) and f[j]) else "NA")
-                lineages[taxid] = ";".join(ranks)
-    return lineages
+        for i, tid in enumerate(taxid_vals):
+            lineages[tid] = ";".join(
+                (rank_vals[r][i] if rank_vals[r][i] else "NA") for r in ranks)
+        return lineages
+    return _resolve
 
 
-def fill_ncbi_taxonomy(merged, gtdb_tab, assembly_info_path,
-                       use_datasets_fallback=True, _resolver=resolve_lineages):
-    """ fill ncbi_* columns for every row, resolving each accession's NCBI tax_id
-    (tiered sources) to a lineage. Only fills rows whose ncbi_* are still NA.
+def fill_ncbi_taxonomy(merged, gtdb_tab, assembly_info_path, _resolver=None):
+    """
+    fill ncbi_* columns for every row, resolving each accession's NCBI tax_id
+    (from local tables) to a lineage read out of the NCBI Parquet
+    """
+    if _resolver is None:
+        _resolver = parquet_lineage_resolver(assembly_info_path)
 
-    Also persists a `taxid` column for every row whose NCBI tax_id can be resolved
-    (the same tax_id is available for GTDB picks via the GTDB metadata table, so it
-    is populated in both taxonomy trees), defaulting to "NA" where none resolves.
-
-    Returns the merged frame (modified copy). """
     out = merged.copy()
 
     # resolve taxids for every accession (not just rows needing lineages) so the
     # taxid column is populated wherever knowable, in both GTDB and NCBI trees.
     all_accs = [out.iloc[i]["accession"] for i in range(len(out))]
-    all_taxids = gather_taxids(all_accs, gtdb_tab, assembly_info_path,
-                               use_datasets_fallback=use_datasets_fallback)
+    all_taxids = gather_taxids(all_accs, gtdb_tab, assembly_info_path)
     if "taxid" not in out.columns:
         out["taxid"] = "NA"
     for i in range(len(out)):
@@ -338,12 +280,12 @@ def fill_ncbi_taxonomy(merged, gtdb_tab, assembly_info_path,
 
 # ----------------------------------------------------------------- top level --
 
-def resolve_all(merged, gtdb_tab, assembly_info_path, use_datasets_fallback=True,
-                _resolver=resolve_lineages):
-    """ fill both gtdb_* and ncbi_* on the merged table. GTDB first (cheap,
-    in-memory), then NCBI (tiered taxid gather + one taxonkit pass). """
+def resolve_all(merged, gtdb_tab, assembly_info_path, _resolver=None):
+    """
+    fill both gtdb_* and ncbi_* on the merged table. GTDB first then NCBI
+    (taxid gather + lineage read from the NCBI Parquet)
+    """
     merged = fill_gtdb_taxonomy(merged, gtdb_tab)
     merged = fill_ncbi_taxonomy(merged, gtdb_tab, assembly_info_path,
-                                use_datasets_fallback=use_datasets_fallback,
                                 _resolver=_resolver)
     return merged

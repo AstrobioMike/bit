@@ -31,22 +31,14 @@ def gtdb_tab():
     ])
 
 
-def fake_runner(taxid_to_lineage):
-    """ build a get_lineage_from_taxids-shaped runner from a taxid->lineage map. """
-    def _runner(tin, tout):
-        with open(tin) as fh:
-            taxids = [l.strip() for l in fh if l.strip()]
-        with open(tout, "w") as fh:
-            fh.write("taxid\t" + "\t".join(RANKS) + "\n")
-            for t in taxids:
-                if t in taxid_to_lineage:
-                    fh.write(t + "\t" + taxid_to_lineage[t].replace(";", "\t") + "\n")
-    return _runner
-
-
 def make_resolver(taxid_to_lineage):
-    runner = fake_runner(taxid_to_lineage)
-    return lambda taxids: TAX.resolve_lineages(taxids, _runner=runner)
+    """ a fake _resolver: taxids -> {taxid: 'd;p;c;o;f;g;s'} (the seam
+    fill_ncbi_taxonomy calls). Mirrors what parquet_lineage_resolver returns, but
+    from an in-memory map so tests don't need a Parquet. """
+    def _resolve(taxids):
+        want = {str(t).strip() for t in taxids if str(t).strip()}
+        return {t: taxid_to_lineage[t] for t in want if t in taxid_to_lineage}
+    return _resolve
 
 
 # ─── GTDB maps: dual GCA/GCF keying ────────────────────────────────────────
@@ -94,23 +86,31 @@ def test_fill_gtdb_taxonomy_leaves_non_gtdb_na(gtdb_tab):
 # exist -- those tests are replaced by the behavioural checks below. Columns are read
 # by name via pushdown.
 
-import pyarrow as _pa  # noqa: E402
-import pyarrow.parquet as _pq  # noqa: E402
+import pyarrow as _pa  # type: ignore
+import pyarrow.parquet as _pq  # type: ignore
 
 _AI_COLUMNS = [
     "assembly_accession", "taxid", "organism_name", "infraspecific_name",
     "version_status", "assembly_level", "asm_name", "ftp_path",
+    "domain", "phylum", "class", "order", "family", "genus", "species",
 ]
 
 
 def _write_ai_parquet(path, rows):
-    """rows: list of (accession, taxid). Other columns filled with 'na'."""
+    """rows: (accession, taxid) or (accession, taxid, lineage_str). Lineage is a
+    ';'-joined 7-rank string; when omitted the rank columns are 'na'."""
     data = {c: [] for c in _AI_COLUMNS}
-    for acc, taxid in rows:
+    ranks = ["domain", "phylum", "class", "order", "family", "genus", "species"]
+    for row in rows:
+        acc, taxid = row[0], row[1]
+        lineage = row[2].split(";") if len(row) > 2 else ["na"] * 7
         data["assembly_accession"].append(acc)
         data["taxid"].append(taxid)
-        for c in _AI_COLUMNS[2:]:
+        for c in ("organism_name", "infraspecific_name", "version_status",
+                  "assembly_level", "asm_name", "ftp_path"):
             data[c].append("na")
+        for r, v in zip(ranks, lineage):
+            data[r].append(v)
     _pq.write_table(_pa.table({c: _pa.array(data[c]) for c in _AI_COLUMNS}), str(path))
 
 
@@ -153,29 +153,48 @@ def test_gather_taxids_prefers_gtdb_then_assembly_info(gtdb_tab, tmp_path):
     _write_ai_parquet(ai, [("GCA_900.1", "4932")])     # a euk, not in GTDB
 
     taxids = TAX.gather_taxids(
-        ["GCF_000005845.2", "GCA_900.1"], gtdb_tab, str(ai),
-        use_datasets_fallback=False)
+        ["GCF_000005845.2", "GCA_900.1"], gtdb_tab, str(ai))
     assert taxids["GCF_000005845"] == "511145"   # from GTDB table
     assert taxids["GCA_900"] == "4932"            # from assembly-info
 
 
 def test_gather_taxids_no_sources_returns_empty():
-    taxids = TAX.gather_taxids(["GCA_xyz.1"], None, None, use_datasets_fallback=False)
+    taxids = TAX.gather_taxids(["GCA_xyz.1"], None, None)
     assert taxids == {}
 
 
-# ─── resolve_lineages (mocked taxonkit) ────────────────────────────────────
+# ─── parquet_lineage_resolver (taxid -> lineage from the NCBI Parquet) ──────
 
-def test_resolve_lineages_parses_runner_output():
-    runner = fake_runner({
-        "511145": "Bacteria;Pseudomonadota;Gammaproteobacteria;Enterobacterales;"
-                  "Enterobacteriaceae;Escherichia;Escherichia coli"})
-    lineages = TAX.resolve_lineages(["511145"], _runner=runner)
-    assert lineages["511145"].split(";")[5] == "Escherichia"
+def test_parquet_lineage_resolver_reads_lineage_by_taxid(tmp_path):
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [
+        ("GCF_1.1", "511145",
+         "Bacteria;Pseudomonadota;Gammaproteobacteria;Enterobacterales;"
+         "Enterobacteriaceae;Escherichia;Escherichia coli"),
+    ])
+    resolve = TAX.parquet_lineage_resolver(str(ai))
+    out = resolve(["511145"])
+    assert out["511145"].split(";")[5] == "Escherichia"
 
 
-def test_resolve_lineages_empty_input():
-    assert TAX.resolve_lineages([]) == {}
+def test_parquet_lineage_resolver_empty_and_missing(tmp_path):
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [("GCF_1.1", "511145", "Bacteria;P;C;O;F;Escherichia;E coli")])
+    resolve = TAX.parquet_lineage_resolver(str(ai))
+    assert resolve([]) == {}                 # no taxids
+    assert resolve(["999999"]) == {}         # taxid not in table
+    # no file -> empty, no crash
+    assert TAX.parquet_lineage_resolver("/no/such.parquet")(["511145"]) == {}
+
+
+def test_parquet_lineage_resolver_preserves_na_ranks(tmp_path):
+    """where the Parquet has 'NA' at a rank (NCBI itself has no value), it comes
+    through as NA -- same as taxonkit's reformat2 -r NA behavior."""
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [("GCA_9.1", "4444", "Bacteria;P;C;O;F;NA;NA")])
+    resolve = TAX.parquet_lineage_resolver(str(ai))
+    parts = resolve(["4444"])["4444"].split(";")
+    assert parts[5] == "NA" and parts[6] == "NA"
 
 
 # ─── fill_ncbi_taxonomy + resolve_all (full, injected resolver) ────────────
@@ -203,8 +222,7 @@ def test_resolve_all_fills_both_taxonomies(gtdb_tab, merged_mixed, tmp_path):
         "4932": "Eukaryota;Ascomycota;Saccharomycetes;Saccharomycetales;"
                 "Saccharomycetaceae;Saccharomyces;Saccharomyces cerevisiae"})
 
-    out = TAX.resolve_all(merged_mixed, gtdb_tab, str(ai),
-                          use_datasets_fallback=False, _resolver=resolver)
+    out = TAX.resolve_all(merged_mixed, gtdb_tab, str(ai), _resolver=resolver)
     r = out.set_index("accession")
 
     # GTDB genome: gtdb already there, ncbi resolved via GTDB-table taxid
@@ -215,25 +233,62 @@ def test_resolve_all_fills_both_taxonomies(gtdb_tab, merged_mixed, tmp_path):
     assert r.loc["GCA_900.1", "ncbi_genus"] == "Saccharomyces"
 
 
-def test_resolve_all_no_datasets_calls(gtdb_tab, merged_mixed, tmp_path, monkeypatch):
-    """ in the normal path, the datasets CLI fallback is never invoked. """
+def test_resolve_all_uses_parquet_as_terminal_taxid_source(gtdb_tab, merged_mixed, tmp_path):
+    """
+    The euk user accession isn't in GTDB, so its taxid must come from the NCBI
+    Parquet (the terminal source now that the datasets CLI fallback is gone). If the
+    Parquet lookup works, ncbi ranks fill; there is no other fallback.
+    """
     ai = tmp_path / "ncbi-data.parquet"
     _write_ai_parquet(ai, [("GCA_900.1", "4932")])
-
-    called = {"datasets": False}
-    def _boom(accessions):
-        called["datasets"] = True
-        return {}
-    monkeypatch.setattr(TAX, "datasets_taxid_map", _boom)
 
     resolver = make_resolver({
         "511145": "Bacteria;Pseudomonadota;Gammaproteobacteria;Enterobacterales;"
                   "Enterobacteriaceae;Escherichia;Escherichia coli",
         "4932": "Eukaryota;Ascomycota;Saccharomycetes;Saccharomycetales;"
                 "Saccharomycetaceae;Saccharomyces;Saccharomyces cerevisiae"})
-    TAX.resolve_all(merged_mixed, gtdb_tab, str(ai),
-                    use_datasets_fallback=True, _resolver=resolver)
-    assert called["datasets"] is False
+    out = TAX.resolve_all(merged_mixed, gtdb_tab, str(ai), _resolver=resolver)
+    r = out.set_index("accession")
+    # euk genome resolved purely via the Parquet taxid -> lineage
+    assert r.loc["GCA_900.1", "ncbi_genus"] == "Saccharomyces"
+
+
+def test_datasets_fallback_is_gone(gtdb_tab, merged_mixed, tmp_path):
+    """Regression guard: the datasets CLI fallback has been removed entirely, so
+    neither the function nor the plumbing kwarg should exist."""
+    assert not hasattr(TAX, "datasets_taxid_map")
+    import inspect
+    assert "use_datasets_fallback" not in inspect.signature(TAX.gather_taxids).parameters
+    assert "use_datasets_fallback" not in inspect.signature(TAX.resolve_all).parameters
+
+
+def test_taxonkit_is_gone_from_gen_mg(gtdb_tab, merged_mixed, tmp_path):
+    """Regression guard: gen-mg no longer resolves lineages via taxonkit; the
+    default resolver reads them from the NCBI Parquet."""
+    assert not hasattr(TAX, "resolve_lineages")
+    assert hasattr(TAX, "parquet_lineage_resolver")
+
+
+def test_resolve_all_default_resolver_reads_from_parquet(gtdb_tab, merged_mixed, tmp_path):
+    """
+    End-to-end with the REAL default resolver (no injected fake): the euk user
+    accession's NCBI ranks must be filled from lineage columns in the NCBI Parquet.
+    """
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [
+        # the euk user genome: taxid 4932, lineage present in the Parquet
+        ("GCA_900.1", "4932",
+         "Eukaryota;Ascomycota;Saccharomycetes;Saccharomycetales;"
+         "Saccharomycetaceae;Saccharomyces;Saccharomyces cerevisiae"),
+        # the GTDB E. coli genome (taxid 511145 from the gtdb_tab fixture)
+        ("GCA_000005845.2", "511145",
+         "Bacteria;Pseudomonadota;Gammaproteobacteria;Enterobacterales;"
+         "Enterobacteriaceae;Escherichia;Escherichia coli"),
+    ])
+    out = TAX.resolve_all(merged_mixed, gtdb_tab, str(ai))   # default resolver
+    r = out.set_index("accession")
+    assert r.loc["GCA_900.1", "ncbi_genus"] == "Saccharomyces"
+    assert r.loc["GCA_000005845.2", "ncbi_genus"] == "Escherichia"
 
 
 # ─── present_accessions (suppression screen) ───────────────────────────────

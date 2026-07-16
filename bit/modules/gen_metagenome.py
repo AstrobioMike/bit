@@ -21,7 +21,6 @@ from bit.modules.general import (color_text, report_message,
 from bit.modules.gtdb.get_gtdb_data import get_gtdb_data, report_gtdb_version_info
 from bit.modules.gtdb.build_gtdb_data_parquet import OUT_COLUMNS as GTDB_KEPT_COLUMNS
 from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
-from bit.modules.ncbi.get_ncbi_tax_data import get_ncbi_tax_data
 from bit.modules.ncbi.get_ncbi_assembly_data import (get_ncbi_assembly_data,
                                                      PARQUET_FILENAME as NCBI_PARQUET_FILENAME)
 
@@ -87,14 +86,11 @@ def _phase_counter():
 
 
 def check_required_dbs(args, run):
-    # all three reference datasets are needed for every run: GTDB (selection +
-    # taxonomy), NCBI taxonomy (lineage resolution), and the NCBI assembly
-    # summary (download phase resolves accession -> FTP path from it). Fetch them
-    # all up front so no large download surprises the user mid-run.
+    # both reference datasets are needed for every run: GTDB (selection + taxonomy)
+    # and the NCBI assembly Parquet (download phase resolves accession -> FTP path,
+    # and taxonomy resolution reads NCBI lineages from it). Fetch them up front so no
+    # large download surprises the user mid-run.
     run.gtdb_dir = get_gtdb_data(quiet=True)
-    get_ncbi_tax_data(quiet=True)
-    log_data_source(run, "\nNCBI taxonomy (taxdump) retrieved",
-                    _read_retrieved_date(os.environ.get("TAXONKIT_DB")))
     get_ncbi_assembly_data(quiet=True)
     log_data_source(run, "NCBI assembly summary retrieved",
                     _read_retrieved_date(os.environ.get("NCBI_assembly_data_dir")))
@@ -147,8 +143,10 @@ def setup(args):
 
 
 def log_data_source(run, label, detail):
-    """ append a reference-data provenance line to the runlog (e.g. GTDB version,
-    NCBI assembly-summary retrieval date, NCBI taxdump date). """
+    """
+    append a reference-data provenance line to the runlog (e.g. GTDB version,
+    NCBI assembly-summary retrieval date)
+    """
     log_file = getattr(run, "log_file", None)
     if not log_file:
         return
@@ -197,11 +195,11 @@ def _load_gtdb_table(args, run):
     if getattr(run, "gtdb_tab", None) is not None:
         return run.gtdb_tab
     import pyarrow.parquet as pq # type: ignore
- 
+
     gtdb_path = get_gtdb_data(quiet=True)
     gtdb_version, gtdb_release_date = _read_gtdb_version(os.path.dirname(gtdb_path))
     log_data_source(run, "GTDB version", f"{gtdb_version} ({gtdb_release_date})")
- 
+
     present = set(pq.ParquetFile(gtdb_path).schema_arrow.names)
     usecols = [c for c in GTDB_USED_COLUMNS if c in present]
     run.gtdb_tab = pq.read_table(gtdb_path, columns=usecols).to_pandas()

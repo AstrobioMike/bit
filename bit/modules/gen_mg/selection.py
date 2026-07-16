@@ -1,22 +1,6 @@
 """
 gen-mg selection layer: produce one normalized genome table from
-GTDB-generative selection and/or user-supplied accessions (GTDB- or NCBI-sourced).
-
-Normalized schema (one row per selected genome) carries BOTH taxonomies side by
-side so downstream truth tables can be written per-source:
-  accession,
-  gtdb_domain..gtdb_species, ncbi_domain..ncbi_species,
-  user_supplied
-(genome sizes are measured from the downloaded/working FASTAs downstream:
- downloaded_genome_size and used_genome_size, added in the orchestrator)
-plus optional pinned override columns carried through from a user TSV:
-  pinned_rel_abundance, pinned_coverage, pinned_mutation_rate
-
-At normalization time each source fills only its native rank set; the other set
-is initialized to 'NA' and filled later by the taxonomy-resolution layer
-(GTDB-table / assembly-info / datasets + taxonkit).
-
-Pure logic: no printing, no sys.exit, no file writes. Returns (df, warnings).
+GTDB-generative selection and/or user-supplied accessions (GTDB- or NCBI-sourced)
 """
 import pandas as pd # type: ignore
 

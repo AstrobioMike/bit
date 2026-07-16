@@ -279,14 +279,14 @@ def _fake_stream(fail_times, exc=None, dest_content=b"ok"):
     """
     _stream_once side effect: raise `exc` on the first `fail_times` calls, then
     "download" by writing dest_content to `filename`. fail_times=None fails every
-    call. Signature mirrors _stream_once(url, filename, desc, total, leave,
+    call. Signature mirrors _stream_once(url, filename, desc, leave,
     floor_bytes_per_s, probe_seconds).
     """
     if exc is None:
         exc = socket.timeout("handshake timed out")
     seen = {"count": 0}
 
-    def _stream(url, filename, desc, total, leave, floor_bytes_per_s, probe_seconds, **kwargs):
+    def _stream(url, filename, desc, leave, floor_bytes_per_s, probe_seconds, **kwargs):
         if fail_times is None or seen["count"] < fail_times:
             seen["count"] += 1
             raise exc
@@ -380,7 +380,7 @@ def test_download_with_tqdm_speed_gate_rerolls_then_completes(tmp_path):
     dest = str(tmp_path / "out.bin")
     calls = {"n": 0}
 
-    def _stream(url, filename, desc, total, leave, floor_bytes_per_s, probe_seconds, **kwargs):
+    def _stream(url, filename, desc, leave, floor_bytes_per_s, probe_seconds, **kwargs):
         calls["n"] += 1
         if calls["n"] == 1:
             # first attempt is gated (floor enforced) and judged too slow
@@ -466,8 +466,7 @@ def test_stream_once_writes_full_payload_known_length(tmp_path):
     with mock.patch("bit.modules.general.urllib.request.urlopen",
                     _patch_urlopen(payload, known_length=True)):
         _stream_once("https://example.test/x", dest, "label",
-                     total=len(payload), leave=False,
-                     floor_bytes_per_s=0.0, probe_seconds=5.0)
+                     leave=False, floor_bytes_per_s=0.0, probe_seconds=5.0)
     assert Path(dest).read_bytes() == payload
 
 
@@ -479,8 +478,7 @@ def test_stream_once_writes_full_payload_unknown_length(tmp_path):
     with mock.patch("bit.modules.general.urllib.request.urlopen",
                     _patch_urlopen(payload, known_length=False)):
         _stream_once("https://example.test/x", dest, "label",
-                     total=None, leave=False,
-                     floor_bytes_per_s=0.0, probe_seconds=5.0)
+                     leave=False, floor_bytes_per_s=0.0, probe_seconds=5.0)
     assert Path(dest).read_bytes() == payload
 
 
@@ -511,8 +509,8 @@ def test_stream_once_speed_gate_raises_too_slow(tmp_path):
                                    per_read_delay=0.05, max_read=1024)):
         with pytest.raises(_TooSlow):
             _stream_once("https://example.test/x", dest, "label",
-                         total=len(payload), leave=False,
-                         floor_bytes_per_s=10 * 1024 * 1024, probe_seconds=0.05)
+                         leave=False, floor_bytes_per_s=10 * 1024 * 1024,
+                         probe_seconds=0.05)
 
 
 def test_download_with_tqdm_speed_gate_reroll_then_final_completes(tmp_path):
@@ -527,12 +525,12 @@ def test_download_with_tqdm_speed_gate_reroll_then_final_completes(tmp_path):
     dest = str(tmp_path / "out.bin")
     real_stream_once = general_mod._stream_once
 
-    def gated_or_real(url, filename, desc, total, leave, floor_bytes_per_s,
+    def gated_or_real(url, filename, desc, leave, floor_bytes_per_s,
                       probe_seconds, **kwargs):
         if floor_bytes_per_s > 0:
             raise _TooSlow(0.5)          # gated attempt: reroll
         # final attempt (floor 0): run the genuine streaming loop
-        return real_stream_once(url, filename, desc, total, leave,
+        return real_stream_once(url, filename, desc, leave,
                                 floor_bytes_per_s, probe_seconds, **kwargs)
 
     with mock.patch("bit.modules.general.urllib.request.urlopen",
@@ -589,8 +587,7 @@ def test_stream_once_interrupted_leaves_no_file_or_part(tmp_path):
     with mock.patch("bit.modules.general.urllib.request.urlopen", _fake):
         with pytest.raises(ConnectionResetError):
             _stream_once("https://example.test/x", dest, "label",
-                         total=None, leave=False,
-                         floor_bytes_per_s=0.0, probe_seconds=5.0)
+                         leave=False, floor_bytes_per_s=0.0, probe_seconds=5.0)
 
     assert not Path(dest).exists()            # no truncated file left to be trusted
     assert not Path(dest + ".part").exists()  # temp cleaned up
@@ -605,8 +602,8 @@ def test_stream_once_too_slow_leaves_no_file_or_part(tmp_path):
                                    per_read_delay=0.05, max_read=1024)):
         with pytest.raises(_TooSlow):
             _stream_once("https://example.test/x", dest, "label",
-                         total=len(payload), leave=False,
-                         floor_bytes_per_s=10 * 1024 * 1024, probe_seconds=0.05)
+                         leave=False, floor_bytes_per_s=10 * 1024 * 1024,
+                         probe_seconds=0.05)
 
     assert not Path(dest).exists()
     assert not Path(dest + ".part").exists()
