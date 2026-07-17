@@ -27,6 +27,7 @@
 - internal changes, not really user-facing
   - the github action that builds the slimmed down ncbi assembly summary data object now builds in full lineages also (so that info is more easily available and always syncd with the cached assembly summary data)
   - gtdb and ncbi data tables are stored as parquets now (smaller/faster downloads, less user storage needed, and are much faster when accessed and searched)
+  - more robustness improvements to dl-ncbi-assemblies
 
 ---
 

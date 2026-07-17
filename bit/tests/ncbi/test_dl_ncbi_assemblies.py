@@ -13,7 +13,6 @@ from bit.modules.ncbi.dl_ncbi_assemblies import (
     download_one,
     download_assemblies,
     report_finish,
-    valid_gzip,
     sleep_backoff,
     download_one
 )
@@ -134,7 +133,6 @@ def test_download_one_success(tmp_path):
 
 def test_download_one_skips_existing_valid_file(tmp_path):
     # a non-gz file that already exists and is non-empty should be skipped
-    # without any network call (valid_gzip returns True for non-.gz paths)
     dest = tmp_path / "file.fasta"
     dest.write_text("already here")
     with patch("bit.modules.ncbi.dl_ncbi_assemblies.requests.get") as mock_get:
@@ -311,55 +309,6 @@ def test_report_finish_skipped_note(capsys):
     report_finish(rd)
     out = capsys.readouterr().out
     assert "already present" in out
-
-
-def test_valid_gzip_accepts_intact_file(tmp_path):
-    p = tmp_path / "good.fasta.gz"
-    _write_gzip(p, b"ACGT" * 100_000)  # ~400 KB payload, multi-block
-    assert valid_gzip(str(p)) is True
-
-
-def test_valid_gzip_rejects_small_truncation(tmp_path):
-    # a small payload truncated mid-stream raises EOFError internally; the function
-    # must treat that as invalid (not crash). EOFError is not an OSError subclass,
-    # which is exactly the case a first-block-only read would miss.
-    p = tmp_path / "small.fasta.gz"
-    _write_gzip(p, b"ACGT" * 100)  # ~400 B payload
-    _truncate(p)
-    assert valid_gzip(str(p)) is False
-
-
-def test_valid_gzip_rejects_large_truncation(tmp_path):
-    # a large payload truncated mid-stream: reading only the first block would
-    # succeed (the cut is far past block 1) and wrongly pass. The full read reaches
-    # the missing trailer and correctly rejects it.
-    p = tmp_path / "large.fasta.gz"
-    _write_gzip(p, b"ACGT" * 1_000_000)  # ~4 MB payload
-    _truncate(p)
-    assert valid_gzip(str(p)) is False
-
-
-def test_valid_gzip_rejects_corrupted_body(tmp_path):
-    # valid gzip structure but a flipped mid-stream byte -> CRC32 mismatch at EOS
-    p = tmp_path / "corrupt.fasta.gz"
-    _write_gzip(p, b"ACGT" * 50_000)
-    data = bytearray(p.read_bytes())
-    data[len(data) // 2] ^= 0xFF
-    p.write_bytes(bytes(data))
-    assert valid_gzip(str(p)) is False
-
-
-def test_valid_gzip_rejects_non_gzip_content(tmp_path):
-    p = tmp_path / "junk.fasta.gz"
-    p.write_bytes(b"this is not gzip data at all")
-    assert valid_gzip(str(p)) is False
-
-
-def test_valid_gzip_passes_through_non_gz_paths(tmp_path):
-    # non-.gz paths are not decompressed; the function returns True without reading
-    p = tmp_path / "report.txt"
-    p.write_text("some plain text")
-    assert valid_gzip(str(p)) is True
 
 
 # ---------------------------------------------------------------------------

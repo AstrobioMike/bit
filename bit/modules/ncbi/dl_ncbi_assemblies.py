@@ -111,21 +111,6 @@ def summarize_search(summary):
             print(f"    Remaining total targets: {summary.num_found}\n")
 
 
-def valid_gzip(path):
-    """
-    integrity check for a gzipped file (only used for retried runs)
-    """
-    if str(path).endswith(".gz"):
-        try:
-            with gzip.open(path, "rb") as fh:
-                while fh.read(1024 * 1024):
-                    pass
-            return True
-        except (OSError, EOFError):
-            return False
-    return True
-
-
 def sleep_backoff(attempt, resp=None):
     """
     sleep before a retry. Honors an NCBI-provided Retry-After header when present,
@@ -145,11 +130,16 @@ def sleep_backoff(attempt, resp=None):
 def download_one(target_link, local_dest, retries=max_retries):
 
     local_path = Path(local_dest)
+    tmp_path = local_path.with_name(local_path.name + ".tmp")
 
-    if local_path.exists() and local_path.stat().st_size > 0 and valid_gzip(local_path):
+    # atomic writes (below) guarantee any 'final file' completed this run
+    if local_path.exists() and local_path.stat().st_size > 0:
         return (local_dest, None, "skipped")
 
     local_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # clear any stale tmp left behind by a prior interrupted run
+    tmp_path.unlink(missing_ok=True)
 
     for attempt in range(1, retries + 1):
         try:
@@ -173,22 +163,23 @@ def download_one(target_link, local_dest, retries=max_retries):
                 sleep_backoff(attempt)
                 continue
 
-            with open(local_path, "wb") as fh:
+            with open(tmp_path, "wb") as fh:
                 for chunk in resp.iter_content(chunk_size=1024 * 64):
                     fh.write(chunk)
 
-            if local_path.stat().st_size == 0:
-                local_path.unlink(missing_ok=True)
+            if tmp_path.stat().st_size == 0:
+                tmp_path.unlink(missing_ok=True)
                 if attempt == retries:
                     return (local_dest, "Downloaded file was empty", "failed_transient")
                 sleep_backoff(attempt)
                 continue
 
+            os.replace(tmp_path, local_path)
             return (local_dest, None, "downloaded")
 
         except (requests.RequestException, OSError) as e:
+            tmp_path.unlink(missing_ok=True)
             if attempt == retries:
-                local_path.unlink(missing_ok=True)
                 return (local_dest, str(e), "failed_transient")
             sleep_backoff(attempt)
 
