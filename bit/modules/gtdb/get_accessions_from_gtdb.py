@@ -42,9 +42,9 @@ def get_accessions_from_gtdb(args):
     _report_gtdb_version(gtdb_path)
 
     if args.gtdb_representatives_only:
-        representatives_source = "GTDB"
+        representatives_source = "gtdb"
     elif args.refseq_reference_genomes_only:
-        representatives_source = "RefSeq"
+        representatives_source = "refseq"
     else:
         representatives_source = None
 
@@ -129,7 +129,7 @@ def _read_rank_columns(gtdb_path):
 def _apply_reps_filter(gtdb_path, representatives_source):
     if not representatives_source:
         return None
-    if representatives_source == "GTDB":
+    if representatives_source == "gtdb":
         filt = [("gtdb_representative", "=", "t")]
     else:
         filt = [("ncbi_refseq_category", "=", "reference genome")]
@@ -142,7 +142,7 @@ def _read_taxon_full_slice(gtdb_path, taxon, resolved_rank, representatives_sour
 
     if taxon == "all":
         if reps_only:
-            filt = [("gtdb_representative", "=", "t")] if representatives_source == "GTDB" \
+            filt = [("gtdb_representative", "=", "t")] if representatives_source == "gtdb" \
                 else [("ncbi_refseq_category", "=", "reference genome")]
             tab = pq.read_table(gtdb_path, columns=cols, filters=filt).to_pandas()
         else:
@@ -323,13 +323,13 @@ def get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab=None, representat
         print("    {:<10} {:}".format(rank, str(gtdb_tab[rank].nunique())))
     print("")
 
-    if representatives_source == "GTDB":
+    if representatives_source == "gtdb":
         wprint(color_text("(The `--gtdb-representatives-only` flag doesn't change these "
                           "counts: every GTDB taxon has a representative genome, so the "
                           "number of unique taxa per rank is the same with or without it.)",
                           "yellow"))
         print("")
-    elif representatives_source == "RefSeq":
+    elif representatives_source == "refseq":
         wprint(color_text("In considering only RefSeq reference genomes:", "yellow"))
         print("")
         print("    {:<10} {:}".format("Rank", "Num. Unique Ref. Taxa"))
