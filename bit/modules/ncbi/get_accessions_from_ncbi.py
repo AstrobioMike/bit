@@ -15,6 +15,7 @@ from bit.modules.taxonomy.tax_select import (
     TaxonNotFound,
     resolve_taxon,
     select,
+    find_ranks_for_taxon as _resolve_ranks,
 )
 from bit.modules.taxonomy.tax_derep import select_ref_genomes
 
@@ -98,6 +99,19 @@ def get_accessions_from_ncbi(args):
             reps_only=args.refseq_reference_genomes_only)
         sys.exit(0)
 
+    # --get-taxon-counts on a taxon NAME reports per-rank counts and exits before any
+    # selection happens, so --derep-rank never applies: counts report how many genomes
+    # MATCH the filters, not how many survive dereplication (a pull-time reduction).
+    # 'all' and taxid targets fall through to the single-number report below, since
+    # neither resolves to a set of ranks (matches what i do in GToTree for this module)
+    target = str(args.target_taxon)
+    if (getattr(args, "get_taxon_counts", False)
+            and target.lower() != "all" and not target.isdigit()):
+        _report_taxon_counts_or_exit(table_path, target, args,
+                                     parse_assembly_levels(
+                                         getattr(args, "assembly_level", None)))
+        sys.exit(0)
+
     if str(args.target_taxon).lower() == "all":
         tab = _select_all(table_path, reps_only=args.refseq_reference_genomes_only)
         label = "all genomes"
@@ -173,6 +187,112 @@ def get_accessions_from_ncbi(args):
         sys.exit(0)
 
     _write_outputs(tab, args, label)
+
+
+def _prefix_mask(acc_col, prefixes):
+    mask = None
+    for p in prefixes:
+        m = pc.starts_with(acc_col, p)
+        mask = m if mask is None else pc.or_(mask, m)
+    return mask
+
+
+def _count_at_rank(table_path, rank, taxon, prefixes=None, reps_only=False,
+                   assembly_levels=None):
+    """
+    Count rows where column `rank` == `taxon`, with the set POOL filters applied
+    (source prefix, RefSeq-reference-only, assembly level). --derep-rank is
+    intentionally NOT applied: counts report how many genomes MATCH the filters, not
+    how many survive dereplication (a pull-time reduction). Reads via pushdown where
+    possible, then applies the prefix filter in Arrow.
+    """
+    filters = [(rank, "=", taxon)]
+    if reps_only:
+        filters.append(("refseq_category", "=", "reference genome"))
+    if assembly_levels:
+        filters.append(("assembly_level", "in", set(assembly_levels)))
+
+    cols = [rank, "assembly_accession"]
+    tab = pq.read_table(table_path, columns=cols, filters=filters)
+
+    if prefixes:
+        tab = tab.filter(_prefix_mask(tab.column("assembly_accession"), prefixes))
+
+    return tab.num_rows
+
+
+def _counts_scope_note(args, assembly_levels):
+    """short human description of which filters the primary counts block reflects"""
+    bits = []
+    if args.source == "refseq":
+        bits.append("in refseq")
+    elif args.source == "genbank":
+        bits.append("in genbank")
+    if assembly_levels:
+        levels = ", ".join(sorted(assembly_levels))
+        bits.append(f"at assembly level {levels}")
+    if not bits:
+        return ""
+    return " (" + ", ".join(bits) + ")"
+
+
+def _report_taxon_counts_or_exit(table_path, taxon, args, assembly_levels):
+    """
+    Report how many genomes match `taxon` at each rank it occurs at, matching the GTDB
+    helper's format: a primary per-rank block for the base pool (scoped by --source and
+    --assembly-level), then if --refseq-reference-genomes-only is set a separate
+    "in considering only RefSeq reference genomes" block, like GTDB's reps block.
+
+    The wording is explicit about WHICH filters each block reflects: the primary block
+    reflects --source and --assembly-level (but not the reference-genome filter, which
+    is applied only in the second block), so the two numbers aren't confused.
+
+    Reporting per-rank (rather than one number for a single resolved rank) also means
+    an ambiguous taxon name is informative here instead of an error.
+    """
+    prefixes = _source_prefixes(args.source)
+    scope_note = _counts_scope_note(args, assembly_levels)
+
+    try:
+        canonical, ranks_found_in = _resolve_ranks(table_path, taxon)
+    except TaxonNotFound:
+        report_message(f"Input taxon '{taxon}' doesn't seem to exist at any rank :(",
+                       "yellow", width=100, initial_indent="    ",
+                       subsequent_indent="    ", trailing_newline=True)
+        sys.exit(0)
+
+    taxon = canonical
+
+    print("")
+    for rank in ranks_found_in:
+        count = _count_at_rank(table_path, rank, taxon, prefixes=prefixes,
+                               assembly_levels=assembly_levels)
+        report_message(f"The rank '{rank}' has {count:,} {taxon} entries{scope_note}.",
+                       color=None, width=100, initial_indent="    ",
+                       subsequent_indent="    ", leading_newline=False,
+                       trailing_newline=True)
+
+    if args.refseq_reference_genomes_only:
+        report_message("Of those, in considering only RefSeq reference genomes:",
+                       "yellow", width=100, initial_indent="    ",
+                       subsequent_indent="    ", leading_newline=False,
+                       trailing_newline=True)
+        any_rep = False
+        for rank in ranks_found_in:
+            count = _count_at_rank(table_path, rank, taxon, prefixes=prefixes,
+                                   reps_only=True, assembly_levels=assembly_levels)
+            if count:
+                any_rep = True
+                report_message(f"The rank '{rank}' has {count:,} {taxon} RefSeq "
+                               "reference genome entries.", color=None, width=100,
+                               initial_indent="    ", subsequent_indent="    ",
+                               leading_newline=False, trailing_newline=True)
+        if not any_rep:
+            report_message(f"Input taxon '{taxon}' doesn't seem to exist at any rank "
+                           "as a RefSeq reference genome :(", "yellow", width=100,
+                           initial_indent="    ", subsequent_indent="    ",
+                           leading_newline=False, trailing_newline=True)
+            sys.exit(0)
 
 
 def report_unique_taxa_counts_of_all_ranks(table_path, source="refseq", reps_only=False):

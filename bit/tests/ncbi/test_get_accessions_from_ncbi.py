@@ -60,7 +60,8 @@ def _make_table(tmp_path, rows):
 def _args(**kw):
     base = dict(target_taxon=None, target_rank=None, source="refseq",
                 refseq_reference_genomes_only=False, assembly_level=None,
-                get_taxon_counts=False, get_rank_counts=False)
+                get_taxon_counts=False, get_rank_counts=False, get_table=False,
+                derep_rank="off")
     base.update(kw)
     return SimpleNamespace(**base)
 
@@ -141,9 +142,51 @@ def test_counts_mode_reports_and_writes_nothing(table, tmp_path, monkeypatch, ca
     with pytest.raises(SystemExit):
         get_accessions_from_ncbi(_args(target_taxon="Alteromonas", get_taxon_counts=True))
     out = capsys.readouterr().out
-    assert "genome(s) under" in out
+    # per-rank format, matching get-accs-from-gtdb
+    assert "The rank 'genus' has" in out
+    assert "Alteromonas entries" in out
     assert not list(tmp_path.glob("ncbi-*-accessions.txt"))
     assert not list(tmp_path.glob("ncbi-*-metadata.tsv"))
+
+
+def test_counts_mode_ignores_derep_rank(table, tmp_path, monkeypatch, capsys):
+    """
+    --get-taxon-counts reports how many genomes MATCH the filters, not how many
+    survive dereplication -- so --derep-rank must not change the number. The counts
+    path bails before any selection happens, so derep never runs.
+    """
+    monkeypatch.chdir(tmp_path)
+    seen = []
+    for derep in ("off", "family", "auto"):
+        with pytest.raises(SystemExit):
+            get_accessions_from_ncbi(_args(target_taxon="Alteromonas",
+                                           get_taxon_counts=True, derep_rank=derep))
+        seen.append(capsys.readouterr().out.strip())
+    assert seen[0] == seen[1] == seen[2]
+
+
+def test_counts_mode_scope_note_reflects_source(table, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit):
+        get_accessions_from_ncbi(_args(target_taxon="Alteromonas",
+                                       get_taxon_counts=True, source="refseq"))
+    assert "(in refseq)" in capsys.readouterr().out
+
+
+def test_counts_mode_reports_every_rank_a_name_occurs_at(tmp_path, monkeypatch, capsys):
+    """An ambiguous name is informative here rather than an error: one line per rank."""
+    p = _make_table(tmp_path, [
+        _row("GCF_1.1", genus="Dup", family="Dup"),
+        _row("GCF_2.1", genus="Other", family="Dup"),
+    ])
+    monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit):
+        get_accessions_from_ncbi(_args(target_taxon="Dup", get_taxon_counts=True,
+                                       source="both"))
+    out = capsys.readouterr().out
+    assert "The rank 'family' has 2 Dup entries" in out
+    assert "The rank 'genus' has 1 Dup entries" in out
 
 
 # --- taxid path -----------------------------------------------------------
