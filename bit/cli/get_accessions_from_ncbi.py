@@ -9,14 +9,11 @@ from bit.modules.taxonomy.tax_ranks import RANKS
 
 def build_parser(parent_subparsers=None):
 
-    desc = """
-        This is a helper program to facilitate getting NCBI accessions and assembly
-        metadata based on an NCBI-taxonomy search. It primarily returns NCBI
-        accessions and a summary metadata table based on NCBI-taxonomy or taxid searches, 
-        which can then be passed to, e.g., `bit dl-ncbi-assemblies`. bit 
-        caches the NCBI assembly metadata. If you want to update it, run
-        `bit data get ncbi-assembly-data -f`.
-        """
+    desc = ("This is a helper program to facilitate getting NCBI accessions and assembly "
+            "metadata based on an NCBI-taxonomy search. It primarily returns NCBI "
+            "accessions and metadata subsets based on NCBI-taxonomy searches, with optional "
+            "filtering by source (RefSeq/GenBank), assembly level, and/or RefSeq 'reference' genomes "
+            "only, plus optional dereplication down to one genome per specified rank.")
 
     if parent_subparsers is not None:
         parser = parent_subparsers.add_parser(
@@ -40,9 +37,8 @@ def build_parser(parent_subparsers=None):
         "-t",
         "--target-taxon",
         metavar="<STR>",
-        help=wrap_help("Target taxon (enter 'all' for all). Can be a taxon name or an "
-                       "NCBI taxid (e.g., 'Alteromonas', 'archaea', or '226'). "
-                       "Not needed with `--get-rank-counts`."),
+        help=("Target taxon (a name, an NCBI taxid, or 'all'). Not needed with "
+              "`--get-rank-counts`."),
         action="store",
     )
 
@@ -50,9 +46,7 @@ def build_parser(parent_subparsers=None):
         "-r",
         "--target-rank",
         choices=list(RANKS),
-        help=wrap_help("If the target taxon name occurs at more than one rank, "
-                       "specify which rank is wanted (e.g. 'genus'). Only needed to "
-                       "disambiguate a homonym."),
+        help=("Target rank (if needed to disambiguate a taxon name that exists at multiple ranks)"),
         action="store",
     )
 
@@ -60,63 +54,58 @@ def build_parser(parent_subparsers=None):
         "--derep-rank",
         choices=["auto", "off"] + list(RANKS),
         default="off",
-        help=wrap_help("Dereplicate the pulled genomes down to a single best genome per "
-                       "unique value of this rank (default: off). E.g., '--derep-rank family' "
-                       "keeps one genome per family within the target taxon. Use 'auto' for "
-                       "two ranks finer than the target. Only applies to a taxon-name search "
-                       "(not a taxid or 'all')."),
+        help=("Dereplicate the pulled genomes down to a single best genome per unique "
+              "value of this rank (default: off). E.g., '--derep-rank family' keeps one genome per "
+              "family within the target taxon). Use 'auto' for two ranks finer than the target. "
+              "Only applies to a taxon-name search (not a taxid or 'all')."),
         action="store",
-    )
-
-    optional.add_argument(
-        "--get-taxon-counts",
-        action="store_true",
-        help=wrap_help("Add this flag along with a specified taxon to the `-t` parameter to "
-                       "see how many genomes match (under any filters also provided) without "
-                       "writing output files."),
-    )
-
-    optional.add_argument(
-        "--get-rank-counts",
-        action="store_true",
-        help=wrap_help("Provide just this flag alone to see counts of how many "
-                       "unique taxa there are for each rank."),
-    )
-
-    optional.add_argument(
-        "--get-table",
-        action="store_true",
-        help=wrap_help("Provide just this flag alone to write out a tsv of bit's NCBI "
-                       "assembly-summary metadata table."),
     )
 
     optional.add_argument(
         "-s",
         "--source",
-        help=wrap_help("Specify source (default: \"refseq\"; note that 'both' or 'genbank' "
-                       "will also grab 'suppressed' assembly accessions)"),
-        choices=["refseq", "genbank", "both"],
         default="refseq",
-    )
-
-    optional.add_argument(
-        "-R",
-        "--refseq-reference-genomes-only",
-        action="store_true",
-        help=wrap_help("Add this flag to only pull accessions "
-                       "for genomes designated as RefSeq \"reference\" genomes (these "
-                       "used to be called \"representative\" genomes, see, e.g., "
-                       "https://www.ncbi.nlm.nih.gov/refseq/about/prokaryotes/#reference_genomes)"),
+        choices=["refseq", "genbank", "both"],
+        help=("Specify which section of NCBI to pull from (default: refseq)"),
+        action="store",
     )
 
     optional.add_argument(
         "-a",
         "--assembly-level",
-        nargs="+",
         choices=list(_ASSEMBLY_LEVELS),
-        help=wrap_help("Limit to one or more assembly levels, space-separated (e.g., "
-                       "'complete chromosome')."),
+        nargs="+",
+        help=("Restrict to one or more assembly levels (can be multiple space-separated)"),
         action="store",
+    )
+
+    optional.add_argument(
+        "-R",
+        "--refseq-reference-genomes-only",
+        dest="refseq_reference_genomes_only",
+        action="store_true",
+        help=("Pull only genomes designated as RefSeq reference genomes."),
+    )
+
+    optional.add_argument(
+        "--get-taxon-counts",
+        action="store_true",
+        help=("Provide this flag along with a specified taxon to `-t` to see how many "
+              "genomes match the set parameters (excluding --derep-rank)"),
+    )
+
+    optional.add_argument(
+        "--get-rank-counts",
+        action="store_true",
+        help=("Provide just this flag alone to see counts of how many unique taxa there "
+              "are for each rank."),
+    )
+
+    optional.add_argument(
+        "--get-table",
+        action="store_true",
+        help=("Provide just this flag alone to write out a tsv of GToTree's "
+              "NCBI assembly-summary metadata table."),
     )
 
     add_help(optional)
@@ -150,7 +139,7 @@ def preflight_checks(args):
         sys.exit()
 
     if args.refseq_reference_genomes_only and args.source != "refseq":
-        report_message("The `--reference-genomes-only` flag is only compatible with " 
-                       "`--source refseq`.", 
+        report_message("The `--reference-genomes-only` flag is only compatible with "
+                       "`--source refseq`.",
                        trailing_newline=True)
         sys.exit()

@@ -17,7 +17,20 @@ from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data, ncbi
 TRANSIENT_STATUS = {429, 500, 502, 503, 504}
 
 max_threads=20
-max_retries=20
+max_retries=10
+
+# statuses that mean we are specifically being rate-limited, as opposed to the
+# broader TRANSIENT_STATUS (which also covers plain server hiccups). These get true
+# exponential backoff; everything else transient gets a limited backoff
+THROTTLE_STATUS = {429}
+
+# ceiling on any single retry sleep (seconds), applied to the throttled path.
+MAX_BACKOFF = 30
+
+# separate, larger ceiling for a server-specified Retry-After
+MAX_RETRY_AFTER = 300
+
+SAWTOOTH_CYCLE = 5
 
 def dl_ncbi_assemblies(args):
 
@@ -111,20 +124,44 @@ def summarize_search(summary):
             print(f"    Remaining total targets: {summary.num_found}\n")
 
 
-def sleep_backoff(attempt, resp=None):
+def sleep_backoff(attempt, resp=None, throttled=False):
     """
-    sleep before a retry. Honors an NCBI-provided Retry-After header when present,
-    otherwise falls back to exponential backoff with jitter
+    Sleep before a retry. Two policies, chosen by WHY the attempt failed:
+
+    throttled=True  -- the server is explicitly rate-limiting us (HTTP 429, or any
+                       response carrying Retry-After). Honor Retry-After if given
+                       (capped at MAX_RETRY_AFTER), otherwise true exponential
+                       backoff capped at MAX_BACKOFF. Backing off progressively is
+                       the whole point here: retrying faster accelerates into the
+                       thing that's throttling us and tends to extend the penalty
+                       window. Retry-After gets the more generous ceiling because
+                       it's a specific instruction rather than a guess -- clamping
+                       it to MAX_BACKOFF would just burn retries on requests the
+                       server has already said it won't serve yet.
+
+    throttled=False -- a generic transient failure (5xx, connection reset, timeout,
+                       truncated/empty body, NCBI error page). These are blips or
+                       genuinely dead URLs, and there's no politeness argument for
+                       stretching the interval forever, so the wait SAWTOOTHS:
+                       1, 2, 4, 8, 16, 1, 2, 4, 8, 16, ... That keeps a straggler
+                       from parking a pool thread for hours while still spacing
+                       requests out, and we find out a file is dead far sooner.
     """
-    if resp is not None:
-        retry_after = resp.headers.get("Retry-After")
-        if retry_after:
-            try:
-                time.sleep(float(retry_after))
-                return
-            except ValueError:
-                pass
-    time.sleep((2 ** (attempt - 1)) + random.uniform(0, 1))
+    if throttled:
+        if resp is not None:
+            retry_after = resp.headers.get("Retry-After")
+            if retry_after:
+                try:
+                    time.sleep(min(float(retry_after), MAX_RETRY_AFTER))
+                    return
+                except ValueError:
+                    pass
+        time.sleep(min((2 ** (attempt - 1)) + random.uniform(0, 1), MAX_BACKOFF))
+        return
+
+    # sawtooth: exponential within a short cycle, then start over
+    step = (attempt - 1) % SAWTOOTH_CYCLE
+    time.sleep((2 ** step) + random.uniform(0, 1))
 
 
 def download_one(target_link, local_dest, retries=max_retries):
@@ -151,7 +188,11 @@ def download_one(target_link, local_dest, retries=max_retries):
             if resp.status_code in TRANSIENT_STATUS:
                 if attempt == retries:
                     return (local_dest, f"HTTP {resp.status_code} after {retries} attempts", "failed_transient")
-                sleep_backoff(attempt, resp)
+                # a 429, or any response that bothered to tell us when to come back,
+                # is a throttle -- back off properly. A bare 5xx is just a hiccup.
+                throttled = (resp.status_code in THROTTLE_STATUS
+                             or resp.headers.get("Retry-After") is not None)
+                sleep_backoff(attempt, resp, throttled=throttled)
                 continue
 
             resp.raise_for_status()

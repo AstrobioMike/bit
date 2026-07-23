@@ -14,7 +14,9 @@ from bit.modules.ncbi.dl_ncbi_assemblies import (
     download_assemblies,
     report_finish,
     sleep_backoff,
-    download_one
+    download_one,
+    MAX_BACKOFF,
+    MAX_RETRY_AFTER
 )
 
 def _write_gzip(path, payload):
@@ -319,9 +321,57 @@ def test_sleep_backoff_honors_retry_after_header():
     resp = MagicMock()
     resp.headers = {"Retry-After": "0"}
     with patch("bit.modules.ncbi.dl_ncbi_assemblies.time.sleep") as mock_sleep:
-        sleep_backoff(1, resp=resp)
+        sleep_backoff(1, resp=resp, throttled=True)
     # slept exactly once, using the header value (0.0)
     mock_sleep.assert_called_once_with(0.0)
+
+
+def test_sleep_backoff_ignores_retry_after_when_not_throttled():
+    # a plain 5xx/connection blip takes the sawtooth path, which does not consult
+    # Retry-After at all (only an explicit throttle does)
+    resp = MagicMock()
+    resp.headers = {"Retry-After": "600"}
+    with patch("bit.modules.ncbi.dl_ncbi_assemblies.time.sleep") as mock_sleep, \
+         patch("bit.modules.ncbi.dl_ncbi_assemblies.random.uniform", return_value=0.0):
+        sleep_backoff(1, resp=resp)
+    mock_sleep.assert_called_once_with(1.0)
+
+
+def test_sleep_backoff_sawtooth_resets_each_cycle():
+    # non-throttle sleeps cycle 1, 2, 4, 8, 16 then start over, so a straggler never
+    # parks a pool thread for hours
+    seen = []
+    with patch("bit.modules.ncbi.dl_ncbi_assemblies.time.sleep", side_effect=seen.append), \
+         patch("bit.modules.ncbi.dl_ncbi_assemblies.random.uniform", return_value=0.0):
+        for attempt in range(1, 12):
+            sleep_backoff(attempt)
+    assert seen == [1.0, 2.0, 4.0, 8.0, 16.0, 1.0, 2.0, 4.0, 8.0, 16.0, 1.0]
+
+
+def test_sleep_backoff_throttled_is_capped():
+    with patch("bit.modules.ncbi.dl_ncbi_assemblies.time.sleep") as mock_sleep, \
+         patch("bit.modules.ncbi.dl_ncbi_assemblies.random.uniform", return_value=0.0):
+        sleep_backoff(20, throttled=True)
+    mock_sleep.assert_called_once_with(MAX_BACKOFF)
+
+
+def test_sleep_backoff_caps_absurd_retry_after():
+    resp = MagicMock()
+    resp.headers = {"Retry-After": "99999"}
+    with patch("bit.modules.ncbi.dl_ncbi_assemblies.time.sleep") as mock_sleep:
+        sleep_backoff(1, resp=resp, throttled=True)
+    mock_sleep.assert_called_once_with(MAX_RETRY_AFTER)
+
+
+def test_sleep_backoff_honors_retry_after_beyond_max_backoff():
+    # Retry-After gets the larger ceiling: a server saying "come back in 120s" is
+    # obeyed rather than clamped to MAX_BACKOFF, which would just burn retries on
+    # requests we already know will be refused
+    resp = MagicMock()
+    resp.headers = {"Retry-After": "120"}
+    with patch("bit.modules.ncbi.dl_ncbi_assemblies.time.sleep") as mock_sleep:
+        sleep_backoff(1, resp=resp, throttled=True)
+    mock_sleep.assert_called_once_with(120.0)
 
 
 def test_sleep_backoff_invalid_retry_after_falls_back_to_exponential():
@@ -329,7 +379,7 @@ def test_sleep_backoff_invalid_retry_after_falls_back_to_exponential():
     resp.headers = {"Retry-After": "not-a-number"}
     with patch("bit.modules.ncbi.dl_ncbi_assemblies.time.sleep") as mock_sleep, \
          patch("bit.modules.ncbi.dl_ncbi_assemblies.random.uniform", return_value=0.0):
-        sleep_backoff(3, resp=resp)
+        sleep_backoff(3, resp=resp, throttled=True)
     # 2 ** (3 - 1) + 0.0 == 4.0
     mock_sleep.assert_called_once_with(4.0)
 

@@ -116,7 +116,7 @@ def test_copy_gtdb_table_copies_file(gtdb_parquet, tmp_path, monkeypatch):
     out_dir.mkdir()
     monkeypatch.chdir(out_dir)
     copy_gtdb_table(gtdb_parquet)
-    assert (out_dir / "GTDB-arc-and-bac-metadata.tsv").exists()
+    assert (out_dir / "gtdb-arc-and-bac-metadata.tsv").exists()
 
 
 # ─── find_ranks_for_taxon ─────────────────────────────────────────────────────
@@ -150,57 +150,57 @@ def test_find_ranks_for_taxon_multiple_ranks():
 def test_get_accessions_all_writes_accs_file(gtdb_tab, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions("all", gtdb_tab)
-    accs = (tmp_path / "GTDB-arc-and-bac-accessions.txt").read_text().splitlines()
+    accs = (tmp_path / "gtdb-arc-and-bac-accessions.txt").read_text().splitlines()
     assert len(accs) == 5
 
 
 def test_get_accessions_all_no_rep_source_no_tab_file(gtdb_tab, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions("all", gtdb_tab)
-    assert not (tmp_path / "GTDB-arc-and-bac-refseq-rep-metadata.tsv").exists()
+    assert not (tmp_path / "gtdb-arc-and-bac-refseq-rep-metadata.tsv").exists()
 
 
 def test_get_accessions_all_with_rep_source_writes_both_files(gtdb_tab, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     rep_tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
-    get_accessions("all", gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="GTDB")
-    assert (tmp_path / "GTDB-arc-and-bac-refseq-rep-metadata.tsv").exists()
-    accs = (tmp_path / "GTDB-arc-and-bac-refseq-rep-accessions.txt").read_text().splitlines()
+    get_accessions("all", gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="gtdb")
+    assert (tmp_path / "gtdb-arc-and-bac-refseq-rep-metadata.tsv").exists()
+    accs = (tmp_path / "gtdb-arc-and-bac-refseq-rep-accessions.txt").read_text().splitlines()
     assert len(accs) == 3
 
 
 def test_get_accessions_specific_taxon_writes_accs_file(gtdb_tab, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions("Escherichia", gtdb_tab)
-    accs = (tmp_path / "GTDB-Escherichia-genus-accs.txt").read_text().splitlines()
+    accs = (tmp_path / "gtdb-escherichia-genus-accs.txt").read_text().splitlines()
     assert len(accs) == 2
 
 
 def test_get_accessions_specific_taxon_writes_metadata_file(gtdb_tab, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions("Escherichia", gtdb_tab)
-    assert (tmp_path / "GTDB-Escherichia-genus-metadata.tsv").exists()
+    assert (tmp_path / "gtdb-escherichia-genus-metadata.tsv").exists()
 
 
 def test_get_accessions_rank_specified_explicitly(gtdb_tab, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions("Escherichia", gtdb_tab, rank="genus")
-    accs = (tmp_path / "GTDB-Escherichia-genus-accs.txt").read_text().splitlines()
+    accs = (tmp_path / "gtdb-escherichia-genus-accs.txt").read_text().splitlines()
     assert len(accs) == 2
 
 
 def test_get_accessions_species_with_space_replaced_by_dash(gtdb_tab, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions("Escherichia coli", gtdb_tab, rank="species")
-    assert (tmp_path / "GTDB-Escherichia-coli-species-accs.txt").exists()
+    assert (tmp_path / "gtdb-escherichia-coli-species-accs.txt").exists()
 
 
 def test_get_accessions_with_rep_source_in_filename(gtdb_tab, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     rep_tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
-    get_accessions("Escherichia", gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="GTDB")
-    assert (tmp_path / "GTDB-Escherichia-genus-GTDB-rep-accs.txt").exists()
-    accs = (tmp_path / "GTDB-Escherichia-genus-GTDB-rep-accs.txt").read_text().splitlines()
+    get_accessions("Escherichia", gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="gtdb")
+    assert (tmp_path / "gtdb-escherichia-genus-gtdb-rep-accs.txt").exists()
+    accs = (tmp_path / "gtdb-escherichia-genus-gtdb-rep-accs.txt").read_text().splitlines()
     assert len(accs) == 1
 
 
@@ -272,7 +272,7 @@ def test_get_unique_taxa_counts_of_all_ranks_with_gtdb_rep_shows_note_not_table(
     duplicate second table.
     """
     rep_tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
-    get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="GTDB")
+    get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="gtdb")
     out = capsys.readouterr().out
     assert "doesn't change these counts" in out
     # and NOT a second table
@@ -290,7 +290,7 @@ def test_orchestrator_get_table_copies_file_and_exits(gtdb_parquet, tmp_path, mo
                return_value=gtdb_parquet):
         with pytest.raises(SystemExit):
             get_accessions_from_gtdb(make_args(get_table=True))
-    assert (out_dir / "GTDB-arc-and-bac-metadata.tsv").exists()
+    assert (out_dir / "gtdb-arc-and-bac-metadata.tsv").exists()
 
 
 def test_orchestrator_get_taxon_counts_without_taxon_exits(tmp_path):
@@ -360,7 +360,7 @@ def test_orchestrator_get_accessions_exits(gtdb_parquet, tmp_path, monkeypatch):
                return_value=gtdb_parquet):
         with pytest.raises(SystemExit):
             get_accessions_from_gtdb(make_args(target_taxon="Escherichia"))
-    assert (out_dir / "GTDB-Escherichia-genus-accs.txt").exists()
+    assert (out_dir / "gtdb-escherichia-genus-accs.txt").exists()
 
 
 def test_orchestrator_gtdb_rep_only_filters_to_rep_genomes(gtdb_parquet, tmp_path, monkeypatch):
@@ -374,7 +374,7 @@ def test_orchestrator_gtdb_rep_only_filters_to_rep_genomes(gtdb_parquet, tmp_pat
                 target_taxon="Escherichia",
                 gtdb_representatives_only=True,
             ))
-    accs = (out_dir / "GTDB-Escherichia-genus-GTDB-rep-accs.txt").read_text().splitlines()
+    accs = (out_dir / "gtdb-escherichia-genus-gtdb-rep-accs.txt").read_text().splitlines()
     assert len(accs) == 1
 
 
@@ -389,7 +389,7 @@ def test_orchestrator_refseq_ref_only_filters_to_ref_genomes(gtdb_parquet, tmp_p
                 target_taxon="Escherichia",
                 refseq_reference_genomes_only=True,
             ))
-    accs = (out_dir / "GTDB-Escherichia-genus-RefSeq-rep-accs.txt").read_text().splitlines()
+    accs = (out_dir / "gtdb-escherichia-genus-RefSeq-rep-accs.txt").read_text().splitlines()
     assert len(accs) == 1
 
 
@@ -407,7 +407,7 @@ def test_orchestrator_taxon_slice_matches_full_filter(gtdb_parquet, tmp_path, mo
         with pytest.raises(SystemExit):
             get_accessions_from_gtdb(make_args(target_taxon="Escherichia"))
 
-    new_accs = sorted((tmp_path / "GTDB-Escherichia-genus-accs.txt").read_text().split())
+    new_accs = sorted((tmp_path / "gtdb-escherichia-genus-accs.txt").read_text().split())
     full = pd.DataFrame(ROWS)
     old_accs = sorted(full[full["genus"] == "Escherichia"]["ncbi_genbank_assembly_accession"].tolist())
     assert new_accs == old_accs
@@ -421,7 +421,7 @@ def test_orchestrator_metadata_tsv_carries_all_asset_columns(gtdb_parquet, tmp_p
         with pytest.raises(SystemExit):
             get_accessions_from_gtdb(make_args(target_taxon="Escherichia"))
 
-    meta = pd.read_csv(tmp_path / "GTDB-Escherichia-genus-metadata.tsv", sep="\t")
+    meta = pd.read_csv(tmp_path / "gtdb-escherichia-genus-metadata.tsv", sep="\t")
     asset_cols = set(pq.ParquetFile(gtdb_parquet).schema_arrow.names)
     assert set(meta.columns) == asset_cols
 
