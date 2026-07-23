@@ -16,6 +16,7 @@ from bit.modules.taxonomy.tax_select import (
     resolve_taxon,
     select,
 )
+from bit.modules.taxonomy.tax_derep import select_ref_genomes
 
 
 _COLUMNS = [
@@ -61,10 +62,35 @@ def ncbi_table_path(force_update=False, quiet=True):
     return os.path.join(ncbi_dir, PARQUET_FILENAME)
 
 
+def _source_prefixes(source):
+    """Accession prefixes for a --source value (None means no restriction)."""
+    if source == "refseq":
+        return ("GCF_",)
+    if source == "genbank":
+        return ("GCA_",)
+    return None
+
+
+def copy_ncbi_table(table_path):
+    """
+    Write out the parquet object as a tsv
+    """
+    out_name = "ncbi-assembly-summary-metadata.tsv"
+    pq.read_table(table_path).to_pandas().to_csv(out_name, sep="\t", index=False)
+
+    print("")
+    wprint("NCBI table written to:")
+    print(color_text("    " + out_name + "\n"))
+
+
 def get_accessions_from_ncbi(args):
 
     table_path = ncbi_table_path()
     _report_ncbi_date(table_path)
+
+    if getattr(args, "get_table", False):
+        copy_ncbi_table(table_path)
+        sys.exit(0)
 
     if getattr(args, "get_rank_counts", False):
         report_unique_taxa_counts_of_all_ranks(
@@ -100,9 +126,35 @@ def get_accessions_from_ncbi(args):
                               f"'{canonical}'.", "yellow"))
             print("")
 
-        tab = select(table_path, "ncbi", rank, canonical,
-                     reps_only=args.refseq_reference_genomes_only, columns=_COLUMNS)
+        # shared selection core (also used by get-accs-from-gtdb and, in GToTree,
+        # the main program). --source scopes the candidate pool BY ACCESSION PREFIX
+        # up front, inside the core. So when --derep-rank is also set, the
+        # best-per-rank pick is made within the already-scoped pool. Post-filtering
+        # by source after dereplication instead would drop the derep winners and
+        # return nothing.
+        try:
+            selection = select_ref_genomes(
+                table_path, "ncbi", canonical, target_rank=rank,
+                derep_rank=getattr(args, "derep_rank", "off"),
+                reps_only=args.refseq_reference_genomes_only,
+                accession_prefixes=_source_prefixes(args.source))
+        except ValueError as e:
+            report_message(str(e), "yellow")
+            print("")
+            sys.exit(0)
+
+        for w in selection.warnings:
+            wprint(color_text(w, "yellow"))
+        if selection.warnings:
+            print("")
+
+        tab = pa.Table.from_pylist(selection.rows) if selection.rows else \
+            select(table_path, "ncbi", rank, canonical,
+                   reps_only=args.refseq_reference_genomes_only,
+                   columns=_COLUMNS).slice(0, 0)
         label = f"{rank} '{canonical}'"
+        if selection.effective_derep_rank:
+            label += f" (dereplicated to one genome per {selection.effective_derep_rank})"
 
     tab = _apply_filters(tab, args)
 
@@ -219,8 +271,8 @@ def _write_outputs(tab, args, label):
         suffix_bits.append(args.source.lower())
     suffix = ("-" + "-".join(suffix_bits)) if suffix_bits else ""
 
-    acc_out = f"NCBI-{taxon_for_filename}{suffix}-accessions.txt"
-    tab_out = f"NCBI-{taxon_for_filename}{suffix}-metadata.tsv"
+    acc_out = f"ncbi-{taxon_for_filename}{suffix}-accessions.txt"
+    tab_out = f"ncbi-{taxon_for_filename}{suffix}-metadata.tsv"
 
     df = tab.to_pandas()
     df.to_csv(tab_out, sep="\t", index=False)

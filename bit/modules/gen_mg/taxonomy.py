@@ -1,7 +1,7 @@
 """
-gen-mg taxonomy-resolution layer.
+gen-mg taxonomy-resolution
 
-Fills BOTH taxonomy rank sets (gtdb_* and ncbi_*) on the merged genome table
+Fills both taxonomy rank sets (gtdb_* and ncbi_*) on the merged genome table
 """
 import os
 import pandas as pd # type: ignore
@@ -9,13 +9,17 @@ from bit.modules.gen_mg.selection import RANKS, GTDB_RANKS, NCBI_RANKS
 
 
 def _root_acc(acc):
-    """ strip version suffix for tolerant matching (GCA_000001.2 -> GCA_000001). """
+    """
+    strip version suffix for tolerant matching (GCA_000001.2 -> GCA_000001)
+    """
     return str(acc).split(".")[0]
 
 
 def _clean_gtdb_acc(acc):
-    """ strip GTDB's RS_/GB_ prefix from the col-0 accession, leaving e.g.
-    'RS_GCF_000005845.2' -> 'GCF_000005845.2'. """
+    """
+    strip GTDB's RS_/GB_ prefix from the col-0 accession, leaving e.g.
+    'RS_GCF_000005845.2' -> 'GCF_000005845.2'
+    """
     s = str(acc)
     if s.startswith(("RS_", "GB_")):
         s = s[3:]
@@ -23,14 +27,18 @@ def _clean_gtdb_acc(acc):
 
 
 def _norm_key(acc):
-    """ the single canonical lookup key for an accession (de-prefix + de-version). """
+    """
+    the single canonical lookup key for an accession (de-prefix + de-version)
+    """
     return _root_acc(_clean_gtdb_acc(acc))
 
 
 # ---------------------------------------------------------------- GTDB ranks --
 
 def gtdb_taxid_map(gtdb_tab):
-    """ accession(rootless, both GCA & GCF forms) -> ncbi_taxid (str). """
+    """
+    accession(rootless, both GCA & GCF forms) -> ncbi_taxid (str)
+    """
     if ("ncbi_genbank_assembly_accession" not in gtdb_tab.columns
             and "accession" not in gtdb_tab.columns):
         return {}
@@ -63,7 +71,9 @@ def gtdb_taxid_map(gtdb_tab):
 
 
 def gtdb_lineage_map(gtdb_tab):
-    """ accession(rootless, both GCA & GCF forms) -> dict(plain_rank -> gtdb value). """
+    """
+    accession(rootless, both GCA & GCF forms) -> dict(plain_rank -> gtdb value)
+    """
     have_acc = ("ncbi_genbank_assembly_accession" in gtdb_tab.columns
                 or "accession" in gtdb_tab.columns)
     if not have_acc or any(c not in gtdb_tab.columns for c in RANKS):
@@ -94,8 +104,10 @@ def gtdb_lineage_map(gtdb_tab):
 
 
 def fill_gtdb_taxonomy(merged, gtdb_tab):
-    """ fill gtdb_* columns for any row whose accession is in the GTDB table and
-    whose gtdb_* are still NA. Returns the merged frame (modified copy). """
+    """
+    fill gtdb_* columns for any row whose accession is in the GTDB table and
+    whose gtdb_* are still NA. Returns the merged frame (modified copy)
+    """
     lineage = gtdb_lineage_map(gtdb_tab)
     if not lineage:
         return merged
@@ -137,10 +149,15 @@ def assembly_info_taxid_map(accessions, assembly_info_path):
     return out
 
 
+_NCBI_CORES_CACHE = {}
+
+
 def _acc_digits(acc):
-    """ numeric core of an assembly accession, ignoring GCA/GCF prefix and
+    """
+    numeric core of an assembly accession, ignoring GCA/GCF prefix and
     version, so GCA_000001.2 and GCF_000001.1 share the key '000001'. GCA/GCF
-    twins share their numeric portion. """
+    twins share their numeric portion
+    """
     s = str(acc)
     if s.startswith(("RS_", "GB_")):
         s = s[3:]
@@ -148,6 +165,53 @@ def _acc_digits(acc):
     if "_" in s:
         s = s.split("_", 1)[1]       # drop GCA_/GCF_ prefix -> digits
     return s
+
+
+def _ncbi_accession_cores(assembly_info_path):
+    """
+    Arrow array of the numeric cores of every accession in the NCBI assembly-summary
+    Parquet. Vectorised equivalent of mapping _acc_digits over the column: strip any
+    RS_/GB_ prefix, drop the version suffix, drop the GCA_/GCF_ prefix.
+    """
+    import pyarrow as pa # type: ignore
+    import pyarrow.parquet as pq # type: ignore
+    import pyarrow.compute as pc # type: ignore
+
+    key = (assembly_info_path, os.path.getmtime(assembly_info_path))
+    hit = _NCBI_CORES_CACHE.get(key)
+    if hit is not None:
+        return hit
+
+    col = pq.read_table(assembly_info_path, columns=["assembly_accession"]).column(0)
+    if isinstance(col, pa.ChunkedArray):
+        col = col.combine_chunks()
+    cores = pc.replace_substring_regex(col, r'^(RS_|GB_)', '')
+    cores = pc.replace_substring_regex(cores, r'\..*$', '')
+    cores = pc.replace_substring_regex(cores, r'^[^_]*_', '')
+
+    _NCBI_CORES_CACHE.clear()   # only ever need the current asset
+    _NCBI_CORES_CACHE[key] = cores
+    return cores
+
+
+def dead_accession_cores(candidate_accessions, assembly_info_path):
+    """
+    The numeric cores of `candidate_accessions` that are NOT present in the NCBI
+    assembly-summary (i.e., suppressed/removed).
+
+    Intended to be computed ONCE for the whole candidate pool and handed to the
+    suppression backfill as `exclude_accessions`, rather than re-screening each round.
+    """
+    if not assembly_info_path or not os.path.exists(assembly_info_path):
+        return set()
+
+    import pyarrow as pa # type: ignore
+    import pyarrow.compute as pc # type: ignore
+
+    ncbi_cores = _ncbi_accession_cores(assembly_info_path)
+    cand = pa.array([_acc_digits(a) for a in candidate_accessions])
+    dead_mask = pc.invert(pc.is_in(cand, value_set=ncbi_cores))
+    return set(pc.filter(cand, dead_mask).to_pylist())
 
 
 def present_accessions(accessions, assembly_info_path):
@@ -166,14 +230,8 @@ def present_accessions(accessions, assembly_info_path):
     for a in accessions:
         wanted.setdefault(_acc_digits(a), a)
 
-    import pyarrow.parquet as pq # type: ignore
-    live = set()
-    col = pq.read_table(assembly_info_path, columns=["assembly_accession"]).column(0)
-    for acc in col:
-        d = _acc_digits(acc.as_py())
-        if d in wanted:
-            live.add(d)
-    return {orig for d, orig in wanted.items() if d in live}
+    dead = dead_accession_cores(list(wanted.keys()), assembly_info_path)
+    return {orig for d, orig in wanted.items() if d not in dead}
 
 
 def gather_taxids(accessions, gtdb_tab, assembly_info_path):

@@ -1,6 +1,6 @@
 """
 builds mock metagenomes with ground-truth tables by composing existing bit
-machinery: GTDB/NCBI selection, dl-ncbi-assemblies, mutate-seqs, and gen-reads
+machinery: GTDB selection, dl-ncbi-assemblies, mutate-seqs, and gen-reads
 
 Phases:
   1. select    - GTDB selection and/or user accessions, normalized + merged into one genome table
@@ -155,8 +155,10 @@ def log_data_source(run, label, detail):
 
 
 def _read_retrieved_date(data_dir):
-    """ read a date-retrieved.txt (stored YYYY,MM,DD) from a data dir and return
-    it formatted like 'Jun 20, 2026'. Returns '(date unknown)' if absent. """
+    """
+    read a date-retrieved.txt (stored YYYY,MM,DD) from a data dir and return
+    it formatted like 'Jun 20, 2026'. Returns '(date unknown)' if absent
+    """
     from datetime import datetime
     if not data_dir:
         return "(date unknown)"
@@ -180,9 +182,7 @@ def _read_gtdb_version(location):
 
 # columns gen-mg uses from the GTDB metadata table. This is exactly the
 # set the stored table is slimmed to at download time, so it's defined once in
-# get_gtdb_data (GTDB_KEPT_COLUMNS) and aliased here. The load still intersects
-# this with the columns actually present, so an older un-slimmed cached table
-# (or a release missing a column) reads correctly rather than erroring.
+# get_gtdb_data (GTDB_KEPT_COLUMNS) and aliased here
 GTDB_USED_COLUMNS = GTDB_KEPT_COLUMNS
 
 
@@ -218,8 +218,8 @@ def _select_with_suppression_screen(gtdb_tab, derep_rank, domains, num_genomes, 
                                     user_excluded_groups, assembly_info_path):
     """
     Select num_genomes GTDB genomes, screening each pick against the NCBI
-    assembly-summary (absent == suppressed/removed/version-drifted) and backfill-
-    ing replacements until num_genomes live genomes are found or the pool is
+    assembly-summary (absent == suppressed/removed) and backfilling
+    replacements until num_genomes live genomes are found or the pool is
     exhausted. Excludes dead accessions (not their whole group), so at coarse
     derep ranks a suppressed pick is replaced by a sibling in the same group; at
     species rank (one representative per group) it degrades to a different group.
@@ -232,8 +232,19 @@ def _select_with_suppression_screen(gtdb_tab, derep_rank, domains, num_genomes, 
     kept_rows = []                 # list of selected GTDB rows (as 1-row frames)
     kept_accs = set()              # accessions already kept (for dedup safety)
     kept_groups = set(user_excluded_groups) if user_excluded_groups else set()
-    dead_accs = set()
     seen_accs = set()              # every accession ever picked (kept or dead)
+
+    # Screen the WHOLE candidate pool up front rather than each round's picks.
+    # The screen's cost is dominated by reading/normalising the 4M-row NCBI
+    # accession column, which is virtually the same whether we check 50 accessions or 900k
+    # so doing it once for everything is cheaper than once per backfill round.
+    # We keep the dead cores rather than the live ones, and seed the loop's exclusion
+    # set with them
+    if assembly_info_path:
+        pool_accs = gtdb_tab["ncbi_genbank_assembly_accession"].tolist()
+        dead_accs = TAX.dead_accession_cores(pool_accs, assembly_info_path)
+    else:
+        dead_accs = set()
 
     def acc_of(row_frame):
         return row_frame["ncbi_genbank_assembly_accession"].iloc[0]
@@ -252,40 +263,27 @@ def _select_with_suppression_screen(gtdb_tab, derep_rank, domains, num_genomes, 
 
         accs = list(sel["ncbi_genbank_assembly_accession"])
 
-        # stop only when a round surfaces no genome we haven't already seen — i.e.
-        # the candidate pool is genuinely exhausted. A round can legitimately add
-        # zero *live* genomes (all its head(1) picks suppressed) while still making
-        # progress: recording those as dead changes the next round's picks, letting
-        # live siblings in the same groups surface
+        # stop when a round surfaces no genome we haven't already seen, i.e., the
+        # candidate pool is genuinely exhausted
         if all(a in seen_accs for a in accs):
             break
         seen_accs.update(accs)
 
-        # screen this batch
-        if assembly_info_path:
-            live = TAX.present_accessions(accs, assembly_info_path)
-        else:
-            live = set(accs)       # no screen possible -> assume all live
-
         for _, r in sel.iterrows():
             a = r["ncbi_genbank_assembly_accession"]
-            if a in live and a not in kept_accs:
+            if a not in kept_accs:
                 kept_rows.append(r.to_frame().T)
                 kept_accs.add(a)
                 if on:
                     kept_groups.add(r[derep_rank])
-            elif a not in live:
-                dead_accs.add(a)
 
-    import pandas as _pd # type: ignore
-    selected = (_pd.concat(kept_rows, ignore_index=True)
+    selected = (pd.concat(kept_rows, ignore_index=True)
                 if kept_rows else gtdb_tab.iloc[0:0].copy())
 
     if len(selected) < num_genomes:
-        n_dead = len(dead_accs)
         warnings.append(
             f"Requested {num_genomes} genomes; returning {len(selected)} after "
-            f"screening out {n_dead} suppressed/unavailable accession(s) and "
+            f"excluding suppressed/unavailable accession(s) and "
             f"exhausting available candidates."
         )
 
@@ -296,10 +294,6 @@ def phase_select(args, run): # pragma: no cover
 
     generative = bool(args.num_genomes)
 
-    # GTDB table is needed if selecting generatively OR resolving GTDB taxonomy
-    # for user accessions. In generative mode the load is the "pool" of genomes
-    # to pick from and gets its own spinner; in accessions-only mode it's loaded
-    # silently as part of taxonomy resolution (no pool, no selection step).
     gtdb_tab = None
     print()
     if generative:
@@ -373,7 +367,7 @@ def load_user_accessions(args):
     read user accession file. Bare one-per-line, or a TSV whose first column is
     the accession and optional named columns pin rel_abundance / coverage /
     mutation_rate. Taxonomy is resolved downstream (resolve_all) and genome sizes
-    are measured from the downloaded FASTAs; no NCBI metadata query is needed.
+    are measured from the downloaded fastas; no NCBI metadata query is needed.
     """
     first = open(args.accessions).readline()
     has_header = "accession" in first.lower()
@@ -468,10 +462,8 @@ def phase_download(args, run): # pragma: no cover
     # write the GTDB info summary for the final community
     write_gtdb_summary(run)
 
-    # the full GTDB metadata table (~GBs) is no longer needed after this point —
-    # selection, taxonomy resolution, and the GTDB summary are all done. Drop it
-    # so it isn't held through mutate/abundance/reads/truth (the per-read truth
-    # build is memory-heavy and shouldn't stack on top of the GTDB table).
+    # the full GTDB metadata table (~GBs) is no longer needed after this point, so
+    # dropping it to reduce memory load
     run.gtdb_tab = None
 
     print()
@@ -842,11 +834,13 @@ def phase_truth(args, run): # pragma: no cover
 
 
 def _truth_process_worker(spec, counter, result_q):
-    """ picklable worker for the process-parallel path: build one taxonomy's
+    """
+    picklable worker for the process-parallel path: build one taxonomy's
     per-read table, incrementing the shared counter once per chunk so the parent
     can render a single aggregate progress bar, and putting the result (or an
     error marker) on the queue. counter and result_q are passed as direct Process
-    args (not nested in spec) so spawn can share them. """
+    args (not nested in spec) so spawn can share them
+    """
     try:
         import sys as _sys
         _sys.path.insert(0, os.getcwd())
@@ -868,11 +862,13 @@ def _truth_process_worker(spec, counter, result_q):
 
 
 def _build_truth_processes(run, gt_root, fasta2acc, chunksize, pbar):
-    """ build the two taxonomies' per-read tables in separate (spawned) processes
+    """
+    build the two taxonomies' per-read tables in separate (spawned) processes
     for true multi-core parallelism on the CPU-bound merge+gzip. A shared counter
     (incremented per chunk by each worker) drives the single aggregate bar; results
     come back over a queue. Raw Process (not a pool) so the shared Value/Queue can
-    be passed as direct args at construction rather than pickled through submit. """
+    be passed as direct args at construction rather than pickled through submit
+    """
     import time
     import multiprocessing as mp
     ctx = mp.get_context("spawn")

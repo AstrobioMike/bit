@@ -21,6 +21,7 @@
   - `--target-rank` added for disambiguation of wanted taxon if needed
   - `--get-taxon-counts` added
   - `--get-rank-counts` added
+  - `--get-table` added to turn the parquet-stored data into a tsv for the user
 
 ### Changed
 - `bit get-accs-from-ncbi` and `bit get-accs-from-gtdb` now share primarly all the same code for finding accessions based on tax (due to change noted below about ncbi's tables being prebuilt with full lineages baked in)

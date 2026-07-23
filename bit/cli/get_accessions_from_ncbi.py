@@ -2,7 +2,9 @@ import sys
 import argparse
 from bit.modules.general import report_message
 from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help, add_version_arg
-from bit.modules.ncbi.get_accessions_from_ncbi import get_accessions_from_ncbi
+from bit.modules.ncbi.get_accessions_from_ncbi import (get_accessions_from_ncbi,
+                                                       _ASSEMBLY_LEVELS)
+from bit.modules.taxonomy.tax_ranks import RANKS
 
 
 def build_parser(parent_subparsers=None):
@@ -47,10 +49,22 @@ def build_parser(parent_subparsers=None):
     optional.add_argument(
         "-r",
         "--target-rank",
-        metavar="<STR>",
+        choices=list(RANKS),
         help=wrap_help("If the target taxon name occurs at more than one rank, "
                        "specify which rank is wanted (e.g. 'genus'). Only needed to "
                        "disambiguate a homonym."),
+        action="store",
+    )
+
+    optional.add_argument(
+        "--derep-rank",
+        choices=["auto", "off"] + list(RANKS),
+        default="off",
+        help=wrap_help("Dereplicate the pulled genomes down to a single best genome per "
+                       "unique value of this rank (default: off). E.g., '--derep-rank family' "
+                       "keeps one genome per family within the target taxon. Use 'auto' for "
+                       "two ranks finer than the target. Only applies to a taxon-name search "
+                       "(not a taxid or 'all')."),
         action="store",
     )
 
@@ -67,6 +81,13 @@ def build_parser(parent_subparsers=None):
         action="store_true",
         help=wrap_help("Provide just this flag alone to see counts of how many "
                        "unique taxa there are for each rank."),
+    )
+
+    optional.add_argument(
+        "--get-table",
+        action="store_true",
+        help=wrap_help("Provide just this flag alone to write out a tsv of bit's NCBI "
+                       "assembly-summary metadata table."),
     )
 
     optional.add_argument(
@@ -89,9 +110,10 @@ def build_parser(parent_subparsers=None):
     )
 
     optional.add_argument(
+        "-a",
         "--assembly-level",
         nargs="+",
-        choices=["complete", "chromosome", "scaffold", "contig"],
+        choices=list(_ASSEMBLY_LEVELS),
         help=wrap_help("Limit to one or more assembly levels, space-separated (e.g., "
                        "'complete chromosome')."),
         action="store",
@@ -120,9 +142,10 @@ def main():
 
 def preflight_checks(args):
 
-    if not args.get_rank_counts and not args.target_taxon:
+    if not args.get_rank_counts and not args.get_table and not args.target_taxon:
         report_message("A target must be provided to `-t` (a taxon name or an NCBI "
-                       "taxid), unless you're using `--get-rank-counts`.",
+                       "taxid), unless you're using `--get-rank-counts` or "
+                       "`--get-table`.",
                        trailing_newline=True)
         sys.exit()
 

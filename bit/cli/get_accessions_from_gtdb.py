@@ -3,6 +3,7 @@ import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help, add_version_arg
 from bit.modules.general import report_message
 from bit.modules.gtdb.get_accessions_from_gtdb import get_accessions_from_gtdb
+from bit.modules.taxonomy.tax_ranks import RANKS
 
 
 def build_parser(parent_subparsers=None):
@@ -46,7 +47,7 @@ def build_parser(parent_subparsers=None):
     optional.add_argument(
         "-r",
         "--target-rank",
-        metavar="<STR>",
+        choices=list(RANKS),
         help=wrap_help("Target rank (if needed to disambiguate a taxon name that exists at multiple ranks)"),
         action="store",
     )
@@ -56,6 +57,17 @@ def build_parser(parent_subparsers=None):
         action="store_true",
         help=wrap_help("Add this flag along with a specified taxon to the `-t` parameter "
                        "to see how many of that taxon are in the database."),
+    )
+
+    optional.add_argument(
+        "--derep-rank",
+        choices=["auto", "off"] + list(RANKS),
+        default="off",
+        help=wrap_help("Dereplicate the pulled genomes down to a single best genome per "
+                       "unique value of this rank (default: off). E.g., '--derep-rank family' "
+                       "keeps one genome per family within the target taxon. Use 'auto' for "
+                       "two ranks finer than the target."),
+        action="store",
     )
 
     optional.add_argument(
@@ -113,8 +125,8 @@ def main():
 
 def preflight_checks(args):
 
-    if not args.get_rank_counts and not args.target_taxon:
+    if not args.get_rank_counts and not args.get_table and not args.target_taxon:
         report_message("A target must be provided to `-t` (a taxon name), "
-                       "unless you're using `--get-rank-counts`.",
+                       "unless you're using `--get-rank-counts` or `--get-table`.",
                        trailing_newline=True)
         sys.exit()

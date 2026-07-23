@@ -28,12 +28,19 @@ def _resolve_checkm_cols(tab):
     return None, None
 
 
-def _acc_norm(acc):
-    """ canonical accession key: strip GTDB RS_/GB_ prefix and version suffix. """
+def _acc_core(acc):
+    """
+    Canonical accession key: strip the GTDB RS_/GB_ prefix, the version suffix, AND
+    the GCA_/GCF_ prefix, so GCA_000005845.2 and GCF_000005845.1 share the key
+    '000005845'
+    """
     s = str(acc)
     if s.startswith(("RS_", "GB_")):
         s = s[3:]
-    return s.split(".")[0]
+    s = s.split(".")[0]              # drop version
+    if "_" in s:
+        s = s.split("_", 1)[1]       # drop GCA_/GCF_ prefix -> digits
+    return s
 
 
 # quality floor applied only when derep is off (the representative pool is already
@@ -48,14 +55,14 @@ def _select_gtdb_one_per_rank(gtdb_tab, derep_rank="species", domains=None,
     """
     one GTDB genome per unique value at derep_rank; strict one-per-group.
 
-    When derep_rank == 'off', dereplication is fully disabled: the pool is the
+    When derep_rank == 'off', dereplication is disabled: the pool is the
     FULL GTDB table (all genomes, so multiple strains per species are possible),
     subject only to a fixed quality floor. Otherwise the pool is GTDB species
-    representatives, the right basis for one-per-group selection.
+    representatives, which is the right foundation for one-per-group selection.
 
     exclude_accessions: accessions (any GCA/GCF/prefixed/versioned form) never to
     select — used by the suppression backfill to skip known-dead genomes while
-    still allowing other members of the same derep group.
+    still allowing other members of the same derep group
     """
     warnings = []
     if derep_rank != "off" and derep_rank not in RANKS:
@@ -86,10 +93,12 @@ def _select_gtdb_one_per_rank(gtdb_tab, derep_rank="species", domains=None,
     tab = tab.copy()
 
     # exclude specific known-dead accessions (suppression backfill); version- and
-    # prefix-tolerant match on the GCA accession column.
+    # prefix-tolerant match on the GCA accession column. Matching is on the NUMERIC
+    # CORE (_acc_core), so a GCF_ accession excludes its GCA_ twin and
+    # vice versa
     if exclude_accessions:
-        dead = {_acc_norm(a) for a in exclude_accessions}
-        keep = ~tab["ncbi_genbank_assembly_accession"].map(_acc_norm).isin(dead)
+        dead = {_acc_core(a) for a in exclude_accessions}
+        keep = ~tab["ncbi_genbank_assembly_accession"].map(_acc_core).isin(dead)
         tab = tab[keep]
         if len(tab) == 0:
             return tab.iloc[0:0].copy(), warnings
@@ -126,11 +135,13 @@ def _select_gtdb_one_per_rank(gtdb_tab, derep_rank="species", domains=None,
 
 
 def _normalize_gtdb_rows(gtdb_selected):
-    """ map a GTDB-selected subframe onto the normalized schema.
+    """
+    map a GTDB-selected subframe onto the normalized schema.
 
     Fills gtdb_* ranks from the GTDB taxonomy columns; ncbi_* ranks are left NA
     here and resolved later (via the accession's NCBI tax_id) by the taxonomy
-    layer. """
+    layer.
+    """
     out = pd.DataFrame()
     out["accession"] = gtdb_selected["ncbi_genbank_assembly_accession"].values
     for gtdb_col, plain in zip(GTDB_RANKS, RANKS):
@@ -216,10 +227,12 @@ def merge_sources(generative_df=None, user_df=None):
 
 
 def user_filled_groups(user_df, derep_rank):
-    """ set of GTDB derep_rank values occupied by user genomes (for generative
+    """
+    set of GTDB derep_rank values occupied by user genomes (for generative
     exclusion). Uses the gtdb_<rank> column, since generative selection/derep is
     GTDB-based. Only meaningful after GTDB taxonomy has been resolved for user
-    rows; returns empty set if that column is absent or all-NA. """
+    rows; returns empty set if that column is absent or all-NA
+    """
     if user_df is None or len(user_df) == 0 or derep_rank == "off":
         return set()
     col = f"gtdb_{derep_rank}"

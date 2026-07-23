@@ -7,6 +7,7 @@ from bit.modules.gtdb.get_gtdb_data import (get_gtdb_data,
 from bit.modules.taxonomy.tax_ranks import RANKS
 from bit.modules.taxonomy.tax_select import (resolve_taxon, select,
                                              TaxonNotFound, AmbiguousTaxon)
+from bit.modules.taxonomy.tax_derep import select_ref_genomes
 
 
 _RANK_COLUMNS = list(RANKS)
@@ -70,9 +71,55 @@ def get_accessions_from_gtdb(args):
 
     working, rank = _read_taxon_full_slice(gtdb_path, target_taxon, resolved_rank,
                                            representatives_source)
+
+    working = _apply_derep(gtdb_path, args, target_taxon, rank, working,
+                           representatives_source)
+
     _write_accessions(target_taxon, working, rank,
                       representatives_source=representatives_source)
     sys.exit(0)
+
+
+def _apply_derep(gtdb_path, args, target_taxon, rank, working, representatives_source):
+    """
+    Dereplicate `working` (a full-slice DataFrame) down to one best genome per unique
+    value of --derep-rank, using the shared selection core so this matches
+    get-accs-from-ncbi and GToTree.
+
+    Derep only applies to a resolved taxon name, 'all' has no single rank to
+    dereplicate relative to, so it is passed through untouched. Mike, remember, this is
+    not gen-mg's dereplication (see modules/gen_mg/selection.py); that one samples
+    randomly toward a target count and is deliberately a different approach.
+    """
+    derep_rank = getattr(args, "derep_rank", "off")
+    if derep_rank in (None, "off") or target_taxon == "all":
+        return working
+
+    try:
+        selection = select_ref_genomes(
+            gtdb_path, "gtdb", target_taxon, target_rank=rank,
+            derep_rank=derep_rank,
+            reps_only=representatives_source is not None)
+    except ValueError as e:
+        print("")
+        wprint(color_text(str(e), "yellow"))
+        print("")
+        sys.exit(0)
+
+    for w in selection.warnings:
+        wprint(color_text(w, "yellow"))
+    if selection.warnings:
+        print("")
+
+    keep = set(selection.accessions)
+    out = working[working["ncbi_genbank_assembly_accession"].isin(keep)]
+
+    if selection.effective_derep_rank:
+        wprint(f"Dereplicated to one genome per {selection.effective_derep_rank}: "
+               f"{len(out):,} genome(s) kept.")
+        print("")
+
+    return out
 
 
 def _read_rank_columns(gtdb_path):
@@ -134,17 +181,15 @@ def _report_gtdb_version(gtdb_path):
 def report_gtdb_version_info(location):
     gtdb_version, gtdb_release_date = _read_gtdb_version_info(location)
     print("\n    Using GTDB " + gtdb_version + ": " + gtdb_release_date)
- 
+
 
 def copy_gtdb_table(gtdb_path):
     """
-    Materialize the full GTDB metadata table (all columns in the asset) to the
-    current directory as a TSV -- the `--get-table` escape hatch. Reads the hosted
-    Parquet and writes it out; the version file sits beside the Parquet.
+    Write the parquet object as a tsv
     """
     report_gtdb_version_info(os.path.dirname(gtdb_path))
 
-    out_name = "GTDB-arc-and-bac-metadata.tsv"
+    out_name = "gtdb-arc-and-bac-metadata.tsv"
     df = pq.read_table(gtdb_path).to_pandas()
     df.to_csv(out_name, sep="\t", index=False)
 
@@ -164,11 +209,11 @@ def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representative
 
     if taxon == "all":
         if representatives_source:
-            tab_out_filename = "GTDB-arc-and-bac-refseq-rep-metadata.tsv"
-            acc_out_filename = "GTDB-arc-and-bac-refseq-rep-accessions.txt"
+            tab_out_filename = "gtdb-arc-and-bac-refseq-rep-metadata.tsv"
+            acc_out_filename = "gtdb-arc-and-bac-refseq-rep-accessions.txt"
             working_tab.to_csv(tab_out_filename, sep="\t", index=False)
         else:
-            acc_out_filename = "GTDB-arc-and-bac-accessions.txt"
+            acc_out_filename = "gtdb-arc-and-bac-accessions.txt"
             tab_out_filename = None
     else:
         ranks_found_in = find_ranks_for_taxon(taxon, working_tab)
@@ -194,11 +239,11 @@ def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representative
         taxon_for_filename = taxon.replace(" ", "-")
 
         if representatives_source:
-            tab_out_filename = "GTDB-" + taxon_for_filename + "-" + rank + "-" + representatives_source + "-rep-metadata.tsv"
-            acc_out_filename = "GTDB-" + taxon_for_filename + "-" + rank + "-" + representatives_source + "-rep-accs.txt"
+            tab_out_filename = "gtdb-" + taxon_for_filename + "-" + rank + "-" + representatives_source + "-rep-metadata.tsv"
+            acc_out_filename = "gtdb-" + taxon_for_filename + "-" + rank + "-" + representatives_source + "-rep-accs.txt"
         else:
-            tab_out_filename = "GTDB-" + taxon_for_filename + "-" + rank + "-metadata.tsv"
-            acc_out_filename = "GTDB-" + taxon_for_filename + "-" + rank + "-accs.txt"
+            tab_out_filename = "gtdb-" + taxon_for_filename + "-" + rank + "-metadata.tsv"
+            acc_out_filename = "gtdb-" + taxon_for_filename + "-" + rank + "-accs.txt"
 
         working_tab.to_csv(tab_out_filename, sep="\t", index=False)
 
@@ -217,7 +262,7 @@ def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representative
         wprint("  " + color_text(tab_out_filename))
         print("")
     else:
-        wprint("The GTDB table that already exists holds all of these: " + color_text("GTDB-arc-and-bac-metadata.tsv"))
+        wprint("The GTDB table that already exists holds all of these: " + color_text("gtdb-arc-and-bac-metadata.tsv"))
         print("")
 
 
