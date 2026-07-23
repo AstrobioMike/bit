@@ -230,7 +230,7 @@ def test_get_unique_taxon_counts_all_total(gtdb_tab, capsys):
 
 def test_get_unique_taxon_counts_all_with_rep_tab(gtdb_tab, capsys):
     rep_tab = gtdb_tab[gtdb_tab["gtdb_representative"] == "t"]
-    get_unique_taxon_counts("all", gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="RefSeq")
+    get_unique_taxon_counts("all", gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="refseq")
     out = capsys.readouterr().out
     assert "5" in out   # total
     assert "3" in out   # rep count
@@ -259,7 +259,7 @@ def test_get_unique_taxa_counts_of_all_ranks_with_refseq_rep(gtdb_tab, capsys):
     """RefSeq reference genomes are a sparse subset, so they get their own (genuinely
     different) counts table."""
     rep_tab = gtdb_tab[gtdb_tab["ncbi_refseq_category"] == "reference genome"]
-    get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="RefSeq")
+    get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab=rep_tab, representatives_source="refseq")
     out = capsys.readouterr().out
     assert "RefSeq reference genomes" in out
     assert "Num. Unique Ref. Taxa" in out
@@ -389,7 +389,7 @@ def test_orchestrator_refseq_ref_only_filters_to_ref_genomes(gtdb_parquet, tmp_p
                 target_taxon="Escherichia",
                 refseq_reference_genomes_only=True,
             ))
-    accs = (out_dir / "gtdb-escherichia-genus-RefSeq-rep-accs.txt").read_text().splitlines()
+    accs = (out_dir / "gtdb-escherichia-genus-refseq-rep-accs.txt").read_text().splitlines()
     assert len(accs) == 1
 
 
