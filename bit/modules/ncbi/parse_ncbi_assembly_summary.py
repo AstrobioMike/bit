@@ -1,4 +1,5 @@
 import re
+import pyarrow as pa # type: ignore
 import pyarrow.compute as pc # type: ignore
 import pyarrow.dataset as ds # type: ignore
 
@@ -77,11 +78,10 @@ def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
     dataset = ds.dataset(str(assembly_summary_file), format="parquet")
 
     roots = list(wanted_dict)
-    acc_field = ds.field("assembly_accession")
-    predicate = None
-    for root in roots:
-        cond = pc.starts_with(acc_field, root)
-        predicate = cond if predicate is None else (predicate | cond)
+    root_field = pc.replace_substring_regex(ds.field("assembly_accession"),
+                                            r"\..*$", "")
+    predicate = pc.is_in(root_field,
+                         value_set=pa.array(sorted(set(roots)), type=pa.string()))
 
     with open(run_data.ncbi_sub_table_path, "w") as out_file:
 
@@ -92,7 +92,6 @@ def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
             cols.extend(["target_link", "local_destination"])
         out_file.write("\t".join(cols) + "\n")
 
-        # predicate=None means no wanted accessions, scanner handles that fine
         scanner = dataset.scanner(columns=_NEEDED_COLUMNS, filter=predicate)
 
         for batch in scanner.to_batches():
