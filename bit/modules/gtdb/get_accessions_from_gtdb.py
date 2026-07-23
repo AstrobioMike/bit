@@ -236,7 +236,7 @@ def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representative
 
         working_tab = working_tab[working_tab[rank] == taxon]
 
-        taxon_for_filename = taxon.replace(" ", "-")
+        taxon_for_filename = taxon.replace(" ", "-").replace("/", "-").lower()
 
         if representatives_source:
             tab_out_filename = "gtdb-" + taxon_for_filename + "-" + rank + "-" + representatives_source + "-rep-metadata.tsv"

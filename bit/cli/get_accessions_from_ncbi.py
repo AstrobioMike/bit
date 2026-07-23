@@ -10,9 +10,8 @@ from bit.modules.taxonomy.tax_ranks import RANKS
 def build_parser(parent_subparsers=None):
 
     desc = ("This is a helper program to facilitate getting NCBI accessions and assembly "
-            "metadata based on an NCBI-taxonomy search. It primarily returns NCBI "
-            "accessions and metadata subsets based on NCBI-taxonomy searches, with optional "
-            "filtering by source (RefSeq/GenBank), assembly level, and/or RefSeq 'reference' genomes "
+            "metadata based on an NCBI-taxonomy search. It has optional filtering "
+            "by source (RefSeq/GenBank), assembly level, and/or RefSeq 'reference' genomes "
             "only, plus optional dereplication down to one genome per specified rank.")
 
     if parent_subparsers is not None:

@@ -10,10 +10,9 @@ def build_parser(parent_subparsers=None):
 
     desc = ("This is a helper program to facilitate using taxonomy and genomes "
             "from the Genome Taxonomy Database (gtdb.ecogenomic.org). "
-            "It primarily returns NCBI accessions and GTDB metadata subsets based "
-            "on GTDB-taxonomy searches, with optional filtering to GTDB "
-            "representative species or RefSeq reference genomes, plus optional "
-            "dereplication down to one genome per specified rank.")
+            "It has optional filtering to GTDB representative species or RefSeq "
+            " reference genomes, plus optional dereplication down to one genome per "
+            "specified rank.")
 
     if parent_subparsers is not None:
         parser = parent_subparsers.add_parser(

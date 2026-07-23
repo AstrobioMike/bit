@@ -382,7 +382,7 @@ def _write_outputs(tab, args, label):
     taxon_raw = str(args.target_taxon)
     if taxon_raw.lower() == "all":
         taxon_raw = "all"
-    taxon_for_filename = taxon_raw.replace(" ", "-").replace("/", "-")
+    taxon_for_filename = taxon_raw.replace(" ", "-").replace("/", "-").lower()
 
     suffix_bits = []
     if args.refseq_reference_genomes_only:
