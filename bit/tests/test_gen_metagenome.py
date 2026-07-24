@@ -83,8 +83,8 @@ def screen_pool():
 
 def _ai_file(tmp_path, live_accs):
     """
-    Write the NCBI assembly-info fixture as Parquet (the format present_accessions now
-    reads). Only the accession column is needed for the suppression screen, but we
+    Write the NCBI assembly-info fixture as Parquet (the format the suppression
+    screen reads). Only the accession column is needed for that screen, but we
     write the same core columns the real asset carries so the schema is representative.
     An empty live_accs still produces a typed, empty table (not a schema-less file).
     """

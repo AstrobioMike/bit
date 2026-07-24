@@ -134,11 +134,11 @@ def test_assembly_info_taxid_map_skips_blank_taxid(tmp_path):
     assert TAX.assembly_info_taxid_map(["GCA_900.1"], str(ai)) == {}
 
 
-def test_present_accessions_reads_parquet(tmp_path):
+def test_dead_accession_cores_reads_parquet(tmp_path):
     ai = tmp_path / "ncbi-data.parquet"
     _write_ai_parquet(ai, [("GCA_000005845.2", "562")])
     # a GCF pick whose GCA twin (same digits) is present should count as live
-    assert TAX.present_accessions(["GCF_000005845.1"], str(ai)) == {"GCF_000005845.1"}
+    assert TAX.dead_accession_cores(["GCF_000005845.1"], str(ai)) == set()
 
 
 def test_assembly_info_taxid_map_missing_file():
@@ -291,35 +291,55 @@ def test_resolve_all_default_resolver_reads_from_parquet(gtdb_tab, merged_mixed,
     assert r.loc["GCA_000005845.2", "ncbi_genus"] == "Escherichia"
 
 
-# ─── present_accessions (suppression screen) ───────────────────────────────
+# ─── dead_accession_cores (suppression screen) ─────────────────────────────
 
 def _write_ai(path, accessions):
     _write_ai_parquet(path, [(a, "999") for a in accessions])
 
 
-def test_present_accessions_detects_absence(tmp_path):
+def test_dead_accession_cores_detects_absence(tmp_path):
     ai = tmp_path / "ncbi-data.parquet"
     _write_ai(ai, ["GCA_000000003.1", "GCA_000000004.1"])   # 002 absent (suppressed)
-    live = TAX.present_accessions(
+    dead = TAX.dead_accession_cores(
         ["GCA_000000002.1", "GCA_000000003.1", "GCA_000000004.1"], str(ai))
-    assert live == {"GCA_000000003.1", "GCA_000000004.1"}
+    assert dead == {"000000002"}
 
 
-def test_present_accessions_matches_gca_gcf_twin(tmp_path):
+def test_dead_accession_cores_matches_gca_gcf_twin(tmp_path):
     # table has the GenBank (GCA) row; a GCF query must still register present
     ai = tmp_path / "ncbi-data.parquet"
     _write_ai(ai, ["GCA_000005845.2"])
-    live = TAX.present_accessions(["GCF_000005845.2"], str(ai))
-    assert live == {"GCF_000005845.2"}
+    assert TAX.dead_accession_cores(["GCF_000005845.2"], str(ai)) == set()
 
 
-def test_present_accessions_version_tolerant(tmp_path):
+def test_dead_accession_cores_version_tolerant(tmp_path):
     ai = tmp_path / "ncbi-data.parquet"
     _write_ai(ai, ["GCA_000005845.3"])           # newer version in table
-    live = TAX.present_accessions(["GCA_000005845.1"], str(ai))   # older queried
-    assert live == {"GCA_000005845.1"}
+    # older version queried -- same numeric core, so still live
+    assert TAX.dead_accession_cores(["GCA_000005845.1"], str(ai)) == set()
 
 
-def test_present_accessions_missing_file():
-    assert TAX.present_accessions(["GCA_000000001.1"], None) == set()
-    assert TAX.present_accessions(["GCA_000000001.1"], "/no/such.parquet") == set()
+def test_dead_accession_cores_missing_file():
+    assert TAX.dead_accession_cores(["GCA_000000001.1"], None) == set()
+    assert TAX.dead_accession_cores(["GCA_000000001.1"], "/no/such.parquet") == set()
+
+
+def test_dead_accession_cores_empty_candidates(tmp_path):
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai(ai, ["GCA_000000003.1"])
+    assert TAX.dead_accession_cores([], str(ai)) == set()
+
+
+def test_dead_accession_cores_spans_batches(tmp_path, monkeypatch):
+    """
+    A live accession must be found no matter which batch it lands in -- the
+    screen ORs each batch into a running mask rather than checking one batch.
+    """
+    monkeypatch.setattr(TAX, "NCBI_SCREEN_BATCH_ROWS", 2)
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai(ai, [f"GCA_00000000{i}.1" for i in range(1, 8)])   # 7 rows -> 4 batches
+    # first, last, and a middle accession are live; 009 was never in the table
+    dead = TAX.dead_accession_cores(
+        ["GCA_000000001.1", "GCA_000000004.1", "GCA_000000007.1", "GCA_000000009.1"],
+        str(ai))
+    assert dead == {"000000009"}

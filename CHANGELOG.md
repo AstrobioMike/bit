@@ -26,6 +26,7 @@
 ### Changed
 - `bit get-accs-from-ncbi` and `bit get-accs-from-gtdb` now share primarly all the same code for finding accessions based on tax (due to change noted below about ncbi's tables being prebuilt with full lineages baked in)
 - internal changes, not really user-facing
+  - `bit gen-mg`'s suppression screen now streams the ncbi accession column in batches instead of reading in all of it, cutting peak memory use (and running a bit faster)
   - the github action that builds the slimmed down ncbi assembly summary data object now builds in full lineages also (so that info is more easily available and always syncd with the cached assembly summary data)
   - gtdb and ncbi data tables are stored as parquets now (smaller/faster downloads, less user storage needed, and are much faster when accessed and searched)
   - more robustness improvements to dl-ncbi-assemblies

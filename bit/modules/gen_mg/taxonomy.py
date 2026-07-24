@@ -149,7 +149,7 @@ def assembly_info_taxid_map(accessions, assembly_info_path):
     return out
 
 
-_NCBI_CORES_CACHE = {}
+NCBI_SCREEN_BATCH_ROWS = 500_000
 
 
 def _acc_digits(acc):
@@ -167,31 +167,17 @@ def _acc_digits(acc):
     return s
 
 
-def _ncbi_accession_cores(assembly_info_path):
+def _batch_accession_cores(batch):
     """
-    Arrow array of the numeric cores of every accession in the NCBI assembly-summary
-    Parquet. Vectorised equivalent of mapping _acc_digits over the column: strip any
-    RS_/GB_ prefix, drop the version suffix, drop the GCA_/GCF_ prefix.
+    numeric cores of one record batch's accession column. Vectorised equivalent
+    of mapping _acc_digits over the column: strip any RS_/GB_ prefix, drop the
+    version suffix, drop the GCA_/GCF_ prefix.
     """
-    import pyarrow as pa # type: ignore
-    import pyarrow.parquet as pq # type: ignore
     import pyarrow.compute as pc # type: ignore
 
-    key = (assembly_info_path, os.path.getmtime(assembly_info_path))
-    hit = _NCBI_CORES_CACHE.get(key)
-    if hit is not None:
-        return hit
-
-    col = pq.read_table(assembly_info_path, columns=["assembly_accession"]).column(0)
-    if isinstance(col, pa.ChunkedArray):
-        col = col.combine_chunks()
-    cores = pc.replace_substring_regex(col, r'^(RS_|GB_)', '')
+    cores = pc.replace_substring_regex(batch.column(0), r'^(RS_|GB_)', '')
     cores = pc.replace_substring_regex(cores, r'\..*$', '')
-    cores = pc.replace_substring_regex(cores, r'^[^_]*_', '')
-
-    _NCBI_CORES_CACHE.clear()   # only ever need the current asset
-    _NCBI_CORES_CACHE[key] = cores
-    return cores
+    return pc.replace_substring_regex(cores, r'^[^_]*_', '')
 
 
 def dead_accession_cores(candidate_accessions, assembly_info_path):
@@ -201,37 +187,31 @@ def dead_accession_cores(candidate_accessions, assembly_info_path):
 
     Intended to be computed ONCE for the whole candidate pool and handed to the
     suppression backfill as `exclude_accessions`, rather than re-screening each round.
+
+    The NCBI accession column is streamed a batch at a time and each batch only
+    updates a running per-candidate "seen it" mask, so the reference side is never
+    fully materialised. Only the (small) dead set outlives the call -- the reference
+    data is much larger than the answer, and holding it costs hundreds of MB for the
+    remainder of the run.
     """
     if not assembly_info_path or not os.path.exists(assembly_info_path):
         return set()
 
     import pyarrow as pa # type: ignore
+    import pyarrow.parquet as pq # type: ignore
     import pyarrow.compute as pc # type: ignore
 
-    ncbi_cores = _ncbi_accession_cores(assembly_info_path)
     cand = pa.array([_acc_digits(a) for a in candidate_accessions])
-    dead_mask = pc.invert(pc.is_in(cand, value_set=ncbi_cores))
-    return set(pc.filter(cand, dead_mask).to_pylist())
-
-
-def present_accessions(accessions, assembly_info_path):
-    """
-    subset of `accessions` whose assembly is present in the NCBI
-    assembly-summary file. NCBI drops suppressed/removed assemblies from that
-    file entirely, so absence == suppressed/removed/version-drifted. Returns a
-    set of the ORIGINAL accession strings that are present (live).
-
-    Matching is on the numeric core (via _acc_digits), so a GCF pick counts as
-    'present' if its GCA twin is in the table (and vice versa)
-    """
-    if not assembly_info_path or not os.path.exists(assembly_info_path):
+    if len(cand) == 0:
         return set()
-    wanted = {}
-    for a in accessions:
-        wanted.setdefault(_acc_digits(a), a)
 
-    dead = dead_accession_cores(list(wanted.keys()), assembly_info_path)
-    return {orig for d, orig in wanted.items() if d not in dead}
+    alive = pa.array([False] * len(cand))
+    pf = pq.ParquetFile(assembly_info_path)
+    for batch in pf.iter_batches(batch_size=NCBI_SCREEN_BATCH_ROWS,
+                                 columns=["assembly_accession"]):
+        alive = pc.or_(alive, pc.is_in(cand, value_set=_batch_accession_cores(batch)))
+
+    return set(pc.filter(cand, pc.invert(alive)).to_pylist())
 
 
 def gather_taxids(accessions, gtdb_tab, assembly_info_path):
@@ -268,10 +248,6 @@ def parquet_lineage_resolver(assembly_info_path):
         import pyarrow.parquet as pq # type: ignore
 
         ranks = list(RANKS)
-        # push the taxid filter into the read (only rows for wanted taxids), then
-        # collapse to one row per taxid IN ARROW before touching Python -- taxid
-        # isn't unique per row (many assemblies share a taxid), so a naive
-        # row-by-row Python loop over the filtered result is what makes this slow.
         tbl = pq.read_table(assembly_info_path, columns=["taxid"] + ranks,
                             filters=[("taxid", "in", list(uniq))])
         if tbl.num_rows == 0:
