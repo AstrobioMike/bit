@@ -62,6 +62,47 @@ def test_gtdb_maps_missing_columns_return_empty():
     assert TAX.gtdb_lineage_map(pd.DataFrame({"foo": [1]})) == {}
 
 
+def test_gtdb_taxid_map_wanted_filter(gtdb_tab):
+    # only the requested key is materialised; unrelated rows are skipped
+    m = TAX.gtdb_taxid_map(gtdb_tab, wanted={"GCA_000009"})
+    assert m == {"GCA_000009": "1280"}
+
+
+def test_gtdb_lineage_map_wanted_filter(gtdb_tab):
+    m = TAX.gtdb_lineage_map(gtdb_tab, wanted={"GCF_000005845"})
+    assert set(m) == {"GCF_000005845"}
+    assert m["GCF_000005845"]["genus"] == "Escherichia"
+
+
+def test_gtdb_lineage_map_wanted_none_keeps_everything(gtdb_tab):
+    # wanted=None must behave exactly as before (no filtering)
+    assert TAX.gtdb_lineage_map(gtdb_tab, wanted=None) == TAX.gtdb_lineage_map(gtdb_tab)
+
+
+def test_gtdb_maps_wanted_empty_set(gtdb_tab):
+    # an empty wanted set means nothing is wanted -- not "no filter"
+    assert TAX.gtdb_taxid_map(gtdb_tab, wanted=set()) == {}
+    assert TAX.gtdb_lineage_map(gtdb_tab, wanted=set()) == {}
+
+
+def test_fill_gtdb_taxonomy_matches_unfiltered_map(gtdb_tab):
+    """
+    filtering is an optimisation only: the filled frame must match what the
+    full unfiltered lineage map would have produced.
+    """
+    merged = pd.DataFrame({"accession": ["GCA_000009.1", "GCA_000005845.2"]})
+    for c in ["gtdb_domain", "gtdb_phylum", "gtdb_class", "gtdb_order",
+              "gtdb_family", "gtdb_genus", "gtdb_species"]:
+        merged[c] = "NA"
+
+    out = TAX.fill_gtdb_taxonomy(merged, gtdb_tab)
+    full = TAX.gtdb_lineage_map(gtdb_tab)          # unfiltered reference
+    for _, row in out.iterrows():
+        expected = full[TAX._norm_key(row["accession"])]
+        assert row["gtdb_genus"] == expected["genus"]
+        assert row["gtdb_species"] == expected["species"]
+
+
 # ─── fill_gtdb_taxonomy ────────────────────────────────────────────────────
 
 def test_fill_gtdb_taxonomy_resolves_user_gcf(gtdb_tab):
@@ -144,6 +185,24 @@ def test_dead_accession_cores_reads_parquet(tmp_path):
 def test_assembly_info_taxid_map_missing_file():
     assert TAX.assembly_info_taxid_map(["GCA_1.1"], None) == {}
     assert TAX.assembly_info_taxid_map(["GCA_1.1"], "/no/such/file.parquet") == {}
+
+
+def test_assembly_info_taxid_map_spans_batches(tmp_path, monkeypatch):
+    """
+    a wanted accession must be found regardless of which batch it falls in
+    """
+    monkeypatch.setattr(TAX, "NCBI_BATCH_ROWS", 2)
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [(f"GCA_00000000{i}.1", str(100 + i)) for i in range(1, 8)])
+    m = TAX.assembly_info_taxid_map(
+        ["GCA_000000001.1", "GCA_000000007.1"], str(ai))       # first and last batch
+    assert m == {"GCA_000000001": "101", "GCA_000000007": "107"}
+
+
+def test_assembly_info_taxid_map_empty_accessions(tmp_path):
+    ai = tmp_path / "ncbi-data.parquet"
+    _write_ai_parquet(ai, [("GCA_900.1", "4932")])
+    assert TAX.assembly_info_taxid_map([], str(ai)) == {}
 
 
 # ─── tiered gather_taxids ──────────────────────────────────────────────────
@@ -335,7 +394,7 @@ def test_dead_accession_cores_spans_batches(tmp_path, monkeypatch):
     A live accession must be found no matter which batch it lands in -- the
     screen ORs each batch into a running mask rather than checking one batch.
     """
-    monkeypatch.setattr(TAX, "NCBI_SCREEN_BATCH_ROWS", 2)
+    monkeypatch.setattr(TAX, "NCBI_BATCH_ROWS", 2)
     ai = tmp_path / "ncbi-data.parquet"
     _write_ai(ai, [f"GCA_00000000{i}.1" for i in range(1, 8)])   # 7 rows -> 4 batches
     # first, last, and a middle accession are live; 009 was never in the table

@@ -496,13 +496,26 @@ def write_gtdb_summary(run):
 
     # build a lookup from the GTDB table keyed by numeric accession core so user
     # GCF/GCA accessions match GTDB's GCA-form rows.
+    #
+    # Only the selected genomes are ever looked up, so the GTDB table is reduced to
+    # those rows BEFORE materialising any per-row dicts
     lookup = {}
     if gtdb_tab is not None and "ncbi_genbank_assembly_accession" in gtdb_tab.columns:
         cols_present = [c for c in (GTDB_SUMMARY_EXTRA + GTDB_SUMMARY_RANKS)
                         if c in gtdb_tab.columns]
+        wanted = {_acc_digits_core(a) for a in accs}
         gcol = gtdb_tab["ncbi_genbank_assembly_accession"].map(_acc_digits_core)
-        for key, row in zip(gcol.values, gtdb_tab[cols_present].to_dict("records")):
-            lookup.setdefault(key, row)
+        keys = gcol.values
+        # keep the FIRST row per key, matching the previous setdefault semantics
+        keep_pos = {}
+        for pos, key in enumerate(keys):
+            if key in wanted and key not in keep_pos:
+                keep_pos[key] = pos
+        if keep_pos:
+            positions = list(keep_pos.values())
+            sub = gtdb_tab[cols_present].iloc[positions]
+            for key, row in zip(keep_pos.keys(), sub.to_dict("records")):
+                lookup[key] = row
 
     rows = []
     for a in accs:

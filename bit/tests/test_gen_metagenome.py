@@ -202,6 +202,65 @@ def test_write_gtdb_summary_matches_across_version_and_prefix(tmp_path):
     assert df.iloc[0]["genus"] == "Escherichia"
 
 
+def _gtdb_summary_row(gca, genus):
+    return {"ncbi_genbank_assembly_accession": gca,
+            "domain": "Bacteria", "phylum": "P", "class": "C", "order": "O",
+            "family": "F", "genus": genus, "species": "S",
+            "genome_size": 1000}
+
+
+def test_write_gtdb_summary_duplicate_cores_first_row_wins(tmp_path):
+    """
+    Several GTDB rows can share a numeric accession core (different versions).
+    The FIRST such row must win -- the lookup is only built for the selected
+    genomes, and that narrowing must not disturb which row is chosen.
+    """
+    gtdb = pd.DataFrame([
+        _gtdb_summary_row("GCA_000000001.1", "FIRST"),
+        _gtdb_summary_row("GCA_000000001.2", "SECOND"),
+        _gtdb_summary_row("GCA_000000001.3", "THIRD"),
+    ])
+    merged = pd.DataFrame({"accession": ["GCA_000000001.9"]})   # any version
+    gdir = tmp_path / "genomes"; gdir.mkdir()
+    run = type("R", (), {"merged": merged, "gtdb_tab": gtdb, "genomes_dir": str(gdir)})()
+    G.write_gtdb_summary(run)
+    df = pd.read_csv(run.gtdb_summary_path, sep="\t", keep_default_na=False)
+    assert df.iloc[0]["genus"] == "FIRST"
+
+
+def test_write_gtdb_summary_preserves_merged_row_order(tmp_path):
+    """
+    output rows follow run.merged's order, not the GTDB table's
+    """
+    gtdb = pd.DataFrame([
+        _gtdb_summary_row("GCA_000000001.1", "one"),
+        _gtdb_summary_row("GCA_000000002.1", "two"),
+        _gtdb_summary_row("GCA_000000003.1", "three"),
+    ])
+    merged = pd.DataFrame({"accession": [
+        "GCA_000000003.1", "GCA_000000404.1", "GCA_000000001.1"]})
+    gdir = tmp_path / "genomes"; gdir.mkdir()
+    run = type("R", (), {"merged": merged, "gtdb_tab": gtdb, "genomes_dir": str(gdir)})()
+    G.write_gtdb_summary(run)
+    df = pd.read_csv(run.gtdb_summary_path, sep="\t", keep_default_na=False)
+    assert list(df["accession"]) == [
+        "GCA_000000003.1", "GCA_000000404.1", "GCA_000000001.1"]
+    assert list(df["genus"])[0] == "three"
+    assert list(df["genus"])[2] == "one"
+    assert list(df["genus"])[1] in ("", "NA")          # absent stays NA
+
+
+def test_write_gtdb_summary_no_gtdb_table(tmp_path):
+    # user-supplied-only run: no GTDB table at all -> every column NA
+    merged = pd.DataFrame({"accession": ["GCA_000000001.1"]})
+    gdir = tmp_path / "genomes"; gdir.mkdir()
+    run = type("R", (), {"merged": merged, "gtdb_tab": None, "genomes_dir": str(gdir)})()
+    G.write_gtdb_summary(run)
+    df = pd.read_csv(run.gtdb_summary_path, sep="\t", keep_default_na=False)
+    assert df.iloc[0]["accession"] == "GCA_000000001.1"
+    assert df.iloc[0]["genus"] in ("", "NA")
+
+
 # ─── small parsing helpers ─────────────────────────────────────────────────
 
 def test_read_retrieved_date(tmp_path):

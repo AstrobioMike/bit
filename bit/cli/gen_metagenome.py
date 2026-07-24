@@ -13,8 +13,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
         Build a mock metagenome with ground-truth tables. Genomes are: selected
         from GTDB and/or supplied directly as accessions; downloaded;
         optionally mutated to specified per-genome values; and then reads are generated at
-        chosen abundance or coverage distributions. Outputs include reads, a 
-        ground-truth assembly fasta, and per-genome, per-rank, and (optionally) 
+        chosen abundance or coverage distributions. Outputs include reads, a
+        ground-truth assembly fasta, and per-genome, per-rank, and (optionally)
         per-read truth tables with GTDB and NCBI taxonomy info.
         """
 
@@ -155,9 +155,9 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "--total-reads",
         metavar="<INT>",
         type=int,
-        default=None, # 10,000,000 set later
+        default=None, # 1,000,000 set later
         help=wrap_help("Number of total reads (NOT read-pairs) to generate in 'relative' "
-                       "abundance mode (default: 10,000,000)")
+                       "abundance mode (default: 1,000,000)")
     )
 
     abundance.add_argument(
@@ -308,7 +308,7 @@ def main():
 
     # these are all set to None above and ultimately set here so that any
     # incompatible user inputs can be detected and reported in preflight_checks
-    args.total_reads = args.total_reads or 10_000_000
+    args.total_reads = args.total_reads or 1_000_000
     # remember whether the user set --median-coverage before applying the default,
     # so the orchestrator can tell pinned coverages where un-pinned genomes draw
     # around the *default* (worth a notice) from an explicit choice (no notice).
@@ -483,7 +483,7 @@ def resolve_input_driven_modes(args):
         args.mutation_mode = "off"
 
     # ---- single-genome coverage runs -> even distribution ----
-    # with exactly one genome in coverage mode, 'lognormal' --abundance-dist would apply 
+    # with exactly one genome in coverage mode, 'lognormal' --abundance-dist would apply
     # a random multiplier to the single coverage the user asked for. Setting 'even' so
     # that genome gets exactly --median-coverage, unless the user explicitly chose
     # a dist. The auto_even_single flag lets preflight_checks give a clearer message if
@@ -520,7 +520,7 @@ def preflight_checks(args):
         notify_premature_exit()
 
     if args.sigma and args.abundance_dist == "even":
-        # a single-genome coverage run auto-flips the dist to 'even' (unless explicitly set), 
+        # a single-genome coverage run auto-flips the dist to 'even' (unless explicitly set),
         # so the generic "spread incompatible with even" message would be
         # confusing here; giving a clearer one instead
         if getattr(args, "auto_even_single", False):

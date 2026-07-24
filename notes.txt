@@ -1,1 +1,0 @@
-# i made some improvements/standardizations to gtotree's get-accs-from-gtdb/ncbi that i need to port over to bit here still

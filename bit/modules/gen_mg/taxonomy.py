@@ -35,9 +35,13 @@ def _norm_key(acc):
 
 # ---------------------------------------------------------------- GTDB ranks --
 
-def gtdb_taxid_map(gtdb_tab):
+def gtdb_taxid_map(gtdb_tab, wanted=None):
     """
     accession(rootless, both GCA & GCF forms) -> ncbi_taxid (str)
+
+    `wanted`, if given, is a set of normalised accession keys to keep. Callers
+    only ever look up the handful of selected genomes, so restricting the map as
+    it is built avoids materialising an entry for every row of the GTDB table.
     """
     if ("ncbi_genbank_assembly_accession" not in gtdb_tab.columns
             and "accession" not in gtdb_tab.columns):
@@ -61,18 +65,23 @@ def gtdb_taxid_map(gtdb_tab):
         tid = str(tid).strip()
         if gca is not None:
             k = _norm_key(gca[i])
-            if k and k.lower() != "na":
+            if k and k.lower() != "na" and (wanted is None or k in wanted):
                 out[k] = tid
         if raw is not None:
             k = _norm_key(_clean_gtdb_acc(raw[i]))
-            if k and k.lower() != "na":
+            if k and k.lower() != "na" and (wanted is None or k in wanted):
                 out[k] = tid
     return out
 
 
-def gtdb_lineage_map(gtdb_tab):
+def gtdb_lineage_map(gtdb_tab, wanted=None):
     """
     accession(rootless, both GCA & GCF forms) -> dict(plain_rank -> gtdb value)
+
+    `wanted`, if given, is a set of normalised accession keys to keep. Callers
+    only ever look up the handful of selected genomes, so restricting the map as
+    it is built avoids building a per-row lineage dict for every row of the GTDB
+    table (which dominates gen-mg's peak memory on the full ~900k-row asset).
     """
     have_acc = ("ncbi_genbank_assembly_accession" in gtdb_tab.columns
                 or "accession" in gtdb_tab.columns)
@@ -88,18 +97,26 @@ def gtdb_lineage_map(gtdb_tab):
     out = {}
     n = len(next(iter(rank_arrays.values())))
     for i in range(n):
+        # resolve the row's key(s) FIRST and skip early, so the per-row lineage
+        # dict is only ever built for rows we actually keep
+        keys = []
+        if gca is not None:
+            k = _norm_key(gca[i])
+            if k and k.lower() != "na" and (wanted is None or k in wanted):
+                keys.append(k)
+        if raw is not None:
+            k = _norm_key(_clean_gtdb_acc(raw[i]))
+            if k and k.lower() != "na" and (wanted is None or k in wanted):
+                keys.append(k)
+        if not keys:
+            continue
+
         lineage = {}
         for r in RANKS:
             v = rank_arrays[r][i]
             lineage[r] = v if (v is not None and not (not isinstance(v, str) and pd.isna(v))) else "NA"
-        if gca is not None:
-            k = _norm_key(gca[i])
-            if k and k.lower() != "na":
-                out[k] = lineage
-        if raw is not None:
-            k = _norm_key(_clean_gtdb_acc(raw[i]))
-            if k and k.lower() != "na":
-                out[k] = lineage
+        for k in keys:
+            out[k] = lineage
     return out
 
 
@@ -108,7 +125,8 @@ def fill_gtdb_taxonomy(merged, gtdb_tab):
     fill gtdb_* columns for any row whose accession is in the GTDB table and
     whose gtdb_* are still NA. Returns the merged frame (modified copy)
     """
-    lineage = gtdb_lineage_map(gtdb_tab)
+    wanted = {_norm_key(a) for a in merged["accession"]}
+    lineage = gtdb_lineage_map(gtdb_tab, wanted=wanted)
     if not lineage:
         return merged
     out = merged.copy()
@@ -125,31 +143,41 @@ def fill_gtdb_taxonomy(merged, gtdb_tab):
 
 # ---------------------------------------------------------------- NCBI ranks --
 
+# rows per batch when streaming the big NCBI parquet; keeps peak memory flat
+# regardless of how large the asset grows
+NCBI_BATCH_ROWS = 500_000
+
 def assembly_info_taxid_map(accessions, assembly_info_path):
     """
     accession(rootless) -> taxid from the NCBI assembly-info Parquet table.
     Only the accession and taxid columns are read, and only rows matching the
-    wanted accessions are kept
+    wanted accessions are kept.
+
+    Streamed a batch at a time: the wanted set is tiny next to the ~4M-row table,
+    so materialising both columns in full just to discard nearly all of them is
+    wasted memory. Stops early once every wanted accession has been found.
     """
     wanted = {_norm_key(a) for a in accessions}
     out = {}
-    if not assembly_info_path or not os.path.exists(assembly_info_path):
+    if not wanted or not assembly_info_path or not os.path.exists(assembly_info_path):
         return out
 
     import pyarrow.parquet as pq # type: ignore
-    tbl = pq.read_table(assembly_info_path, columns=["assembly_accession", "taxid"])
-    accs = tbl.column("assembly_accession")
-    taxids = tbl.column("taxid")
-    for acc, taxid in zip(accs, taxids):
-        root = _norm_key(acc.as_py())
-        if root in wanted:
-            t = (taxid.as_py() or "").strip()
-            if t:
-                out[root] = t
+
+    pf = pq.ParquetFile(assembly_info_path)
+    for batch in pf.iter_batches(batch_size=NCBI_BATCH_ROWS,
+                                 columns=["assembly_accession", "taxid"]):
+        accs = batch.column("assembly_accession").to_pylist()
+        taxids = batch.column("taxid").to_pylist()
+        for acc, taxid in zip(accs, taxids):
+            root = _norm_key(acc)
+            if root in wanted and root not in out:
+                t = (taxid or "").strip()
+                if t:
+                    out[root] = t
+        if len(out) == len(wanted):
+            break
     return out
-
-
-NCBI_SCREEN_BATCH_ROWS = 500_000
 
 
 def _acc_digits(acc):
@@ -207,7 +235,7 @@ def dead_accession_cores(candidate_accessions, assembly_info_path):
 
     alive = pa.array([False] * len(cand))
     pf = pq.ParquetFile(assembly_info_path)
-    for batch in pf.iter_batches(batch_size=NCBI_SCREEN_BATCH_ROWS,
+    for batch in pf.iter_batches(batch_size=NCBI_BATCH_ROWS,
                                  columns=["assembly_accession"]):
         alive = pc.or_(alive, pc.is_in(cand, value_set=_batch_accession_cores(batch)))
 
@@ -222,7 +250,7 @@ def gather_taxids(accessions, gtdb_tab, assembly_info_path):
     acc_roots = [_norm_key(a) for a in accessions]
     taxids = {}
 
-    gmap = gtdb_taxid_map(gtdb_tab) if gtdb_tab is not None else {}
+    gmap = gtdb_taxid_map(gtdb_tab, wanted=set(acc_roots)) if gtdb_tab is not None else {}
     for a in acc_roots:
         if a in gmap:
             taxids[a] = gmap[a]
@@ -248,6 +276,8 @@ def parquet_lineage_resolver(assembly_info_path):
         import pyarrow.parquet as pq # type: ignore
 
         ranks = list(RANKS)
+        # push the taxid filter into the read (only rows for wanted taxids), then
+        # collapse to one row per taxid in arrow
         tbl = pq.read_table(assembly_info_path, columns=["taxid"] + ranks,
                             filters=[("taxid", "in", list(uniq))])
         if tbl.num_rows == 0:
