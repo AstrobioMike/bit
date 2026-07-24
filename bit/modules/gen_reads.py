@@ -918,12 +918,20 @@ def _gen_reads_parallel(args, per_file_units, id_offsets, jobs):
         # and emits a DeprecationWarning on Python 3.12+. spawn re-imports this module
         # in each worker, which is fine since the worker and its helpers are top-level.
         mp_ctx = multiprocessing.get_context("spawn")
-        with ProcessPoolExecutor(max_workers=jobs, mp_context=mp_ctx) as ex:
+        ex = ProcessPoolExecutor(max_workers=jobs, mp_context=mp_ctx)
+        try:
             futures = {ex.submit(_worker_generate_file, s): s["index"] for s in specs}
             for fut in as_completed(futures):
                 res = fut.result()
                 results[res["index"]] = res
                 pbar.update(1)
+        except KeyboardInterrupt:
+            # drop anything still queued so a ctrl-c doesn't sit through the whole
+            # backlog; workers already running can't be interrupted, but the rest can go
+            ex.shutdown(wait=False, cancel_futures=True)
+            raise
+        finally:
+            ex.shutdown(wait=True)
 
         pbar.update(pbar.total - pbar.n)
         pbar.close()

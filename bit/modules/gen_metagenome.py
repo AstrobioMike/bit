@@ -683,7 +683,8 @@ def measure_sizes_parallel(accessions, path_map, jobs=10):
     """
     from concurrent.futures import ThreadPoolExecutor, as_completed
     sizes = {}
-    with ThreadPoolExecutor(max_workers=max(int(jobs), 1)) as pool:
+    pool = ThreadPoolExecutor(max_workers=max(int(jobs), 1))
+    try:
         futures = {pool.submit(measure_fasta_size, path_map.get(a)): a
                    for a in accessions}
         with tqdm(total=len(futures), desc="    Progress",
@@ -695,6 +696,11 @@ def measure_sizes_parallel(accessions, path_map, jobs=10):
                 except Exception:
                     sizes[a] = None
                 pbar.update(1)
+    except KeyboardInterrupt:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    finally:
+        pool.shutdown(wait=True)
     return sizes
 
 

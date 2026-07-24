@@ -237,7 +237,8 @@ def run_download_pass(targets, run_data, desc="Progress"):
 
     link_by_dest = {dest: link for link, dest in targets}
 
-    with ThreadPoolExecutor(max_workers=min(run_data.num_jobs, max_threads)) as pool:
+    pool = ThreadPoolExecutor(max_workers=min(run_data.num_jobs, max_threads))
+    try:
         futures = {
             pool.submit(download_one, link, dest): dest
             for link, dest in targets
@@ -259,6 +260,11 @@ def run_download_pass(targets, run_data, desc="Progress"):
                 elif status == "skipped":
                     num_skipped += 1
                 pbar.update(1)
+    except KeyboardInterrupt:
+        pool.shutdown(wait=False, cancel_futures=True)
+        raise
+    finally:
+        pool.shutdown(wait=True)
 
     return permanent, transient, num_skipped
 

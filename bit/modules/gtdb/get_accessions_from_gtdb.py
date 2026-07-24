@@ -284,7 +284,8 @@ def get_unique_taxon_counts(taxon, gtdb_tab, gtdb_rep_tab=None, representatives_
         print("")
         if representatives_source:
             count = len(gtdb_rep_tab.index)
-            wprint(color_text("In considering only " + representatives_source + " representative genomes:", "yellow"))
+            rep_source = "GTDB" if representatives_source == "gtdb" else "RefSeq"
+            wprint(color_text("In considering only " + rep_source + " representative genomes:", "yellow"))
             print("")
             wprint("  There are " + str(count) + " total representative genomes in the database.")
             print("")
@@ -304,7 +305,8 @@ def get_unique_taxon_counts(taxon, gtdb_tab, gtdb_rep_tab=None, representatives_
 
         if representatives_source:
             ranks_found_in_rep = find_ranks_for_taxon(taxon, gtdb_rep_tab)
-            wprint(color_text("In considering only " + representatives_source + " representative genomes:", "yellow"))
+            rep_source = "GTDB" if representatives_source == "gtdb" else "RefSeq"
+            wprint(color_text("In considering only " + rep_source + " representative genomes:", "yellow"))
             print("")
             for rank in ranks_found_in_rep:
                 count = len(gtdb_rep_tab[gtdb_rep_tab[rank] == taxon].index)
