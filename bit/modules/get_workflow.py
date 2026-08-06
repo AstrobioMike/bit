@@ -1,7 +1,7 @@
 import os
-import requests
+import requests # type: ignore
 import re
-from packaging import version
+from packaging import version # type: ignore
 from bit.modules.general import report_message
 
 
@@ -9,6 +9,8 @@ base_repo = "https://github.com/astrobiomike/bit/"
 base_download_link = base_repo + "releases/download/"
 releases_page_link = "https://api.github.com/repos/astrobiomike/bit/releases"
 html_releases_page = base_repo + "releases"
+
+REQUEST_TIMEOUT = 30
 
 workflow_dict = {
     "amplicon": { "basename": "amplicon-wf" },
@@ -25,7 +27,8 @@ def get_all_releases():
 
     while True:
         # resp = requests.get(releases_page_link, headers=headers, params=params)
-        resp = requests.get(releases_page_link, headers=headers, params=params.copy())
+        resp = requests.get(releases_page_link, headers=headers,
+                            params=params.copy(), timeout=REQUEST_TIMEOUT)
         resp.raise_for_status()
         page_data = resp.json()
         if not page_data:
@@ -125,7 +128,7 @@ def download_and_unzip(workflow, target_link):
     base_zip = os.path.basename(target_link)
 
     # downloading
-    target = requests.get(target_link)
+    target = requests.get(target_link, timeout=REQUEST_TIMEOUT)
 
     # writing out
     with open(base_zip, "wb") as downloaded_zip:

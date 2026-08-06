@@ -23,6 +23,9 @@ ARC_FILENAME = "ar53_metadata.tsv.gz"
 BAC_FILENAME = "bac120_metadata.tsv.gz"
 VERSION_URL = f"{GTDB_BASE_URL}/VERSION.txt"
 
+# per-operation socket timeout for the fetches below (seconds)
+DOWNLOAD_TIMEOUT = 60
+
 PARQUET_FILENAME = "gtdb-data.parquet"
 VERSION_FILENAME = "VERSION.txt"
 
@@ -163,9 +166,38 @@ def write_parquet(table, out_path, compression_level=9, row_group_size=256_000):
     return os.path.getsize(out_path)
 
 
-def download(url, dest):
+def download(url, dest, timeout=None):
+    """
+    Stream `url` to `dest` with a socket timeout, written atomically.
+
+    `urlretrieve` accepts no timeout, so a stalled server hung this until the
+    Actions job limit killed it. `urlopen(..., timeout=)` bounds the connect and
+    every individual read instead, so a stall raises promptly. Note this is a
+    per-operation timeout, not a total-transfer deadline -- a server trickling
+    bytes slowly is still waited on, which is what we want for the GTDB metadata
+    tables.
+
+    Writing through a `.tmp` and promoting with `os.replace` means a failed fetch
+    can't leave a truncated file that the parsers downstream would read as complete.
+    """
+    # resolved at call time, not bound as a default, so the module constant stays
+    # the single source of truth (and remains patchable)
+    if timeout is None:
+        timeout = DOWNLOAD_TIMEOUT
+
     print(f"    downloading {url}", flush=True)
-    urllib.request.urlretrieve(url, dest)
+    tmp = dest + ".tmp"
+    req = urllib.request.Request(url, headers={"User-Agent": "curl/8.0"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp, open(tmp, "wb") as out:
+            shutil.copyfileobj(resp, out, length=1024 * 256)
+        os.replace(tmp, dest)
+    except BaseException:
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
     return dest
 
 

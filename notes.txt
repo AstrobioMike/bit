@@ -1,0 +1,1 @@
+# add -w to bit dl-ncbi-assemblies ? (or download options to get accs?)
