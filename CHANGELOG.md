@@ -14,6 +14,15 @@
 
 -->
 
+
+## v2.9.1 (18-Aug-2026)
+
+### Fixed
+- some of the subcommands of `bit itol` had fallen out of date with the latest iToL, so they were updated
+  - `bit itol map` has become `bit itol style` to match iToL's terminology of the type
+  - function is the same otherwise of all, but some parameter values maybe have changed to be consistent across all over them, peek at the help menus if something isn't working how it used to for you
+
+
 ## v2.9.0 (24-Jul-2026)
 
 ### Added

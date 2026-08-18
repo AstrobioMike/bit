@@ -217,9 +217,9 @@ PROGRAM_GROUPS = [
                 "name": "itol",
                 "desc": "",
                 "subcommands": [
+                    ("style",         "generate a branch/label style dataset file"),
                     ("binary-dataset","generate a binary dataset annotation file"),
                     ("colorstrip",    "generate a color strip annotation file"),
-                    ("map",           "generate a mapping/connection file"),
                     ("text-dataset",  "generate a text label dataset file"),
                 ],
             },

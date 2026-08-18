@@ -34,8 +34,8 @@ def build_parser(parent_subparsers=None):
     ### shared args ###
     def add_common_required_arguments(group):
         group.add_argument(
-            "-i",
-            "--input-file",
+            "-g",
+            "--wanted-genomes",
             help = "single-column file with genomes to decorate (must match the IDs in the tree file)",
             metavar = "<FILE>",
             required = True
@@ -53,14 +53,24 @@ def build_parser(parent_subparsers=None):
         group.add_argument(
             "-c",
             "--color",
-            help='Color to use (default: "blue")',
-            choices=["blue", "green", "red", "purple", "black"],
+            metavar="<STR>",
+            help=('Color to use -- either a name (blue, green, red, purple, black, orange) '
+                  'or a hex code like "#0000ff" (default: "blue")'),
             default="blue"
         )
 
-     ### subcommand cli for generating iToL binary dataset file ###
+    # `DATASET_LABEL` in the written file -- the dataset's name in iToL's Datasets
+    # panel. Not added to `map`: TREE_COLORS has no such field.
+    def add_dataset_label_argument(group):
+        group.add_argument(
+            "-d",
+            "--dataset-label",
+            metavar="<STR>",
+            help='Label of the dataset (default: "data")',
+            default="data"
+        )
 
-    ### subcommand cli for generating iToL binary dataset file ###
+    ### subcommand cli for generating an iToL binary-dataset file ###
     binary_desc = """
         This subcommand creates a standard iToL binary-dataset file.
         """
@@ -69,7 +79,7 @@ def build_parser(parent_subparsers=None):
         "binary-dataset",
         help="Create an iToL binary-dataset file",
         description=binary_desc,
-        epilog="Ex. usage: `bit itol binary-dataset -i genomes.txt`",
+        epilog="Ex. usage: `bit itol binary-dataset -g genomes.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -80,13 +90,7 @@ def build_parser(parent_subparsers=None):
     add_common_required_arguments(binary_required)
     add_common_optional_arguments(binary_optional)
 
-    binary_optional.add_argument(
-        "-d",
-        "--dataset-label",
-        metavar="<STR>",
-        help='Label of the dataset (default: "data")',
-        default="data"
-    )
+    add_dataset_label_argument(binary_optional)
 
     binary_optional.add_argument(
         "-s",
@@ -112,7 +116,7 @@ def build_parser(parent_subparsers=None):
     binary_parser.set_defaults(func="binary_dataset")
 
 
-    ### subcommand cli for generating iToL colorstrip file ###
+    ### subcommand cli for generating an iToL colorstrip file ###
     colorstrip_desc = """
         This subcommand creates a standard iToL colorstrip file.
         """
@@ -121,7 +125,7 @@ def build_parser(parent_subparsers=None):
         "colorstrip",
         help="Create an iToL colorstrip file",
         description=colorstrip_desc,
-        epilog="Ex. usage: `bit itol colorstrip -i genomes.txt`",
+        epilog="Ex. usage: `bit itol colorstrip -g genomes.txt`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -132,17 +136,11 @@ def build_parser(parent_subparsers=None):
     add_common_required_arguments(colorstrip_required)
     add_common_optional_arguments(colorstrip_optional)
 
-    colorstrip_optional.add_argument(
-        "-l",
-        "--label",
-        metavar="<STR>",
-        help='Label used in the legend table (default: "label1")',
-        default="label1"
-    )
+    add_dataset_label_argument(colorstrip_optional)
 
     colorstrip_optional.add_argument(
-        "-w",
-        "--width",
+        "-W",
+        "--strip-width",
         metavar="<NUM>",
         help='Width of the colorstrip (default: "25")',
         default="25"
@@ -161,50 +159,61 @@ def build_parser(parent_subparsers=None):
     colorstrip_parser.set_defaults(func="colorstrip")
 
 
-    ### subcommand cli for generating iToL map file ###
-    map_desc = """
-        This subcommand creates a standard iToL-map file for coloring labels and/or branches.
+    ### subcommand cli for generating an iToL-style dataset file ###
+    style_desc = """
+        This subcommand creates a standard iToL style-dataset file for coloring labels and/or branches.
         """
 
-    map_parser = subparsers.add_parser(
-        "map",
-        help="Create an iToL map file for coloring labels and/or branches",
-        description=map_desc,
-        epilog="Ex. usage: `bit itol map -i genomes.txt`",
+    style_parser = subparsers.add_parser(
+        "style",
+        help="Create an iToL style-dataset file for coloring labels and/or branches",
+        description=style_desc,
+        epilog="Ex. usage: `bit itol style -g genomes.txt -d my-gene`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
 
-    map_required = map_parser.add_argument_group("Required Parameters")
-    map_optional = map_parser.add_argument_group("Optional Parameters")
+    style_required = style_parser.add_argument_group("Required Parameters")
+    style_optional = style_parser.add_argument_group("Optional Parameters")
 
-    add_common_required_arguments(map_required)
-    add_common_optional_arguments(map_optional)
+    add_common_required_arguments(style_required)
+    add_common_optional_arguments(style_optional)
 
-    map_optional.add_argument(
-        "-w",
+    add_dataset_label_argument(style_optional)
+
+    style_optional.add_argument(
         "--what-to-color",
-        help='What to color (default: "both")',
+        help='What to color (default: "branches")',
         choices=["branches", "labels", "both"],
-        default="both"
+        default="branches"
     )
 
-    map_optional.add_argument(
+    style_optional.add_argument(
+        "-a",
+        "--apply-to",
+        help=('Whether to style just the matched node, or the whole clade beneath it '
+              '(default: "node")'),
+        choices=["node", "clade"],
+        default="node",
+        dest="apply_to"
+    )
+
+    style_optional.add_argument(
         "-l",
         "--line-weight",
         metavar="<NUM>",
-        help='Line weight if coloring branches (default: "2")',
-        default=2
+        help='Line weight if coloring branches (default: "3")',
+        default=3
     )
 
-    add_help(map_optional)
+    add_help(style_optional)
 
-    add_version_arg(map_optional)
+    add_version_arg(style_optional)
 
-    map_parser.set_defaults(func="itol_map")
+    style_parser.set_defaults(func="style_dataset")
 
 
-    ### subcommand cli for generating iToL text dataset file ###
+    ### subcommand cli for generating an iToL text dataset file ###
     text_desc = """
         This subcommand creates a standard iToL text-dataset file.
         """
@@ -213,7 +222,7 @@ def build_parser(parent_subparsers=None):
         "text-dataset",
         help="Create an iToL text-dataset file",
         description=text_desc,
-        epilog="Ex. usage: `bit itol text-dataset -i genomes.txt`",
+        epilog="Ex. usage: `bit itol text-dataset -g genomes.txt -t 'my note'`",
         formatter_class=CustomRichHelpFormatter,
         add_help=False
     )
@@ -232,6 +241,8 @@ def build_parser(parent_subparsers=None):
     )
 
     add_common_optional_arguments(text_optional)
+
+    add_dataset_label_argument(text_optional)
 
     add_help(text_optional)
 
@@ -276,16 +287,17 @@ def main():
     args = parser.parse_args()
 
     from bit.modules.general import check_files_are_found
-    check_files_are_found([args.input_file])
+    check_files_are_found([args.wanted_genomes])
 
-    from bit.modules.itol import binary_dataset, colorstrip, itol_map, text_dataset
+    from bit.modules.itol import (binary_dataset, colorstrip, style_dataset,
+                                  text_dataset)
 
     args = preflight_checks(args)
 
     func_map = {
         "binary_dataset": binary_dataset,
         "colorstrip": colorstrip,
-        "itol_map": itol_map,
+        "style_dataset": style_dataset,
         "text_dataset": text_dataset
     }
 
@@ -298,6 +310,14 @@ def preflight_checks(args):
 
     from bit.modules.general import report_message, notify_premature_exit
 
+    from bit.modules.itol import resolve_color
+
+    try:
+        resolve_color(args.color)
+    except ValueError as e:
+        report_message(str(e))
+        notify_premature_exit()
+
     if args.func == "binary_dataset":
         try:
             args.height = float(args.height)
@@ -307,12 +327,12 @@ def preflight_checks(args):
 
     elif args.func == "colorstrip":
         try:
-            args.width = int(args.width)
+            args.strip_width = int(args.strip_width)
         except ValueError:
-            report_message("The value passed to `--width' must be an integer.")
+            report_message("The value passed to `--strip-width' must be an integer.")
             notify_premature_exit()
 
-    elif args.func == "itol_map":
+    elif args.func == "style_dataset":
         try:
             args.line_weight = float(args.line_weight)
         except ValueError:
