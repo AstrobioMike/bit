@@ -129,10 +129,10 @@ def style_dataset(args):
         for target in targets:
             if args.what_to_color in ("both", "branches"):
                 out_file.write(
-                    f"{target}\tbranch\t{args.apply_to}\t{col}\t{args.line_weight}\tnormal\n")
+                    f"{target}\tbranch\tnode\t{col}\t{args.line_weight}\tnormal\n")
             if args.what_to_color in ("both", "labels"):
                 out_file.write(
-                    f"{target}\tlabel\t{args.apply_to}\t{col}\t1\tbold\n")
+                    f"{target}\tlabel\tnode\t{col}\t1\tbold\n")
 
 
 def text_dataset(args):

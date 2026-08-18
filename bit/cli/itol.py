@@ -189,16 +189,6 @@ def build_parser(parent_subparsers=None):
     )
 
     style_optional.add_argument(
-        "-a",
-        "--apply-to",
-        help=('Whether to style just the matched node, or the whole clade beneath it '
-              '(default: "node")'),
-        choices=["node", "clade"],
-        default="node",
-        dest="apply_to"
-    )
-
-    style_optional.add_argument(
         "-l",
         "--line-weight",
         metavar="<NUM>",

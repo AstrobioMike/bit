@@ -145,8 +145,7 @@ def test_colorstrip_branches_off(targets_file, tmp_path):
 
 def _style_args(targets_file, out, **over):
     base = dict(color="blue", dataset_label="data", what_to_color="branches",
-                apply_to="node", line_weight=3,
-                wanted_genomes=str(targets_file), output_file=str(out))
+                line_weight=3, wanted_genomes=str(targets_file), output_file=str(out))
     base.update(over)
     return Args(**base)
 
@@ -180,13 +179,6 @@ def test_style_dataset_labels_only(targets_file, tmp_path):
     rows = _data_rows(out)
     assert all("\tlabel\t" in r for r in rows)
     assert not any("\tbranch\t" in r for r in rows)
-
-
-def test_style_dataset_applies_to_clade(targets_file, tmp_path):
-    """`clade` propagates the style to every descendant, `node` doesn't."""
-    out = tmp_path / "style.txt"
-    style_dataset(_style_args(targets_file, out, apply_to="clade"))
-    assert all(r.split("\t")[2] == "clade" for r in _data_rows(out))
 
 
 def test_style_dataset_bad_color_raises(targets_file, tmp_path):
