@@ -16,6 +16,7 @@ from importlib.metadata import version
 import urllib.request
 import urllib.error
 from tqdm import tqdm # type: ignore
+import pyarrow as pa # type: ignore
 
 
 def get_package_path(rel_path = ""):
@@ -427,3 +428,66 @@ def check_bam_file_is_indexed(bam_file): # pragma: no cover
             subprocess.run(["samtools", "index", "-@", "4", bam_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
     return bam_file
+
+
+def atomic_write_text(path, write_fn, encoding="utf-8"):
+    """
+    Write text through `<path>.part` and rename into place, so an interrupted write
+    never leaves a truncated file looking like a complete one.
+    """
+    tmp = f"{path}.part"
+    try:
+        with open(tmp, "w", encoding=encoding) as f:
+            write_fn(f)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        # BaseException so Ctrl-C (KeyboardInterrupt) also cleans up the partial
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def write_table_tsv(table, out_path):
+    """
+    Write a pyarrow Table to a TSV, atomically
+
+    """
+    import pyarrow.csv as pacsv # type: ignore
+
+    tmp = f"{out_path}.part"
+    try:
+        try:
+            with open(tmp, "wb") as out:
+                out.write(("\t".join(table.column_names) + "\n").encode())
+                pacsv.write_csv(
+                    table, out,
+                    write_options=pacsv.WriteOptions(delimiter="\t",
+                                                     include_header=False,
+                                                     quoting_style="none"))
+        except pa.ArrowInvalid:
+            # a value carries a structural character; pandas quotes it instead
+            table.to_pandas().to_csv(tmp, sep="\t", index=False)
+        os.replace(tmp, out_path)
+    except BaseException:
+        # BaseException so Ctrl-C also cleans up the partial file
+        try:
+            os.remove(tmp)
+        except OSError:
+            pass
+        raise
+
+
+def write_accessions(out_path, accessions):
+    """
+    Write an accession list, one per line, atomically. Shared by every
+    get-accs-from-* surface so they can't drift in how the file is produced.
+    """
+    def _write(f):
+        for acc in accessions:
+            f.write(str(acc) + "\n")
+
+    atomic_write_text(out_path, _write)

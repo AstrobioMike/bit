@@ -1,13 +1,21 @@
 import sys
 import os
+import pyarrow as pa # type: ignore
+import pyarrow.compute as pc # type: ignore
 import pyarrow.parquet as pq # type: ignore
-from bit.modules.general import color_text, wprint
+from bit.modules.general import (color_text, wprint, write_table_tsv,
+                                 write_accessions)
 from bit.modules.gtdb.get_gtdb_data import (get_gtdb_data,
                                             report_gtdb_version_info as _read_gtdb_version_info)
 from bit.modules.taxonomy.tax_ranks import RANKS
 from bit.modules.taxonomy.tax_select import (resolve_taxon, select,
-                                             TaxonNotFound, AmbiguousTaxon)
-from bit.modules.taxonomy.tax_derep import select_ref_genomes
+                                             TaxonNotFound, AmbiguousTaxon,
+                                             find_ranks_for_taxon as _resolve_ranks)
+from bit.modules.taxonomy.tax_derep import (select_ref_genomes, select_all_domains,
+                                            resolve_derep_rank)
+from bit.modules.taxonomy.tax_counts import (representatives_filter, count_genomes,
+                                             derep_size, distinct_taxa, rank_counts,
+                                             render_rank_count_table)
 
 
 _RANK_COLUMNS = list(RANKS)
@@ -48,10 +56,15 @@ def get_accessions_from_gtdb(args):
     else:
         representatives_source = None
 
+    named_taxon = bool(args.target_taxon) and str(args.target_taxon).lower() != "all"
+
     if args.get_rank_counts:
-        full = _read_rank_columns(gtdb_path)
-        rep = _apply_reps_filter(gtdb_path, representatives_source)
-        get_unique_taxa_counts_of_all_ranks(full, rep, representatives_source=representatives_source)
+        if named_taxon:
+            report_rank_counts_for_taxon(gtdb_path, args.target_taxon,
+                                         representatives_source)
+        else:
+            report_unique_taxa_counts_of_all_ranks(
+                gtdb_path, representatives_source=representatives_source)
         sys.exit(0)
 
     if not args.target_taxon:
@@ -60,46 +73,40 @@ def get_accessions_from_gtdb(args):
     target_taxon, resolved_rank = _resolve_or_exit(gtdb_path, args.target_taxon, args.target_rank)
 
     if args.get_taxon_counts:
-        if target_taxon == "all":
-            full = _read_rank_columns(gtdb_path)
-            rep = _apply_reps_filter(gtdb_path, representatives_source)
-        else:
-            full = _read_rank_columns(gtdb_path)
-            rep = _apply_reps_filter(gtdb_path, representatives_source) if representatives_source else None
-        get_unique_taxon_counts(target_taxon, full, rep, representatives_source=representatives_source)
+        report_taxon_counts(gtdb_path, target_taxon, representatives_source, args)
         sys.exit(0)
 
-    working, rank = _read_taxon_full_slice(gtdb_path, target_taxon, resolved_rank,
-                                           representatives_source)
+    if target_taxon == "all":
+        if _derep_is_on(args):
+            _write_all_dereplicated(gtdb_path, args, representatives_source)
+        else:
+            _write_all(gtdb_path, representatives_source)
+        sys.exit(0)
 
-    working = _apply_derep(gtdb_path, args, target_taxon, rank, working,
-                           representatives_source)
-
-    _write_accessions(target_taxon, working, rank,
-                      representatives_source=representatives_source)
+    table, kept_rank = _select_rows(gtdb_path, args, target_taxon, resolved_rank,
+                                    representatives_source)
+    _write_outputs(table, target_taxon, kept_rank, representatives_source)
     sys.exit(0)
 
 
-def _apply_derep(gtdb_path, args, target_taxon, rank, working, representatives_source):
+def _select_rows(gtdb_path, args, target_taxon, resolved_rank, representatives_source):
     """
-    Dereplicate `working` (a full-slice DataFrame) down to one best genome per unique
-    value of --derep-rank, using the shared selection core so this matches
-    get-accs-from-ncbi and GToTree.
+    The taxon slice to write, as a pyarrow Table carrying every column of the asset
+    """
+    reps_only = representatives_source is not None
+    cols = _all_columns(gtdb_path)
 
-    Derep only applies to a resolved taxon name, 'all' has no single rank to
-    dereplicate relative to, so it is passed through untouched. Mike, remember, this is
-    not gen-mg's dereplication (see modules/gen_mg/selection.py); that one samples
-    randomly toward a target count and is deliberately a different approach.
-    """
+    table = select(gtdb_path, "gtdb", resolved_rank, target_taxon,
+                   reps_only=reps_only, columns=cols)
+
     derep_rank = getattr(args, "derep_rank", "off")
-    if derep_rank in (None, "off") or target_taxon == "all":
-        return working
+    if derep_rank in (None, "off", "none", "None"):
+        return table, resolved_rank
 
     try:
         selection = select_ref_genomes(
-            gtdb_path, "gtdb", target_taxon, target_rank=rank,
-            derep_rank=derep_rank,
-            reps_only=representatives_source is not None)
+            gtdb_path, "gtdb", target_taxon, target_rank=resolved_rank,
+            derep_rank=derep_rank, reps_only=reps_only)
     except ValueError as e:
         print("")
         wprint(color_text(str(e), "yellow"))
@@ -111,47 +118,130 @@ def _apply_derep(gtdb_path, args, target_taxon, rank, working, representatives_s
     if selection.warnings:
         print("")
 
-    keep = set(selection.accessions)
-    out = working[working["ncbi_genbank_assembly_accession"].isin(keep)]
+    table = _restrict_to_accessions(table, selection.accessions)
 
     if selection.effective_derep_rank:
         wprint(f"Dereplicated to one genome per {selection.effective_derep_rank}: "
-               f"{len(out):,} genome(s) kept.")
+               f"{table.num_rows:,} genome(s) kept.")
         print("")
 
-    return out
+    return table, resolved_rank
 
 
-def _read_rank_columns(gtdb_path):
-    return pq.read_table(gtdb_path, columns=_RANK_COLUMNS).to_pandas()
+def _restrict_to_accessions(table, accessions):
+    """
+    Keep only the rows whose accession is in `accessions`
+    """
+    wanted = pa.array(sorted(set(accessions)), type=pa.string())
+    col = table.column("ncbi_genbank_assembly_accession")
+    return table.filter(pc.is_in(col, value_set=wanted))
 
 
-def _apply_reps_filter(gtdb_path, representatives_source):
-    if not representatives_source:
-        return None
-    if representatives_source == "gtdb":
-        filt = [("gtdb_representative", "=", "t")]
+def _write_outputs(table, taxon, rank, representatives_source=None):
+    """Write the accession list + metadata TSV for a resolved taxon."""
+    taxon_for_filename = taxon.replace(" ", "-").replace("/", "-").lower()
+
+    if representatives_source:
+        stem = f"gtdb-{taxon_for_filename}-{rank}-{representatives_source}-rep"
     else:
-        filt = [("ncbi_refseq_category", "=", "reference genome")]
-    return pq.read_table(gtdb_path, columns=_RANK_COLUMNS, filters=filt).to_pandas()
+        stem = f"gtdb-{taxon_for_filename}-{rank}"
+
+    acc_out_filename = stem + "-accs.txt"
+    tab_out_filename = stem + "-metadata.tsv"
+
+    write_table_tsv(table, tab_out_filename)
+
+    accs = table.column("ncbi_genbank_assembly_accession").to_pylist()
+    write_accessions(acc_out_filename, accs)
+
+    print("")
+    wprint(f"Wrote {len(accs):,} accession(s) to:")
+    wprint("  " + color_text(acc_out_filename))
+    print("")
+    wprint("Associated taxonomy and metadata of these targets written to:")
+    wprint("  " + color_text(tab_out_filename))
+    print("")
 
 
-def _read_taxon_full_slice(gtdb_path, taxon, resolved_rank, representatives_source):
+def _derep_is_on(args):
+    """True when --derep-rank asks for actual dereplication."""
+    return getattr(args, "derep_rank", "off") not in (None, "off", "none", "None")
+
+
+def _write_all_dereplicated(gtdb_path, args, representatives_source=None):
+    """`-t all` WITH --derep-rank: one selection per domain, merged."""
     reps_only = representatives_source is not None
-    cols = _all_columns(gtdb_path)
 
-    if taxon == "all":
-        if reps_only:
-            filt = [("gtdb_representative", "=", "t")] if representatives_source == "gtdb" \
-                else [("ncbi_refseq_category", "=", "reference genome")]
-            tab = pq.read_table(gtdb_path, columns=cols, filters=filt).to_pandas()
-        else:
-            tab = pq.read_table(gtdb_path, columns=cols).to_pandas()
-        return tab, None
+    try:
+        selection = select_all_domains(gtdb_path, "gtdb", derep_rank=args.derep_rank,
+                                       reps_only=reps_only)
+    except ValueError as e:
+        print("")
+        wprint(color_text(str(e), "yellow"))
+        print("")
+        sys.exit(0)
 
-    tbl = select(gtdb_path, "gtdb", resolved_rank, taxon,
-                 reps_only=reps_only, columns=cols)
-    return tbl.to_pandas(), resolved_rank
+    print("")
+    wprint(color_text(f"Dereplicating within each domain "
+                      f"({', '.join(selection.domains)}), since 'all' has no rank of "
+                      f"its own to group beneath.", "yellow"))
+    for w in selection.warnings:
+        wprint(color_text(w, "yellow"))
+    print("")
+
+    stem = (f"gtdb-arc-and-bac-{representatives_source}-rep"
+            if representatives_source else "gtdb-arc-and-bac")
+    acc_out_filename = stem + "-accessions.txt"
+    tab_out_filename = stem + "-metadata.tsv"
+
+    table = _restrict_to_accessions(
+        pq.read_table(gtdb_path, columns=_all_columns(gtdb_path)),
+        selection.accessions)
+    write_table_tsv(table, tab_out_filename)
+    write_accessions(acc_out_filename, selection.accessions)
+
+    print("")
+    wprint(f"Wrote {len(selection.accessions):,} accession(s) to:")
+    wprint("  " + color_text(acc_out_filename))
+    print("")
+    wprint("Associated taxonomy and metadata written to:")
+    wprint("  " + color_text(tab_out_filename))
+    print("")
+
+
+def _write_all(gtdb_path, representatives_source=None):
+    """
+    Bulk dump of every accession (optionally representatives-only)
+    """
+    rep_filter = _rep_filter_for(representatives_source)
+    filters = [(rep_filter[0], "=", rep_filter[1])] if rep_filter else None
+
+    table = pq.read_table(gtdb_path, columns=_all_columns(gtdb_path), filters=filters)
+
+    if representatives_source:
+        stem = f"gtdb-arc-and-bac-{representatives_source}-rep"
+        tab_out_filename = stem + "-metadata.tsv"
+        write_table_tsv(table, tab_out_filename)
+    else:
+        stem = "gtdb-arc-and-bac"
+        tab_out_filename = None
+
+    acc_out_filename = stem + "-accessions.txt"
+    accs = table.column("ncbi_genbank_assembly_accession").to_pylist()
+    write_accessions(acc_out_filename, accs)
+
+    print("")
+    wprint(f"Wrote {len(accs):,} accession(s) to:")
+    wprint("  " + color_text(acc_out_filename))
+    print("")
+    if tab_out_filename:
+        wprint("Associated taxonomy and metadata written to:")
+        wprint("  " + color_text(tab_out_filename))
+        print("")
+    else:
+        wprint("The full GTDB table holds all of these; `--get-table` writes it out as "
+               + color_text("gtdb-arc-and-bac-metadata.tsv"))
+        print("")
 
 
 def _resolve_or_exit(gtdb_path, taxon, rank=None):
@@ -190,139 +280,175 @@ def copy_gtdb_table(gtdb_path):
     report_gtdb_version_info(os.path.dirname(gtdb_path))
 
     out_name = "gtdb-arc-and-bac-metadata.tsv"
-    df = pq.read_table(gtdb_path).to_pandas()
-    df.to_csv(out_name, sep="\t", index=False)
+    write_table_tsv(pq.read_table(gtdb_path), out_name)
 
     print("")
     wprint("GTDB table written to:")
     print(color_text("    " + out_name + "\n"))
 
 
-def find_ranks_for_taxon(taxon, tab):
-    """ ranks (of the 7) whose column contains `taxon`, within a DataFrame """
-    return [rank for rank in RANKS if taxon in tab[rank].unique()]
+def _rep_filter_for(representatives_source):
+    """
+    The Parquet predicate for a representatives source (or None for no filter).
+    Delegates to tax_counts so the column names live with the SourceSpec.
+    """
+    if representatives_source == "gtdb":
+        return representatives_filter("gtdb", "source")
+    if representatives_source == "refseq":
+        return representatives_filter("gtdb", "refseq")
+    return None
 
 
-def get_accessions(taxon, gtdb_tab, gtdb_rep_tab=None, rank=None, representatives_source=None):
-    """ write accessions (+ metadata TSV) for a taxon, from a DataFrame """
-    working_tab = gtdb_rep_tab if representatives_source else gtdb_tab
+def _derep_note(gtdb_path, rank, taxon, args, rep_filter=None):
+    """
+    The "...dereplicated at X, that would be N" line for one rank, or None when
+    dereplication is off
+    """
+    derep_rank = getattr(args, "derep_rank", "off")
+    if derep_rank in (None, "off", "none", "None"):
+        return None, []
+
+    try:
+        effective, warnings = resolve_derep_rank(rank, derep_rank)
+    except ValueError as err:
+        # an explicit rank coarser than this one -- can't dereplicate to it
+        return str(err), []
+
+    if effective is None:
+        return None, warnings
+
+    n = derep_size(gtdb_path, "gtdb", rank, taxon, effective, rep_filter=rep_filter)
+    return f"Dereplicated at '{effective}', that would be {n:,} genome(s).", warnings
+
+
+def _report_derep_note(gtdb_path, rank, taxon, args, rep_filter=None):
+    """Print the dereplicated-count line (and any 'auto' advisory) for one rank."""
+    if args is None:
+        return
+    line, warnings = _derep_note(gtdb_path, rank, taxon, args, rep_filter=rep_filter)
+    if line:
+        wprint("    " + line)
+    for warning in warnings:
+        wprint(color_text("      " + warning, "yellow"))
+
+
+def report_taxon_counts(gtdb_path, taxon, representatives_source=None, args=None):
+    """
+    Counts for a specific taxon (or 'all'), read straight from the Parquet.
+
+    When --derep-rank is set, each per-rank line is followed by how many genomes would
+    survive dereplication
+    """
+    rep_filter = _rep_filter_for(representatives_source)
 
     if taxon == "all":
+        count = count_genomes(gtdb_path, "gtdb")
+        print("")
+        wprint(f"  There are {count:,} total genomes in the database.")
+        if args is not None and _derep_is_on(args):
+            wprint(f"    Dereplicated within each domain, that would be "
+                   f"{_all_derep_size(gtdb_path, 'gtdb', args):,} genome(s).")
+        print("")
         if representatives_source:
-            tab_out_filename = "gtdb-arc-and-bac-refseq-rep-metadata.tsv"
-            acc_out_filename = "gtdb-arc-and-bac-refseq-rep-accessions.txt"
-            working_tab.to_csv(tab_out_filename, sep="\t", index=False)
-        else:
-            acc_out_filename = "gtdb-arc-and-bac-accessions.txt"
-            tab_out_filename = None
-    else:
-        ranks_found_in = find_ranks_for_taxon(taxon, working_tab)
-
-        if len(ranks_found_in) == 0:
-            wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any rank :(", "yellow"))
+            rep_source = "GTDB" if representatives_source == "gtdb" else "RefSeq"
+            wprint(color_text(f"In considering only {rep_source} representative genomes:",
+                              "yellow"))
             print("")
-            sys.exit(0)
+            wprint(f"  There are {count_genomes(gtdb_path, 'gtdb', rep_filter=rep_filter):,} "
+                   f"total representative genomes in the database.")
+            print("")
+        return
 
-        if not rank:
-            if len(ranks_found_in) > 1:
-                wprint(color_text("Since '" + str(taxon) + "' occurs at more than 1 rank, we'll need to specify "
-                       "which rank is wanted as well before we pull the accessions. This can be specified with the `-r` flag.", "yellow"))
-                print("")
-                sys.exit(0)
-            else:
-                rank = ranks_found_in[0]
-        else:
-            rank = rank.lower()
+    try:
+        canonical, ranks_found_in = _resolve_ranks(gtdb_path, taxon)
+    except TaxonNotFound:
+        wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any rank :(", "yellow"))
+        print("")
+        sys.exit(0)
 
-        working_tab = working_tab[working_tab[rank] == taxon]
+    taxon = canonical
 
-        taxon_for_filename = taxon.replace(" ", "-").replace("/", "-").lower()
-
-        if representatives_source:
-            tab_out_filename = "gtdb-" + taxon_for_filename + "-" + rank + "-" + representatives_source + "-rep-metadata.tsv"
-            acc_out_filename = "gtdb-" + taxon_for_filename + "-" + rank + "-" + representatives_source + "-rep-accs.txt"
-        else:
-            tab_out_filename = "gtdb-" + taxon_for_filename + "-" + rank + "-metadata.tsv"
-            acc_out_filename = "gtdb-" + taxon_for_filename + "-" + rank + "-accs.txt"
-
-        working_tab.to_csv(tab_out_filename, sep="\t", index=False)
-
-    target_accs = working_tab["ncbi_genbank_assembly_accession"].tolist()
-
-    with open(acc_out_filename, "w") as out:
-        for acc in target_accs:
-            out.write(acc + "\n")
+    for rank in ranks_found_in:
+        count = count_genomes(gtdb_path, "gtdb", rank=rank, taxon=taxon)
+        wprint("  The rank '" + rank + "' has " + f"{count:,}" + " " + taxon + " entries.")
+        _report_derep_note(gtdb_path, rank, taxon, args)
 
     print("")
-    wprint(f"Wrote {len(target_accs):,} accession(s) to:")
-    wprint("  " + color_text(acc_out_filename))
-    print("")
-    if tab_out_filename:
-        wprint("Associated taxonomy and metadata of these targets written to:")
-        wprint("  " + color_text(tab_out_filename))
-        print("")
-    else:
-        wprint("The GTDB table that already exists holds all of these: " + color_text("gtdb-arc-and-bac-metadata.tsv"))
-        print("")
 
-
-def _write_accessions(taxon, working_df, rank, representatives_source=None):
-    """ thin orchestrator->worker adapter: working_df is already the taxon slice """
     if representatives_source:
-        get_accessions(taxon, None, gtdb_rep_tab=working_df, rank=rank,
-                       representatives_source=representatives_source)
-    else:
-        get_accessions(taxon, working_df, rank=rank)
-
-
-def get_unique_taxon_counts(taxon, gtdb_tab, gtdb_rep_tab=None, representatives_source=None):
-    """ counts of a specific taxon (or all) per rank, from a DataFrame """
-    if taxon == "all":
-        count = len(gtdb_tab.index)
+        rep_source = "GTDB" if representatives_source == "gtdb" else "RefSeq"
+        wprint(color_text(f"In considering only {rep_source} representative genomes:", "yellow"))
         print("")
-        wprint("  There are " + str(count) + " total genomes in the database.")
-        print("")
-        if representatives_source:
-            count = len(gtdb_rep_tab.index)
-            rep_source = "GTDB" if representatives_source == "gtdb" else "RefSeq"
-            wprint(color_text("In considering only " + rep_source + " representative genomes:", "yellow"))
-            print("")
-            wprint("  There are " + str(count) + " total representative genomes in the database.")
-            print("")
-    else:
-        ranks_found_in = find_ranks_for_taxon(taxon, gtdb_tab)
-
+        any_rep = False
         for rank in ranks_found_in:
-            count = len(gtdb_tab[gtdb_tab[rank] == taxon].index)
-            wprint("  The rank '" + rank + "' has " + str(count) + " " + taxon + " entries.")
-
-        if len(ranks_found_in) == 0:
-            wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any rank :(", "yellow"))
+            count = count_genomes(gtdb_path, "gtdb", rank=rank, taxon=taxon,
+                                  rep_filter=rep_filter)
+            if count:
+                any_rep = True
+                wprint("  The rank '" + rank + "' has " + f"{count:,}" + " " + taxon +
+                       " representative genome entries.")
+                _report_derep_note(gtdb_path, rank, taxon, args, rep_filter=rep_filter)
+                print("")
+        if not any_rep:
+            wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any "
+                              "rank as a representative genome :(", "yellow"))
             print("")
             sys.exit(0)
 
+
+def _all_derep_size(path, source, args, rep_filter=None):
+    """
+    How many genomes `-t all --derep-rank X` would return
+    """
+    total = 0
+    for domain in distinct_taxa(path, source, RANKS[0], rep_filter=rep_filter):
+        effective, _warnings = resolve_derep_rank(RANKS[0], args.derep_rank)
+        if effective is None:
+            return count_genomes(path, source, rep_filter=rep_filter)
+        total += derep_size(path, source, RANKS[0], domain, effective,
+                            rep_filter=rep_filter)
+    return total
+
+
+def report_rank_counts_for_taxon(gtdb_path, taxon, representatives_source=None):
+    """
+    `--get-rank-counts` scoped to a taxon
+    """
+    rep_filter = _rep_filter_for(representatives_source)
+
+    try:
+        canonical, ranks_found_in = _resolve_ranks(gtdb_path, taxon)
+    except TaxonNotFound:
+        wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any rank :(", "yellow"))
         print("")
+        sys.exit(0)
 
-        if representatives_source:
-            ranks_found_in_rep = find_ranks_for_taxon(taxon, gtdb_rep_tab)
-            rep_source = "GTDB" if representatives_source == "gtdb" else "RefSeq"
-            wprint(color_text("In considering only " + rep_source + " representative genomes:", "yellow"))
-            print("")
-            for rank in ranks_found_in_rep:
-                count = len(gtdb_rep_tab[gtdb_rep_tab[rank] == taxon].index)
-                wprint("  The rank '" + rank + "' has " + str(count) + " " + taxon + " representative genome entries.")
-                print("")
-            if len(ranks_found_in_rep) == 0:
-                wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any rank as a representative genome :(", "yellow"))
-                print("")
-                sys.exit(0)
+    for rank in ranks_found_in:
+        total = count_genomes(gtdb_path, "gtdb", rank=rank, taxon=canonical,
+                              rep_filter=rep_filter)
+        rows = rank_counts(gtdb_path, "gtdb", scope_rank=rank, scope_taxon=canonical,
+                           rep_filter=rep_filter)
+        print("")
+        wprint(f"  The rank '{rank}' has {total:,} {canonical} entries.")
+        print("")
+        print(render_rank_count_table(
+            rows, count_header=f"Num. Unique Taxa under '{canonical}'"))
+
+    print("")
+    wprint(color_text("    Each count above is also how many genomes `--derep-rank "
+                      "<rank>` would return, since dereplication keeps one genome per "
+                      "unique taxon at that rank.", "yellow"))
+    print("")
 
 
-def get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab=None, representatives_source=None):
-    """ counts of unique taxa at each rank, from a DataFrame """
-    print("\n    {:<10} {:}".format("Rank", "Num. Unique Taxa"))
-    for rank in RANKS:
-        print("    {:<10} {:}".format(rank, str(gtdb_tab[rank].nunique())))
+def report_unique_taxa_counts_of_all_ranks(gtdb_path, representatives_source=None):
+    """
+    Counts of unique taxa at each rank across the whole table.
+
+    Counting is done by tax_counts, which excludes the "NA" placeholder
+    """
+    print("")
+    print(render_rank_count_table(rank_counts(gtdb_path, "gtdb")))
     print("")
 
     if representatives_source == "gtdb":
@@ -332,9 +458,8 @@ def get_unique_taxa_counts_of_all_ranks(gtdb_tab, gtdb_rep_tab=None, representat
                           "yellow"))
         print("")
     elif representatives_source == "refseq":
+        rep_rows = rank_counts(gtdb_path, "gtdb", rep_filter=_rep_filter_for("refseq"))
         wprint(color_text("In considering only RefSeq reference genomes:", "yellow"))
         print("")
-        print("    {:<10} {:}".format("Rank", "Num. Unique Ref. Taxa"))
-        for rank in RANKS:
-            print("    {:<10} {:}".format(rank, str(gtdb_rep_tab[rank].nunique())))
+        print(render_rank_count_table(rep_rows, count_header="Num. Unique Ref. Taxa"))
         print("")

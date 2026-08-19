@@ -149,20 +149,52 @@ def test_counts_mode_reports_and_writes_nothing(table, tmp_path, monkeypatch, ca
     assert not list(tmp_path.glob("ncbi-*-metadata.tsv"))
 
 
-def test_counts_mode_ignores_derep_rank(table, tmp_path, monkeypatch, capsys):
+def _match_lines(out):
+    return [l.strip() for l in out.splitlines() if "entries" in l]
+
+
+def test_counts_mode_match_counts_are_not_collapsed_by_derep(table, tmp_path,
+                                                             monkeypatch, capsys):
     """
-    --get-taxon-counts reports how many genomes MATCH the filters, not how many
-    survive dereplication -- so --derep-rank must not change the number. The counts
-    path bails before any selection happens, so derep never runs.
+    --get-taxon-counts reports how many genomes MATCH the filters, so --derep-rank
+    must not change that number -- but the dereplicated size is now reported
+    alongside it (it used to be omitted entirely).
     """
     monkeypatch.chdir(tmp_path)
     seen = []
-    for derep in ("off", "family", "auto"):
+    for derep in ("off", "species", "auto"):
         with pytest.raises(SystemExit):
             get_accessions_from_ncbi(_args(target_taxon="Alteromonas",
                                            get_taxon_counts=True, derep_rank=derep))
-        seen.append(capsys.readouterr().out.strip())
-    assert seen[0] == seen[1] == seen[2]
+        seen.append(capsys.readouterr().out)
+
+    assert _match_lines(seen[0]) == _match_lines(seen[1]) == _match_lines(seen[2])
+    assert "Dereplicated at" not in seen[0]          # derep off
+    assert "Dereplicated at 'species'" in seen[1]
+
+
+def test_counts_mode_reports_the_dereplicated_size(table, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit):
+        get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="both",
+                                       get_taxon_counts=True, derep_rank="species"))
+    out = capsys.readouterr().out
+    # all 3 fixture rows share one species -> one genome survives
+    assert "Dereplicated at 'species', that would be 1 genome(s)." in out
+
+
+def test_counts_mode_derep_size_matches_what_a_pull_returns(table, tmp_path,
+                                                            monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    with pytest.raises(SystemExit):
+        get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="both",
+                                       get_taxon_counts=True, derep_rank="species"))
+    reported = capsys.readouterr().out
+
+    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="both",
+                                   derep_rank="species"))
+    accs = (tmp_path / "ncbi-alteromonas-accessions.txt").read_text().split()
+    assert f"that would be {len(accs)} genome(s)." in reported
 
 
 def test_counts_mode_scope_note_reflects_source(table, tmp_path, monkeypatch, capsys):
@@ -224,11 +256,61 @@ def test_source_genbank_keeps_only_gca(table, tmp_path):
     assert all(a.startswith("GCA_") for a in accs)
 
 
-def test_assembly_level_filter(table, tmp_path):
+def test_apply_filters_no_longer_handles_assembly_level(table, tmp_path):
+    """
+    --assembly-level is a PRE-filter now (see the derep-ordering tests below), so
+    _apply_filters is source scoping only and must not silently drop rows by level.
+    """
     tab = pq.read_table(table, columns=_COLS)
     out = _apply_filters(tab, _args(source="both", assembly_level=["scaffold"]))
-    levels = set(out.column("assembly_level").to_pylist())
-    assert levels == {"Scaffold"}
+    assert out.num_rows == tab.num_rows
+
+
+def test_assembly_level_still_filters_end_to_end(table, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="both",
+                                   assembly_level=["scaffold"]))
+    accs = (tmp_path / "ncbi-alteromonas-accessions.txt").read_text().split()
+    assert accs == ["GCA_000000003.1"]
+
+
+def test_assembly_level_still_filters_for_all(table, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    get_accessions_from_ncbi(_args(target_taxon="all", source="both",
+                                   assembly_level=["scaffold"]))
+    accs = (tmp_path / "ncbi-all-accessions.txt").read_text().split()
+    assert accs == ["GCA_000000003.1"]
+
+
+def test_assembly_level_still_filters_for_a_taxid(table, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    get_accessions_from_ncbi(_args(target_taxon="28108", source="both",
+                                   assembly_level=["scaffold"]))
+    accs = (tmp_path / "ncbi-28108-accessions.txt").read_text().split()
+    assert accs == ["GCA_000000003.1"]
+
+
+def test_assembly_level_is_applied_before_dereplication(tmp_path, monkeypatch):
+    """
+    FamB holds a Complete Genome and a higher-quality Scaffold. Filtering on level
+    AFTER dereplication picked the Scaffold as FamB's best and then deleted it, so
+    FamB contributed nothing -- instead of contributing the best genome that actually
+    meets the requested level.
+    """
+    p = _make_table(tmp_path, [
+        _row("GCF_000000001.1", genus="GenA", family="FamA",
+             checkm_completeness="90.0"),
+        _row("GCF_000000003.1", genus="GenB", family="FamB",
+             checkm_completeness="90.0"),
+        _row("GCA_000000004.1", genus="GenB", family="FamB", level="Scaffold",
+             checkm_completeness="99.9"),
+    ])
+    monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
+    monkeypatch.chdir(tmp_path)
+    get_accessions_from_ncbi(_args(target_taxon="Alteromonadales", source="both",
+                                   derep_rank="family", assembly_level=["complete"]))
+    accs = sorted((tmp_path / "ncbi-alteromonadales-accessions.txt").read_text().split())
+    assert accs == ["GCF_000000001.1", "GCF_000000003.1"]
 
 
 # --- --get-rank-counts (whole-database, no taxon) -------------------------
@@ -393,3 +475,48 @@ def test_startup_prints_date_and_update_hint(table, tmp_path, monkeypatch, capsy
         get_accessions_from_ncbi(_args(get_rank_counts=True))
     out = capsys.readouterr().out
     assert "Date NCBI data retrieved: Jan 05, 2026" in out
+
+
+# --- preflight: --derep-rank applicability --------------------------------
+
+def test_all_with_derep_rank_is_allowed_now(capsys):
+    from bit.cli.get_accessions_from_ncbi import check_derep_rank_is_applicable
+    check_derep_rank_is_applicable(_args(target_taxon="all", derep_rank="family"))
+
+
+def test_all_with_derep_rank_includes_eukaryotes(tmp_path, monkeypatch, capsys):
+    """
+    The domain list is read from the table, not hardcoded to the prokaryotic pair --
+    NCBI carries eukaryotes and they must not be silently dropped.
+    """
+    p = _make_table(tmp_path, [
+        _row("GCF_000000001.1"),
+        _row("GCF_000000002.1"),
+        _row("GCF_000000020.1", genus="Saccharomyces", domain="Eukaryota",
+             phylum="Ascomycota"),
+    ])
+    monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
+    monkeypatch.chdir(tmp_path)
+    get_accessions_from_ncbi(_args(target_taxon="all", source="both",
+                                   derep_rank="domain"))
+    accs = (tmp_path / "ncbi-all-accessions.txt").read_text().split()
+    assert len(accs) == 2                      # one bacterium, one eukaryote
+    assert "GCF_000000020.1" in accs
+    assert "Bacteria, Eukaryota" in capsys.readouterr().out
+
+
+def test_derep_rank_with_a_taxid_is_refused(capsys):
+    from bit.cli.get_accessions_from_ncbi import check_derep_rank_is_applicable
+    with pytest.raises(SystemExit):
+        check_derep_rank_is_applicable(_args(target_taxon="28108", derep_rank="family"))
+    assert "`--derep-rank` can't be applied with a taxid" in capsys.readouterr().out
+
+
+def test_derep_rank_off_with_a_taxid_is_allowed():
+    from bit.cli.get_accessions_from_ncbi import check_derep_rank_is_applicable
+    check_derep_rank_is_applicable(_args(target_taxon="28108", derep_rank="off"))
+
+
+def test_derep_rank_with_a_named_taxon_is_allowed():
+    from bit.cli.get_accessions_from_ncbi import check_derep_rank_is_applicable
+    check_derep_rank_is_applicable(_args(target_taxon="Alteromonas", derep_rank="genus"))

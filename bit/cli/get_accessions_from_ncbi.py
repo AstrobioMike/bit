@@ -56,7 +56,7 @@ def build_parser(parent_subparsers=None):
         help=("Dereplicate the pulled genomes down to a single best genome per unique "
               "value of this rank (default: off). E.g., '--derep-rank family' keeps one genome per "
               "family within the target taxon). Use 'auto' for two ranks finer than the target. "
-              "Only applies to a taxon-name search (not a taxid or 'all')."),
+              "Only applies to a taxon-name search, not a given taxid."),
         action="store",
     )
 
@@ -90,14 +90,16 @@ def build_parser(parent_subparsers=None):
         "--get-taxon-counts",
         action="store_true",
         help=("Provide this flag along with a specified taxon to `-t` to see how many "
-              "genomes match the set parameters (excluding --derep-rank)"),
+              "genomes match the set parameters. If `--derep-rank` is also set, the "
+              "number of genomes following dereplication is reported too."),
     )
 
     optional.add_argument(
         "--get-rank-counts",
         action="store_true",
-        help=("Provide just this flag alone to see counts of how many unique taxa there "
-              "are for each rank."),
+        help=("Provide this flag to see counts of how many unique taxa there are for each rank. "
+              "By itself, that'd be the whole database, but it can also be combined with "
+              "`-t` and `--derep-rank`."),
     )
 
     optional.add_argument(
@@ -142,3 +144,25 @@ def preflight_checks(args):
                        "`--source refseq`.",
                        trailing_newline=True)
         sys.exit()
+
+    check_derep_rank_is_applicable(args)
+
+
+def check_derep_rank_is_applicable(args):
+    """
+    `--derep-rank` is not applicable to a taxid input
+    """
+    target = str(args.target_taxon or "")
+    derep_rank = getattr(args, "derep_rank", "off")
+
+    if derep_rank in (None, "off", "none", "None"):
+        return
+
+    if not target.isdigit():
+        return
+
+    report_message(
+        "`--derep-rank` can't be applied with a taxid. Pass the taxon "
+        "name instead if you also want to dereplicate.",
+        trailing_newline=True)
+    sys.exit()

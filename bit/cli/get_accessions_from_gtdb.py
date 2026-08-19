@@ -76,14 +76,16 @@ def build_parser(parent_subparsers=None):
         "--get-taxon-counts",
         action="store_true",
         help=("Provide this flag along with a specified taxon to `-t` to see how many "
-              "genomes match the set parameters (excluding --derep-rank)"),
+              "genomes match the set parameters. If `--derep-rank` is also set, the "
+              "number of genomes following dereplication is reported too."),
     )
 
     optional.add_argument(
         "--get-rank-counts",
         action="store_true",
-        help=("Provide just this flag alone to see counts of how many unique taxa there "
-              "are for each rank."),
+        help=("Provide this flag to see counts of how many unique taxa there are for each rank. "
+              "By itself, that'd be the whole database, but it can also be combined with "
+              "`-t` and `--derep-rank`."),
     )
 
     optional.add_argument(
@@ -121,3 +123,4 @@ def preflight_checks(args):
                        "unless you're using `--get-rank-counts` or `--get-table`.",
                        trailing_newline=True)
         sys.exit()
+
