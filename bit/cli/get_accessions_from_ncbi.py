@@ -2,9 +2,9 @@ import sys
 import argparse
 from bit.modules.general import report_message
 from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help, add_version_arg
-from bit.modules.ncbi.get_accessions_from_ncbi import (get_accessions_from_ncbi,
-                                                       _ASSEMBLY_LEVELS)
-from bit.modules.taxonomy.tax_ranks import RANKS
+from bit.modules.ncbi.get_accessions_from_ncbi import get_accessions_from_ncbi
+from bit.modules.taxonomy.get_accs_shared import (ASSEMBLY_LEVELS,
+                                                  add_common_get_accs_args)
 
 
 def build_parser(parent_subparsers=None):
@@ -32,33 +32,11 @@ def build_parser(parent_subparsers=None):
     required = parser.add_argument_group("Required Parameters")
     optional = parser.add_argument_group("Optional Parameters")
 
-    required.add_argument(
-        "-t",
-        "--target-taxon",
-        metavar="<STR>",
-        help=("Target taxon (a name, an NCBI taxid, or 'all'). Not needed with "
-              "`--get-rank-counts`."),
-        action="store",
-    )
-
-    optional.add_argument(
-        "-r",
-        "--target-rank",
-        choices=list(RANKS),
-        help=("Target rank (if needed to disambiguate a taxon name that exists at multiple ranks)"),
-        action="store",
-    )
-
-    optional.add_argument(
-        "--derep-rank",
-        choices=["auto", "off"] + list(RANKS),
-        default="off",
-        help=("Dereplicate the pulled genomes down to a single best genome per unique "
-              "value of this rank (default: off). E.g., '--derep-rank family' keeps one genome per "
-              "family within the target taxon). Use 'auto' for two ranks finer than the target. "
-              "Only applies to a taxon-name search, not a given taxid."),
-        action="store",
-    )
+    add_common_get_accs_args(
+        required, optional, "NCBI assembly-summary",
+        taxon_flags=("-t", "--target-taxon"),
+        taxon_help=("Target taxon (a name, an NCBI taxid, or 'all' for every domain "
+                    "in the table). Not needed with `--get-rank-counts`."))
 
     optional.add_argument(
         "-s",
@@ -72,41 +50,10 @@ def build_parser(parent_subparsers=None):
     optional.add_argument(
         "-a",
         "--assembly-level",
-        choices=list(_ASSEMBLY_LEVELS),
+        choices=list(ASSEMBLY_LEVELS),
         nargs="+",
         help=("Restrict to one or more assembly levels (can be multiple space-separated)"),
         action="store",
-    )
-
-    optional.add_argument(
-        "-R",
-        "--refseq-reference-genomes-only",
-        dest="refseq_reference_genomes_only",
-        action="store_true",
-        help=("Pull only genomes designated as RefSeq reference genomes."),
-    )
-
-    optional.add_argument(
-        "--get-taxon-counts",
-        action="store_true",
-        help=("Provide this flag along with a specified taxon to `-t` to see how many "
-              "genomes match the set parameters. If `--derep-rank` is also set, the "
-              "number of genomes following dereplication is reported too."),
-    )
-
-    optional.add_argument(
-        "--get-rank-counts",
-        action="store_true",
-        help=("Provide this flag to see counts of how many unique taxa there are for each rank. "
-              "By itself, that'd be the whole database, but it can also be combined with "
-              "`-t` and `--derep-rank`."),
-    )
-
-    optional.add_argument(
-        "--get-table",
-        action="store_true",
-        help=("Provide just this flag alone to write out a tsv of GToTree's "
-              "NCBI assembly-summary metadata table."),
     )
 
     add_help(optional)

@@ -14,6 +14,11 @@
 
 -->
 
+## v2.9.2 (NOT YET RELEASED)
+
+### Changed
+- added `-t all` as option to `bit get-accs-from-*`
+
 
 ## v2.9.1 (18-Aug-2026)
 

@@ -132,15 +132,13 @@ def test_case_insensitive_match(table, tmp_path, monkeypatch):
 
 def test_taxon_not_found_exits_without_files(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(target_taxon="Nonexistentia"))
+    _run(_args(target_taxon="Nonexistentia"))
     assert not list(tmp_path.glob("ncbi-*-accessions.txt"))
     assert not list(tmp_path.glob("ncbi-*-metadata.tsv"))
 
 def test_counts_mode_reports_and_writes_nothing(table, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(target_taxon="Alteromonas", get_taxon_counts=True))
+    _run(_args(target_taxon="Alteromonas", get_taxon_counts=True))
     out = capsys.readouterr().out
     # per-rank format, matching get-accs-from-gtdb
     assert "The rank 'genus' has" in out
@@ -175,8 +173,7 @@ def test_counts_mode_match_counts_are_not_collapsed_by_derep(table, tmp_path,
 
 def test_counts_mode_reports_the_dereplicated_size(table, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="both",
+    _run(_args(target_taxon="Alteromonas", source="both",
                                        get_taxon_counts=True, derep_rank="species"))
     out = capsys.readouterr().out
     # all 3 fixture rows share one species -> one genome survives
@@ -186,8 +183,7 @@ def test_counts_mode_reports_the_dereplicated_size(table, tmp_path, monkeypatch,
 def test_counts_mode_derep_size_matches_what_a_pull_returns(table, tmp_path,
                                                             monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="both",
+    _run(_args(target_taxon="Alteromonas", source="both",
                                        get_taxon_counts=True, derep_rank="species"))
     reported = capsys.readouterr().out
 
@@ -199,8 +195,7 @@ def test_counts_mode_derep_size_matches_what_a_pull_returns(table, tmp_path,
 
 def test_counts_mode_scope_note_reflects_source(table, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(target_taxon="Alteromonas",
+    _run(_args(target_taxon="Alteromonas",
                                        get_taxon_counts=True, source="refseq"))
     assert "(in refseq)" in capsys.readouterr().out
 
@@ -213,8 +208,7 @@ def test_counts_mode_reports_every_rank_a_name_occurs_at(tmp_path, monkeypatch, 
     ])
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(target_taxon="Dup", get_taxon_counts=True,
+    _run(_args(target_taxon="Dup", get_taxon_counts=True,
                                        source="both"))
     out = capsys.readouterr().out
     assert "The rank 'family' has 2 Dup entries" in out
@@ -317,8 +311,7 @@ def test_assembly_level_is_applied_before_dereplication(tmp_path, monkeypatch):
 
 def test_get_rank_counts_prints_all_ranks(table, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(get_rank_counts=True))
+    _run(_args(get_rank_counts=True))
     out = capsys.readouterr().out
     # a line per rank, with the header
     assert "Num. Unique Taxa" in out
@@ -330,16 +323,14 @@ def test_get_rank_counts_prints_all_ranks(table, tmp_path, monkeypatch, capsys):
 
 def test_get_rank_counts_writes_no_files(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(get_rank_counts=True))
+    _run(_args(get_rank_counts=True))
     assert not list(tmp_path.glob("ncbi-*-accessions.txt"))
     assert not list(tmp_path.glob("ncbi-*-metadata.tsv"))
 
 
 def test_get_rank_counts_reps_only_adds_second_table(table, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(get_rank_counts=True,
+    _run(_args(get_rank_counts=True,
                                        refseq_reference_genomes_only=True))
     out = capsys.readouterr().out
     assert "RefSeq reference genomes" in out
@@ -351,16 +342,14 @@ def test_get_rank_counts_needs_no_taxon(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     args = _args(get_rank_counts=True)
     assert args.target_taxon is None
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(args)
+    _run(args)
 
 
 def test_get_rank_counts_honors_source_refseq(table, tmp_path, monkeypatch, capsys):
     """--source refseq counts only GCF_ rows. Fixture: 2 GCF + 1 GCA, all Alteromonas
     -> genus count is 1 either way, but the header labels the source."""
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(get_rank_counts=True, source="refseq"))
+    _run(_args(get_rank_counts=True, source="refseq"))
     out = capsys.readouterr().out
     assert "(RefSeq)" in out
 
@@ -373,8 +362,7 @@ def test_get_rank_counts_source_genbank_excludes_gcf(tmp_path, monkeypatch, caps
     ])
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(get_rank_counts=True, source="genbank"))
+    _run(_args(get_rank_counts=True, source="genbank"))
     out = capsys.readouterr().out
     assert "(GenBank)" in out
     # genbank scope: exactly 1 genus (GenbankOne); the GCF-only genus is excluded
@@ -388,8 +376,7 @@ def test_get_rank_counts_source_both_counts_everything(tmp_path, monkeypatch, ca
     ])
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(get_rank_counts=True, source="both"))
+    _run(_args(get_rank_counts=True, source="both"))
     out = capsys.readouterr().out
     assert "(all)" in out
     assert "genus      2" in out          # both genera counted
@@ -448,8 +435,7 @@ def test_all_counts_mode(tmp_path, monkeypatch, capsys):
     p = _make_table(tmp_path, [_row("GCF_1.1"), _row("GCF_2.1")])
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(target_taxon="all", get_taxon_counts=True))
+    _run(_args(target_taxon="all", get_taxon_counts=True))
     assert "2 genome(s) under all genomes" in capsys.readouterr().out
     assert not list(tmp_path.glob("ncbi-*-accessions.txt"))
     assert not list(tmp_path.glob("ncbi-*-metadata.tsv"))
@@ -471,8 +457,7 @@ def test_read_date_retrieved_falls_back_to_raw(tmp_path):
 
 def test_startup_prints_date_and_update_hint(table, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    with pytest.raises(SystemExit):
-        get_accessions_from_ncbi(_args(get_rank_counts=True))
+    _run(_args(get_rank_counts=True))
     out = capsys.readouterr().out
     assert "Date NCBI data retrieved: Jan 05, 2026" in out
 
@@ -520,3 +505,116 @@ def test_derep_rank_off_with_a_taxid_is_allowed():
 def test_derep_rank_with_a_named_taxon_is_allowed():
     from bit.cli.get_accessions_from_ncbi import check_derep_rank_is_applicable
     check_derep_rank_is_applicable(_args(target_taxon="Alteromonas", derep_rank="genus"))
+
+
+################################################################################
+# 'all' and the genomes it can't reach
+#
+# The NCBI table carries rows with NO assigned domain (viral and
+# metagenome/uncultured entries). 'all' is expanded to the table's DOMAINS, so those
+# rows are unreachable by it -- which has to be both CONSISTENT (the same pool with
+# and without --derep-rank) and REPORTED (an unscoped --get-rank-counts otherwise
+# quotes a number no pull will produce).
+################################################################################
+
+def _viral_row(acc):
+    """A domain-less row whose class exists nowhere else in the fixture."""
+    return _row(acc, domain="NA", phylum="Uroviricota", **{"class": "Caudoviricetes"},
+                order="NA", family="NA", genus="NA", species="Phage sp.")
+
+
+@pytest.fixture
+def table_with_viruses(tmp_path, monkeypatch):
+    p = _make_table(tmp_path, [
+        _row("GCF_000000001.1", refseq="reference genome"),
+        _row("GCF_000000002.1", genus="Pseudoalteromonas", genus_taxid="53246"),
+        _viral_row("GCF_000000030.1"),
+        _viral_row("GCF_000000031.1"),
+    ])
+    monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
+    monkeypatch.chdir(tmp_path)
+    return p
+
+
+def _accs(tmp_path, name):
+    return [l.strip() for l in open(tmp_path / name) if l.strip()]
+
+
+def _run(args):
+    """The counts/table paths exit; the pull paths return. Tolerate either."""
+    try:
+        get_accessions_from_ncbi(args)
+    except SystemExit:
+        pass
+
+
+def test_all_without_derep_excludes_domainless_genomes(table_with_viruses, tmp_path):
+    """
+    'all' has to mean the same pool whether or not --derep-rank is set. It used to be
+    a whole-table dump without derep (viruses in) and a domain walk with it (viruses
+    out), so an unrelated flag decided whether viral genomes appeared.
+    """
+    _run(_args(target_taxon="all"))
+    accs = _accs(tmp_path, "ncbi-all-refseq-accessions.txt")
+    assert sorted(accs) == ["GCF_000000001.1", "GCF_000000002.1"]
+
+
+def test_all_reports_the_genomes_it_left_behind(table_with_viruses, capsys):
+    _run(_args(target_taxon="all", derep_rank="class"))
+    out = capsys.readouterr().out
+    assert "2 genome(s)" in out
+    assert "no assigned domain" in out
+
+
+def test_rank_counts_with_all_are_scoped_to_what_all_pulls(table_with_viruses,
+                                                           tmp_path, capsys):
+    """
+    The reconciliation: the genus count reported for `-t all` must equal the number of
+    accessions `-t all --derep-rank genus` writes. Unscoped it counted the viral rows
+    too, which is the shape of "--get-rank-counts says 326 but we get 280".
+    """
+    _run(_args(target_taxon="all", get_rank_counts=True))
+    assert "genus      2" in capsys.readouterr().out
+
+    _run(_args(target_taxon="all", derep_rank="genus"))
+    assert len(_accs(tmp_path, "ncbi-all-refseq-accessions.txt")) == 2
+
+
+def test_rank_counts_without_a_taxon_still_counts_the_whole_table(table_with_viruses,
+                                                                  capsys):
+    """Unscoped `--get-rank-counts` is documented as the whole database -- unchanged."""
+    _run(_args(get_rank_counts=True))
+    assert "class      2" in capsys.readouterr().out   # includes Caudoviricetes
+
+
+def test_domainless_genomes_are_still_reachable_by_name(table_with_viruses, tmp_path):
+    """They're excluded from 'all', not from the tool."""
+    _run(_args(target_taxon="Uroviricota"))
+    accs = _accs(tmp_path, "ncbi-uroviricota-refseq-accessions.txt")
+    assert sorted(accs) == ["GCF_000000030.1", "GCF_000000031.1"]
+
+
+def test_source_both_warns_about_the_overlap(table, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="both"))
+    out = capsys.readouterr().out
+    assert "overlap between RefSeq and GenBank" in out
+
+
+def test_single_source_says_nothing_about_overlap(table, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="refseq"))
+    assert "overlap between RefSeq and GenBank" not in capsys.readouterr().out
+
+
+def test_eukaryote_alias_resolves(tmp_path, monkeypatch):
+    """`-t eukarya` (and friends) resolve to Eukaryota wherever a taxon is taken."""
+    p = _make_table(tmp_path, [
+        _row("GCF_000000001.1"),
+        _row("GCF_000000020.1", domain="Eukaryota", phylum="Ascomycota",
+             genus="Saccharomyces", **{"class": "Saccharomycetes"}),
+    ])
+    monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
+    monkeypatch.chdir(tmp_path)
+    _run(_args(target_taxon="eukarya"))
+    assert _accs(tmp_path, "ncbi-eukarya-refseq-accessions.txt") == ["GCF_000000020.1"]

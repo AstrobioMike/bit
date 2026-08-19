@@ -21,8 +21,17 @@ from bit.modules.taxonomy.tax_select import (
 from bit.modules.taxonomy.tax_derep import (select_ref_genomes, select_all_domains,
                                             resolve_derep_rank)
 from bit.modules.taxonomy.tax_counts import (representatives_filter, count_genomes,
-                                             derep_size, rank_counts,
+                                             derep_size, rank_counts, read_pool,
                                              render_rank_count_table)
+from bit.modules.taxonomy.tax_targets import (is_all_target,
+                                              unassigned_domain_summary)
+from bit.modules.taxonomy.get_accs_shared import (ASSEMBLY_LEVELS, PoolSpec,
+                                                  derep_note as _shared_derep_note,
+                                                  is_derep_on,
+                                                  parse_assembly_levels as _parse_levels,
+                                                  scoped_counts_note,
+                                                  source_overlap_note,
+                                                  source_prefixes as _shared_prefixes)
 
 
 _COLUMNS = [
@@ -38,28 +47,12 @@ _COLUMNS = [
     "domain", "phylum", "class", "order", "family", "genus", "species",
 ]
 
-_ASSEMBLY_LEVELS = {
-    "complete": "Complete Genome",
-    "chromosome": "Chromosome",
-    "scaffold": "Scaffold",
-    "contig": "Contig",
-}
+_ASSEMBLY_LEVELS = ASSEMBLY_LEVELS
 
 
 def parse_assembly_levels(value):
-    if not value:
-        return []
-    if isinstance(value, str):
-        parts = [v.strip().lower() for v in value.split(",") if v.strip()]
-    else:
-        parts = [str(v).strip().lower() for v in value]
-
-    unknown = [p for p in parts if p not in _ASSEMBLY_LEVELS]
-    if unknown:
-        raise ValueError(
-            f"unrecognised --assembly-level value(s): {', '.join(unknown)}. "
-            f"Choose from: {', '.join(_ASSEMBLY_LEVELS)}")
-    return [_ASSEMBLY_LEVELS[p] for p in parts]
+    """Kept as a name here; the body is shared with the GTDB helper's vocabulary."""
+    return _parse_levels(value)
 
 
 def ncbi_table_path(force_update=False, quiet=True):
@@ -70,11 +63,7 @@ def ncbi_table_path(force_update=False, quiet=True):
 
 def _source_prefixes(source):
     """Accession prefixes for a --source value (None means no restriction)."""
-    if source == "refseq":
-        return ("GCF_",)
-    if source == "genbank":
-        return ("GCA_",)
-    return None
+    return _shared_prefixes(source)
 
 
 def copy_ncbi_table(table_path):
@@ -93,6 +82,7 @@ def get_accessions_from_ncbi(args):
 
     table_path = ncbi_table_path()
     _report_ncbi_date(table_path)
+    _report_source_overlap(getattr(args, "source", "refseq"))
 
     if getattr(args, "get_table", False):
         copy_ncbi_table(table_path)
@@ -101,7 +91,7 @@ def get_accessions_from_ncbi(args):
     assembly_levels = parse_assembly_levels(getattr(args, "assembly_level", None))
 
     target = str(args.target_taxon) if args.target_taxon else ""
-    named_taxon = bool(target) and target.lower() != "all" and not target.isdigit()
+    named_taxon = bool(target) and not is_all_target(target) and not target.isdigit()
 
     if getattr(args, "get_rank_counts", False):
         if named_taxon:
@@ -111,18 +101,19 @@ def get_accessions_from_ncbi(args):
             report_unique_taxa_counts_of_all_ranks(
                 table_path, source=args.source,
                 reps_only=args.refseq_reference_genomes_only,
-                assembly_levels=assembly_levels)
+                assembly_levels=assembly_levels,
+                scoped_to_all=is_all_target(target))
         sys.exit(0)
 
     if getattr(args, "get_taxon_counts", False) and named_taxon:
         _report_taxon_counts_or_exit(table_path, target, args, assembly_levels)
         sys.exit(0)
 
-    if str(args.target_taxon).lower() == "all":
+    if is_all_target(args.target_taxon):
         if _derep_is_on(args):
             tab, label = _select_all_dereplicated(table_path, args, assembly_levels)
         else:
-            tab = _select_all(table_path,
+            tab = _select_all(table_path, args,
                               reps_only=args.refseq_reference_genomes_only,
                               assembly_levels=assembly_levels)
             label = "all genomes"
@@ -234,26 +225,15 @@ def _derep_note(table_path, rank, taxon, args, prefixes, assembly_levels,
                 reps_only=False):
     """
     The "...dereplicated at X, that would be N" line for one rank, or None when
-    dereplication is off. Any advisory from resolving 'auto' comes back alongside.
+    dereplication is off
 
     Returns (line_or_None, warnings).
     """
-    derep_rank = getattr(args, "derep_rank", "off")
-    if derep_rank in (None, "off", "none", "None"):
-        return None, []
-
-    try:
-        effective, warnings = resolve_derep_rank(rank, derep_rank)
-    except ValueError as err:
-        # an explicit rank coarser than this one -- can't dereplicate to it
-        return str(err), []
-
-    if effective is None:
-        return None, warnings
-
-    n = _derep_count_at_rank(table_path, rank, taxon, effective, prefixes=prefixes,
-                             reps_only=reps_only, assembly_levels=assembly_levels)
-    return f"Dereplicated at '{effective}', that would be {n:,} genome(s).", warnings
+    pool = PoolSpec(table_path, "ncbi", rep_filter=_rep_filter(reps_only),
+                    accession_prefixes=prefixes, assembly_levels=assembly_levels,
+                    label="NCBI", taxon_flag="-t")
+    return _shared_derep_note(pool, rank, taxon,
+                              getattr(args, "derep_rank", "off"))
 
 
 def _report_derep_note(table_path, rank, taxon, args, prefixes, assembly_levels,
@@ -385,8 +365,30 @@ def _report_taxon_counts_or_exit(table_path, taxon, args, assembly_levels):
             sys.exit(0)
 
 
+def _report_unassigned_domains(summary):
+    """
+    Say what an 'all' pull leaves behind, if anything
+    """
+    message = summary.message("NCBI") if summary else None
+    if message:
+        report_message(message, "yellow", width=100, initial_indent="    ",
+                       subsequent_indent="    ", trailing_newline=True)
+
+
+def _report_source_overlap(source):
+    """
+    `--source both` pulls most assemblies twice (a RefSeq GCF_ record and the GenBank
+    GCA_ original it was derived from), so say so rather than let it look like twice
+    as many genomes.
+    """
+    note = source_overlap_note(source)
+    if note:
+        report_message(note, "yellow", width=100, initial_indent="    ",
+                       subsequent_indent="    ", trailing_newline=True)
+
+
 def report_unique_taxa_counts_of_all_ranks(table_path, source="refseq", reps_only=False,
-                                           assembly_levels=None):
+                                           assembly_levels=None, scoped_to_all=False):
     """
     Print, for each of the 7 ranks, how many unique taxa exist in the NCBI table
     (matching get-accs-from-gtdb's --get-rank-counts), scoped to `source`:
@@ -400,17 +402,28 @@ def report_unique_taxa_counts_of_all_ranks(table_path, source="refseq", reps_onl
     """
     prefixes = _source_prefixes(source)
     label = {"refseq": "RefSeq", "genbank": "GenBank", "both": "all"}.get(source, source)
+    domain_assigned = True if scoped_to_all else None
 
     rows = rank_counts(table_path, "ncbi", accession_prefixes=prefixes,
-                       assembly_levels=assembly_levels)
+                       assembly_levels=assembly_levels,
+                       domain_assigned=domain_assigned)
     print("")
     print(render_rank_count_table(rows, count_header=f"Num. Unique Taxa ({label})"))
     print("")
 
+    if scoped_to_all:
+        report_message(scoped_counts_note("-t"), "yellow", width=100,
+                       initial_indent="    ", subsequent_indent="    ",
+                       trailing_newline=False)
+        _report_unassigned_domains(unassigned_domain_summary(
+            table_path, "ncbi", rep_filter=_rep_filter(reps_only),
+            accession_prefixes=prefixes, assembly_levels=assembly_levels))
+
     if reps_only:
         rep_rows = rank_counts(table_path, "ncbi", accession_prefixes=prefixes,
                                rep_filter=_rep_filter(True),
-                               assembly_levels=assembly_levels)
+                               assembly_levels=assembly_levels,
+                               domain_assigned=domain_assigned)
         wprint(color_text("In considering only RefSeq reference genomes:", "yellow"))
         print("")
         print(render_rank_count_table(rep_rows, count_header="Num. Unique Ref. Taxa"))
@@ -435,7 +448,7 @@ def _report_ncbi_date(table_path):
 
 def _derep_is_on(args):
     """True when --derep-rank asks for actual dereplication."""
-    return getattr(args, "derep_rank", "off") not in (None, "off", "none", "None")
+    return is_derep_on(getattr(args, "derep_rank", "off"))
 
 
 def _select_all_dereplicated(table_path, args, assembly_levels=None):
@@ -452,11 +465,12 @@ def _select_all_dereplicated(table_path, args, assembly_levels=None):
         sys.exit(0)
 
     report_message(f"Dereplicating within each domain "
-                   f"({', '.join(selection.domains)}), since 'all' has no rank of its "
-                   f"own to group beneath.", "yellow")
+                   f"({', '.join(selection.domains)}).", "yellow",
+                   initial_indent="    ", subsequent_indent="    ",
+                   trailing_newline=False)
+    _report_unassigned_domains(getattr(selection, "unassigned", None))
     for w in selection.warnings:
         wprint(color_text(w, "yellow"))
-    print("")
 
     tab = (pa.Table.from_pylist(selection.rows) if selection.rows
            else pq.read_table(table_path, columns=_COLUMNS).slice(0, 0))
@@ -465,11 +479,17 @@ def _select_all_dereplicated(table_path, args, assembly_levels=None):
     return tab, label
 
 
-def _select_all(table_path, reps_only=False, assembly_levels=None):
-    filters = [("refseq_category", "=", "reference genome")] if reps_only else []
-    if assembly_levels:
-        filters.append(("assembly_level", "in", set(assembly_levels)))
-    return pq.read_table(table_path, columns=_COLUMNS, filters=filters or None)
+def _select_all(table_path, args, reps_only=False, assembly_levels=None):
+    prefixes = _source_prefixes(getattr(args, "source", "refseq"))
+    tab = read_pool(table_path, "ncbi", _COLUMNS,
+                    rep_filter=_rep_filter(reps_only),
+                    accession_prefixes=prefixes,
+                    assembly_levels=assembly_levels,
+                    domain_assigned=True)
+    _report_unassigned_domains(unassigned_domain_summary(
+        table_path, "ncbi", rep_filter=_rep_filter(reps_only),
+        accession_prefixes=prefixes, assembly_levels=assembly_levels))
+    return tab
 
 
 def _select_by_taxid(table_path, taxid, assembly_levels=None):
