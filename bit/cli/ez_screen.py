@@ -111,11 +111,12 @@ def build_parser(parent_subparsers=None, show_fine=False):
     assembly_general.add_argument(
         "-j",
         "--num-jobs",
-        help = ("Number of parallel nucleotide search jobs to run at once. More 'jobs' "
-                "helps when the input fasta is very large e.g., treating longreads as "
-                "contigs. (default: 4)"),
+        help = ("Number of parallel nucleotide search jobs to run at once (see --num-threads, "
+                "these two parameters will be multiplied together). More jobs really only help "
+                "here when the input fasta is very large, e.g., treating long-reads as contigs. "
+                "(default: 1)"),
         metavar = "<INT>",
-        default = 4,
+        default = 1,
         type = int
     )
 
@@ -123,10 +124,10 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "-n",
         "--num-threads",
         help = ("Number of threads given to each individual search job (see --num-jobs, "
-                "these two will be multiplied together). More 'threads' helps when the "
-                "target database is very large (default: 2)"),
+                "these two parameters will be multiplied together). More threads tend to "
+                "help here when the target database is very large (default: 5)"),
         metavar = "<INT>",
-        default = 2,
+        default = 5,
         type = int
     )
 

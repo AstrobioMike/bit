@@ -502,9 +502,13 @@ def split_fasta_by_bytes(fasta_path, num_chunks, dest_dir):
     return chunk_paths
 
 
-def run_single_blastn(query_path, db_path, out_path, num_threads, task):
+def run_single_blastn(query_path, db_path, out_path, num_threads, task,
+                      remove_query=False):
     """
     runs one blastn process writing outfmt-6 to out_path
+
+    'remove_query' is about the temp files when chunking is happening, not
+    the initial user input
 
     returns (returncode, captured_output)
     """
@@ -513,6 +517,11 @@ def run_single_blastn(query_path, db_path, out_path, num_threads, task):
            "-num_threads", str(num_threads), "-outfmt", outfmt, "-out", out_path]
     result = subprocess.run(cmd, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, text=True)
+    if remove_query:
+        try:
+            os.remove(query_path)
+        except OSError:
+            pass
     return result.returncode, result.stdout
 
 
@@ -524,21 +533,22 @@ def report_blast_failure(captured_output):
     report_failure("")
 
 
-TARGET_CHUNK_BYTES = 25 * 1024 * 1024  # ~25MB query per blastn job
+TARGET_CHUNK_BYTES = 50 * 1024 * 1024  # ~50MB query per blastn job
 MAX_CHUNKS = 1000
 
 
 def run_blastn(assembly, db_path, outputs_dir, out_base, num_jobs, num_threads, task):
     """
-    blastn of assembly against db_path, run as num_jobs parallel blastn
-    processes with num_threads threads each over chunks of the query
+    blastn of assembly against db_path
 
-    the query is split into ~TARGET_CHUNK_BYTES chunks (with a floor of
-    num_jobs and a cap of MAX_CHUNKS) rather than exactly num_jobs, so large
-    inputs yield many short-lived jobs and the progress bar (tracked in bytes
-    of query processed) advances steadily instead of sitting on a few huge
-    chunks. results stream to disk via -out rather than being captured in
-    memory
+    with num_jobs > 1 the query is split into ~TARGET_CHUNK_BYTES chunks (with
+    a floor of num_jobs and a cap of MAX_CHUNKS) and run as num_jobs parallel
+    blastn processes with num_threads threads each, so large inputs yield many
+    short-lived jobs and the progress bar (tracked in bytes of query processed)
+    advances steadily instead of sitting on a few huge chunks. chunk query and
+    output files are deleted as they're consumed to bound scratch disk.
+
+    results stream to disk via -out rather than being captured in memory
     """
 
     cols = BLASTN_OUTFMT_FIELDS
@@ -546,41 +556,55 @@ def run_blastn(assembly, db_path, outputs_dir, out_base, num_jobs, num_threads, 
 
     with tempfile.TemporaryDirectory(dir=outputs_dir, prefix="blast-tmp-") as tmp_dir:
 
-        num_chunks = min(max(num_jobs, -(-filesize // TARGET_CHUNK_BYTES)), MAX_CHUNKS)
-        chunk_paths = split_fasta_by_bytes(assembly, num_chunks, tmp_dir)
-        chunk_outs = [os.path.join(tmp_dir, f"chunk-{i:04d}-results.tsv")
-                      for i in range(len(chunk_paths))]
+        raw_results_path = os.path.join(tmp_dir, "all-results.tsv")
 
-        if len(chunk_paths) == 1:
-            returncode, output = run_single_blastn(chunk_paths[0], db_path,
-                                                   chunk_outs[0],
-                                                   num_jobs * num_threads, task)
+        if num_jobs <= 1:
+            returncode, output = run_single_blastn(assembly, db_path,
+                                                   raw_results_path,
+                                                   num_threads, task)
             if returncode != 0:
                 report_blast_failure(output)
         else:
-            chunk_sizes = {i: os.path.getsize(chunk_path)
-                           for i, chunk_path in enumerate(chunk_paths)}
-            with ThreadPoolExecutor(max_workers=num_jobs) as pool:
-                futures = {pool.submit(run_single_blastn, chunk_path, db_path,
-                                       chunk_out, num_threads, task): i
-                           for i, (chunk_path, chunk_out)
-                           in enumerate(zip(chunk_paths, chunk_outs))}
-                progress = tqdm(total=filesize, desc="        blastn progress",
-                                unit="B", unit_scale=True, unit_divisor=1024,
-                                ncols=76, leave=False)
-                for future in as_completed(futures):
-                    returncode, output = future.result()
-                    if returncode != 0:
-                        report_blast_failure(output)
-                    progress.update(chunk_sizes[futures[future]])
-                progress.close()
+            num_chunks = min(max(num_jobs, -(-filesize // TARGET_CHUNK_BYTES)), MAX_CHUNKS)
+            chunk_paths = split_fasta_by_bytes(assembly, num_chunks, tmp_dir)
+            chunk_outs = [os.path.join(tmp_dir, f"chunk-{i:04d}-results.tsv")
+                          for i in range(len(chunk_paths))]
 
-        # in-order concat of chunk outputs into one raw results file
-        raw_results_path = os.path.join(tmp_dir, "all-results.tsv")
-        with open(raw_results_path, "wb") as final:
-            for chunk_out in chunk_outs:
-                with open(chunk_out, "rb") as f:
-                    shutil.copyfileobj(f, final, 4 * 1024 * 1024)
+            if len(chunk_paths) == 1:
+                # single record / unsplittable: one process, full thread budget
+                returncode, output = run_single_blastn(chunk_paths[0], db_path,
+                                                       raw_results_path,
+                                                       num_jobs * num_threads,
+                                                       task, remove_query=True)
+                if returncode != 0:
+                    report_blast_failure(output)
+            else:
+                chunk_sizes = {i: os.path.getsize(chunk_path)
+                               for i, chunk_path in enumerate(chunk_paths)}
+                with ThreadPoolExecutor(max_workers=num_jobs) as pool:
+                    futures = {pool.submit(run_single_blastn, chunk_path, db_path,
+                                           chunk_out, num_threads, task,
+                                           remove_query=True): i
+                               for i, (chunk_path, chunk_out)
+                               in enumerate(zip(chunk_paths, chunk_outs))}
+                    progress = tqdm(total=filesize, desc="        blastn progress",
+                                    unit="B", unit_scale=True, unit_divisor=1024,
+                                    ncols=76, leave=False)
+                    for future in as_completed(futures):
+                        returncode, output = future.result()
+                        if returncode != 0:
+                            report_blast_failure(output)
+                        progress.update(chunk_sizes[futures[future]])
+                    progress.close()
+
+                with open(raw_results_path, "wb") as final:
+                    for chunk_out in chunk_outs:
+                        with open(chunk_out, "rb") as f:
+                            shutil.copyfileobj(f, final, 4 * 1024 * 1024)
+                        try:
+                            os.remove(chunk_out)
+                        except OSError:
+                            pass
 
         if os.path.getsize(raw_results_path) == 0:
             blast_df = pd.DataFrame(columns=cols)
