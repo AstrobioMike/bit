@@ -23,7 +23,7 @@ requirements:
     - blast=2
     - bwa>=0.7
     - coreutils
-    - diamond=2
+    - diamond=2.2
     - entrez-direct
     - goatools
     - mamba=1

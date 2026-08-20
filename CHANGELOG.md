@@ -14,7 +14,7 @@
 
 -->
 
-## v2.9.2 (NOT YET RELEASED)
+## v2.9.2 (20-Aug-2026)
 
 ### Changed
 - efficiency improvements to `bit ez-screen assembly`

@@ -353,7 +353,9 @@ def report_version():
 
 @contextmanager
 def spinner(in_progress_msg, complete_msg, indent="    "): # pragma: no cover
-    """Show a spinner while a block runs; report elapsed time only if >= 60 s."""
+    """
+    Show a spinner while a block runs, report elapsed time only if >= 60 s
+    """
     done = threading.Event()
     elapsed = [0.0]
 
@@ -380,6 +382,43 @@ def spinner(in_progress_msg, complete_msg, indent="    "): # pragma: no cover
         yield
     finally:
         elapsed[0] = time.monotonic() - start_time
+        done.set()
+        t.join()
+
+
+@contextmanager
+def transient_spinner(in_progress_msg, indent="    "): # pragma: no cover
+    """
+    Show a spinner while a block runs, then erase it
+    """
+    done = threading.Event()
+    clear_line = "\r\033[K"  # carriage return + clear to end of line
+
+    # if stderr isn't a terminal (redirected to a file/pipe), ANSI cursor codes
+    # would just be written as literal garbage, so skip the spinner entirely
+    if not sys.stderr.isatty():
+        yield
+        return
+
+    def spin():
+        # open a line below whatever is already on screen (e.g. a tqdm bar)
+        sys.stderr.write("\n")
+        sys.stderr.flush()
+        for char in itertools.cycle("⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"):
+            if done.is_set():
+                break
+            sys.stderr.write(f"\r{indent}{char} {in_progress_msg} \033[K")
+            sys.stderr.flush()
+            time.sleep(0.1)
+        # erase the spinner line and move the cursor back up to the bar's line
+        sys.stderr.write(f"{clear_line}\033[1A")
+        sys.stderr.flush()
+
+    t = threading.Thread(target=spin)
+    t.start()
+    try:
+        yield
+    finally:
         done.set()
         t.join()
 
