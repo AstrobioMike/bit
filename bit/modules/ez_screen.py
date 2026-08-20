@@ -1,7 +1,9 @@
 import os
 import shutil
+import tempfile
 import pandas as pd # type: ignore
 import subprocess
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from io import StringIO
 from Bio import SeqIO # type: ignore
 from tqdm import tqdm # type: ignore
@@ -121,7 +123,7 @@ def diamond_db_is_readable(path):
 def classify_targets_entry(entry):
     """
     classify one --targets entry into (modality, seqtype):
-        ("fasta", "nt")  nucleotide fasta   -> blastn -subject
+        ("fasta", "nt")  nucleotide fasta   -> build blast db -> blastn -db
         ("fasta", "aa")  protein fasta      -> build .dmnd -> diamond blastx
         ("db",    "nt")  nucleotide BLAST db-> blastn -db
         ("db",    "aa")  DIAMOND db (.dmnd) -> diamond blastx -db
@@ -218,6 +220,7 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan):
     type_map = targets_plan["types"]
     summary_df = pd.DataFrame()
     total_assemblies = len(args.assemblies)
+    task = "megablast" if args.use_megablast else "blastn"
 
     print("")
 
@@ -228,11 +231,6 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan):
         unique_assembly_name = assembly_path_dict[assembly]
         out_base = safe_name(unique_assembly_name)
 
-        # ---- per-targets-entry search + per-type loci resolution ----
-        # each entry is homogeneous (one modality, one seqtype), so it gets the
-        # right search engine and the right pident threshold; resulting loci are
-        # tagged with target_type and concatenated, so all downstream outputs
-        # see one merged, type-aware loci frame.
         per_entry_filtered = []
         per_entry_loci = []
 
@@ -242,10 +240,8 @@ def run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan):
             min_perc_id = args.min_aa_perc_id if seqtype == "aa" else args.min_nt_perc_id
 
             blast_df = run_targets_search(assembly, entry_info, outputs_dir,
-                                          out_base, args.num_threads)
+                                          out_base, args.num_jobs, args.num_threads, task)
 
-            # remap this entry's sseqids into the merged (possibly suffixed)
-            # keyspace, so coverage lookups and downstream joins line up
             blast_df = apply_collision_suffix(blast_df, entry_info)
 
             # guard against id mismatch (e.g. a db built without -parse_seqids):
@@ -396,11 +392,15 @@ def get_targets(targets, modality, seqtype):
     return targets_dict
 
 
-def run_targets_search(assembly, entry_info, outputs_dir, out_base, num_threads):
+def run_targets_search(assembly, entry_info, outputs_dir, out_base, num_jobs, num_threads, task):
     """
     dispatches one targets entry to the right search engine and return a
     BLAST-outfmt-6-shaped DataFrame. nucleotide -> blastn; protein -> DIAMOND
-    blastx (building a .dmnd in outputs_dir first if the entry is a fasta)
+    blastx (building a blast db or .dmnd in outputs_dir first if the entry is
+    a fasta, so searches always run in db mode)
+
+    nucleotide searches are parallelized as num_jobs blastn processes with
+    num_threads threads each; DIAMOND gets num_jobs * num_threads threads in one process
     """
 
     entry = entry_info["entry"]
@@ -410,8 +410,14 @@ def run_targets_search(assembly, entry_info, outputs_dir, out_base, num_threads)
     entry_tag = safe_name(os.path.splitext(os.path.basename(entry))[0])
 
     if seqtype == "nt":
-        return run_blastn(assembly, entry, modality, outputs_dir,
-                          f"{out_base}-{entry_tag}", num_threads)
+        if modality == "fasta":
+            db_path = f"{outputs_dir}/{entry_tag}-blast-db"
+            if not os.path.exists(f"{db_path}.ndb"):
+                build_blast_db(entry, db_path)
+        else:
+            db_path = entry  # already a blast db
+        return run_blastn(assembly, db_path, outputs_dir,
+                          f"{out_base}-{entry_tag}", num_jobs, num_threads, task)
 
     # protein
     if modality == "fasta":
@@ -421,35 +427,165 @@ def run_targets_search(assembly, entry_info, outputs_dir, out_base, num_threads)
     else:
         db_path = entry  # already a .dmnd db
     return run_diamond_blastx(assembly, db_path, outputs_dir,
-                              f"{out_base}-{entry_tag}", num_threads)
+                              f"{out_base}-{entry_tag}", num_jobs * num_threads)
 
 
-def run_blastn(assembly, targets, modality, outputs_dir, out_base, num_threads):
+BLASTN_OUTFMT_FIELDS = ["qseqid", "qlen", "sseqid", "slen", "qstart", "qend",
+                        "sstart", "send", "length", "qcovs", "qcovhsp",
+                        "qcovus", "pident", "evalue", "bitscore"]
 
-    outfmt = ("6 qseqid qlen sseqid slen qstart qend sstart send length "
-              "qcovs qcovhsp qcovus pident evalue bitscore")
 
-    blast_command = ["blastn", "-task", "blastn", "-query", assembly, "-outfmt", outfmt]
+def build_blast_db(nt_fasta, db_path):
 
-    if modality == "db":
-        blast_command += ["-db", targets, "-num_threads", str(num_threads)]
-    else:
-        blast_command += ["-subject", targets]
-
+    cmd = ["makeblastdb", "-in", nt_fasta, "-dbtype", "nucl", "-out", db_path]
     try:
-        blast_results = subprocess.check_output(blast_command, stderr=subprocess.STDOUT, text=True)
+        subprocess.check_output(cmd, stderr=subprocess.STDOUT, text=True)
     except subprocess.CalledProcessError as e:
         print()
-        report_message("BLAST failed with the following error:")
+        report_message("makeblastdb failed with the following error:")
         report_message(f"{e.output}", join = False, color = "none", initial_indent = "      ", subsequent_indent = "      ")
         report_failure("")
 
-    cols = ["qseqid", "qlen", "sseqid", "slen", "qstart", "qend", "sstart",
-            "send", "length", "qcovs", "qcovhsp", "qcovus", "pident", "evalue", "bitscore"]
-    if blast_results.strip() == "":
-        blast_df = pd.DataFrame(columns=cols)
-    else:
-        blast_df = pd.read_csv(StringIO(blast_results), sep="\t", header=None, names=cols)
+
+def find_next_record_start(handle, offset, filesize):
+    """
+    returns the byte offset of the first fasta record header at or after
+    offset (a line starting with '>'), or filesize if none remains
+    """
+    if offset == 0:
+        return 0
+    handle.seek(offset - 1)
+    prev = handle.read(1)
+    while True:
+        chunk = handle.read(1024 * 1024)
+        if not chunk:
+            return filesize
+        search_space = prev + chunk
+        idx = search_space.find(b"\n>")
+        if idx != -1:
+            return handle.tell() - len(chunk) + (idx - len(prev)) + 1
+        prev = search_space[-1:]
+
+
+def split_fasta_by_bytes(fasta_path, num_chunks, dest_dir):
+    """
+    splits a plain-text fasta into up to num_chunks piece-files on record
+    boundaries, targeting roughly equal byte sizes
+    """
+    filesize = os.path.getsize(fasta_path)
+    if num_chunks <= 1 or filesize == 0:
+        return [fasta_path]
+
+    with open(fasta_path, "rb") as f:
+        boundaries = [find_next_record_start(f, (filesize * i) // num_chunks, filesize)
+                      for i in range(num_chunks)]
+    boundaries.append(filesize)
+
+    spans = [(start, end) for start, end in zip(boundaries, boundaries[1:])
+             if end > start]
+
+    chunk_paths = []
+    with open(fasta_path, "rb") as f:
+        for i, (start, end) in enumerate(spans):
+            chunk_path = os.path.join(dest_dir, f"query-chunk-{i:04d}.fasta")
+            f.seek(start)
+            remaining = end - start
+            with open(chunk_path, "wb") as out:
+                while remaining > 0:
+                    buf = f.read(min(4 * 1024 * 1024, remaining))
+                    if not buf:
+                        break
+                    out.write(buf)
+                    remaining -= len(buf)
+            chunk_paths.append(chunk_path)
+
+    return chunk_paths
+
+
+def run_single_blastn(query_path, db_path, out_path, num_threads, task):
+    """
+    runs one blastn process writing outfmt-6 to out_path
+
+    returns (returncode, captured_output)
+    """
+    outfmt = "6 " + " ".join(BLASTN_OUTFMT_FIELDS)
+    cmd = ["blastn", "-task", task, "-query", query_path, "-db", db_path,
+           "-num_threads", str(num_threads), "-outfmt", outfmt, "-out", out_path]
+    result = subprocess.run(cmd, stdout=subprocess.PIPE,
+                            stderr=subprocess.STDOUT, text=True)
+    return result.returncode, result.stdout
+
+
+def report_blast_failure(captured_output):
+    print()
+    report_message("BLAST failed with the following error:")
+    report_message(f"{captured_output}", join = False, color = "none",
+                   initial_indent = "      ", subsequent_indent = "      ")
+    report_failure("")
+
+
+TARGET_CHUNK_BYTES = 25 * 1024 * 1024  # ~25MB query per blastn job
+MAX_CHUNKS = 1000
+
+
+def run_blastn(assembly, db_path, outputs_dir, out_base, num_jobs, num_threads, task):
+    """
+    blastn of assembly against db_path, run as num_jobs parallel blastn
+    processes with num_threads threads each over chunks of the query
+
+    the query is split into ~TARGET_CHUNK_BYTES chunks (with a floor of
+    num_jobs and a cap of MAX_CHUNKS) rather than exactly num_jobs, so large
+    inputs yield many short-lived jobs and the progress bar (tracked in bytes
+    of query processed) advances steadily instead of sitting on a few huge
+    chunks. results stream to disk via -out rather than being captured in
+    memory
+    """
+
+    cols = BLASTN_OUTFMT_FIELDS
+    filesize = os.path.getsize(assembly)
+
+    with tempfile.TemporaryDirectory(dir=outputs_dir, prefix="blast-tmp-") as tmp_dir:
+
+        num_chunks = min(max(num_jobs, -(-filesize // TARGET_CHUNK_BYTES)), MAX_CHUNKS)
+        chunk_paths = split_fasta_by_bytes(assembly, num_chunks, tmp_dir)
+        chunk_outs = [os.path.join(tmp_dir, f"chunk-{i:04d}-results.tsv")
+                      for i in range(len(chunk_paths))]
+
+        if len(chunk_paths) == 1:
+            returncode, output = run_single_blastn(chunk_paths[0], db_path,
+                                                   chunk_outs[0],
+                                                   num_jobs * num_threads, task)
+            if returncode != 0:
+                report_blast_failure(output)
+        else:
+            chunk_sizes = {i: os.path.getsize(chunk_path)
+                           for i, chunk_path in enumerate(chunk_paths)}
+            with ThreadPoolExecutor(max_workers=num_jobs) as pool:
+                futures = {pool.submit(run_single_blastn, chunk_path, db_path,
+                                       chunk_out, num_threads, task): i
+                           for i, (chunk_path, chunk_out)
+                           in enumerate(zip(chunk_paths, chunk_outs))}
+                progress = tqdm(total=filesize, desc="        blastn progress",
+                                unit="B", unit_scale=True, unit_divisor=1024,
+                                ncols=76, leave=False)
+                for future in as_completed(futures):
+                    returncode, output = future.result()
+                    if returncode != 0:
+                        report_blast_failure(output)
+                    progress.update(chunk_sizes[futures[future]])
+                progress.close()
+
+        # in-order concat of chunk outputs into one raw results file
+        raw_results_path = os.path.join(tmp_dir, "all-results.tsv")
+        with open(raw_results_path, "wb") as final:
+            for chunk_out in chunk_outs:
+                with open(chunk_out, "rb") as f:
+                    shutil.copyfileobj(f, final, 4 * 1024 * 1024)
+
+        if os.path.getsize(raw_results_path) == 0:
+            blast_df = pd.DataFrame(columns=cols)
+        else:
+            blast_df = pd.read_csv(raw_results_path, sep="\t", header=None, names=cols)
 
     blast_df["perc-subj-cov"] = (round((blast_df["length"] / blast_df["slen"]) * 100, 1)
                                  if not blast_df.empty else pd.Series(dtype=float))

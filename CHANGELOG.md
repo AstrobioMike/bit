@@ -17,6 +17,8 @@
 ## v2.9.2 (NOT YET RELEASED)
 
 ### Changed
+- efficiency improvements to `bit ez-screen assembly`
+  - including new flags `--num-jobs` and `--use-megablast` (see help menu for details)
 - added `-t all` as acceptable option to `bit get-accs-from-*`
 
 

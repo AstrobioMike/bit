@@ -109,12 +109,32 @@ def build_parser(parent_subparsers=None, show_fine=False):
     )
 
     assembly_general.add_argument(
+        "-j",
+        "--num-jobs",
+        help = ("Number of parallel nucleotide search jobs to run at once. More 'jobs' "
+                "helps when the input fasta is very large e.g., treating longreads as "
+                "contigs. (default: 4)"),
+        metavar = "<INT>",
+        default = 4,
+        type = int
+    )
+
+    assembly_general.add_argument(
         "-n",
         "--num-threads",
-        help = "Number of threads to use during database searches (default: 5)",
+        help = ("Number of threads given to each individual search job (see --num-jobs, "
+                "these two will be multiplied together). More 'threads' helps when the "
+                "target database is very large (default: 2)"),
         metavar = "<INT>",
-        default = 5,
+        default = 2,
         type = int
+    )
+
+    assembly_general.add_argument(
+        "--use-megablast",
+        help = ("Use megablast for nucleotide searches instead of blastn (this will help with "
+                "speed, but at the cost of a good amount of sensitivity)"),
+        action = "store_true"
     )
 
     assembly_general.add_argument(
