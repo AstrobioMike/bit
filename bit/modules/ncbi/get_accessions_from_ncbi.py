@@ -138,10 +138,10 @@ def get_accessions_from_ncbi(args):
             print("")
             sys.exit(0)
 
-        if canonical != args.target_taxon:
-            wprint(color_text(f"Matched input '{args.target_taxon}' to NCBI taxon "
-                              f"'{canonical}'.", "yellow"))
-            print("")
+        # if canonical != args.target_taxon:
+        #     wprint(color_text(f"Matched input '{args.target_taxon}' to NCBI taxon "
+        #                       f"'{canonical}'.", "yellow"))
+        #     print("")
 
         try:
             selection = select_ref_genomes(
@@ -282,8 +282,8 @@ def _report_rank_counts_for_taxon_or_exit(table_path, taxon, args, assembly_leve
 
     report_message("Each count above is also how many genomes `--derep-rank <rank>` "
                    "would return, since dereplication keeps one genome per unique "
-                   "taxon at that rank.", "yellow", width=100, initial_indent="    ",
-                   subsequent_indent="    ", trailing_newline=True)
+                   "taxon at that rank.", "yellow", width=90, initial_indent="  ",
+                   subsequent_indent="  ", trailing_newline=True)
 
 
 def _counts_scope_note(args, assembly_levels):

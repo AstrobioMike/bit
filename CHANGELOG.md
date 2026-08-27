@@ -14,6 +14,13 @@
 
 -->
 
+## v2.9.3 (NOT YET RELEASED)
+
+### Fixed
+- output metadata table from `bit get-accs-from-gtdb` could sometimes be mangled at the top, fixed now
+
+---
+
 ## v2.9.2 (20-Aug-2026)
 
 ### Changed
@@ -21,6 +28,7 @@
   - including new flags `--num-jobs` and `--use-megablast` (see help menu for details)
 - added `-t all` as acceptable option to `bit get-accs-from-*`
 
+---
 
 ## v2.9.1 (18-Aug-2026)
 
@@ -30,6 +38,7 @@
   - function is the same otherwise of all, but some parameter values maybe have changed to be consistent across all of them
   - peek at the help menus if something isn't working how it used to for you
 
+---
 
 ## v2.9.0 (24-Jul-2026)
 

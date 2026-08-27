@@ -274,9 +274,9 @@ def _resolve_or_exit(gtdb_path, taxon, rank=None):
         wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any rank :(", "yellow"))
         print("")
         sys.exit(0)
-    if canonical != taxon:
-        wprint(color_text("Matched input '" + taxon + "' to GTDB taxon '" + canonical + "'.", "yellow"))
-        print("")
+    # if canonical != taxon:
+    #     wprint(color_text("Matched input '" + taxon + "' to GTDB taxon '" + canonical + "'.", "yellow"))
+    #     print("")
     return canonical, resolved_rank
 
 
@@ -430,11 +430,10 @@ def report_rank_counts_for_taxon(gtdb_path, taxon, representatives_source=None):
         print(render_rank_count_table(
             rows, count_header=f"Num. Unique Taxa under '{canonical}'"))
 
-    print("")
-    wprint(color_text("    Each count above is also how many genomes `--derep-rank "
-                      "<rank>` would return, since dereplication keeps one genome per "
-                      "unique taxon at that rank.", "yellow"))
-    print("")
+    report_message("Each count above is also how many genomes `--derep-rank <rank>` "
+                   "would return, since dereplication keeps one genome per unique "
+                   "taxon at that rank.", "yellow", width=90, initial_indent="  ",
+                   subsequent_indent="  ", trailing_newline=True)
 
 
 def report_unique_taxa_counts_of_all_ranks(gtdb_path, representatives_source=None,

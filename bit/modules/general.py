@@ -32,7 +32,7 @@ def color_text(text, color = 'green'):
         'yellow' : '\033[0;33m%s\033[0m'
     }
 
-    if sys.stdout.isatty() and color != "none":
+    if sys.stdout.isatty() and color not in (None, "none"):
         return tty_colors[color] % text
     else:
         return text
@@ -496,6 +496,8 @@ def write_table_tsv(table, out_path):
 
     """
     import pyarrow.csv as pacsv # type: ignore
+
+    table = table.combine_chunks()
 
     tmp = f"{out_path}.part"
     try:
