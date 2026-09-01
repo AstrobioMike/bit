@@ -1,1 +1,18 @@
-# add -w to bit dl-ncbi-assemblies ? (or download options to get accs?)
+# add -w (as -t) to bit dl-ncbi-assemblies
+    # started this, but i have work to do here testing/adjusting regular/detailed help menu
+    # add --exclusion-list parameter everywhere -t is used
+
+    # need to fix spacing on Dereplication message:
+
+        #   -t Alteromonas (resolved to genus; dereplicated to one genome per
+        #   species)
+        #       79 genome(s) selected
+
+        #   -t Alteromonas macleodii (resolved to species; dereplication off)
+        #       195 genome(s) selected, 194 new (1 already counted)
+        #       Dereplication is off by default for a target at 'species' rank: the
+        #   default derep rank would be 'species' itself, which returns a single genome.
+        #   For this run, all genomes under the taxon will be used. If you do want a
+        #   single best representative, pass --derep-rank species explicitly.
+
+        #   Total that would be downloaded: 273 genome(s) in fasta format.

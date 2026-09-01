@@ -41,26 +41,64 @@ MISSING_CONTAMINATION = float("inf")
 # How many ranks FINER than the target the default --derep-rank uses
 DEREP_STEPS = 2
 
-def _derive_default_derep(target_rank):
-    """Two ranks finer, clamped at species; None if that would be the target's own rank."""
+# Per-domain overrides to DEREP_STEPS for the `auto` default. Mostly because euks
+# have stupid giant genomes, so we want to pull fewer of them unless explicitly told
+# otherwise by the user.
+#
+# Any eukaryotic-lineage target's `auto` default is one rank COARSER than the prokaryotic
+# default: one step finer than the target instead of two. Bacteria/Archaea (and any
+# domain not listed) keep the standard two-steps-finer default.
+#
+# Keyed by the canonical domain name as it appears in the asset. Applied whenever the
+# selection's target belongs to that domain -- so `-t Eukaryota`, `-t <a eukaryotic
+# phylum>`, `-t <a eukaryotic class>` are all coarsened. A name shared across domains
+# (e.g. `Bacillus`) never reaches here as a single domain: resolve_taxon raises
+# CrossDomainTaxon for it unless --target-domain picks one, so the domain passed here
+# is always unambiguous.
+DEREP_STEPS_BY_DOMAIN = {"Eukaryota": 1}
+
+def _derive_default_derep(target_rank, steps=DEREP_STEPS):
+    """
+    `steps` ranks finer, clamped at species; None if that would be the target's own rank
+    """
     i = rank_index(target_rank)
-    j = min(i + DEREP_STEPS, len(RANKS) - 1)
+    j = min(i + steps, len(RANKS) - 1)
     return None if j == i else RANKS[j]
 
 DEFAULT_DEREP_BY_TARGET_RANK = {r: _derive_default_derep(r) for r in RANKS}
 
-def default_derep_rank(wanted_rank):
-    return DEFAULT_DEREP_BY_TARGET_RANK[RANKS[rank_index(wanted_rank)]]
+def default_derep_steps(domain=None):
+    """
+    The `auto` step count for a target in `domain` (None -> the standard default)
+    """
+    if domain is None:
+        return DEREP_STEPS
+    return DEREP_STEPS_BY_DOMAIN.get(domain, DEREP_STEPS)
 
-def resolve_derep_rank(wanted_rank, derep_rank="auto"):
+def default_derep_rank(wanted_rank, domain=None):
+    """
+    The default derep rank for a target at `wanted_rank`. None == off.
+
+    `domain` (when the target IS a domain) selects a per-domain step count, so
+    Eukaryota defaults one rank coarser than the prokaryotic domains.
+    """
+    return _derive_default_derep(RANKS[rank_index(wanted_rank)],
+                                 default_derep_steps(domain))
+
+def resolve_derep_rank(wanted_rank, derep_rank="auto", domain=None):
     """
     Work out the effective derep rank. Returns (rank_or_None, warnings);
     None means no dereplication.
 
     derep_rank:
-      "auto"            -> DEFAULT_DEREP_BY_TARGET_RANK (two ranks finer, clamped)
+      "auto"            -> `steps` ranks finer, clamped (steps is domain-aware)
       "off"/None/"none" -> no dereplication
       an explicit rank  -> honored, but must not be COARSER than the target
+
+    domain:
+      When the target itself is a domain, its canonical name; used to pick the
+      per-domain `auto` step count (Eukaryota -> one rank finer, others -> two).
+      An explicit --derep-rank is unaffected by this.
     """
     warnings = []
     w_rank = RANKS[rank_index(wanted_rank)]
@@ -69,7 +107,7 @@ def resolve_derep_rank(wanted_rank, derep_rank="auto"):
         return None, warnings
 
     if derep_rank == "auto":
-        eff = DEFAULT_DEREP_BY_TARGET_RANK[w_rank]
+        eff = default_derep_rank(w_rank, domain)
         if eff is None:
             warnings.append(
                 f"Dereplication is off by default for a target at '{w_rank}' rank: the "
@@ -180,9 +218,76 @@ def quality_key(row, spec):
 
 PICKERS["quality"] = quality_key
 
+
+def apply_quality_floor(rows, spec, min_completeness=None, max_contamination=None):
+    """
+    Drop genomes that fall outside an explicit checkm quality floor.
+
+    This is DIFFERENT in kind from quality_key(), which only ORDERS a group and always
+    returns something (the best genome in a genus even if that genome is 55% complete).
+    This floor removes candidates outright, so a group whose every member is below the bar
+    contributes nothing at all rather than contributing its least-bad member.
+
+    Missing values: when a floor is requested, a genome with no value for that metric
+    is excluded, because "unknown quality" can't be shown to clear the bar. Those are
+    counted separately from genomes that have a value and failed it. GTDB's checkm2
+    columns are fully populated, but NCBI's checkm columns are sparse, and a caller
+    setting a floor against NCBI will be told that's why the pool emptied.
+
+    Returns (kept_rows, n_below_floor, n_missing_values).
+    """
+    if min_completeness is None and max_contamination is None:
+        return rows, 0, 0
+
+    comp_col, cont_col = spec.quality_cols
+    kept = []
+    n_below = 0
+    n_missing = 0
+
+    for row in rows:
+        comp = _num(row.get(comp_col)) if min_completeness is not None else None
+        cont = _num(row.get(cont_col)) if max_contamination is not None else None
+
+        if (min_completeness is not None and comp is None) or \
+           (max_contamination is not None and cont is None):
+            n_missing += 1
+            continue
+
+        if min_completeness is not None and comp < min_completeness:
+            n_below += 1
+            continue
+        if max_contamination is not None and cont > max_contamination:
+            n_below += 1
+            continue
+
+        kept.append(row)
+
+    return kept, n_below, n_missing
+
+
+def _quality_floor_warnings(n_below, n_missing, min_completeness, max_contamination):
+    """Human-facing lines describing what a quality floor removed."""
+    warnings = []
+    if n_below:
+        bits = []
+        if min_completeness is not None:
+            bits.append(f"completeness >= {min_completeness:g}")
+        if max_contamination is not None:
+            bits.append(f"contamination <= {max_contamination:g}")
+        warnings.append(
+            f"{n_below:,} candidate genome(s) didn't meet the quality floor "
+            f"({', '.join(bits)}) and were excluded.")
+    if n_missing:
+        warnings.append(
+            f"{n_missing:,} candidate genome(s) have no completeness/contamination "
+            f"values recorded and were excluded by the quality floor.")
+    return warnings
+
+
 def derep(path, source, wanted_rank, wanted_taxon, derep_rank,
           reps_only=None, pick="quality", screen_against=None,
-          accession_prefixes=None, assembly_levels=None):
+          accession_prefixes=None, assembly_levels=None,
+          min_completeness=None, max_contamination=None, domain=None):
     """
     One genome per unique value of `derep_rank`, within `wanted_taxon`
 
@@ -215,6 +320,12 @@ def derep(path, source, wanted_rank, wanted_taxon, derep_rank,
         would let a group's best genome be picked and then deleted, so a group with a
         perfectly good qualifying genome contributes nothing at all. Ignored for a
         source with no assembly-level column.
+
+    min_completeness / max_contamination:
+        Optional checkm quality floor (see apply_quality_floor). Both default to None
+        (off), which means the best genome in every group is kept regardless of its
+        quality. Applied before grouping, so a group with no genome clearing the
+        floor drops out entirely.
 
     Returns (accessions, groups_seen, warnings).
     """
@@ -252,7 +363,7 @@ def derep(path, source, wanted_rank, wanted_taxon, derep_rank,
     tab = select(path, source, wanted_rank, wanted_taxon,
                  reps_only=reps_only, columns=cols,
                  accession_prefixes=accession_prefixes,
-                 assembly_levels=assembly_levels)
+                 assembly_levels=assembly_levels, domain=domain)
 
     if screen_against:
         live = live_accession_cores(screen_against)
@@ -267,6 +378,11 @@ def derep(path, source, wanted_rank, wanted_taxon, derep_rank,
         tab = None
     else:
         rows = tab.to_pylist()
+
+    rows, n_below, n_missing = apply_quality_floor(
+        rows, spec, min_completeness, max_contamination)
+    warnings.extend(_quality_floor_warnings(
+        n_below, n_missing, min_completeness, max_contamination))
 
     if not rows:
         warnings.append(f"No genomes found under {wanted_rank} '{wanted_taxon}'"
@@ -324,17 +440,28 @@ class RefGenomeSelection:
 
 def select_ref_genomes(path, source, taxon, target_rank=None, derep_rank="auto",
                        reps_only=None, pick="quality", screen_against=None,
-                       accession_prefixes=None, assembly_levels=None):
+                       accession_prefixes=None, assembly_levels=None,
+                       min_completeness=None, max_contamination=None,
+                       target_domain=None, include_rows=True):
     """
     The one selection entry point shared by every surface that adds reference genomes
     by taxonomy: the standalone get-accessions helpers and the main GToTree driver's
     --wanted-ref-tax path. It runs the full sequence in one place so the surfaces stay
     thin and can't drift:
 
-        1. resolve_taxon()      -- taxon (+ optional target_rank) -> (canonical, rank)
+        1. resolve_taxon()      -- taxon (+ optional target_rank, target_domain) ->
+                                   (canonical, rank, domain)
         2. resolve_derep_rank() -- turn "auto"/"off"/<rank> into a concrete rank or None
         3. derep() OR select()  -- dereplicate to one-best-per-rank, or (derep off) take
                                    every genome under the taxon
+
+    target_domain:
+        Optional --target-domain: which domain is wanted when the taxon name is shared
+        across domains (e.g. `Bacillus`, both a bacterial and a eukaryotic genus).
+        Without it, such a name raises CrossDomainTaxon rather than silently mixing
+        domains. Normalized through the same aliases as `-t` ('eukarya' -> 'Eukaryota').
+        The resolved domain also scopes selection, so only that domain's genomes are
+        kept, and drives the domain-aware `auto` derep step.
 
     accession_prefixes:
         Optional tuple/list of accession prefixes (e.g. ("GCF_",) for RefSeq, ("GCA_",)
@@ -348,16 +475,29 @@ def select_ref_genomes(path, source, taxon, target_rank=None, derep_rank="auto",
         dereplicated set silently deletes whole groups whose best genome happened to be
         at another level, rather than picking the best QUALIFYING genome in the group.
 
+    min_completeness / max_contamination:
+        Optional checkm quality floor, applied to the candidate pool before any
+        selection (see apply_quality_floor). Both default to None (off). Honored on
+        both paths below. With derep on it constrains what each group can be
+        represented BY, and with derep off it constrains the kept set directly.
+
     Returns a RefGenomeSelection
     """
     spec = SOURCES[source]
 
-    # 1. resolve the taxon -> (canonical, rank). Raises TaxonNotFound / AmbiguousTaxon.
-    canonical, resolved_rank = resolve_taxon(path, taxon, target_rank)
+    # 1. resolve the taxon -> (canonical, rank, domain). Raises TaxonNotFound,
+    #    AmbiguousTaxon (multi-rank name), or CrossDomainTaxon (multi-domain name with
+    #    no --target-domain to disambiguate).
+    canonical, resolved_rank, resolved_domain = resolve_taxon(
+        path, taxon, target_rank, target_domain)
 
     # 2. work out the effective derep rank. Raises ValueError if the rank is coarser
-    #    than the taxon's own rank; may return None (derep off) with a warning.
-    effective_derep_rank, warnings = resolve_derep_rank(resolved_rank, derep_rank)
+    #    than the taxon's own rank; may return None (derep off) with a warning. The
+    #    resolved domain drives the domain-aware `auto` step (any eukaryotic-lineage
+    #    target dereplicates one rank coarser than the prokaryotic default), and also
+    #    scopes selection so a cross-domain name's other-domain genomes never leak in.
+    effective_derep_rank, warnings = resolve_derep_rank(
+        resolved_rank, derep_rank, domain=resolved_domain)
 
     if reps_only is None:
         reps_only = spec.default_reps_only
@@ -365,11 +505,12 @@ def select_ref_genomes(path, source, taxon, target_rank=None, derep_rank="auto",
     if effective_derep_rank is None:
         # derep off: take every genome under the taxon (optionally NCBI-liveness
         # screened), preserving full metadata rows for the caller's TSV
-        cols = _selection_columns(spec, extra_rank=None)
+        cols = (_selection_columns(spec, extra_rank=None) if include_rows
+                else [spec.acc_col])
         tab = select(path, source, resolved_rank, canonical,
                      reps_only=reps_only, columns=cols,
                      accession_prefixes=accession_prefixes,
-                     assembly_levels=assembly_levels)
+                     assembly_levels=assembly_levels, domain=resolved_domain)
         rows = tab.to_pylist()
 
         if screen_against:
@@ -383,9 +524,14 @@ def select_ref_genomes(path, source, taxon, target_rank=None, derep_rank="auto",
                     f"{n_dead:,} candidate genome(s) are no longer available at NCBI "
                     f"(suppressed/removed) and were excluded.")
 
+        rows, n_below, n_missing = apply_quality_floor(
+            rows, spec, min_completeness, max_contamination)
+        warnings.extend(_quality_floor_warnings(
+            n_below, n_missing, min_completeness, max_contamination))
+
         accessions = [r.get(spec.acc_col) for r in rows if r.get(spec.acc_col)]
-        return RefGenomeSelection(accessions, rows, canonical, resolved_rank,
-                                  None, warnings)
+        return RefGenomeSelection(accessions, rows if include_rows else [],
+                                  canonical, resolved_rank, None, warnings)
 
     # 3. dereplicate to one best genome per unique value of effective_derep_rank.
     #    derep() returns accessions only, so re-slice to recover metadata rows for the
@@ -393,13 +539,16 @@ def select_ref_genomes(path, source, taxon, target_rank=None, derep_rank="auto",
     accessions, _groups, derep_warnings = derep(
         path, source, resolved_rank, canonical, effective_derep_rank,
         reps_only=reps_only, pick=pick, screen_against=screen_against,
-        accession_prefixes=accession_prefixes, assembly_levels=assembly_levels)
+        accession_prefixes=accession_prefixes, assembly_levels=assembly_levels,
+        min_completeness=min_completeness, max_contamination=max_contamination,
+        domain=resolved_domain)
     warnings.extend(derep_warnings)
 
     rows = _rows_for_accessions(path, source, resolved_rank, canonical,
                                 effective_derep_rank, reps_only, set(accessions),
                                 accession_prefixes=accession_prefixes,
-                                assembly_levels=assembly_levels)
+                                assembly_levels=assembly_levels,
+                                domain=resolved_domain) if include_rows else []
 
     return RefGenomeSelection(accessions, rows, canonical, resolved_rank,
                               effective_derep_rank, warnings)
@@ -407,9 +556,16 @@ def select_ref_genomes(path, source, taxon, target_rank=None, derep_rank="auto",
 
 def select_all_domains(path, source, derep_rank="auto", reps_only=None, pick="quality",
                        screen_against=None, accession_prefixes=None,
-                       assembly_levels=None):
+                       assembly_levels=None, min_completeness=None,
+                       max_contamination=None, include_rows=True):
     """
-    Dereplicate across the whole asset
+    Dereplicate across the whole asset, by running one selection per domain and
+    merging the results
+
+    The domain list is READ FROM THE ASSET rather than hardcoded
+
+    Returns a RefGenomeSelection whose `canonical` is "all" and whose `domains` lists
+    the domains that were walked.
     """
     domains = domains_in_asset(path, source,
                                accession_prefixes=accession_prefixes,
@@ -424,7 +580,9 @@ def select_all_domains(path, source, derep_rank="auto", reps_only=None, pick="qu
             path, source, domain, target_rank=RANKS[0], derep_rank=derep_rank,
             reps_only=reps_only, pick=pick, screen_against=screen_against,
             accession_prefixes=accession_prefixes,
-            assembly_levels=assembly_levels)
+            assembly_levels=assembly_levels,
+            min_completeness=min_completeness, max_contamination=max_contamination,
+            include_rows=include_rows)
 
         effective_derep_rank = effective_derep_rank or selection.effective_derep_rank
 
@@ -445,6 +603,8 @@ def select_all_domains(path, source, derep_rank="auto", reps_only=None, pick="qu
     merged = RefGenomeSelection(accessions, rows, "all", None,
                                 effective_derep_rank, warnings)
     merged.domains = domains
+    # what walking the domains cannot reach (the domain-less viral / metagenome rows).
+    # Attached rather than warned about here: the CLIs decide the wording.
     merged.unassigned = unassigned_domain_summary(
         path, source, rank=effective_derep_rank,
         accession_prefixes=accession_prefixes, assembly_levels=assembly_levels)
@@ -463,7 +623,7 @@ def _selection_columns(spec, extra_rank=None):
 
 def _rows_for_accessions(path, source, wanted_rank, wanted_taxon, derep_rank,
                          reps_only, wanted_accessions, accession_prefixes=None,
-                         assembly_levels=None):
+                         assembly_levels=None, domain=None):
     """
     Re-read the taxon slice and return only the rows whose accession is in
     `wanted_accessions` (the derep-kept set), in sorted-accession order.
@@ -473,7 +633,7 @@ def _rows_for_accessions(path, source, wanted_rank, wanted_taxon, derep_rank,
     tab = select(path, source, wanted_rank, wanted_taxon,
                  reps_only=reps_only, columns=cols,
                  accession_prefixes=accession_prefixes,
-                 assembly_levels=assembly_levels)
+                 assembly_levels=assembly_levels, domain=domain)
 
     acc_col = tab.column(spec.acc_col)
     wanted = pa.array(list(wanted_accessions), type=acc_col.type)

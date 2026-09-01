@@ -39,9 +39,9 @@ def build_parser(parent_subparsers=None):
                     "in the table). Not needed with `--get-rank-counts`."))
 
     optional.add_argument(
-        "-s",
-        "--source",
-        default="refseq",
+        "--ncbi-section",
+        dest="ncbi_section",
+        default=None,
         choices=["refseq", "genbank", "both"],
         help=("Specify which section of NCBI to pull from (default: refseq)"),
         action="store",
@@ -88,7 +88,7 @@ def preflight_checks(args):
 
     if args.refseq_reference_genomes_only and args.source != "refseq":
         report_message("The `--reference-genomes-only` flag is only compatible with "
-                       "`--source refseq`.",
+                       "`--ncbi-section refseq`.",
                        trailing_newline=True)
         sys.exit()
 

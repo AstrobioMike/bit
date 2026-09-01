@@ -8,8 +8,15 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests # type: ignore
 from dataclasses import dataclass
 from tqdm import tqdm # type: ignore
-from bit.modules.general import (color_text, check_files_are_found,
+from bit.modules.general import (color_text, check_files_are_found, wprint,
                                  attempt_to_make_dir)
+from bit.modules.taxonomy.tax_select import (TaxonNotFound, AmbiguousTaxon,
+                                             CrossDomainTaxon)
+from bit.modules.taxonomy.target_taxon import (resolve_target_taxon_accessions,
+                                               expand_target_taxa,
+                                               describe_all_expansion,
+                                               ensure_source_data,
+                                               TargetTaxonError)
 from bit.modules.ncbi.parse_ncbi_assembly_summary import parse_ncbi_assembly_summary
 from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data, ncbi_data_table_path
 
@@ -36,7 +43,16 @@ def dl_ncbi_assemblies(args):
 
     preflight_checks(args)
 
-    run_data = setup(args)
+    wanted_accs, selections, expansion_note = resolve_targets(args)
+
+    if getattr(args, "dry_run", False):
+        report_selection(wanted_accs, selections, expansion_note, args)
+        return
+
+    run_data = setup(args, wanted_accs)
+
+    if selections:
+        report_selection(wanted_accs, selections, expansion_note, args)
 
     run_data = parse_main_assembly_table(run_data)
 
@@ -49,18 +65,210 @@ def dl_ncbi_assemblies(args):
 
 def preflight_checks(args):
 
-    check_files_are_found([args.wanted_accessions])
+    accessions_file = getattr(args, "wanted_accessions", None)
+    target_taxa = getattr(args, "target_taxon", None)
 
-    if args.output_dir and not os.path.exists(args.output_dir):
-        attempt_to_make_dir(args.output_dir)
+    if not accessions_file and not target_taxa:
+        print("")
+        wprint(color_text("Nothing to download. Provide a target taxon with `-t`, an accessions file with `-w`, "
+                          "or both.", "yellow"))
+        print("")
+        sys.exit(1)
+
+    if accessions_file:
+        check_files_are_found([accessions_file])
+
+    # a dry run reports and stops, so it must not create anything
+    if not getattr(args, "dry_run", False):
+        if args.output_dir and not os.path.exists(args.output_dir):
+            attempt_to_make_dir(args.output_dir)
 
     get_ncbi_assembly_data(quiet=True)
 
+    if target_taxa:
+        # fetches the selection asset (and, for GTDB, the NCBI table it screens against)
+        ensure_source_data(getattr(args, "source", "ncbi"))
 
-def setup(args):
 
-    with open(args.wanted_accessions, "r") as f:
-        wanted_accs = [line.strip() for line in f if line.strip()]
+def _selection_kwargs(args):
+    """The selection knobs shared by every `-t` target in a run."""
+    source = getattr(args, "source", "ncbi")
+
+    # Deliberately NOT the source's own default (`None`), which would make a GTDB pull
+    # species-representatives-only. Two reasons:
+    #   1. --derep-rank is `auto` here, so volume is already controlled by dereplication.
+    #      Reps-only was a volume brake, and on top of derep it only narrows what each
+    #      group can be represented BY -- quietly excluding a possibly-better genome for
+    #      no benefit.
+    #   2. `bit get-accs-from-gtdb` already defaults to all genomes, so deferring to the
+    #      source default here would make this subcommand the odd one out.
+    # With this, --representatives-only means the same thing for both sources: restrict
+    # to that source's representative/reference genomes.
+    reps_only = bool(getattr(args, "representatives_only", False))
+
+    return {
+        "target_rank": getattr(args, "target_rank", None),
+        "derep_rank": getattr(args, "derep_rank", "auto"),
+        "target_domain": getattr(args, "target_domain", None),
+        "ncbi_section": getattr(args, "ncbi_section", "refseq"),
+        "assembly_levels": getattr(args, "assembly_level", None),
+        "reps_only": reps_only,
+        "min_completeness": getattr(args, "min_completeness", None),
+        "max_contamination": getattr(args, "max_contamination", None),
+        "include_rows": False,
+    }
+
+
+def resolve_targets(args):
+    """
+    Turn `-w` and/or `-t` into ONE deduplicated accession list.
+
+    Returns (accessions, selections, expansion_note). `selections` is one record per
+    resolved `-t` target carrying what it selected and how many of those were NEW
+    after deduplication -- with a repeatable `-t`, overlapping taxa mean the per-taxon
+    counts will not sum to the total, and that difference is the thing worth showing.
+    """
+    accessions = []
+    seen = set()
+
+    accessions_file = getattr(args, "wanted_accessions", None)
+    if accessions_file:
+        with open(accessions_file, "r") as f:
+            for line in f:
+                acc = line.strip()
+                if acc and acc not in seen:
+                    seen.add(acc)
+                    accessions.append(acc)
+
+    num_from_file = len(accessions)
+
+    target_taxa = getattr(args, "target_taxon", None)
+    if not target_taxa:
+        return accessions, [], None
+
+    source = getattr(args, "source", "ncbi")
+
+    try:
+        expanded, domains = expand_target_taxa(source, target_taxa)
+    except TargetTaxonError as e:
+        _exit_with(str(e))
+    expansion_note = describe_all_expansion(source, domains)
+
+    kwargs = _selection_kwargs(args)
+    selections = []
+
+    for taxon in expanded:
+        try:
+            taxon_accs, selection = resolve_target_taxon_accessions(
+                source, taxon, **kwargs)
+        except AmbiguousTaxon as e:
+            _exit_with(f"'{e.taxon}' occurs at more than one rank "
+                       f"({', '.join(e.ranks_found)}). Specify which is wanted with "
+                       f"`-r`.")
+        except CrossDomainTaxon as e:
+            _exit_with(f"'{e.taxon}' occurs in more than one domain "
+                       f"({', '.join(e.domains_found)}), so pulling on the name alone "
+                       f"would mix genomes from different domains. Specify which is "
+                       f"wanted with `--target-domain` (e.g. `--target-domain "
+                       f"{e.domains_found[0]}`).")
+        except TaxonNotFound:
+            _exit_with(f"Input taxon '{taxon}' doesn't seem to exist at any rank in "
+                       f"the {source.upper()} table :(")
+        except (TargetTaxonError, ValueError) as e:
+            _exit_with(str(e))
+
+        num_new = 0
+        for acc in taxon_accs:
+            if acc not in seen:
+                seen.add(acc)
+                accessions.append(acc)
+                num_new += 1
+
+        selections.append(TaxonSelection(
+            taxon=taxon,
+            canonical=selection.canonical,
+            resolved_rank=selection.resolved_rank,
+            effective_derep_rank=selection.effective_derep_rank,
+            num_selected=len(taxon_accs),
+            num_new=num_new,
+            warnings=list(selection.warnings)))
+
+    return accessions, selections, (expansion_note, num_from_file)
+
+
+def _exit_with(message):
+    print("")
+    wprint(color_text(message, "yellow"))
+    print("")
+    sys.exit(1)
+
+
+@dataclass
+class TaxonSelection:
+    """What one `-t` target resolved to, for the reporting layer."""
+    taxon: str = None
+    canonical: str = None
+    resolved_rank: str = None
+    effective_derep_rank: str = None
+    num_selected: int = 0
+    num_new: int = 0
+    warnings: list = None
+
+
+def report_selection(accessions, selections, expansion_note, args):
+    """
+    What each `-t` resolved to, and the combined total.
+
+    `num_selected` is what the taxonomy core returned for that taxon; `num_new` is what
+    survived deduplication against `-w` and against earlier `-t` targets. They differ
+    whenever two taxa overlap, which is exactly the case where a bare per-taxon count
+    would mislead. Shared with `--dry-run`, so the numbers can't drift apart.
+    """
+    if getattr(args, "quiet", False):
+        return
+
+    note, num_from_file = (expansion_note if expansion_note else (None, 0))
+
+    print("")
+    if note:
+        wprint(color_text(note, "yellow"))
+        print("")
+
+    if num_from_file:
+        wprint(f"{num_from_file:,} accession(s) read from "
+               f"{color_text(args.wanted_accessions)}")
+        print("")
+
+    for sel in selections:
+        derep = (f"dereplicated to one genome per {sel.effective_derep_rank}"
+                 if sel.effective_derep_rank else "dereplication off")
+        wprint(f"-t {color_text(sel.canonical)} "
+               f"(resolved to {sel.resolved_rank}; {derep})")
+
+        line = f"{sel.num_selected:,} genome(s) selected"
+        overlap = sel.num_selected - sel.num_new
+        if overlap:
+            line += f", {sel.num_new:,} new ({overlap:,} already counted)"
+        wprint("    " + line)
+
+        for warning in (sel.warnings or []):
+            wprint(color_text("    " + warning, "yellow"))
+        print("")
+
+    total = len(accessions)
+    if getattr(args, "dry_run", False):
+        wprint(color_text(f"Total that would be downloaded: {total:,} genome(s) "
+                          f"in {args.format} format.", "green"))
+    else:
+        wprint(color_text(f"Total to download: {total:,} genome(s)", "green"))
+    print("")
+
+
+def setup(args, wanted_accs=None):
+
+    if wanted_accs is None:
+        with open(args.wanted_accessions, "r") as f:
+            wanted_accs = [line.strip() for line in f if line.strip()]
 
     run_data = RunData(wanted_format=args.format,
         num_jobs=args.jobs,
@@ -70,7 +278,8 @@ def setup(args):
         ncbi_sub_table_path=Path(args.output_dir) / "wanted-ncbi-accessions-info.tsv",
         not_found_path=Path(args.output_dir) / "ncbi-accessions-not-found.txt",
         not_downloaded_path=Path(args.output_dir) / "ncbi-accessions-not-downloaded.tsv",
-        quiet=getattr(args, "quiet", False)
+        quiet=getattr(args, "quiet", False),
+        from_taxon=bool(getattr(args, "target_taxon", None))
         )
 
     return run_data
@@ -104,6 +313,27 @@ class RunData:
     not_found_path: str = None
     not_downloaded_path: str = None
     quiet: bool = False
+    from_taxon: bool = False
+
+    @property
+    def not_found_reason(self):
+        """
+        Why accessions might be missing depends on where they came from.
+
+        Telling someone who passed `-t` that their input "may be invalid" is wrong and
+        confusing: they never typed an accession. On that path we just state the count
+        and point at the file, the way GToTree does, rather than speculating about the
+        cause or suggesting they refresh anything.
+        """
+        if self.from_taxon:
+            return ""
+        return "They may be invalid or suppressed."
+
+    @property
+    def none_found_hint(self):
+        if self.from_taxon:
+            return "None of the target taxa could be found."
+        return "This is kinda weird. Are the inputs assembly accessions?"
 
 
 def summarize_search(summary):
@@ -111,12 +341,13 @@ def summarize_search(summary):
     if summary.num_found != summary.num_wanted:
         if summary.num_found > 0:
             print(color_text(f"{' ' * 34}NOTICE", "orange"))
-            print(f"      {summary.num_not_found} accession(s) not found at NCBI. They may be invalid or suppressed.")
+            reason = f" {summary.not_found_reason}" if summary.not_found_reason else ""
+            print(f"      {summary.num_not_found} accession(s) not found at NCBI.{reason}")
             print(f"          See '{summary.not_found_path}'.\n")
         else:
             print(color_text(f"{' ' * 34}NOTICE", "orange"))
             print(f"      None of the {summary.num_wanted} target accession(s) were found at NCBI...")
-            print(f"      This is kinda weird. Are the inputs assembly accessions?\n")
+            print(f"      {summary.none_found_hint}\n")
             os.remove(summary.not_found_path)
             sys.exit(1)
 

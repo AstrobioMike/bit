@@ -57,9 +57,11 @@ def gtdb(tmp_path):
 
 
 def test_resolve_taxon_is_case_insensitive(gtdb):
-    canonical, rank = resolve_taxon(gtdb, "bacteria")
+    canonical, rank, domain = resolve_taxon(gtdb, "bacteria")
     assert canonical == "Bacteria"
     assert rank == "domain"
+    # a domain-rank taxon is its own domain
+    assert domain == "Bacteria"
 
 
 def test_unknown_taxon_raises(gtdb):
@@ -87,7 +89,7 @@ def test_homonym_raises_ambiguous(tmp_path):
     assert set(e.value.ranks_found) == {"order", "family"}
 
     # ...but an explicit rank resolves it
-    assert resolve_taxon(str(out), "X", rank="family") == ("X", "family")
+    assert resolve_taxon(str(out), "X", rank="family") == ("X", "family", "Bacteria")
 
 
 def test_select_accessions_returns_ncbi_accs(gtdb):

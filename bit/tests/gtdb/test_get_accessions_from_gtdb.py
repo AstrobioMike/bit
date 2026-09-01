@@ -87,6 +87,36 @@ ROWS = [
 ]
 
 
+# Every GENBANK accession in ROWS. GTDB is a snapshot, so its entries are screened
+# against the NCBI asset for liveness before anything is written; these tests stub that
+# asset out so the screen is a no-op unless a test deliberately suppresses something.
+ALL_GENBANK_ACCS = [r["ncbi_genbank_assembly_accession"] for r in ROWS]
+
+
+def _write_ncbi_screen_asset(path, accessions):
+    """A minimal NCBI asset carrying just the column the liveness screen reads."""
+    pq.write_table(
+        pa.table({"assembly_accession": pa.array(list(accessions), type=pa.string())}),
+        str(path))
+    return str(path)
+
+
+@pytest.fixture(autouse=True)
+def live_ncbi_screen(tmp_path_factory):
+    """
+    Stub the NCBI liveness screen so it finds every GTDB accession alive.
+
+    Without this, get-accs-from-gtdb would try to FETCH the NCBI asset (the screen
+    always-fetches by design), which needs a set env var and network. Autouse so the
+    existing expectations -- written before the screen existed -- keep holding.
+    """
+    path = tmp_path_factory.mktemp("ncbi-screen") / "ncbi-data.parquet"
+    _write_ncbi_screen_asset(path, ALL_GENBANK_ACCS)
+    with patch("bit.modules.gtdb.get_accessions_from_gtdb.ncbi_screen_path",
+               return_value=str(path)):
+        yield str(path)
+
+
 @pytest.fixture
 def gtdb_tab():
     return pd.DataFrame(ROWS)
@@ -462,14 +492,18 @@ def test_orchestrator_metadata_tsv_carries_all_asset_columns(gtdb_parquet, tmp_p
 
 
 def test_resolve_or_exit_returns_canonical_and_rank(gtdb_parquet):
-    """_resolve_or_exit returns (canonical, rank) -- rank is a single string, not a list."""
-    canonical, rank = _resolve_or_exit(gtdb_parquet, "escherichia")
+    """
+    _resolve_or_exit returns (canonical, rank, domain) -- rank is a single string,
+    not a list, and domain is the taxon's sole assigned domain.
+    """
+    canonical, rank, domain = _resolve_or_exit(gtdb_parquet, "escherichia")
     assert canonical == "Escherichia"
     assert rank == "genus"
+    assert domain == "Bacteria"
 
 
 def test_resolve_or_exit_all_returns_none_rank(gtdb_parquet):
-    assert _resolve_or_exit(gtdb_parquet, "all") == ("all", None)
+    assert _resolve_or_exit(gtdb_parquet, "all") == ("all", None, None)
 
 
 def test_resolve_or_exit_ambiguous_exits(gtdb_parquet, tmp_path):
@@ -521,3 +555,80 @@ def test_all_without_derep_rank_is_still_a_bulk_dump(gtdb_parquet, tmp_path, mon
 def test_all_taxon_counts_report_the_dereplicated_size(gtdb_parquet, capsys):
     report_taxon_counts(gtdb_parquet, "all", args=make_args(derep_rank="genus"))
     assert "Dereplicated within each domain, that would be 3 genome(s)." in capsys.readouterr().out
+
+
+# ─── NCBI liveness screening of the GTDB snapshot ─────────────────────────────
+#
+# GTDB is a fixed snapshot and still lists assemblies NCBI has since suppressed or
+# removed. NCBI drops those from its assembly summary, so absence there == suppressed.
+# Screening here means a user doesn't get handed accessions that can't be downloaded.
+
+class TestSuppressedGtdbEntriesAreScreenedOut:
+
+    @pytest.fixture
+    def screen_missing_one(self, tmp_path):
+        """An NCBI asset where GCA_000005845.2 (a non-rep E. coli) has been suppressed."""
+        path = tmp_path / "ncbi-screen-partial.parquet"
+        live = [a for a in ALL_GENBANK_ACCS if a != "GCA_000005845.2"]
+        _write_ncbi_screen_asset(path, live)
+        return str(path)
+
+    def _run(self, gtdb_parquet, screen_path, tmp_path, monkeypatch, **args):
+        monkeypatch.chdir(tmp_path)
+        with patch("bit.modules.gtdb.get_accessions_from_gtdb.get_gtdb_data",
+                   return_value=gtdb_parquet), \
+             patch("bit.modules.gtdb.get_accessions_from_gtdb.ncbi_screen_path",
+                   return_value=screen_path):
+            with pytest.raises(SystemExit):
+                get_accessions_from_gtdb(make_args(**args))
+
+    def _accessions_written(self, tmp_path):
+        # taxon pulls write "*-accs.txt"; the bulk 'all' dump writes "*-accessions.txt"
+        hits = sorted(tmp_path.glob("*accs.txt")) + sorted(tmp_path.glob("*accessions.txt"))
+        assert len(hits) == 1, f"expected one accessions file, got {hits}"
+        return hits[0].read_text().split()
+
+    def test_a_suppressed_genome_is_dropped_from_a_taxon_pull(
+            self, gtdb_parquet, screen_missing_one, tmp_path, monkeypatch):
+        self._run(gtdb_parquet, screen_missing_one, tmp_path, monkeypatch,
+                  target_taxon="Escherichia")
+        accs = self._accessions_written(tmp_path)
+        assert "GCA_000005845.2" not in accs
+        assert "GCA_000001405.1" in accs
+
+    def test_nothing_is_dropped_when_everything_is_live(
+            self, gtdb_parquet, live_ncbi_screen, tmp_path, monkeypatch):
+        self._run(gtdb_parquet, live_ncbi_screen, tmp_path, monkeypatch,
+                  target_taxon="Escherichia")
+        accs = self._accessions_written(tmp_path)
+        assert set(accs) == {"GCA_000001405.1", "GCA_000005845.2"}
+
+    def test_the_bulk_all_dump_is_screened_too(
+            self, gtdb_parquet, screen_missing_one, tmp_path, monkeypatch):
+        self._run(gtdb_parquet, screen_missing_one, tmp_path, monkeypatch,
+                  target_taxon="all")
+        accs = self._accessions_written(tmp_path)
+        assert "GCA_000005845.2" not in accs
+        assert len(accs) == len(ALL_GENBANK_ACCS) - 1
+
+    def test_the_derep_path_is_screened_too(
+            self, gtdb_parquet, tmp_path, monkeypatch):
+        """
+        With the better E. coli suppressed, derep must fall back to the surviving one
+        rather than picking the dead genome and then dropping it (which would leave the
+        species contributing nothing).
+        """
+        path = tmp_path / "ncbi-screen-no-ref.parquet"
+        live = [a for a in ALL_GENBANK_ACCS if a != "GCA_000001405.1"]
+        _write_ncbi_screen_asset(path, live)
+        self._run(gtdb_parquet, str(path), tmp_path, monkeypatch,
+                  target_taxon="Escherichia", derep_rank="species")
+        accs = self._accessions_written(tmp_path)
+        assert accs == ["GCA_000005845.2"]
+
+    def test_a_suppressed_genome_is_reported_to_the_user(
+            self, gtdb_parquet, screen_missing_one, tmp_path, monkeypatch, capsys):
+        self._run(gtdb_parquet, screen_missing_one, tmp_path, monkeypatch,
+                  target_taxon="Escherichia")
+        out = capsys.readouterr().out
+        assert "no longer available at NCBI" in out

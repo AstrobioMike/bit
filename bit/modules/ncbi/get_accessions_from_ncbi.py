@@ -13,6 +13,7 @@ from bit.modules.ncbi.get_ncbi_assembly_data import (
 from bit.modules.ncbi.build_ncbi_data_parquet import PARQUET_FILENAME
 from bit.modules.taxonomy.tax_select import (
     AmbiguousTaxon,
+    CrossDomainTaxon,
     TaxonNotFound,
     resolve_taxon,
     select,
@@ -123,13 +124,22 @@ def get_accessions_from_ncbi(args):
         label = f"taxid {args.target_taxon}"
     else:
         try:
-            canonical, rank = resolve_taxon(table_path, args.target_taxon,
-                                            rank=getattr(args, "target_rank", None))
+            canonical, rank, domain = resolve_taxon(
+                table_path, args.target_taxon,
+                rank=getattr(args, "target_rank", None),
+                domain=getattr(args, "target_domain", None))
         except AmbiguousTaxon as e:
             report_message(
                 f"'{e.taxon}' occurs at more than one rank "
                 f"({', '.join(e.ranks_found)}). Specify which with `-r`, or pass "
                 f"the NCBI taxid to `-t` instead.", "yellow")
+            print("")
+            sys.exit(0)
+        except CrossDomainTaxon as e:
+            report_message(
+                f"'{e.taxon}' occurs in more than one domain "
+                f"({', '.join(e.domains_found)}). Specify which with "
+                f"`--target-domain`.", "yellow")
             print("")
             sys.exit(0)
         except TaxonNotFound:
@@ -149,7 +159,8 @@ def get_accessions_from_ncbi(args):
                 derep_rank=getattr(args, "derep_rank", "off"),
                 reps_only=args.refseq_reference_genomes_only,
                 accession_prefixes=_source_prefixes(args.source),
-                assembly_levels=assembly_levels)
+                assembly_levels=assembly_levels,
+                target_domain=domain)
         except ValueError as e:
             report_message(str(e), "yellow")
             print("")
@@ -260,7 +271,7 @@ def _report_rank_counts_for_taxon_or_exit(table_path, taxon, args, assembly_leve
     scope_note = _counts_scope_note(args, assembly_levels)
 
     try:
-        canonical, ranks_found_in = _resolve_ranks(table_path, taxon)
+        canonical, ranks_found_in, _domains_found = _resolve_ranks(table_path, taxon)
     except TaxonNotFound:
         report_message(f"Input taxon '{taxon}' doesn't seem to exist at any rank :(",
                        "yellow", width=100, initial_indent="    ",
@@ -321,7 +332,7 @@ def _report_taxon_counts_or_exit(table_path, taxon, args, assembly_levels):
     scope_note = _counts_scope_note(args, assembly_levels)
 
     try:
-        canonical, ranks_found_in = _resolve_ranks(table_path, taxon)
+        canonical, ranks_found_in, _domains_found = _resolve_ranks(table_path, taxon)
     except TaxonNotFound:
         report_message(f"Input taxon '{taxon}' doesn't seem to exist at any rank :(",
                        "yellow", width=100, initial_indent="    ",

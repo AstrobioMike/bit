@@ -14,7 +14,17 @@
 
 -->
 
-## v2.9.3 (NOT YET RELEASED)
+## v2.10.0 (NOT YET RELEASED)
+
+### Added
+- `bit dl-ncbi-assemblies` can now be passed `-t | --target-taxon` instead of, or in addition to, accessions to the `-w` parameter
+  - run `bit dl-ncbi-assemblies -H` to see the detailed help menu which includes a slew of new parameters
+    - like controlling which source db, reps only, which section of ncbi, min/max completeness filters, assembly-level filters
+  - this finally replaces needing to run `get-accs-from-gtdb/ncbi` and then passing them to the dl program
+
+### Changed
+- `bit get-accs-from-ncbi` 
+  - the previous `--source` parameter has been changed to `--ncbi-section` to leave source to be consistent with other things in bit
 
 ### Fixed
 - output metadata table from `bit get-accs-from-gtdb` could sometimes be mangled at the top, fixed now

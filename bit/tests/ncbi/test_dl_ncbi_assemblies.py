@@ -449,3 +449,275 @@ def test_download_one_empty_then_success(tmp_path):
     assert status == "downloaded"
     # the first (empty) attempt removes the zero-byte file and backs off once
     assert mock_backoff.call_count == 1
+
+
+# ─── taxon-based targeting (`-t`), deduplication, and --dry-run ───────────────
+
+from types import SimpleNamespace
+from unittest.mock import patch as _patch
+
+from bit.modules.ncbi.dl_ncbi_assemblies import (
+    resolve_targets, report_selection, dl_ncbi_assemblies, TaxonSelection)
+from bit.modules.taxonomy.tax_select import CrossDomainTaxon, AmbiguousTaxon
+
+
+def _dl_args(**kwargs):
+    defaults = dict(
+        wanted_accessions=None, target_taxon=None, source="ncbi",
+        ncbi_section="both", derep_rank="auto", target_rank=None,
+        target_domain=None, assembly_level=None, min_completeness=None,
+        max_contamination=None, representatives_only=False,
+        dry_run=False, format="fasta", jobs=10, output_dir=".", quiet=False,
+    )
+    defaults.update(kwargs)
+    return SimpleNamespace(**defaults)
+
+
+def _fake_selection(canonical, accessions, rank="phylum", derep="family"):
+    return SimpleNamespace(canonical=canonical, resolved_rank=rank,
+                           effective_derep_rank=derep, accessions=list(accessions),
+                           rows=[], warnings=[])
+
+
+class TestResolveTargets:
+
+    def test_accessions_file_alone_still_works(self, tmp_path):
+        accs = tmp_path / "accs.txt"
+        accs.write_text("GCA_001\nGCA_002\n")
+        got, selections, note = resolve_targets(_dl_args(wanted_accessions=str(accs)))
+        assert got == ["GCA_001", "GCA_002"]
+        assert selections == [] and note is None
+
+    def test_duplicate_lines_in_the_file_are_collapsed(self, tmp_path):
+        accs = tmp_path / "accs.txt"
+        accs.write_text("GCA_001\nGCA_002\nGCA_001\n")
+        got, _, _ = resolve_targets(_dl_args(wanted_accessions=str(accs)))
+        assert got == ["GCA_001", "GCA_002"]
+
+    def test_a_single_taxon_resolves_to_its_accessions(self):
+        sel = _fake_selection("Nitrospirota", ["GCF_1", "GCF_2"])
+        with _patch("bit.modules.ncbi.dl_ncbi_assemblies.resolve_target_taxon_accessions",
+                    return_value=(sel.accessions, sel)), \
+             _patch("bit.modules.ncbi.dl_ncbi_assemblies.expand_target_taxa",
+                    return_value=(["Nitrospirota"], [])):
+            got, selections, _ = resolve_targets(_dl_args(target_taxon=["Nitrospirota"]))
+        assert got == ["GCF_1", "GCF_2"]
+        assert selections[0].num_selected == 2
+        assert selections[0].num_new == 2
+
+    def test_repeated_taxa_dedupe_and_report_the_overlap(self):
+        """
+        Two overlapping taxa must contribute each shared genome once, and the per-taxon
+        counts must still show what each SELECTED -- that gap is the point of the report.
+        """
+        first = _fake_selection("Bacteria", ["GCF_1", "GCF_2"])
+        second = _fake_selection("Escherichia", ["GCF_2", "GCF_3"])
+        with _patch("bit.modules.ncbi.dl_ncbi_assemblies.resolve_target_taxon_accessions",
+                    side_effect=[(first.accessions, first), (second.accessions, second)]), \
+             _patch("bit.modules.ncbi.dl_ncbi_assemblies.expand_target_taxa",
+                    return_value=(["Bacteria", "Escherichia"], [])):
+            got, selections, _ = resolve_targets(
+                _dl_args(target_taxon=["Bacteria", "Escherichia"]))
+
+        assert got == ["GCF_1", "GCF_2", "GCF_3"]
+        assert (selections[0].num_selected, selections[0].num_new) == (2, 2)
+        assert (selections[1].num_selected, selections[1].num_new) == (2, 1)
+        # the total is the union, NOT the sum of the per-taxon counts
+        assert len(got) == 3 != sum(s.num_selected for s in selections)
+
+    def test_taxon_accessions_dedupe_against_the_accessions_file(self, tmp_path):
+        accs = tmp_path / "accs.txt"
+        accs.write_text("GCF_1\n")
+        sel = _fake_selection("Bacteria", ["GCF_1", "GCF_2"])
+        with _patch("bit.modules.ncbi.dl_ncbi_assemblies.resolve_target_taxon_accessions",
+                    return_value=(sel.accessions, sel)), \
+             _patch("bit.modules.ncbi.dl_ncbi_assemblies.expand_target_taxa",
+                    return_value=(["Bacteria"], [])):
+            got, selections, _ = resolve_targets(
+                _dl_args(wanted_accessions=str(accs), target_taxon=["Bacteria"]))
+        assert got == ["GCF_1", "GCF_2"]
+        assert selections[0].num_new == 1
+
+    def test_a_cross_domain_name_exits_pointing_at_target_domain(self, capsys):
+        with _patch("bit.modules.ncbi.dl_ncbi_assemblies.expand_target_taxa",
+                    return_value=(["Bacillus"], [])), \
+             _patch("bit.modules.ncbi.dl_ncbi_assemblies.resolve_target_taxon_accessions",
+                    side_effect=CrossDomainTaxon("Bacillus", ["Bacteria", "Eukaryota"])):
+            with pytest.raises(SystemExit):
+                resolve_targets(_dl_args(target_taxon=["Bacillus"]))
+        assert "--target-domain" in capsys.readouterr().out
+
+    def test_an_ambiguous_rank_exits_pointing_at_dash_r(self, capsys):
+        with _patch("bit.modules.ncbi.dl_ncbi_assemblies.expand_target_taxa",
+                    return_value=(["X"], [])), \
+             _patch("bit.modules.ncbi.dl_ncbi_assemblies.resolve_target_taxon_accessions",
+                    side_effect=AmbiguousTaxon("X", ["order", "family"])):
+            with pytest.raises(SystemExit):
+                resolve_targets(_dl_args(target_taxon=["X"]))
+        assert "`-r`" in capsys.readouterr().out
+
+
+class TestSelectionKwargsPlumbing:
+
+    def _capture(self, **args):
+        sel = _fake_selection("T", ["GCF_1"])
+        with _patch("bit.modules.ncbi.dl_ncbi_assemblies.resolve_target_taxon_accessions",
+                    return_value=(sel.accessions, sel)) as m, \
+             _patch("bit.modules.ncbi.dl_ncbi_assemblies.expand_target_taxa",
+                    return_value=(["T"], [])):
+            resolve_targets(_dl_args(target_taxon=["T"], **args))
+        return m.call_args.kwargs
+
+    def test_reps_only_is_off_by_default_for_both_sources(self):
+        """
+        NOT the source's own default (which would make GTDB representatives-only).
+        Derep already controls volume here, and get-accs-from-gtdb defaults to all
+        genomes too, so both sources start unrestricted.
+        """
+        assert self._capture()["reps_only"] is False
+        assert self._capture(source="gtdb")["reps_only"] is False
+
+    def test_representatives_only_restricts_either_source(self):
+        assert self._capture(representatives_only=True)["reps_only"] is True
+        assert self._capture(source="gtdb", representatives_only=True)["reps_only"] is True
+
+    def test_quality_floor_and_levels_are_passed_through(self):
+        kw = self._capture(min_completeness=90.0, max_contamination=5.0,
+                           assembly_level=["Complete Genome"])
+        assert kw["min_completeness"] == 90.0
+        assert kw["max_contamination"] == 5.0
+        assert kw["assembly_levels"] == ["Complete Genome"]
+
+    def test_section_and_derep_are_passed_through(self):
+        kw = self._capture(ncbi_section="genbank", derep_rank="genus")
+        assert kw["ncbi_section"] == "genbank"
+        assert kw["derep_rank"] == "genus"
+
+
+class TestDryRun:
+
+    def _run_dry(self, tmp_path, **args):
+        first = _fake_selection("Bacteria", ["GCF_1", "GCF_2"])
+        second = _fake_selection("Escherichia", ["GCF_2", "GCF_3"])
+        a = _dl_args(target_taxon=["Bacteria", "Escherichia"], dry_run=True,
+                     output_dir=str(tmp_path / "out"), **args)
+        with _patch("bit.modules.ncbi.dl_ncbi_assemblies.resolve_target_taxon_accessions",
+                    side_effect=[(first.accessions, first), (second.accessions, second)]), \
+             _patch("bit.modules.ncbi.dl_ncbi_assemblies.expand_target_taxa",
+                    return_value=(["Bacteria", "Escherichia"], [])), \
+             _patch("bit.modules.ncbi.dl_ncbi_assemblies.get_ncbi_assembly_data"), \
+             _patch("bit.modules.ncbi.dl_ncbi_assemblies.ensure_source_data"), \
+             _patch("bit.modules.ncbi.dl_ncbi_assemblies.download_assemblies") as dl:
+            dl_ncbi_assemblies(a)
+        return dl, a
+
+    def test_dry_run_downloads_nothing(self, tmp_path, capsys):
+        dl, _ = self._run_dry(tmp_path)
+        capsys.readouterr()
+        dl.assert_not_called()
+
+    def test_dry_run_writes_no_files_and_no_output_dir(self, tmp_path, capsys):
+        _, a = self._run_dry(tmp_path)
+        capsys.readouterr()
+        assert not Path(a.output_dir).exists()
+
+    def test_dry_run_reports_per_taxon_counts_and_the_deduped_total(self, tmp_path, capsys):
+        self._run_dry(tmp_path)
+        out = capsys.readouterr().out
+        assert "Bacteria" in out and "Escherichia" in out
+        # union of {1,2} and {2,3} is 3, not 4
+        assert "3" in out
+        assert "already counted" in out
+
+
+class TestReportSelection:
+
+    def test_a_clean_run_reports_no_overlap_wording(self, capsys):
+        sels = [TaxonSelection(taxon="A", canonical="A", resolved_rank="phylum",
+                               effective_derep_rank="family", num_selected=5,
+                               num_new=5, warnings=[])]
+        report_selection(["a"] * 5, sels, (None, 0), _dl_args())
+        out = capsys.readouterr().out
+        assert "5 genome(s) selected" in out
+        assert "already counted" not in out
+
+    def test_derep_off_is_labelled(self, capsys):
+        sels = [TaxonSelection(taxon="A", canonical="A", resolved_rank="species",
+                               effective_derep_rank=None, num_selected=2,
+                               num_new=2, warnings=[])]
+        report_selection(["a", "b"], sels, (None, 0), _dl_args())
+        assert "dereplication off" in capsys.readouterr().out
+
+    def test_the_all_expansion_note_is_surfaced(self, capsys):
+        sels = [TaxonSelection(taxon="Bacteria", canonical="Bacteria",
+                               resolved_rank="domain", effective_derep_rank="class",
+                               num_selected=1, num_new=1, warnings=[])]
+        report_selection(["a"], sels, ("`-t all` was expanded to: Bacteria, Archaea", 0),
+                         _dl_args())
+        assert "expanded to" in capsys.readouterr().out
+
+    def test_quiet_suppresses_the_report(self, capsys):
+        sels = [TaxonSelection(taxon="A", canonical="A", resolved_rank="phylum",
+                               effective_derep_rank="family", num_selected=5,
+                               num_new=5, warnings=[])]
+        report_selection(["a"] * 5, sels, (None, 0), _dl_args(quiet=True))
+        assert capsys.readouterr().out == ""
+
+
+class TestNotFoundMessagingBranchesOnInputMode:
+
+    def test_accession_input_says_inputs_may_be_invalid(self):
+        rd = RunData(from_taxon=False)
+        assert "may be invalid" in rd.not_found_reason
+        assert "assembly accessions?" in rd.none_found_hint
+
+    def test_taxon_input_does_not_blame_the_user_or_suggest_a_refresh(self):
+        """
+        A `-t` user never typed an accession, so "may be invalid" is wrong, and there
+        is nothing for them to go re-download. State it plainly, like GToTree does.
+        """
+        rd = RunData(from_taxon=True)
+        assert rd.not_found_reason == ""
+        assert "bit data get" not in rd.none_found_hint
+        assert "invalid" not in rd.none_found_hint
+
+
+class TestDryRunCountMatchesTheRealSelection:
+    """
+    The dry run's whole value is that its number is the number. It must come from the
+    same selection call the real run uses -- not a cheaper distinct-group count, which
+    doesn't see liveness screening or the quality floor (see
+    test_domain_aware_derep.TestCheapCountPathWouldOverreport).
+    """
+
+    def test_dry_run_and_real_run_resolve_identically(self, tmp_path):
+        sel = _fake_selection("Bacteria", ["GCF_1", "GCF_2", "GCF_3"])
+
+        def run(dry):
+            a = _dl_args(target_taxon=["Bacteria"], dry_run=dry,
+                         output_dir=str(tmp_path / ("dry" if dry else "real")))
+            with _patch(f"bit.modules.ncbi.dl_ncbi_assemblies."
+                        f"resolve_target_taxon_accessions",
+                        return_value=(sel.accessions, sel)), \
+                 _patch("bit.modules.ncbi.dl_ncbi_assemblies.expand_target_taxa",
+                        return_value=(["Bacteria"], [])):
+                return resolve_targets(a)
+
+        dry_accs, dry_sels, _ = run(True)
+        real_accs, real_sels, _ = run(False)
+        assert dry_accs == real_accs
+        assert dry_sels[0].num_selected == real_sels[0].num_selected
+
+    def test_the_selection_call_skips_metadata_rows(self):
+        """
+        dl-ncbi-assemblies downloads files rather than writing a metadata TSV, so it
+        asks for accessions only -- one less filtered read of the asset per taxon.
+        """
+        sel = _fake_selection("T", ["GCF_1"])
+        with _patch("bit.modules.ncbi.dl_ncbi_assemblies."
+                    "resolve_target_taxon_accessions",
+                    return_value=(sel.accessions, sel)) as m, \
+             _patch("bit.modules.ncbi.dl_ncbi_assemblies.expand_target_taxa",
+                    return_value=(["T"], [])):
+            resolve_targets(_dl_args(target_taxon=["T"]))
+        assert m.call_args.kwargs["include_rows"] is False

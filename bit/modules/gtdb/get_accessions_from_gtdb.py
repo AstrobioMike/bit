@@ -7,9 +7,11 @@ from bit.modules.general import (color_text, report_message, wprint, write_table
                                  write_accessions)
 from bit.modules.gtdb.get_gtdb_data import (get_gtdb_data,
                                             report_gtdb_version_info as _read_gtdb_version_info)
+from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data
 from bit.modules.taxonomy.tax_ranks import RANKS
 from bit.modules.taxonomy.tax_select import (resolve_taxon, select,
                                              TaxonNotFound, AmbiguousTaxon,
+                                             CrossDomainTaxon, live_accession_cores,
                                              find_ranks_for_taxon as _resolve_ranks)
 from bit.modules.taxonomy.tax_derep import (select_ref_genomes, select_all_domains,
                                             resolve_derep_rank)
@@ -28,6 +30,47 @@ _RANK_COLUMNS = list(RANKS)
 
 def _all_columns(gtdb_path):
     return pq.ParquetFile(gtdb_path).schema_arrow.names
+
+
+_NCBI_SCREEN_PATH = None
+
+
+def ncbi_screen_path(quiet=True):
+    """
+    Path to the NCBI Parquet asset, used to screen GTDB accessions for liveness
+    """
+    global _NCBI_SCREEN_PATH
+    if _NCBI_SCREEN_PATH is None:
+        _NCBI_SCREEN_PATH = get_ncbi_assembly_data(quiet=quiet)
+    return _NCBI_SCREEN_PATH
+
+
+def _screen_table_to_live(table, acc_col="ncbi_genbank_assembly_accession"):
+    """
+    Drop rows whose assembly is no longer at NCBI. For the paths that build a table
+    with plain select()/read_table() rather than going through the selection core
+    (which screens internally via `screen_against`).
+
+    Returns (screened_table, n_dropped).
+    """
+    from bit.modules.taxonomy.tax_ranks import accession_core
+
+    live = live_accession_cores(ncbi_screen_path())
+    accs = table.column(acc_col).to_pylist()
+    keep = [i for i, a in enumerate(accs)
+            if a and a != "NA" and accession_core(a) in live]
+    n_dropped = table.num_rows - len(keep)
+    if n_dropped:
+        table = table.take(keep)
+    return table, n_dropped
+
+
+def _report_suppressed(n_dropped):
+    if n_dropped:
+        wprint(color_text(
+            f"{n_dropped:,} genome(s) pulled from GTDB are no longer available at "
+            f"NCBI (suppressed/removed) and were excluded.", "yellow"))
+        print("")
 
 
 def get_accessions_from_gtdb(args):
@@ -76,7 +119,9 @@ def get_accessions_from_gtdb(args):
     if not args.target_taxon:
         return
 
-    target_taxon, resolved_rank = _resolve_or_exit(gtdb_path, args.target_taxon, args.target_rank)
+    target_taxon, resolved_rank, resolved_domain = _resolve_or_exit(
+        gtdb_path, args.target_taxon, args.target_rank,
+        getattr(args, "target_domain", None))
 
     if args.get_taxon_counts:
         report_taxon_counts(gtdb_path, target_taxon, representatives_source, args)
@@ -90,12 +135,13 @@ def get_accessions_from_gtdb(args):
         sys.exit(0)
 
     table, kept_rank = _select_rows(gtdb_path, args, target_taxon, resolved_rank,
-                                    representatives_source)
+                                    representatives_source, resolved_domain)
     _write_outputs(table, target_taxon, kept_rank, representatives_source)
     sys.exit(0)
 
 
-def _select_rows(gtdb_path, args, target_taxon, resolved_rank, representatives_source):
+def _select_rows(gtdb_path, args, target_taxon, resolved_rank, representatives_source,
+                 resolved_domain=None):
     """
     The taxon slice to write, as a pyarrow Table carrying every column of the asset
     """
@@ -103,16 +149,20 @@ def _select_rows(gtdb_path, args, target_taxon, resolved_rank, representatives_s
     cols = _all_columns(gtdb_path)
 
     table = select(gtdb_path, "gtdb", resolved_rank, target_taxon,
-                   reps_only=reps_only, columns=cols)
+                   reps_only=reps_only, columns=cols, domain=resolved_domain)
 
     derep_rank = getattr(args, "derep_rank", "off")
     if derep_rank in (None, "off", "none", "None"):
+        table, n_dropped = _screen_table_to_live(table)
+        _report_suppressed(n_dropped)
         return table, resolved_rank
 
     try:
         selection = select_ref_genomes(
             gtdb_path, "gtdb", target_taxon, target_rank=resolved_rank,
-            derep_rank=derep_rank, reps_only=reps_only)
+            derep_rank=derep_rank, reps_only=reps_only,
+            target_domain=resolved_domain,
+            screen_against=ncbi_screen_path())
     except ValueError as e:
         print("")
         wprint(color_text(str(e), "yellow"))
@@ -180,7 +230,8 @@ def _write_all_dereplicated(gtdb_path, args, representatives_source=None):
 
     try:
         selection = select_all_domains(gtdb_path, "gtdb", derep_rank=args.derep_rank,
-                                       reps_only=reps_only)
+                                       reps_only=reps_only,
+                                       screen_against=ncbi_screen_path())
     except ValueError as e:
         print("")
         wprint(color_text(str(e), "yellow"))
@@ -233,6 +284,8 @@ def _write_all(gtdb_path, representatives_source=None):
     filters = [(rep_filter[0], "=", rep_filter[1])] if rep_filter else None
 
     table = pq.read_table(gtdb_path, columns=_all_columns(gtdb_path), filters=filters)
+    table, n_dropped = _screen_table_to_live(table)
+    _report_suppressed(n_dropped)
 
     if representatives_source:
         stem = f"gtdb-arc-and-bac-{representatives_source}-rep"
@@ -260,11 +313,20 @@ def _write_all(gtdb_path, representatives_source=None):
         print("")
 
 
-def _resolve_or_exit(gtdb_path, taxon, rank=None):
+def _resolve_or_exit(gtdb_path, taxon, rank=None, domain=None):
     if is_all_target(taxon):
-        return "all", None
+        return "all", None, None
     try:
-        canonical, resolved_rank = resolve_taxon(gtdb_path, taxon, rank)
+        canonical, resolved_rank, resolved_domain = resolve_taxon(
+            gtdb_path, taxon, rank, domain)
+    except CrossDomainTaxon as e:
+        wprint(color_text("The input taxon '" + str(e.taxon) + "' occurs in more than one "
+               "domain (" + ", ".join(e.domains_found) + "), so pulling on the name alone "
+               "would mix genomes from different domains. Specify which domain is wanted "
+               "with the `--target-domain` flag (e.g. `--target-domain "
+               + e.domains_found[0] + "`).", "yellow"))
+        print("")
+        sys.exit(0)
     except AmbiguousTaxon:
         wprint(color_text("Since '" + str(taxon) + "' occurs at more than 1 rank, we'll need to specify "
                "which rank is wanted as well before we pull the accessions. This can be specified with the `-r` flag.", "yellow"))
@@ -277,7 +339,7 @@ def _resolve_or_exit(gtdb_path, taxon, rank=None):
     # if canonical != taxon:
     #     wprint(color_text("Matched input '" + taxon + "' to GTDB taxon '" + canonical + "'.", "yellow"))
     #     print("")
-    return canonical, resolved_rank
+    return canonical, resolved_rank, resolved_domain
 
 
 def _report_gtdb_version(gtdb_path):
@@ -364,7 +426,7 @@ def report_taxon_counts(gtdb_path, taxon, representatives_source=None, args=None
         return
 
     try:
-        canonical, ranks_found_in = _resolve_ranks(gtdb_path, taxon)
+        canonical, ranks_found_in, _domains_found = _resolve_ranks(gtdb_path, taxon)
     except TaxonNotFound:
         wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any rank :(", "yellow"))
         print("")
@@ -413,7 +475,7 @@ def report_rank_counts_for_taxon(gtdb_path, taxon, representatives_source=None):
     rep_filter = _rep_filter_for(representatives_source)
 
     try:
-        canonical, ranks_found_in = _resolve_ranks(gtdb_path, taxon)
+        canonical, ranks_found_in, _domains_found = _resolve_ranks(gtdb_path, taxon)
     except TaxonNotFound:
         wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any rank :(", "yellow"))
         print("")
