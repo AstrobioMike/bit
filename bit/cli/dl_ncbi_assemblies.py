@@ -101,9 +101,10 @@ def build_parser(parent_subparsers=None, show_fine=False):
 
     selection.add_argument(
         "--target-domain",
+        metavar="<STR>",
         default=None,
         help=wrap_help("Target domain (if needed to disambiguate a taxon name that "
-                       "exists in multiple domains, e.g. Bacillus)"),
+                       "exists in multiple domains)"),
     )
 
     selection.add_argument(
