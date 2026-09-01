@@ -9,7 +9,7 @@ import requests # type: ignore
 from dataclasses import dataclass
 from tqdm import tqdm # type: ignore
 from bit.modules.general import (color_text, check_files_are_found, wprint,
-                                 attempt_to_make_dir)
+                                 attempt_to_make_dir, report_message)
 from bit.modules.taxonomy.tax_select import (TaxonNotFound, AmbiguousTaxon,
                                              CrossDomainTaxon)
 from bit.modules.taxonomy.target_taxon import (resolve_target_taxon_accessions,
@@ -252,7 +252,7 @@ def report_selection(accessions, selections, expansion_note, args):
         wprint("    " + line)
 
         for warning in (sel.warnings or []):
-            wprint(color_text("    " + warning, "yellow"))
+            report_message(warning, "yellow")
         print("")
 
     total = len(accessions)
