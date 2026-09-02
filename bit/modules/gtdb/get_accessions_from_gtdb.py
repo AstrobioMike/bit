@@ -21,6 +21,7 @@ from bit.modules.taxonomy.tax_counts import (representatives_filter, count_genom
 from bit.modules.taxonomy.tax_targets import (domains_in_asset, is_all_target,
                                               unassigned_domain_summary)
 from bit.modules.taxonomy.get_accs_shared import (PoolSpec, all_derep_size,
+                                                  apply_derep_default,
                                                   derep_note as _shared_derep_note,
                                                   is_derep_on, scoped_counts_note)
 from bit.modules.taxonomy.exclusion_list import (load_exclusion_cores,
@@ -78,6 +79,10 @@ def _report_suppressed(n_dropped):
 
 
 def get_accessions_from_gtdb(args):
+
+    # normally already done by the CLI's preflight, but this is also called directly,
+    # and an unresolved --derep-rank sentinel would blow up further down
+    apply_derep_default(args)
 
     exclude_cores = load_exclusion_cores(getattr(args, "exclusion_list", None))
 

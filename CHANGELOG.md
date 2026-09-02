@@ -25,9 +25,17 @@
 ### Changed
 - `bit get-accs-from-ncbi` 
   - the previous `--source` parameter has been changed to `--ncbi-section` to leave source to be consistent with other things in bit
+- **`--derep-rank` on `bit get-accs-from-gtdb` and `bit get-accs-from-ncbi` now defaults to `auto` instead of `off`**, matching `bit dl-ncbi-assemblies`
+  - this changes default output — a plain `bit get-accs-from-* -t <taxon>` now returns a dereplicated set. Pass `--derep-rank off` for the old behavior
+  - `--derep-rank auto` (the default) is two ranks finer than the target (one rank finer for eukaryotes), one step finer if target is a genus, and becomes off when the target is a species (explictly set `--derep-rank species` if you really want just one member of a species)
+- `--ncbi-section` on `bit get-accs-from-ncbi` now defaults to `both` rather than `refseq`, also matching `bit dl-ncbi-assemblies`
+  - the refseq default had been standing in for redundancy removal, which `--derep-rank auto` now handles directly, while also ensuring maximum breadth of diversity is maintained
 
 ### Fixed
 - output metadata table from `bit get-accs-from-gtdb` could sometimes be mangled at the top, fixed now
+- `bit get-accs-from-ncbi` was broken for most invocations: the `--source` to `--ncbi-section` rename was applied to the parser but not to the 11 places reading the value, so anything resolving a taxon name raised an `AttributeError`
+  - the tests were building their own namespaces with the old `source` key, so they passed against code the real parser could never reach
+- the `-R | --refseq-ref-genomes-only` compatibility check in `bit get-accs-from-ncbi` referred to a `--reference-genomes-only` flag that doesn't exist
 
 ---
 

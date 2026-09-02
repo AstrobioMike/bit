@@ -4,7 +4,9 @@ from bit.modules.general import report_message
 from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help, add_version_arg
 from bit.modules.ncbi.get_accessions_from_ncbi import get_accessions_from_ncbi
 from bit.modules.taxonomy.get_accs_shared import (ASSEMBLY_LEVELS,
-                                                  add_common_get_accs_args)
+                                                  add_common_get_accs_args,
+                                                  apply_derep_default,
+                                                  is_derep_on)
 
 
 def build_parser(parent_subparsers=None):
@@ -39,19 +41,20 @@ def build_parser(parent_subparsers=None):
     optional.add_argument(
         "--ncbi-section",
         dest="ncbi_section",
-        default=None,
+        type=str.lower,
+        default="both",
         choices=["refseq", "genbank", "both"],
-        help=("Specify which section of NCBI to pull from (default: refseq)"),
-        action="store",
+        help=("Which part of NCBI to draw from (default: both). You probably only "
+              "need to worry about changing this from 'both' if you are setting "
+              "`--derep-rank off` and/or targeting a single species."),
     )
 
     optional.add_argument(
-        "-a",
         "--assembly-level",
         choices=list(ASSEMBLY_LEVELS),
-        nargs="+",
-        help=("Restrict to one or more assembly levels (can be multiple space-separated)"),
-        action="store",
+        default=None,
+        help=("Only include genomes (from `-w`) at this assembly level. "
+               "Can be provided multiple times."),
     )
 
     add_help(optional)
@@ -84,9 +87,9 @@ def preflight_checks(args):
                        trailing_newline=True)
         sys.exit()
 
-    if args.refseq_reference_genomes_only and args.source != "refseq":
-        report_message("The `--reference-genomes-only` flag is only compatible with "
-                       "`--ncbi-section refseq`.",
+    if args.refseq_reference_genomes_only and args.ncbi_section != "refseq":
+        report_message("The `-R/--refseq-ref-genomes-only` flag is only compatible "
+                       "with `--ncbi-section refseq`.",
                        trailing_newline=True)
         sys.exit()
 
@@ -95,15 +98,24 @@ def preflight_checks(args):
 
 def check_derep_rank_is_applicable(args):
     """
-    `--derep-rank` is not applicable to a taxid input
-    """
-    target = str(args.target_taxon or "")
-    derep_rank = getattr(args, "derep_rank", "off")
+    A taxid's rank is known only after the lookup, and the taxid path doesn't run
+    through the selection core, so there is no resolved rank to group beneath. So it's
+    not applicable with --derep-rank
 
-    if derep_rank in (None, "off", "none", "None"):
+    What happens depends on where the value came from: an explicit `--derep-rank`
+    is a request we can't honor when given a taxid, so it's an error, while the default
+    is just an inherited setting and quietly steps aside so a plain taxid pull still
+    works.
+    """
+    set_explicitly = apply_derep_default(args)
+
+    target = str(args.target_taxon or "")
+
+    if not is_derep_on(args.derep_rank) or not target.isdigit():
         return
 
-    if not target.isdigit():
+    if not set_explicitly:
+        args.derep_rank = "off"
         return
 
     report_message(

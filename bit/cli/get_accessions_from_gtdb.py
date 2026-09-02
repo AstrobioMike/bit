@@ -3,7 +3,8 @@ import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help, add_version_arg
 from bit.modules.general import report_message
 from bit.modules.gtdb.get_accessions_from_gtdb import get_accessions_from_gtdb
-from bit.modules.taxonomy.get_accs_shared import add_common_get_accs_args
+from bit.modules.taxonomy.get_accs_shared import (add_common_get_accs_args,
+                                                  apply_derep_default)
 
 
 def build_parser(parent_subparsers=None):
@@ -63,6 +64,8 @@ def main():
 
 
 def preflight_checks(args):
+
+    apply_derep_default(args)
 
     if not args.get_rank_counts and not args.get_table and not args.target_taxon:
         report_message("A target must be provided to `-t` (a taxon name), "

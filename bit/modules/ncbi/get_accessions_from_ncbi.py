@@ -27,6 +27,7 @@ from bit.modules.taxonomy.tax_counts import (representatives_filter, count_genom
 from bit.modules.taxonomy.tax_targets import (is_all_target,
                                               unassigned_domain_summary)
 from bit.modules.taxonomy.get_accs_shared import (ASSEMBLY_LEVELS, PoolSpec,
+                                                  apply_derep_default,
                                                   derep_note as _shared_derep_note,
                                                   is_derep_on,
                                                   parse_assembly_levels as _parse_levels,
@@ -64,7 +65,7 @@ def ncbi_table_path(force_update=False, quiet=True):
 
 
 def _source_prefixes(source):
-    """Accession prefixes for a --source value (None means no restriction)."""
+    """Accession prefixes for an --ncbi-section value (None means no restriction)."""
     return _shared_prefixes(source)
 
 
@@ -82,11 +83,15 @@ def copy_ncbi_table(table_path):
 
 def get_accessions_from_ncbi(args):
 
+    # normally already done by the CLI's preflight, but this is also called directly,
+    # and an unresolved --derep-rank sentinel would blow up further down
+    apply_derep_default(args)
+
     exclude_cores = load_exclusion_cores(getattr(args, "exclusion_list", None))
 
     table_path = ncbi_table_path()
     _report_ncbi_date(table_path)
-    _report_source_overlap(getattr(args, "source", "refseq"))
+    _report_source_overlap(getattr(args, "ncbi_section", "refseq"))
 
     if getattr(args, "get_table", False):
         copy_ncbi_table(table_path)
@@ -104,7 +109,7 @@ def get_accessions_from_ncbi(args):
                                                   exclude_cores=exclude_cores)
         else:
             report_unique_taxa_counts_of_all_ranks(
-                table_path, source=args.source,
+                table_path, source=args.ncbi_section,
                 reps_only=args.refseq_reference_genomes_only,
                 assembly_levels=assembly_levels,
                 scoped_to_all=is_all_target(target),
@@ -164,7 +169,7 @@ def get_accessions_from_ncbi(args):
                 table_path, "ncbi", canonical, target_rank=rank,
                 derep_rank=getattr(args, "derep_rank", "off"),
                 reps_only=args.refseq_reference_genomes_only,
-                accession_prefixes=_source_prefixes(args.source),
+                accession_prefixes=_source_prefixes(args.ncbi_section),
                 assembly_levels=assembly_levels,
                 exclude_cores=load_exclusion_cores(
                     getattr(args, "exclusion_list", None)),
@@ -284,7 +289,7 @@ def _report_rank_counts_for_taxon_or_exit(table_path, taxon, args, assembly_leve
     """
     `--get-rank-counts` scoped to a taxon
     """
-    prefixes = _source_prefixes(args.source)
+    prefixes = _source_prefixes(args.ncbi_section)
     reps_only = args.refseq_reference_genomes_only
     scope_note = _counts_scope_note(args, assembly_levels)
 
@@ -322,9 +327,9 @@ def _counts_scope_note(args, assembly_levels):
     short human description of which filters the primary counts block reflects
     """
     bits = []
-    if args.source == "refseq":
+    if args.ncbi_section == "refseq":
         bits.append("in refseq")
-    elif args.source == "genbank":
+    elif args.ncbi_section == "genbank":
         bits.append("in genbank")
     if assembly_levels:
         levels = ", ".join(sorted(assembly_levels))
@@ -339,18 +344,18 @@ def _report_taxon_counts_or_exit(table_path, taxon, args, assembly_levels, exclu
     Report how many genomes match `taxon` at each rank it occurs at, matching the GTDB
     helper's format
 
-    A primary per-rank block for the base pool (scoped by --source and
+    A primary per-rank block for the base pool (scoped by --ncbi-section and
     --assembly-level), then if --refseq-reference-genomes-only is set a separate
     "in considering only RefSeq reference genomes" block, like GTDB's reps block.
 
     The wording is explicit about WHICH filters each block reflects: the primary block
-    reflects --source and --assembly-level (but not the reference-genome filter, which
+    reflects --ncbi-section and --assembly-level (but not the reference-genome filter, which
     is applied only in the second block), so the two numbers aren't confused.
 
     Reporting per-rank (rather than one number for a single resolved rank) also means
     an ambiguous taxon name is informative here instead of an error.
     """
-    prefixes = _source_prefixes(args.source)
+    prefixes = _source_prefixes(args.ncbi_section)
     scope_note = _counts_scope_note(args, assembly_levels)
 
     try:
@@ -414,7 +419,7 @@ def _report_unassigned_domains(summary):
 
 def _report_source_overlap(source):
     """
-    `--source both` pulls most assemblies twice (a RefSeq GCF_ record and the GenBank
+    `--ncbi-section both` pulls most assemblies twice (a RefSeq GCF_ record and the GenBank
     GCA_ original it was derived from), so say so rather than let it look like twice
     as many genomes.
     """
@@ -500,7 +505,7 @@ def _select_all_dereplicated(table_path, args, assembly_levels=None):
         selection = select_all_domains(
             table_path, "ncbi", derep_rank=args.derep_rank,
             reps_only=args.refseq_reference_genomes_only,
-            accession_prefixes=_source_prefixes(args.source),
+            accession_prefixes=_source_prefixes(args.ncbi_section),
             assembly_levels=assembly_levels,
             exclude_cores=load_exclusion_cores(
                 getattr(args, "exclusion_list", None)))
@@ -525,7 +530,7 @@ def _select_all_dereplicated(table_path, args, assembly_levels=None):
 
 
 def _select_all(table_path, args, reps_only=False, assembly_levels=None):
-    prefixes = _source_prefixes(getattr(args, "source", "refseq"))
+    prefixes = _source_prefixes(getattr(args, "ncbi_section", "refseq"))
     tab = read_pool(table_path, "ncbi", _COLUMNS,
                     rep_filter=_rep_filter(reps_only),
                     accession_prefixes=prefixes,
@@ -557,7 +562,7 @@ def _apply_filters(tab, args):
     """
     Source scoping only
     """
-    return _filter_by_source(tab, getattr(args, "source", "refseq"))
+    return _filter_by_source(tab, getattr(args, "ncbi_section", "refseq"))
 
 
 def _write_outputs(tab, args, label):
@@ -569,8 +574,8 @@ def _write_outputs(tab, args, label):
     suffix_bits = []
     if args.refseq_reference_genomes_only:
         suffix_bits.append("refseq-ref")
-    elif getattr(args, "source", "refseq") != "both":
-        suffix_bits.append(args.source.lower())
+    elif getattr(args, "ncbi_section", "refseq") != "both":
+        suffix_bits.append(args.ncbi_section.lower())
     suffix = ("-" + "-".join(suffix_bits)) if suffix_bits else ""
 
     acc_out = f"ncbi-{taxon_for_filename}{suffix}-accessions.txt"

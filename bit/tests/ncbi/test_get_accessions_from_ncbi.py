@@ -58,7 +58,7 @@ def _make_table(tmp_path, rows):
 
 
 def _args(**kw):
-    base = dict(target_taxon=None, target_rank=None, source="refseq",
+    base = dict(target_taxon=None, target_rank=None, ncbi_section="refseq",
                 refseq_reference_genomes_only=False, assembly_level=None,
                 get_taxon_counts=False, get_rank_counts=False, get_table=False,
                 derep_rank="off")
@@ -110,7 +110,7 @@ def test_taxon_writes_both_files(table, tmp_path, monkeypatch):
 def test_taxon_accs_file_contents(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     # source=both so GCA rows aren't prefix-filtered out
-    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="both"))
+    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", ncbi_section="both"))
     accs = (tmp_path / "ncbi-alteromonas-accessions.txt").read_text().split()
     assert "GCF_000000001.1" in accs
     assert "GCA_000000003.1" in accs
@@ -173,7 +173,7 @@ def test_counts_mode_match_counts_are_not_collapsed_by_derep(table, tmp_path,
 
 def test_counts_mode_reports_the_dereplicated_size(table, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    _run(_args(target_taxon="Alteromonas", source="both",
+    _run(_args(target_taxon="Alteromonas", ncbi_section="both",
                                        get_taxon_counts=True, derep_rank="species"))
     out = capsys.readouterr().out
     # all 3 fixture rows share one species -> one genome survives
@@ -183,11 +183,11 @@ def test_counts_mode_reports_the_dereplicated_size(table, tmp_path, monkeypatch,
 def test_counts_mode_derep_size_matches_what_a_pull_returns(table, tmp_path,
                                                             monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    _run(_args(target_taxon="Alteromonas", source="both",
+    _run(_args(target_taxon="Alteromonas", ncbi_section="both",
                                        get_taxon_counts=True, derep_rank="species"))
     reported = capsys.readouterr().out
 
-    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="both",
+    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", ncbi_section="both",
                                    derep_rank="species"))
     accs = (tmp_path / "ncbi-alteromonas-accessions.txt").read_text().split()
     assert f"that would be {len(accs)} genome(s)." in reported
@@ -196,7 +196,7 @@ def test_counts_mode_derep_size_matches_what_a_pull_returns(table, tmp_path,
 def test_counts_mode_scope_note_reflects_source(table, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     _run(_args(target_taxon="Alteromonas",
-                                       get_taxon_counts=True, source="refseq"))
+                                       get_taxon_counts=True, ncbi_section="refseq"))
     assert "(in refseq)" in capsys.readouterr().out
 
 
@@ -209,7 +209,7 @@ def test_counts_mode_reports_every_rank_a_name_occurs_at(tmp_path, monkeypatch, 
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
     _run(_args(target_taxon="Dup", get_taxon_counts=True,
-                                       source="both"))
+                                       ncbi_section="both"))
     out = capsys.readouterr().out
     assert "The rank 'family' has 2 Dup entries" in out
     assert "The rank 'genus' has 1 Dup entries" in out
@@ -220,7 +220,7 @@ def test_counts_mode_reports_every_rank_a_name_occurs_at(tmp_path, monkeypatch, 
 def test_taxid_path_matches_by_rank_taxid(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     # 28108 is the genus_taxid in the fixture
-    get_accessions_from_ncbi(_args(target_taxon="28108", source="both"))
+    get_accessions_from_ncbi(_args(target_taxon="28108", ncbi_section="both"))
     assert (tmp_path / "ncbi-28108-accessions.txt").exists()
 
 
@@ -238,14 +238,14 @@ def test_select_by_taxid_matches_specific_rank(tmp_path):
 
 def test_source_refseq_keeps_only_gcf(table, tmp_path):
     tab = pq.read_table(table, columns=_COLS)
-    out = _apply_filters(tab, _args(source="refseq"))
+    out = _apply_filters(tab, _args(ncbi_section="refseq"))
     accs = out.column("assembly_accession").to_pylist()
     assert all(a.startswith("GCF_") for a in accs)
 
 
 def test_source_genbank_keeps_only_gca(table, tmp_path):
     tab = pq.read_table(table, columns=_COLS)
-    out = _apply_filters(tab, _args(source="genbank"))
+    out = _apply_filters(tab, _args(ncbi_section="genbank"))
     accs = out.column("assembly_accession").to_pylist()
     assert all(a.startswith("GCA_") for a in accs)
 
@@ -256,13 +256,13 @@ def test_apply_filters_no_longer_handles_assembly_level(table, tmp_path):
     _apply_filters is source scoping only and must not silently drop rows by level.
     """
     tab = pq.read_table(table, columns=_COLS)
-    out = _apply_filters(tab, _args(source="both", assembly_level=["scaffold"]))
+    out = _apply_filters(tab, _args(ncbi_section="both", assembly_level=["scaffold"]))
     assert out.num_rows == tab.num_rows
 
 
 def test_assembly_level_still_filters_end_to_end(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="both",
+    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", ncbi_section="both",
                                    assembly_level=["scaffold"]))
     accs = (tmp_path / "ncbi-alteromonas-accessions.txt").read_text().split()
     assert accs == ["GCA_000000003.1"]
@@ -270,7 +270,7 @@ def test_assembly_level_still_filters_end_to_end(table, tmp_path, monkeypatch):
 
 def test_assembly_level_still_filters_for_all(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    get_accessions_from_ncbi(_args(target_taxon="all", source="both",
+    get_accessions_from_ncbi(_args(target_taxon="all", ncbi_section="both",
                                    assembly_level=["scaffold"]))
     accs = (tmp_path / "ncbi-all-accessions.txt").read_text().split()
     assert accs == ["GCA_000000003.1"]
@@ -278,7 +278,7 @@ def test_assembly_level_still_filters_for_all(table, tmp_path, monkeypatch):
 
 def test_assembly_level_still_filters_for_a_taxid(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
-    get_accessions_from_ncbi(_args(target_taxon="28108", source="both",
+    get_accessions_from_ncbi(_args(target_taxon="28108", ncbi_section="both",
                                    assembly_level=["scaffold"]))
     accs = (tmp_path / "ncbi-28108-accessions.txt").read_text().split()
     assert accs == ["GCA_000000003.1"]
@@ -301,7 +301,7 @@ def test_assembly_level_is_applied_before_dereplication(tmp_path, monkeypatch):
     ])
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
-    get_accessions_from_ncbi(_args(target_taxon="Alteromonadales", source="both",
+    get_accessions_from_ncbi(_args(target_taxon="Alteromonadales", ncbi_section="both",
                                    derep_rank="family", assembly_level=["complete"]))
     accs = sorted((tmp_path / "ncbi-alteromonadales-accessions.txt").read_text().split())
     assert accs == ["GCF_000000001.1", "GCF_000000003.1"]
@@ -349,7 +349,7 @@ def test_get_rank_counts_honors_source_refseq(table, tmp_path, monkeypatch, caps
     """--source refseq counts only GCF_ rows. Fixture: 2 GCF + 1 GCA, all Alteromonas
     -> genus count is 1 either way, but the header labels the source."""
     monkeypatch.chdir(tmp_path)
-    _run(_args(get_rank_counts=True, source="refseq"))
+    _run(_args(get_rank_counts=True, ncbi_section="refseq"))
     out = capsys.readouterr().out
     assert "(RefSeq)" in out
 
@@ -362,7 +362,7 @@ def test_get_rank_counts_source_genbank_excludes_gcf(tmp_path, monkeypatch, caps
     ])
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
-    _run(_args(get_rank_counts=True, source="genbank"))
+    _run(_args(get_rank_counts=True, ncbi_section="genbank"))
     out = capsys.readouterr().out
     assert "(GenBank)" in out
     # genbank scope: exactly 1 genus (GenbankOne); the GCF-only genus is excluded
@@ -376,7 +376,7 @@ def test_get_rank_counts_source_both_counts_everything(tmp_path, monkeypatch, ca
     ])
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
-    _run(_args(get_rank_counts=True, source="both"))
+    _run(_args(get_rank_counts=True, ncbi_section="both"))
     out = capsys.readouterr().out
     assert "(all)" in out
     assert "genus      2" in out          # both genera counted
@@ -393,7 +393,7 @@ def test_all_writes_every_row(tmp_path, monkeypatch):
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
     # source=both so all three rows survive
-    get_accessions_from_ncbi(_args(target_taxon="all", source="both"))
+    get_accessions_from_ncbi(_args(target_taxon="all", ncbi_section="both"))
     accs = (tmp_path / "ncbi-all-accessions.txt").read_text().split()
     assert sorted(accs) == ["GCA_3.1", "GCF_1.1", "GCF_2.1"]
 
@@ -482,7 +482,7 @@ def test_all_with_derep_rank_includes_eukaryotes(tmp_path, monkeypatch, capsys):
     ])
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
-    get_accessions_from_ncbi(_args(target_taxon="all", source="both",
+    get_accessions_from_ncbi(_args(target_taxon="all", ncbi_section="both",
                                    derep_rank="domain"))
     accs = (tmp_path / "ncbi-all-accessions.txt").read_text().split()
     assert len(accs) == 2                      # one bacterium, one eukaryote
@@ -596,14 +596,14 @@ def test_domainless_genomes_are_still_reachable_by_name(table_with_viruses, tmp_
 
 def test_source_both_warns_about_the_overlap(table, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="both"))
+    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", ncbi_section="both"))
     out = capsys.readouterr().out
     assert "overlap between RefSeq and GenBank" in out
 
 
 def test_single_source_says_nothing_about_overlap(table, tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
-    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", source="refseq"))
+    get_accessions_from_ncbi(_args(target_taxon="Alteromonas", ncbi_section="refseq"))
     assert "overlap between RefSeq and GenBank" not in capsys.readouterr().out
 
 
