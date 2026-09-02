@@ -9,10 +9,9 @@ from bit.modules.taxonomy.get_accs_shared import (ASSEMBLY_LEVELS,
 
 def build_parser(parent_subparsers=None):
 
-    desc = ("This is a helper program to facilitate getting NCBI accessions and assembly "
-            "metadata based on an NCBI-taxonomy search. It has optional filtering "
-            "by source (RefSeq/GenBank), assembly level, and/or RefSeq 'reference' genomes "
-            "only, plus optional dereplication down to one genome per specified rank.")
+    desc = ("This is a helper program to facilitate retrieving assembly accessions from NCBI. "
+            "It returns NCBI accessions and metadata subsets based on NCBI-taxonomy or taxid searches, "
+            "with optional filtering and dereplication settings.")
 
     if parent_subparsers is not None:
         parser = parent_subparsers.add_parser(
@@ -34,9 +33,8 @@ def build_parser(parent_subparsers=None):
 
     add_common_get_accs_args(
         required, optional, "NCBI assembly-summary",
-        taxon_flags=("-t", "--target-taxon"),
-        taxon_help=("Target taxon (a name, an NCBI taxid, or 'all' for every domain "
-                    "in the table). Not needed with `--get-rank-counts`."))
+        taxon_help=("Target tax to get accessions for (a name, taxid, or 'all'). Not needed with `--get-rank-counts`.")
+    )
 
     optional.add_argument(
         "--ncbi-section",

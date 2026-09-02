@@ -45,11 +45,12 @@ def build_parser(parent_subparsers=None, show_fine=False):
 
     required.add_argument(
         "-t",
-        "--target-taxon",
+        "--target-tax",
         metavar="<STR>",
+        dest="target_taxon",
         action="append",
         default=None,
-        help=wrap_help("Target taxon to pull genomes for (a name, or 'all'). Can be given "
+        help=wrap_help("Target tax to pull genomes for (a name, or 'all'). Can be given "
                        "multiple times, and can be combined with `-w`."),
     )
 

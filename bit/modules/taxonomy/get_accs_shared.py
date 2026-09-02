@@ -223,16 +223,16 @@ def scoped_counts_note(taxon_flag="-t"):
 
 
 def add_common_get_accs_args(required, optional, source_label,
-                             taxon_flags=("-t", "--target-taxon"),
+                             taxon_flags=("-t", "--target-tax"),
                              taxon_help=None):
     """
     Declare the flags both helpers take
     """
     required.add_argument(
         *taxon_flags,
+        dest="target_taxon",
         metavar="<STR>",
-        help=taxon_help or ("Target taxon (a name, or 'all' for every domain in the "
-                            "table). Not needed with `--get-rank-counts`."),
+        help=taxon_help or ("Target tax to get accessions for (a name, or 'all'). Not needed with `--get-rank-counts`."),
         action="store",
     )
 
@@ -248,6 +248,7 @@ def add_common_get_accs_args(required, optional, source_label,
         "--target-domain",
         dest="target_domain",
         default=None,
+        metavar="<STR>",
         help=("Target domain (if needed to disambiguate a taxon name that exists in "
               "multiple domains)"),
         action="store",
@@ -265,13 +266,6 @@ def add_common_get_accs_args(required, optional, source_label,
     )
 
     optional.add_argument(
-        "-R", "--refseq-reference-genomes-only",
-        dest="refseq_reference_genomes_only",
-        action="store_true",
-        help="Pull only genomes designated as RefSeq reference genomes.",
-    )
-
-    optional.add_argument(
         "--exclusion-list",
         metavar="<FILE>",
         dest="exclusion_list",
@@ -284,9 +278,7 @@ def add_common_get_accs_args(required, optional, source_label,
         "--get-taxon-counts",
         action="store_true",
         help=(f"Provide this flag along with a specified taxon to `{taxon_flags[0]}` "
-              f"to see how many genomes match the set parameters. If `--derep-rank` "
-              f"is also set, the number of genomes following dereplication is "
-              f"reported too."),
+              f"to see how many genomes match the set parameters."),
     )
 
     optional.add_argument(
@@ -302,6 +294,13 @@ def add_common_get_accs_args(required, optional, source_label,
         action="store_true",
         help=(f"Provide just this flag alone to write out a tsv of bit's {source_label} "
               f"metadata table."),
+    )
+
+    optional.add_argument(
+        "-R", "--refseq-ref-genomes-only",
+        dest="refseq_reference_genomes_only",
+        action="store_true",
+        help="Pull only genomes designated as RefSeq reference genomes.",
     )
 
     return optional

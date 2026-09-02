@@ -132,7 +132,7 @@ PROGRAM_GROUPS = [
         "programs": [
             {
                 "name": "assemble",
-                "desc": "simple wrapper for assembly with optional quality trimming and normalization",
+                "desc": "simple wrapper for short-read assembly with optional quality trimming and normalization",
             },
             {
                 "name": "summarize-assembly",

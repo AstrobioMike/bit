@@ -18,7 +18,7 @@ def exclusion_list_help(taxon_flag="-t"):
     The `--exclusion-list` help string, reused in multiple places
     """
     return (f"Single-column file of assembly accessions to exclude from what "
-            f"`{taxon_flag}` pulls.")
+            f"`{taxon_flag}` pulls")
 
 def read_exclusion_list(path):
     entries = []
