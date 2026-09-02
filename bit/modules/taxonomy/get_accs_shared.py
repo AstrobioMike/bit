@@ -20,6 +20,8 @@ ASSEMBLY_LEVELS = {
 
 DEREP_OFF = (None, "off", "none", "None")
 
+from bit.modules.taxonomy.exclusion_list import exclusion_list_help
+
 
 def is_derep_on(derep_rank):
     """True when --derep-rank asks for actual dereplication."""
@@ -75,10 +77,12 @@ class PoolSpec:
         assembly_levels    : NCBI level strings, or None
         label              : "GTDB" / "NCBI", for user-facing messages
         taxon_flag         : the flag this surface calls the target, for messages
+        exclude_cores      : accession cores from `--exclusion-list`, or None
     """
 
     def __init__(self, table_path, source, rep_filter=None, accession_prefixes=None,
-                 assembly_levels=None, label=None, taxon_flag="-t"):
+                 assembly_levels=None, label=None, taxon_flag="-t",
+                 exclude_cores=None):
         self.table_path = table_path
         self.source = source
         self.rep_filter = rep_filter
@@ -86,6 +90,7 @@ class PoolSpec:
         self.assembly_levels = assembly_levels or None
         self.label = label or source.upper()
         self.taxon_flag = taxon_flag
+        self.exclude_cores = exclude_cores or None
 
     # -- the pool filters as kwargs, so every call site passes the same set ---------
 
@@ -94,6 +99,7 @@ class PoolSpec:
             "rep_filter": self.rep_filter if with_reps else None,
             "accession_prefixes": self.accession_prefixes,
             "assembly_levels": self.assembly_levels,
+            "exclude_cores": self.exclude_cores,
         }
 
     def without_reps(self):
@@ -101,7 +107,8 @@ class PoolSpec:
         return PoolSpec(self.table_path, self.source,
                         accession_prefixes=self.accession_prefixes,
                         assembly_levels=self.assembly_levels, label=self.label,
-                        taxon_flag=self.taxon_flag)
+                        taxon_flag=self.taxon_flag,
+                        exclude_cores=self.exclude_cores)
 
     def with_reps(self, kind):
         """The same pool plus a representatives predicate ('source' | 'refseq')."""
@@ -109,7 +116,8 @@ class PoolSpec:
                         rep_filter=representatives_filter(self.source, kind),
                         accession_prefixes=self.accession_prefixes,
                         assembly_levels=self.assembly_levels, label=self.label,
-                        taxon_flag=self.taxon_flag)
+                        taxon_flag=self.taxon_flag,
+                        exclude_cores=self.exclude_cores)
 
     # -- counting ------------------------------------------------------------------
 
@@ -261,6 +269,15 @@ def add_common_get_accs_args(required, optional, source_label,
         dest="refseq_reference_genomes_only",
         action="store_true",
         help="Pull only genomes designated as RefSeq reference genomes.",
+    )
+
+    optional.add_argument(
+        "--exclusion-list",
+        metavar="<FILE>",
+        dest="exclusion_list",
+        default=None,
+        help=exclusion_list_help(taxon_flags[0]),
+        action="store",
     )
 
     optional.add_argument(

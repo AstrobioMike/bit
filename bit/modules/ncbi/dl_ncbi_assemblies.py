@@ -17,6 +17,7 @@ from bit.modules.taxonomy.target_taxon import (resolve_target_taxon_accessions,
                                                describe_all_expansion,
                                                ensure_source_data,
                                                TargetTaxonError)
+from bit.modules.taxonomy.exclusion_list import load_exclusion_cores
 from bit.modules.ncbi.parse_ncbi_assembly_summary import parse_ncbi_assembly_summary
 from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data, ncbi_data_table_path
 
@@ -78,6 +79,18 @@ def preflight_checks(args):
     if accessions_file:
         check_files_are_found([accessions_file])
 
+    exclusion_list = getattr(args, "exclusion_list", None)
+    if exclusion_list:
+        if not target_taxa:
+            report_message("An `--exclusion-list` was provided, but it only has an "
+                           "effect alongside `-t` (it removes genomes from what `-t` "
+                           "pulls in). Accessions given directly with `-w` are always "
+                           "downloaded as provided, so nothing would be excluded. Stopping "
+                           "here to let you adjust input parameters we we're all on the same page :)",
+                           "yellow", trailing_newline=True)
+            sys.exit(1)
+        check_files_are_found([exclusion_list])
+
     # a dry run reports and stops, so it must not create anything
     if not getattr(args, "dry_run", False):
         if args.output_dir and not os.path.exists(args.output_dir):
@@ -104,6 +117,7 @@ def _selection_kwargs(args):
     #      source default here would make this subcommand the odd one out.
     # With this, --representatives-only means the same thing for both sources: restrict
     # to that source's representative/reference genomes.
+
     reps_only = bool(getattr(args, "representatives_only", False))
 
     return {
@@ -115,6 +129,7 @@ def _selection_kwargs(args):
         "reps_only": reps_only,
         "min_completeness": getattr(args, "min_completeness", None),
         "max_contamination": getattr(args, "max_contamination", None),
+        "exclude_cores": load_exclusion_cores(getattr(args, "exclusion_list", None)),
         "include_rows": False,
     }
 
@@ -125,8 +140,14 @@ def resolve_targets(args):
 
     Returns (accessions, selections, expansion_note). `selections` is one record per
     resolved `-t` target carrying what it selected and how many of those were NEW
-    after deduplication -- with a repeatable `-t`, overlapping taxa mean the per-taxon
+    after deduplication. With a repeatable `-t`, overlapping taxa mean the per-taxon
     counts will not sum to the total, and that difference is the thing worth showing.
+
+    An `--exclusion-list` rides along in the selection kwargs and is applied inside the
+    taxonomy core, against the candidate pool before dereplication, so an excluded
+    genome never reaches the downloader AND its group still gets a representative. It
+    is deliberately NOT applied to `-w`: accessions the user named directly are
+    downloaded as given.
     """
     accessions = []
     seen = set()
@@ -191,6 +212,7 @@ def resolve_targets(args):
             effective_derep_rank=selection.effective_derep_rank,
             num_selected=len(taxon_accs),
             num_new=num_new,
+            num_excluded=getattr(selection, "num_excluded", 0),
             warnings=list(selection.warnings)))
 
     return accessions, selections, (expansion_note, num_from_file)
@@ -212,6 +234,7 @@ class TaxonSelection:
     effective_derep_rank: str = None
     num_selected: int = 0
     num_new: int = 0
+    num_excluded: int = 0
     warnings: list = None
 
 
@@ -242,14 +265,14 @@ def report_selection(accessions, selections, expansion_note, args):
     for sel in selections:
         derep = (f"dereplicated to one genome per {sel.effective_derep_rank}"
                  if sel.effective_derep_rank else "dereplication off")
-        wprint(f"-t {color_text(sel.canonical)} "
-               f"(resolved to {sel.resolved_rank}; {derep})")
+        wprint(f"- {color_text(sel.canonical)}", initial_indent="    ", subsequent_indent="    ")
+        wprint(f"- resolved to {sel.resolved_rank}; {derep}", initial_indent="        ", subsequent_indent="        ")
 
-        line = f"{sel.num_selected:,} genome(s) selected"
+        line = f"- {sel.num_selected:,} genome(s) selected"
         overlap = sel.num_selected - sel.num_new
         if overlap:
             line += f", {sel.num_new:,} new ({overlap:,} already counted)"
-        wprint("    " + line)
+        wprint(line, initial_indent="        ", subsequent_indent="        ")
 
         for warning in (sel.warnings or []):
             report_message(warning, "yellow")
@@ -258,10 +281,12 @@ def report_selection(accessions, selections, expansion_note, args):
     total = len(accessions)
     if getattr(args, "dry_run", False):
         wprint(color_text(f"Total that would be downloaded: {total:,} genome(s) "
-                          f"in {args.format} format.", "green"))
+                          f"in {args.format} format.", "green"),
+                          initial_indent="    ", subsequent_indent="    ")
+        print("")
     else:
-        wprint(color_text(f"Total to download: {total:,} genome(s)", "green"))
-    print("")
+        wprint(color_text(f"Total to download: {total:,} genome(s)", "green"),
+               initial_indent="    ", subsequent_indent="    ")
 
 
 def setup(args, wanted_accs=None):

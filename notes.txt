@@ -1,3 +1,8 @@
 # add -w (as -t) to bit dl-ncbi-assemblies
     # started this, but i have work to do here testing/adjusting maybe, poke at it a bit
-    # add --exclusion-list parameter everywhere -t is used
+
+# test taxon selection in all functions that use it
+    # dl-ncbi-assemblies seems to be working
+    # get-accs-from-*
+    # others?
+# keep mirroring help menus with gtotree where possible

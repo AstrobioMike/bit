@@ -70,6 +70,51 @@ def build_parser(parent_subparsers=None):
             default="data"
         )
 
+
+    ### subcommand cli for generating an iToL-style dataset file ###
+    style_desc = """
+        This subcommand creates a standard iToL style-dataset file for coloring labels and/or branches.
+        """
+
+    style_parser = subparsers.add_parser(
+        "style",
+        help="Create an iToL style-dataset file for coloring labels and/or branches",
+        description=style_desc,
+        epilog="Ex. usage: `bit itol style -g genomes.txt -d my-gene`",
+        formatter_class=CustomRichHelpFormatter,
+        add_help=False
+    )
+
+    style_required = style_parser.add_argument_group("Required Parameters")
+    style_optional = style_parser.add_argument_group("Optional Parameters")
+
+    add_common_required_arguments(style_required)
+    add_common_optional_arguments(style_optional)
+
+    add_dataset_label_argument(style_optional)
+
+    style_optional.add_argument(
+        "--what-to-color",
+        help='What to color (default: "branches")',
+        choices=["branches", "labels", "both"],
+        default="branches"
+    )
+
+    style_optional.add_argument(
+        "-l",
+        "--line-weight",
+        metavar="<NUM>",
+        help='Line weight if coloring branches (default: "3")',
+        default=3
+    )
+
+    add_help(style_optional)
+
+    add_version_arg(style_optional)
+
+    style_parser.set_defaults(func="style_dataset")
+
+
     ### subcommand cli for generating an iToL binary-dataset file ###
     binary_desc = """
         This subcommand creates a standard iToL binary-dataset file.
@@ -157,50 +202,6 @@ def build_parser(parent_subparsers=None):
     add_version_arg(colorstrip_optional)
 
     colorstrip_parser.set_defaults(func="colorstrip")
-
-
-    ### subcommand cli for generating an iToL-style dataset file ###
-    style_desc = """
-        This subcommand creates a standard iToL style-dataset file for coloring labels and/or branches.
-        """
-
-    style_parser = subparsers.add_parser(
-        "style",
-        help="Create an iToL style-dataset file for coloring labels and/or branches",
-        description=style_desc,
-        epilog="Ex. usage: `bit itol style -g genomes.txt -d my-gene`",
-        formatter_class=CustomRichHelpFormatter,
-        add_help=False
-    )
-
-    style_required = style_parser.add_argument_group("Required Parameters")
-    style_optional = style_parser.add_argument_group("Optional Parameters")
-
-    add_common_required_arguments(style_required)
-    add_common_optional_arguments(style_optional)
-
-    add_dataset_label_argument(style_optional)
-
-    style_optional.add_argument(
-        "--what-to-color",
-        help='What to color (default: "branches")',
-        choices=["branches", "labels", "both"],
-        default="branches"
-    )
-
-    style_optional.add_argument(
-        "-l",
-        "--line-weight",
-        metavar="<NUM>",
-        help='Line weight if coloring branches (default: "3")',
-        default=3
-    )
-
-    add_help(style_optional)
-
-    add_version_arg(style_optional)
-
-    style_parser.set_defaults(func="style_dataset")
 
 
     ### subcommand cli for generating an iToL text dataset file ###

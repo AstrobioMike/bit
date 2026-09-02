@@ -1,24 +1,20 @@
 import sys
 import argparse
-from bit.cli.common import (CustomRichHelpFormatter, add_help, add_version_arg,
+from bit.cli.common import (CustomRichHelpFormatter, add_version_arg,
                             wrap_help)
 from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
 from bit.modules.taxonomy.tax_ranks import RANKS
 from bit.modules.taxonomy.get_accs_shared import ASSEMBLY_LEVELS
 from bit.modules.taxonomy.target_taxon import SOURCE_CHOICES, SECTION_CHOICES
+from bit.modules.taxonomy.exclusion_list import exclusion_list_help
 
 
 def build_parser(parent_subparsers=None, show_fine=False):
-    """
-    `show_fine` toggles whether the fine-tuning parameters carry real help strings
-    (the `-H` / `--detailed-help` menu) or are hidden but still parsed, so they keep
-    working and keep their defaults either way.
-    """
 
     desc = """
         This program downloads assembly files for NCBI genomes. Targets can be pulled
         based on taxonomy (`-t`) from either GTDB or NCBI (also see the --derep-rank parameter),
-        or they can be explicitly specified as assembly accessions (`-w`).
+        and/or they can be explicitly specified as assembly accessions in a file (passed to `-w`).
         """
 
     if parent_subparsers is not None:
@@ -41,6 +37,9 @@ def build_parser(parent_subparsers=None, show_fine=False):
         return argparse.SUPPRESS if not show_fine else wrap_help(text)
 
     required = parser.add_argument_group("Required Parameters (one or both)")
+    # every `-t` knob lives in this one group, including the ones only the
+    # detailed menu shows -- they are all taxon-selection parameters, so splitting
+    # them into a separate "fine-tuning" section put related flags in two places
     selection = parser.add_argument_group("Taxon-selection Parameters (used with `-t`)")
     optional = parser.add_argument_group("Optional Parameters")
 
@@ -50,17 +49,15 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<STR>",
         action="append",
         default=None,
-        help=wrap_help("Target taxon to pull genomes for (a name, or 'all' for every "
-                       "domain available in the source). Can be provided multiple times to "
-                       "combine taxa; genomes shared between them are only downloaded "
-                       "once. Can also be combined with `-w`."),
+        help=wrap_help("Target taxon to pull genomes for (a name, or 'all'). Can be given "
+                       "multiple times, and can be combined with `-w`."),
     )
 
     required.add_argument(
         "-w",
         "--wanted-accessions",
         metavar="<FILE>",
-        help=wrap_help("Input file with wanted accessions, one per line"),
+        help=wrap_help("Single-column file of wanted NCBI assembly accessions"),
         default=None,
     )
 
@@ -76,8 +73,9 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "--ncbi-section",
         choices=list(SECTION_CHOICES),
         default="both",
-        help=wrap_help("Which part of NCBI to draw from (default: both). With the default "
-                       "of `--derep-rank auto`, 'both' is typically fine. Ignored with "
+        help=wrap_help("Which part of NCBI to draw from (default: both). You probably only "
+                       "need to worry about changing this from 'both' if you are setting "
+                       "`--derep-rank off` and/or targeting a single species. Ignored with "
                        "`--source gtdb`."),
     )
 
@@ -85,14 +83,14 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "--derep-rank",
         choices=["auto", "off"] + list(RANKS),
         default="auto",
-        help=wrap_help("Dereplicate down to a single genome per unique value of "
-                       "this rank (default: auto). 'auto' is two ranks finer than the "
-                       "target (one finer for eukaryotes). 'off' downloads every "
-                       "genome under the taxon, so use with care :)"),
+        help=wrap_help("Dereplicate down to one genome per unique value of this rank "
+                       "(default: auto). 'auto' is two ranks finer than the "
+                       "target (one rank finer for eukaryotes). 'off' downloads every "
+                       "genome under the target taxon, so use with care :)"),
     )
 
     selection.add_argument(
-        "-r", "--target-rank",
+        "--target-rank",
         choices=list(RANKS),
         default=None,
         help=wrap_help("Target rank (if needed to disambiguate a taxon name that "
@@ -105,6 +103,52 @@ def build_parser(parent_subparsers=None, show_fine=False):
         default=None,
         help=wrap_help("Target domain (if needed to disambiguate a taxon name that "
                        "exists in multiple domains)"),
+    )
+
+    selection.add_argument(
+        "--exclusion-list",
+        metavar="<FILE>",
+        dest="exclusion_list",
+        default=None,
+        help=h(exclusion_list_help("-t")),
+    )
+
+    selection.add_argument(
+        "--representatives-only",
+        action="store_true",
+        help=h("With `--source gtdb`, only pull GTDB representative genomes; "
+               "with `--source ncbi`, only pull NCBI reference genomes. If the goal is "
+               "removing redundancy, the `--derep-rank` parameter can handle that while "
+               "ensuring the breadth of available diversity is maintained."),
+    )
+
+    selection.add_argument(
+        "--assembly-level",
+        action="append",
+        choices=list(ASSEMBLY_LEVELS),
+        default=None,
+        help=h("Only include genomes (from `-t`) at these assembly levels. "
+               "Can be provided multiple times."),
+    )
+
+    selection.add_argument(
+        "--min-completeness",
+        metavar="<FLOAT>",
+        type=float,
+        default=None,
+        help=h("Don't include any genomes (from `-t`) below this checkm completeness "
+               "(default: None). If set, genomes with no recorded "
+               "value are also excluded."),
+    )
+
+    selection.add_argument(
+        "--max-contamination",
+        metavar="<FLOAT>",
+        type=float,
+        default=None,
+        help=h("Don't include any genomes (from `-t`) above this checkm contamination "
+               "(default: None). If set, genomes with no recorded "
+               "value are also excluded."),
     )
 
     selection.add_argument(
@@ -127,9 +171,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "-j",
         "--jobs",
         metavar="<INT>",
-        help=wrap_help("Number of downloads you'd like to run concurrently. NCBI can "
-                       "become unhappy with many requests, so a max of 20 will be "
-                       "used even if more are requested (default: 10)"),
+        help=wrap_help("Number of concurrent downloads (default: 10; capped at "
+                       "20 to keep NCBI happy)"),
         default=10,
         type=int,
     )
@@ -138,58 +181,25 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "-o",
         "--output-dir",
         metavar="<DIR>",
-        help=wrap_help("Directory to save output files (default: current directory)"),
+        help=wrap_help("Directory for output files (default: current directory)"),
         default=".",
-    )
-
-    ## fine-tuning (detailed menu only) ##
-    fine = parser.add_argument_group("Fine-tuning Parameters") if show_fine else parser
-
-    fine.add_argument(
-        "--assembly-level",
-        action="append",
-        choices=list(ASSEMBLY_LEVELS),
-        default=None,
-        help=h("Only include genomes (from `-t`) at these assembly levels. "
-               "Can be provided multiple times."),
-    )
-
-    fine.add_argument(
-        "--min-completeness",
-        metavar="<FLOAT>",
-        type=float,
-        default=None,
-        help=h("Don't include any genomes (from `-t`) below this checkm completeness "
-               "(default: None). If set, genomes with no recorded "
-               "value are also excluded."),
-    )
-
-    fine.add_argument(
-        "--max-contamination",
-        metavar="<FLOAT>",
-        type=float,
-        default=None,
-        help=h("Don't include any genomes (from `-t`) above this checkm contamination "
-               "(default: None). If set, genomes with no recorded "
-               "value are also excluded."),
-    )
-
-    fine.add_argument(
-        "--representatives-only",
-        action="store_true",
-        help=h("If `--source gtdb`, only pull GTDB representative genomes. "
-               "If `--source ncbi`, only pull NCBI reference genomes. "
-               "With the default of `--derep-rank auto`, these are often not needed."),
     )
 
     optional.add_argument(
         "-H",
         "--detailed-help",
         action="store_true",
-        help=wrap_help("Show detailed help, including fine-tuning parameters"),
+        help=wrap_help("Show detailed help, including additional taxon-selection "
+                       "parameters"),
     )
 
-    add_help(optional)
+    optional.add_argument(
+        "-h",
+        "--help",
+        action="help",
+        help="Show basic help",
+    )
+
     add_version_arg(optional)
 
     return parser

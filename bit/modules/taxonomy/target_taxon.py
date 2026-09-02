@@ -94,7 +94,8 @@ def resolve_target_taxon_accessions(source, taxon, target_rank=None,
                                     derep_rank="auto", target_domain=None,
                                     ncbi_section="refseq", assembly_levels=None,
                                     reps_only=None, min_completeness=None,
-                                    max_contamination=None, include_rows=True):
+                                    max_contamination=None, include_rows=True,
+                                    exclude_cores=None):
     """
     Resolve one `-t <taxon>` to (accessions, selection).
 
@@ -105,6 +106,10 @@ def resolve_target_taxon_accessions(source, taxon, target_rank=None,
     A GTDB-sourced selection is screened against the NCBI table for liveness, so
     suppressed/removed assemblies are dropped BEFORE they reach the downloader (where
     they would otherwise surface as a confusing "not found at NCBI" report).
+
+    `exclude_cores` is an optional set of accession cores from `--exclusion-list`. It
+    goes to the selection core rather than being applied to the result, so the
+    exclusion happens against the candidate pool before dereplication.
 
     Raises TargetTaxonError for an unknown source or an empty selection; lets
     TaxonNotFound / AmbiguousTaxon / CrossDomainTaxon / ValueError propagate for the
@@ -125,6 +130,7 @@ def resolve_target_taxon_accessions(source, taxon, target_rank=None,
         screen_against=screen_against,
         min_completeness=min_completeness,
         max_contamination=max_contamination,
+        exclude_cores=exclude_cores,
         include_rows=include_rows)
 
     if not selection.accessions:
@@ -132,6 +138,9 @@ def resolve_target_taxon_accessions(source, taxon, target_rank=None,
         if min_completeness is not None or max_contamination is not None:
             detail = (" No genomes cleared the requested quality floor, so you may "
                       "want to relax `--min-completeness` / `--max-contamination`.")
+        elif exclude_cores:
+            detail = (" Every candidate genome for it was named in the "
+                      "`--exclusion-list`.")
         raise TargetTaxonError(
             f"No accessions were found for the -t target "
             f"'{selection.canonical}'.{detail}")

@@ -8,11 +8,13 @@ import pyarrow.parquet as pq # type: ignore
 from bit.modules.taxonomy.tax_ranks import RANKS, NA, REFERENCE_VALUE, rank_index
 from bit.modules.taxonomy.tax_select import (SOURCES, UNASSIGNED, assigned_mask,
                                              prefix_mask)
+from bit.modules.taxonomy.exclusion_list import filter_table_by_exclusion
 
 
 ################################################################################
 # pool filters
 ################################################################################
+
 
 def representatives_filter(source, kind):
     """
@@ -46,7 +48,8 @@ def representatives_filter(source, kind):
 ################################################################################
 
 def read_pool(path, source, columns, rank=None, taxon=None, rep_filter=None,
-          accession_prefixes=None, assembly_levels=None, domain_assigned=None):
+          accession_prefixes=None, assembly_levels=None, domain_assigned=None,
+          exclude_cores=None):
     """
     Read `columns` with the pool filters applied, as an Arrow Table
 
@@ -56,6 +59,11 @@ def read_pool(path, source, columns, rank=None, taxon=None, rep_filter=None,
                  actually reach
         False -- only rows WITHOUT one (the viral / metagenome slice `-w all` leaves
                  behind; see tax_targets)
+    exclude_cores:
+        Optional accession cores from `--exclusion-list`, dropped from the pool the
+        same way they're dropped from a real selection. Every count in this module
+        funnels through here, so honoring it in this one place keeps the previewed
+        numbers matching what a pull would actually return
     """
     spec = SOURCES[source]
     domain_col = RANKS[0]
@@ -83,6 +91,15 @@ def read_pool(path, source, columns, rank=None, taxon=None, rep_filter=None,
         tab = tab.filter(assigned_mask(tab.column(domain_col),
                                        assigned=domain_assigned))
 
+    if exclude_cores:
+        if spec.acc_col not in tab.column_names:
+            tab = read_pool(path, source, cols + [spec.acc_col], rank=rank,
+                            taxon=taxon, rep_filter=rep_filter,
+                            accession_prefixes=accession_prefixes,
+                            assembly_levels=assembly_levels,
+                            domain_assigned=domain_assigned)
+        tab, _n = filter_table_by_exclusion(tab, spec.acc_col, exclude_cores)
+
     return tab
 
 
@@ -92,26 +109,30 @@ def read_pool(path, source, columns, rank=None, taxon=None, rep_filter=None,
 
 def count_genomes(path, source, rank=None, taxon=None, rep_filter=None,
                   accession_prefixes=None, assembly_levels=None,
-                  domain_assigned=None):
+                  domain_assigned=None,
+                  exclude_cores=None):
     """
     How many genome rows match. rank/taxon both None counts the whole table.
     """
     spec = SOURCES[source]
     tab = read_pool(path, source, [spec.acc_col], rank=rank, taxon=taxon,
                 rep_filter=rep_filter, accession_prefixes=accession_prefixes,
-                assembly_levels=assembly_levels, domain_assigned=domain_assigned)
+                assembly_levels=assembly_levels, domain_assigned=domain_assigned,
+                exclude_cores=exclude_cores)
     return tab.num_rows
 
 
 def count_distinct_taxa(path, source, rank_col, scope_rank=None, scope_taxon=None,
                         rep_filter=None, accession_prefixes=None,
-                        assembly_levels=None, domain_assigned=None):
+                        assembly_levels=None, domain_assigned=None,
+                        exclude_cores=None):
     """
     How many DISTINCT taxa appear in `rank_col`, optionally scoped to a taxon
     """
     tab = read_pool(path, source, [rank_col], rank=scope_rank, taxon=scope_taxon,
                 rep_filter=rep_filter, accession_prefixes=accession_prefixes,
-                assembly_levels=assembly_levels, domain_assigned=domain_assigned)
+                assembly_levels=assembly_levels, domain_assigned=domain_assigned,
+                exclude_cores=exclude_cores)
     return _count_distinct_assigned(tab.column(rank_col))
 
 
@@ -126,13 +147,15 @@ def _count_distinct_assigned(col):
 
 def distinct_taxa(path, source, rank_col, scope_rank=None, scope_taxon=None,
                   rep_filter=None, accession_prefixes=None, assembly_levels=None,
-                  domain_assigned=None):
+                  domain_assigned=None,
+                  exclude_cores=None):
     """
     The assigned taxa present in `rank_col`, sorted
     """
     tab = read_pool(path, source, [rank_col], rank=scope_rank, taxon=scope_taxon,
                 rep_filter=rep_filter, accession_prefixes=accession_prefixes,
-                assembly_levels=assembly_levels, domain_assigned=domain_assigned)
+                assembly_levels=assembly_levels, domain_assigned=domain_assigned,
+                exclude_cores=exclude_cores)
     col = tab.column(rank_col)
     if len(col) == 0:
         return []
@@ -140,7 +163,8 @@ def distinct_taxa(path, source, rank_col, scope_rank=None, scope_taxon=None,
 
 
 def derep_size(path, source, scope_rank, scope_taxon, derep_rank, rep_filter=None,
-               accession_prefixes=None, assembly_levels=None):
+               accession_prefixes=None, assembly_levels=None,
+               exclude_cores=None):
     """
     How many genomes a --derep-rank pull of this taxon would return
     """
@@ -148,11 +172,13 @@ def derep_size(path, source, scope_rank, scope_taxon, derep_rank, rep_filter=Non
                                scope_rank=scope_rank, scope_taxon=scope_taxon,
                                rep_filter=rep_filter,
                                accession_prefixes=accession_prefixes,
-                               assembly_levels=assembly_levels)
+                               assembly_levels=assembly_levels,
+                               exclude_cores=exclude_cores)
 
 
 def rank_counts(path, source, scope_rank=None, scope_taxon=None, rep_filter=None,
-                accession_prefixes=None, assembly_levels=None, domain_assigned=None):
+                accession_prefixes=None, assembly_levels=None, domain_assigned=None,
+                exclude_cores=None):
     """
     [(rank, num_unique_taxa), ...] for the ranks worth reporting.
 
@@ -166,7 +192,8 @@ def rank_counts(path, source, scope_rank=None, scope_taxon=None, rep_filter=None
                                  rep_filter=rep_filter,
                                  accession_prefixes=accession_prefixes,
                                  assembly_levels=assembly_levels,
-                                 domain_assigned=domain_assigned))
+                                 domain_assigned=domain_assigned,
+                                 exclude_cores=exclude_cores))
             for rank in ranks]
 
 

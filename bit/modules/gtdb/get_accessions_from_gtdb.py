@@ -23,9 +23,13 @@ from bit.modules.taxonomy.tax_targets import (domains_in_asset, is_all_target,
 from bit.modules.taxonomy.get_accs_shared import (PoolSpec, all_derep_size,
                                                   derep_note as _shared_derep_note,
                                                   is_derep_on, scoped_counts_note)
+from bit.modules.taxonomy.exclusion_list import (load_exclusion_cores,
+                                                 filter_table_by_exclusion,
+                                                 exclusion_warning)
 
 
 _RANK_COLUMNS = list(RANKS)
+
 
 
 def _all_columns(gtdb_path):
@@ -75,6 +79,8 @@ def _report_suppressed(n_dropped):
 
 def get_accessions_from_gtdb(args):
 
+    exclude_cores = load_exclusion_cores(getattr(args, "exclusion_list", None))
+
     gtdb_path = get_gtdb_data(quiet=True)
 
     if args.get_table:
@@ -109,11 +115,13 @@ def get_accessions_from_gtdb(args):
     if args.get_rank_counts:
         if named_taxon:
             report_rank_counts_for_taxon(gtdb_path, args.target_taxon,
-                                         representatives_source)
+                                         representatives_source,
+                                         exclude_cores=exclude_cores)
         else:
             report_unique_taxa_counts_of_all_ranks(
                 gtdb_path, representatives_source=representatives_source,
-                scoped_to_all=is_all_target(args.target_taxon))
+                scoped_to_all=is_all_target(args.target_taxon),
+                                            exclude_cores=exclude_cores)
         sys.exit(0)
 
     if not args.target_taxon:
@@ -124,14 +132,17 @@ def get_accessions_from_gtdb(args):
         getattr(args, "target_domain", None))
 
     if args.get_taxon_counts:
-        report_taxon_counts(gtdb_path, target_taxon, representatives_source, args)
+        report_taxon_counts(gtdb_path, target_taxon, representatives_source, args,
+                            exclude_cores=exclude_cores)
         sys.exit(0)
 
     if is_all_target(target_taxon):
         if _derep_is_on(args):
             _write_all_dereplicated(gtdb_path, args, representatives_source)
         else:
-            _write_all(gtdb_path, representatives_source)
+            _write_all(gtdb_path, representatives_source,
+                       exclude_cores=load_exclusion_cores(
+                           getattr(args, "exclusion_list", None)))
         sys.exit(0)
 
     table, kept_rank = _select_rows(gtdb_path, args, target_taxon, resolved_rank,
@@ -162,6 +173,8 @@ def _select_rows(gtdb_path, args, target_taxon, resolved_rank, representatives_s
             gtdb_path, "gtdb", target_taxon, target_rank=resolved_rank,
             derep_rank=derep_rank, reps_only=reps_only,
             target_domain=resolved_domain,
+            exclude_cores=load_exclusion_cores(
+                getattr(args, "exclusion_list", None)),
             screen_against=ncbi_screen_path())
     except ValueError as e:
         print("")
@@ -231,6 +244,8 @@ def _write_all_dereplicated(gtdb_path, args, representatives_source=None):
     try:
         selection = select_all_domains(gtdb_path, "gtdb", derep_rank=args.derep_rank,
                                        reps_only=reps_only,
+                                       exclude_cores=load_exclusion_cores(
+                                           getattr(args, "exclusion_list", None)),
                                        screen_against=ncbi_screen_path())
     except ValueError as e:
         print("")
@@ -276,9 +291,14 @@ def _report_unassigned_domains(summary):
         print("")
 
 
-def _write_all(gtdb_path, representatives_source=None):
+def _write_all(gtdb_path, representatives_source=None, exclude_cores=None):
     """
     Bulk dump of every accession (optionally representatives-only)
+
+    This path reads the asset directly instead of going through the selection core,
+    so it applies the exclusion itself. There is no dereplication here, so "before
+    selection" and "after selection" are the same thing and the listed genomes are
+    simply absent from the dump.
     """
     rep_filter = _rep_filter_for(representatives_source)
     filters = [(rep_filter[0], "=", rep_filter[1])] if rep_filter else None
@@ -286,6 +306,13 @@ def _write_all(gtdb_path, representatives_source=None):
     table = pq.read_table(gtdb_path, columns=_all_columns(gtdb_path), filters=filters)
     table, n_dropped = _screen_table_to_live(table)
     _report_suppressed(n_dropped)
+
+    table, n_excluded = filter_table_by_exclusion(
+        table, "ncbi_genbank_assembly_accession", exclude_cores)
+    note = exclusion_warning(n_excluded)
+    if note:
+        wprint(color_text(note, "yellow"))
+        print("")
 
     if representatives_source:
         stem = f"gtdb-arc-and-bac-{representatives_source}-rep"
@@ -377,28 +404,30 @@ def _rep_filter_for(representatives_source):
     return None
 
 
-def _derep_note(gtdb_path, rank, taxon, args, rep_filter=None):
+def _derep_note(gtdb_path, rank, taxon, args, rep_filter=None, exclude_cores=None):
     """
     The "...dereplicated at X, that would be N" line for one rank, or None when
     dereplication is off
     """
     pool = PoolSpec(gtdb_path, "gtdb", rep_filter=rep_filter, label="GTDB",
-                    taxon_flag="-t")
+                    taxon_flag="-t",
+                    exclude_cores=exclude_cores)
     return _shared_derep_note(pool, rank, taxon, getattr(args, "derep_rank", "off"))
 
 
-def _report_derep_note(gtdb_path, rank, taxon, args, rep_filter=None):
+def _report_derep_note(gtdb_path, rank, taxon, args, rep_filter=None, exclude_cores=None):
     """Print the dereplicated-count line (and any 'auto' advisory) for one rank."""
     if args is None:
         return
-    line, warnings = _derep_note(gtdb_path, rank, taxon, args, rep_filter=rep_filter)
+    line, warnings = _derep_note(gtdb_path, rank, taxon, args, rep_filter=rep_filter,
+                                 exclude_cores=exclude_cores)
     if line:
         wprint("    " + line)
     for warning in warnings:
         wprint(color_text("      " + warning, "yellow"))
 
 
-def report_taxon_counts(gtdb_path, taxon, representatives_source=None, args=None):
+def report_taxon_counts(gtdb_path, taxon, representatives_source=None, args=None, exclude_cores=None):
     """
     Counts for a specific taxon (or 'all'), read straight from the Parquet.
 
@@ -408,19 +437,24 @@ def report_taxon_counts(gtdb_path, taxon, representatives_source=None, args=None
     rep_filter = _rep_filter_for(representatives_source)
 
     if taxon == "all":
-        count = count_genomes(gtdb_path, "gtdb")
+        count = count_genomes(gtdb_path, "gtdb",
+                              exclude_cores=exclude_cores)
         print("")
         wprint(f"  There are {count:,} total genomes in the database.")
         if args is not None and _derep_is_on(args):
+            derep_n = _all_derep_size(gtdb_path, "gtdb", args,
+                                      exclude_cores=exclude_cores)
             wprint(f"    Dereplicated within each domain, that would be "
-                   f"{_all_derep_size(gtdb_path, 'gtdb', args):,} genome(s).")
+                   f"{derep_n:,} genome(s).")
         print("")
         if representatives_source:
             rep_source = "GTDB" if representatives_source == "gtdb" else "RefSeq"
             wprint(color_text(f"In considering only {rep_source} representative genomes:",
                               "yellow"))
             print("")
-            wprint(f"  There are {count_genomes(gtdb_path, 'gtdb', rep_filter=rep_filter):,} "
+            rep_n = count_genomes(gtdb_path, "gtdb", rep_filter=rep_filter,
+                                  exclude_cores=exclude_cores)
+            wprint(f"  There are {rep_n:,} "
                    f"total representative genomes in the database.")
             print("")
         return
@@ -434,10 +468,13 @@ def report_taxon_counts(gtdb_path, taxon, representatives_source=None, args=None
 
     taxon = canonical
 
+    print("")
     for rank in ranks_found_in:
-        count = count_genomes(gtdb_path, "gtdb", rank=rank, taxon=taxon)
+        count = count_genomes(gtdb_path, "gtdb", rank=rank, taxon=taxon,
+                              exclude_cores=exclude_cores)
         wprint("  The rank '" + rank + "' has " + f"{count:,}" + " " + taxon + " entries.")
-        _report_derep_note(gtdb_path, rank, taxon, args)
+        _report_derep_note(gtdb_path, rank, taxon, args,
+                           exclude_cores=exclude_cores)
 
     print("")
 
@@ -448,12 +485,14 @@ def report_taxon_counts(gtdb_path, taxon, representatives_source=None, args=None
         any_rep = False
         for rank in ranks_found_in:
             count = count_genomes(gtdb_path, "gtdb", rank=rank, taxon=taxon,
-                                  rep_filter=rep_filter)
+                                  rep_filter=rep_filter,
+                                  exclude_cores=exclude_cores)
             if count:
                 any_rep = True
                 wprint("  The rank '" + rank + "' has " + f"{count:,}" + " " + taxon +
                        " representative genome entries.")
-                _report_derep_note(gtdb_path, rank, taxon, args, rep_filter=rep_filter)
+                _report_derep_note(gtdb_path, rank, taxon, args, rep_filter=rep_filter,
+                                   exclude_cores=exclude_cores)
                 print("")
         if not any_rep:
             wprint(color_text("Input taxon '" + taxon + "' doesn't seem to exist at any "
@@ -462,13 +501,16 @@ def report_taxon_counts(gtdb_path, taxon, representatives_source=None, args=None
             sys.exit(0)
 
 
-def _all_derep_size(path, source, args, rep_filter=None):
-    """How many genomes `-t all --derep-rank X` would return."""
-    pool = PoolSpec(path, source, rep_filter=rep_filter, label="GTDB", taxon_flag="-t")
+def _all_derep_size(path, source, args, rep_filter=None, exclude_cores=None):
+    """
+    How many genomes `-t all --derep-rank X` would return
+    """
+    pool = PoolSpec(path, source, rep_filter=rep_filter, label="GTDB",
+                    taxon_flag="-t", exclude_cores=exclude_cores)
     return all_derep_size(pool, args.derep_rank)
 
 
-def report_rank_counts_for_taxon(gtdb_path, taxon, representatives_source=None):
+def report_rank_counts_for_taxon(gtdb_path, taxon, representatives_source=None, exclude_cores=None):
     """
     `--get-rank-counts` scoped to a taxon
     """
@@ -483,9 +525,11 @@ def report_rank_counts_for_taxon(gtdb_path, taxon, representatives_source=None):
 
     for rank in ranks_found_in:
         total = count_genomes(gtdb_path, "gtdb", rank=rank, taxon=canonical,
-                              rep_filter=rep_filter)
+                              rep_filter=rep_filter,
+                              exclude_cores=exclude_cores)
         rows = rank_counts(gtdb_path, "gtdb", scope_rank=rank, scope_taxon=canonical,
-                           rep_filter=rep_filter)
+                           rep_filter=rep_filter,
+                           exclude_cores=exclude_cores)
         print("")
         wprint(f"  The rank '{rank}' has {total:,} {canonical} entries.")
         print("")
@@ -499,7 +543,7 @@ def report_rank_counts_for_taxon(gtdb_path, taxon, representatives_source=None):
 
 
 def report_unique_taxa_counts_of_all_ranks(gtdb_path, representatives_source=None,
-                                           scoped_to_all=False):
+                                           scoped_to_all=False, exclude_cores=None):
     """
     Counts of unique taxa at each rank across the whole table.
 
@@ -513,7 +557,8 @@ def report_unique_taxa_counts_of_all_ranks(gtdb_path, representatives_source=Non
 
     print("")
     print(render_rank_count_table(rank_counts(gtdb_path, "gtdb",
-                                              domain_assigned=domain_assigned)))
+                                              domain_assigned=domain_assigned,
+                                              exclude_cores=exclude_cores)))
     print("")
 
     if scoped_to_all:
@@ -530,7 +575,8 @@ def report_unique_taxa_counts_of_all_ranks(gtdb_path, representatives_source=Non
                         width=100, leading_newline=False, trailing_newline=True)
     elif representatives_source == "refseq":
         rep_rows = rank_counts(gtdb_path, "gtdb",
-                               rep_filter=_rep_filter_for("refseq"))
+                               rep_filter=_rep_filter_for("refseq"),
+                                                          exclude_cores=exclude_cores)
         wprint(color_text("  In considering only RefSeq reference genomes:", "yellow"))
         print("")
         print(render_rank_count_table(rep_rows, count_header="Num. Unique Ref. Taxa"))

@@ -37,7 +37,7 @@ def add_help(group):
         "-h",
         "--help",
         action = "help",
-        help = wrap_help("Show this help message and exit")
+        help = wrap_help("Show this help message")
     )
 
 class VersionAction(argparse.Action):
@@ -54,7 +54,7 @@ def add_version_arg(group):
         "-v",
         "--version",
         action = VersionAction,
-        help = wrap_help("Show bit version and exit")
+        help = wrap_help("Show bit version")
     )
 
 def add_force(group):
