@@ -98,6 +98,17 @@ def test_parse_assembly_levels_unknown_raises():
         parse_assembly_levels(["banana"])
 
 
+def test_cli_assembly_level_is_repeatable():
+    # repeated --assembly-level must accumulate (argparse append), not overwrite down
+    # to the last value; parse then turns the tokens into the NCBI display strings
+    from bit.cli.get_accessions_from_ncbi import build_parser
+    args = build_parser().parse_args(
+        ["-t", "Alteromonas", "--assembly-level", "complete",
+         "--assembly-level", "contig"])
+    assert args.assembly_level == ["complete", "contig"]
+    assert parse_assembly_levels(args.assembly_level) == ["Complete Genome", "Contig"]
+
+
 # --- taxon path -----------------------------------------------------------
 
 def test_taxon_writes_both_files(table, tmp_path, monkeypatch):
@@ -193,11 +204,16 @@ def test_counts_mode_derep_size_matches_what_a_pull_returns(table, tmp_path,
     assert f"that would be {len(accs)} genome(s)." in reported
 
 
-def test_counts_mode_scope_note_reflects_source(table, tmp_path, monkeypatch, capsys):
+def test_counts_mode_reflects_source_filter(table, tmp_path, monkeypatch, capsys):
+    # refseq scoping drops the one GCA row, so the genus count is 2 (not 3), and every
+    # count line carries the generic "(after any specified filters)" tag rather than an
+    # enumerated scope note
     monkeypatch.chdir(tmp_path)
     _run(_args(target_taxon="Alteromonas",
                                        get_taxon_counts=True, ncbi_section="refseq"))
-    assert "(in refseq)" in capsys.readouterr().out
+    out = capsys.readouterr().out
+    assert "(after any specified filters)" in out
+    assert "The rank 'genus' has 2 Alteromonas entries" in out
 
 
 def test_counts_mode_reports_every_rank_a_name_occurs_at(tmp_path, monkeypatch, capsys):
@@ -459,7 +475,7 @@ def test_startup_prints_date_and_update_hint(table, tmp_path, monkeypatch, capsy
     monkeypatch.chdir(tmp_path)
     _run(_args(get_rank_counts=True))
     out = capsys.readouterr().out
-    assert "Using NCBI data retrieved: Jan 05, 2026" in out
+    assert "Using NCBI assembly-data retrieved: Jan 05, 2026" in out
 
 
 # --- preflight: --derep-rank applicability --------------------------------

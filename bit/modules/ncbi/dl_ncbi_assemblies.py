@@ -18,6 +18,7 @@ from bit.modules.taxonomy.target_taxon import (resolve_target_taxon_accessions,
                                                ensure_source_data,
                                                TargetTaxonError)
 from bit.modules.taxonomy.exclusion_list import load_exclusion_cores
+from bit.modules.taxonomy.get_accs_shared import parse_assembly_levels
 from bit.modules.ncbi.parse_ncbi_assembly_summary import parse_ncbi_assembly_summary
 from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data, ncbi_data_table_path
 
@@ -79,6 +80,13 @@ def preflight_checks(args):
     if accessions_file:
         check_files_are_found([accessions_file])
 
+    if (getattr(args, "assembly_level", None)
+            and getattr(args, "source", "ncbi") == "gtdb"):
+        report_message("`--assembly-level` is only applicable with `--source ncbi`. "
+                       "Re-run with `--source ncbi`, or drop `--assembly-level`.",
+                       "yellow", trailing_newline=True)
+        sys.exit(1)
+
     exclusion_list = getattr(args, "exclusion_list", None)
     if exclusion_list:
         if not target_taxa:
@@ -125,7 +133,7 @@ def _selection_kwargs(args):
         "derep_rank": getattr(args, "derep_rank", "auto"),
         "target_domain": getattr(args, "target_domain", None),
         "ncbi_section": getattr(args, "ncbi_section", "refseq"),
-        "assembly_levels": getattr(args, "assembly_level", None),
+        "assembly_levels": parse_assembly_levels(getattr(args, "assembly_level", None)),
         "reps_only": reps_only,
         "min_completeness": getattr(args, "min_completeness", None),
         "max_contamination": getattr(args, "max_contamination", None),

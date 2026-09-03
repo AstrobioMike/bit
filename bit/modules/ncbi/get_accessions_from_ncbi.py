@@ -26,14 +26,16 @@ from bit.modules.taxonomy.tax_counts import (representatives_filter, count_genom
                                              render_rank_count_table)
 from bit.modules.taxonomy.tax_targets import (is_all_target,
                                               unassigned_domain_summary)
-from bit.modules.taxonomy.get_accs_shared import (ASSEMBLY_LEVELS, PoolSpec,
+from bit.modules.taxonomy.get_accs_shared import (ASSEMBLY_LEVELS,
+                                                  FILTERS_APPLIED_NOTE, PoolSpec,
                                                   apply_derep_default,
                                                   derep_note as _shared_derep_note,
                                                   is_derep_on,
                                                   parse_assembly_levels as _parse_levels,
                                                   pull_count_lines,
                                                   scoped_counts_note,
-                                                  source_prefixes as _shared_prefixes)
+                                                  source_prefixes as _shared_prefixes,
+                                                  with_filters_note)
 from bit.modules.taxonomy.exclusion_list import load_exclusion_cores
 
 
@@ -200,15 +202,16 @@ def get_accessions_from_ncbi(args):
     tab = _apply_filters(tab, args)
 
     if args.get_taxon_counts:
-        report_message(f"There are {tab.num_rows:,} genome(s) under {label} with "
-                       "the specified filters.", "none",
+        report_message(with_filters_note(
+                           f"There are {tab.num_rows:,} genome(s) under {label}."),
+                       "none",
                        initial_indent="    ", subsequent_indent="    ",
                        trailing_newline=True)
         sys.exit(0)
 
     if tab.num_rows == 0:
-        report_message(f"No genomes were found under {label} with the specified "
-                       "filters.", "none",
+        report_message(with_filters_note(
+                           f"No genomes were found under {label}."), "none",
                        initial_indent="    ", subsequent_indent="    ")
         print("")
         sys.exit(0)
@@ -323,7 +326,6 @@ def _report_rank_counts_for_taxon_or_exit(table_path, taxon, args, assembly_leve
     """
     prefixes = _source_prefixes(args.ncbi_section)
     reps_only = args.refseq_reference_genomes_only
-    scope_note = _counts_scope_note(args, assembly_levels)
 
     try:
         canonical, ranks_found_in, _domains_found = _resolve_ranks(table_path, taxon)
@@ -342,7 +344,8 @@ def _report_rank_counts_for_taxon_or_exit(table_path, taxon, args, assembly_leve
                            accession_prefixes=prefixes,
                            assembly_levels=assembly_levels,
                            exclude_cores=exclude_cores)
-        report_message(f"The rank '{rank}' has {total:,} {canonical} entries{scope_note}.",
+        report_message(with_filters_note(
+                           f"The rank '{rank}' has {total:,} {canonical} entries."),
                        color=None, width=100, initial_indent="    ",
                        subsequent_indent="    ", trailing_newline=True)
         print(render_rank_count_table(
@@ -354,41 +357,25 @@ def _report_rank_counts_for_taxon_or_exit(table_path, taxon, args, assembly_leve
                    subsequent_indent="  ", trailing_newline=True)
 
 
-def _counts_scope_note(args, assembly_levels):
-    """
-    short human description of which filters the primary counts block reflects
-    """
-    bits = []
-    if args.ncbi_section == "refseq":
-        bits.append("in refseq")
-    elif args.ncbi_section == "genbank":
-        bits.append("in genbank")
-    if assembly_levels:
-        levels = ", ".join(sorted(assembly_levels))
-        bits.append(f"at assembly level {levels}")
-    if not bits:
-        return ""
-    return " (" + ", ".join(bits) + ")"
-
-
 def _report_taxon_counts_or_exit(table_path, taxon, args, assembly_levels, exclude_cores=None):
     """
     Report how many genomes match `taxon` at each rank it occurs at, matching the GTDB
     helper's format
 
-    A primary per-rank block for the base pool (scoped by --ncbi-section and
-    --assembly-level), then if --refseq-reference-genomes-only is set a separate
-    "in considering only RefSeq reference genomes" block, like GTDB's reps block.
+    A primary per-rank block for the base pool (scoped by every pool filter --
+    --ncbi-section, --assembly-level, --exclusion-list), then if
+    --refseq-reference-genomes-only is set a separate "in considering only RefSeq
+    reference genomes" block, like GTDB's reps block.
 
-    The wording is explicit about WHICH filters each block reflects: the primary block
-    reflects --ncbi-section and --assembly-level (but not the reference-genome filter, which
-    is applied only in the second block), so the two numbers aren't confused.
+    Each primary line carries the generic "(after any specified filters)" tag rather
+    than enumerating which filters are set, so it can't drift from what the pool
+    actually applies. The reference-genome filter is called out separately because it
+    is applied only in the second block.
 
     Reporting per-rank (rather than one number for a single resolved rank) also means
     an ambiguous taxon name is informative here instead of an error.
     """
     prefixes = _source_prefixes(args.ncbi_section)
-    scope_note = _counts_scope_note(args, assembly_levels)
 
     try:
         canonical, ranks_found_in, _domains_found = _resolve_ranks(table_path, taxon)
@@ -405,7 +392,8 @@ def _report_taxon_counts_or_exit(table_path, taxon, args, assembly_levels, exclu
         count = _count_at_rank(table_path, rank, taxon, prefixes=prefixes,
                                assembly_levels=assembly_levels,
                                exclude_cores=exclude_cores)
-        report_message(f"The rank '{rank}' has {count:,} {taxon} entries{scope_note}.",
+        report_message(with_filters_note(
+                           f"The rank '{rank}' has {count:,} {taxon} entries."),
                        color=None, width=100, initial_indent="    ",
                        subsequent_indent="    ", leading_newline=False,
                        trailing_newline=False)

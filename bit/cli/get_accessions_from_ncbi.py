@@ -51,6 +51,7 @@ def build_parser(parent_subparsers=None):
 
     optional.add_argument(
         "--assembly-level",
+        action="append",
         choices=list(ASSEMBLY_LEVELS),
         default=None,
         help=("Only include genomes (from `-w`) at this assembly level. "

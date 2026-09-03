@@ -582,16 +582,47 @@ class TestSelectionKwargsPlumbing:
         assert self._capture(source="gtdb", representatives_only=True)["reps_only"] is True
 
     def test_quality_floor_and_levels_are_passed_through(self):
+        # argparse yields the lowercase CLI tokens (choices are the short keys); the
+        # selection core wants NCBI's display strings, so _selection_kwargs parses them.
+        # Passing tokens through unparsed was the bug that made --assembly-level match
+        # nothing on the downloader.
         kw = self._capture(min_completeness=90.0, max_contamination=5.0,
-                           assembly_level=["Complete Genome"])
+                           assembly_level=["complete"])
         assert kw["min_completeness"] == 90.0
         assert kw["max_contamination"] == 5.0
         assert kw["assembly_levels"] == ["Complete Genome"]
+
+    def test_multiple_assembly_levels_all_pass_through(self):
+        # repeated --assembly-level (argparse append) -> every level parsed and kept,
+        # not just the last
+        kw = self._capture(assembly_level=["complete", "contig"])
+        assert kw["assembly_levels"] == ["Complete Genome", "Contig"]
 
     def test_section_and_derep_are_passed_through(self):
         kw = self._capture(ncbi_section="genbank", derep_rank="genus")
         assert kw["ncbi_section"] == "genbank"
         assert kw["derep_rank"] == "genus"
+
+
+class TestAssemblyLevelSourceGuard:
+
+    def _preflight(self, **args):
+        from bit.modules.ncbi.dl_ncbi_assemblies import preflight_checks
+        with _patch("bit.modules.ncbi.dl_ncbi_assemblies.get_ncbi_assembly_data"), \
+             _patch("bit.modules.ncbi.dl_ncbi_assemblies.ensure_source_data"):
+            preflight_checks(_dl_args(**args))
+
+    def test_assembly_level_with_gtdb_source_exits(self, capsys):
+        # GTDB has no assembly-level column; erroring beats silently ignoring the flag
+        with pytest.raises(SystemExit):
+            self._preflight(source="gtdb", target_taxon=["Bacteria"],
+                            assembly_level=["complete"])
+        assert "--source ncbi" in capsys.readouterr().out
+
+    def test_assembly_level_with_ncbi_source_is_fine(self):
+        # same flag, ncbi source -> no exit
+        self._preflight(source="ncbi", target_taxon=["Bacteria"],
+                        assembly_level=["complete"])
 
 
 class TestDryRun:
