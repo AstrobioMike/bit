@@ -87,12 +87,6 @@ def preflight_checks(args):
                        trailing_newline=True)
         sys.exit()
 
-    if args.refseq_reference_genomes_only and args.ncbi_section != "refseq":
-        report_message("The `-R/--refseq-ref-genomes-only` flag is only compatible "
-                       "with `--ncbi-section refseq`.",
-                       trailing_newline=True)
-        sys.exit()
-
     check_derep_rank_is_applicable(args)
 
 

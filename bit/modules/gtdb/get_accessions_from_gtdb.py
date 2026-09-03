@@ -23,7 +23,8 @@ from bit.modules.taxonomy.tax_targets import (domains_in_asset, is_all_target,
 from bit.modules.taxonomy.get_accs_shared import (PoolSpec, all_derep_size,
                                                   apply_derep_default,
                                                   derep_note as _shared_derep_note,
-                                                  is_derep_on, scoped_counts_note)
+                                                  is_derep_on, pull_count_lines,
+                                                  scoped_counts_note)
 from bit.modules.taxonomy.exclusion_list import (load_exclusion_cores,
                                                  filter_table_by_exclusion,
                                                  exclusion_warning)
@@ -150,10 +151,30 @@ def get_accessions_from_gtdb(args):
                            getattr(args, "exclusion_list", None)))
         sys.exit(0)
 
-    table, kept_rank = _select_rows(gtdb_path, args, target_taxon, resolved_rank,
-                                    representatives_source, resolved_domain)
+    table, kept_rank, effective_derep_rank = _select_rows(
+        gtdb_path, args, target_taxon, resolved_rank, representatives_source,
+        resolved_domain)
+    _report_pull_counts(gtdb_path, target_taxon, kept_rank, effective_derep_rank,
+                        table.num_rows, representatives_source,
+                        exclude_cores=exclude_cores)
     _write_outputs(table, target_taxon, kept_rank, representatives_source)
     sys.exit(0)
+
+
+def _report_pull_counts(gtdb_path, taxon, rank, effective_derep_rank, kept_n,
+                        representatives_source=None, exclude_cores=None):
+    """
+    The "The rank 'X' has N <taxon> entries." (+ dereplicated) block a taxon pull
+    prints just above its "Wrote N accession(s)" lines.
+    """
+    pool = PoolSpec(gtdb_path, "gtdb",
+                    rep_filter=_rep_filter_for(representatives_source),
+                    label="GTDB", taxon_flag="-t", exclude_cores=exclude_cores)
+    header, derep = pull_count_lines(pool, rank, taxon, effective_derep_rank, kept_n)
+    print("")
+    wprint("  " + header)
+    if derep:
+        wprint("    " + derep)
 
 
 def _select_rows(gtdb_path, args, target_taxon, resolved_rank, representatives_source,
@@ -171,7 +192,7 @@ def _select_rows(gtdb_path, args, target_taxon, resolved_rank, representatives_s
     if derep_rank in (None, "off", "none", "None"):
         table, n_dropped = _screen_table_to_live(table)
         _report_suppressed(n_dropped)
-        return table, resolved_rank
+        return table, resolved_rank, None
 
     try:
         selection = select_ref_genomes(
@@ -194,12 +215,7 @@ def _select_rows(gtdb_path, args, target_taxon, resolved_rank, representatives_s
 
     table = _restrict_to_accessions(table, selection.accessions)
 
-    if selection.effective_derep_rank:
-        wprint(f"Dereplicated to one genome per {selection.effective_derep_rank}: "
-               f"{table.num_rows:,} genome(s) kept.")
-        print("")
-
-    return table, resolved_rank
+    return table, resolved_rank, selection.effective_derep_rank
 
 
 def _restrict_to_accessions(table, accessions):
@@ -229,11 +245,11 @@ def _write_outputs(table, taxon, rank, representatives_source=None):
     write_accessions(acc_out_filename, accs)
 
     print("")
-    wprint(f"Wrote {len(accs):,} accession(s) to:")
-    wprint("  " + color_text(acc_out_filename))
+    wprint("  " + f"Wrote {len(accs):,} accession(s) to:")
+    wprint("    " + color_text(acc_out_filename))
     print("")
-    wprint("Associated taxonomy and metadata of these targets written to:")
-    wprint("  " + color_text(tab_out_filename))
+    wprint("  " + "Associated taxonomy and metadata of these targets written to:")
+    wprint("    " + color_text(tab_out_filename))
     print("")
 
 

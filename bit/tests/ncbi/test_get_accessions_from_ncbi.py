@@ -459,7 +459,7 @@ def test_startup_prints_date_and_update_hint(table, tmp_path, monkeypatch, capsy
     monkeypatch.chdir(tmp_path)
     _run(_args(get_rank_counts=True))
     out = capsys.readouterr().out
-    assert "Date NCBI data retrieved: Jan 05, 2026" in out
+    assert "Using NCBI data retrieved: Jan 05, 2026" in out
 
 
 # --- preflight: --derep-rank applicability --------------------------------
@@ -594,11 +594,13 @@ def test_domainless_genomes_are_still_reachable_by_name(table_with_viruses, tmp_
     assert sorted(accs) == ["GCF_000000030.1", "GCF_000000031.1"]
 
 
-def test_source_both_warns_about_the_overlap(table, tmp_path, monkeypatch, capsys):
+def test_source_both_no_longer_warns_about_the_overlap(table, tmp_path, monkeypatch, capsys):
+    # the `--ncbi-section both` overlap note was dropped now that --derep-rank
+    # defaults to auto, so `both` no longer returns near-duplicate assemblies
     monkeypatch.chdir(tmp_path)
     get_accessions_from_ncbi(_args(target_taxon="Alteromonas", ncbi_section="both"))
     out = capsys.readouterr().out
-    assert "overlap between RefSeq and GenBank" in out
+    assert "overlap between RefSeq and GenBank" not in out
 
 
 def test_single_source_says_nothing_about_overlap(table, tmp_path, monkeypatch, capsys):

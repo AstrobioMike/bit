@@ -31,8 +31,8 @@ from bit.modules.taxonomy.get_accs_shared import (ASSEMBLY_LEVELS, PoolSpec,
                                                   derep_note as _shared_derep_note,
                                                   is_derep_on,
                                                   parse_assembly_levels as _parse_levels,
+                                                  pull_count_lines,
                                                   scoped_counts_note,
-                                                  source_overlap_note,
                                                   source_prefixes as _shared_prefixes)
 from bit.modules.taxonomy.exclusion_list import load_exclusion_cores
 
@@ -91,7 +91,6 @@ def get_accessions_from_ncbi(args):
 
     table_path = ncbi_table_path()
     _report_ncbi_date(table_path)
-    _report_source_overlap(getattr(args, "ncbi_section", "refseq"))
 
     if getattr(args, "get_table", False):
         copy_ncbi_table(table_path)
@@ -120,6 +119,10 @@ def get_accessions_from_ncbi(args):
         _report_taxon_counts_or_exit(table_path, target, args, assembly_levels,
                                      exclude_cores=exclude_cores)
         sys.exit(0)
+
+    # the taxon-name path resolves to a single rank we can report a count block
+    # against; `all` and taxid pulls don't, so these stay None for them
+    pull_rank = pull_taxon = pull_derep = None
 
     if is_all_target(args.target_taxon):
         if _derep_is_on(args):
@@ -191,6 +194,8 @@ def get_accessions_from_ncbi(args):
         label = f"{rank} '{canonical}'"
         if selection.effective_derep_rank:
             label += f" (dereplicated to one genome per {selection.effective_derep_rank})"
+        pull_rank, pull_taxon, pull_derep = (
+            rank, canonical, selection.effective_derep_rank)
 
     tab = _apply_filters(tab, args)
 
@@ -208,7 +213,34 @@ def get_accessions_from_ncbi(args):
         print("")
         sys.exit(0)
 
+    _report_pull_counts(table_path, args, assembly_levels, pull_rank, pull_taxon,
+                        pull_derep, tab.num_rows, exclude_cores=exclude_cores)
     _write_outputs(tab, args, label)
+
+
+def _report_pull_counts(table_path, args, assembly_levels, rank, taxon,
+                        effective_derep_rank, kept_n, exclude_cores=None):
+    """
+    The "The rank 'X' has N <taxon> entries." (+ dereplicated) block a taxon-name
+    pull prints just above its "Wrote N accession(s)" lines.
+
+    Only the taxon-name path has a single resolved rank to report against; the `all`
+    and taxid paths pass rank=None and are left alone.
+    """
+    if rank is None:
+        return
+
+    pool = PoolSpec(
+        table_path, "ncbi",
+        rep_filter=_rep_filter(args.refseq_reference_genomes_only),
+        accession_prefixes=_source_prefixes(getattr(args, "ncbi_section", "refseq")),
+        assembly_levels=assembly_levels or None, label="NCBI", taxon_flag="-t",
+        exclude_cores=exclude_cores)
+    header, derep = pull_count_lines(pool, rank, taxon, effective_derep_rank, kept_n)
+    print("")
+    wprint("  " + header)
+    if derep:
+        wprint("    " + derep)
 
 
 def _prefix_mask(acc_col, prefixes):
@@ -376,7 +408,7 @@ def _report_taxon_counts_or_exit(table_path, taxon, args, assembly_levels, exclu
         report_message(f"The rank '{rank}' has {count:,} {taxon} entries{scope_note}.",
                        color=None, width=100, initial_indent="    ",
                        subsequent_indent="    ", leading_newline=False,
-                       trailing_newline=True)
+                       trailing_newline=False)
         _report_derep_note(table_path, rank, taxon, args, prefixes, assembly_levels,
                            exclude_cores=exclude_cores)
 
@@ -414,18 +446,6 @@ def _report_unassigned_domains(summary):
     message = summary.message("NCBI") if summary else None
     if message:
         report_message(message, "yellow", width=100, initial_indent="    ",
-                       subsequent_indent="    ", trailing_newline=True)
-
-
-def _report_source_overlap(source):
-    """
-    `--ncbi-section both` pulls most assemblies twice (a RefSeq GCF_ record and the GenBank
-    GCA_ original it was derived from), so say so rather than let it look like twice
-    as many genomes.
-    """
-    note = source_overlap_note(source)
-    if note:
-        report_message(note, "yellow", width=100, initial_indent="    ",
                        subsequent_indent="    ", trailing_newline=True)
 
 
@@ -487,7 +507,7 @@ def _filter_by_source(tab, source):
 
 def _report_ncbi_date(table_path):
     date_str = read_date_retrieved(os.path.dirname(table_path))
-    print("\n    Date NCBI data retrieved: " + date_str)
+    print("\n    Using NCBI assembly-data retrieved: " + date_str)
 
 
 def _derep_is_on(args):
@@ -587,9 +607,9 @@ def _write_outputs(tab, args, label):
     write_accessions(acc_out, accs)
 
     print("")
-    wprint(f"Wrote {len(accs):,} accession(s) to:")
-    wprint("  " + color_text(acc_out))
+    wprint("  " + f"Wrote {len(accs):,} accession(s) to:")
+    wprint("    " + color_text(acc_out))
     print("")
-    wprint("Associated taxonomy and metadata of these targets written to:")
-    wprint("  " + color_text(tab_out))
+    wprint("  " + "Associated taxonomy and metadata of these targets written to:")
+    wprint("    " + color_text(tab_out))
     print("")
