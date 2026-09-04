@@ -18,7 +18,8 @@ from bit.modules.taxonomy.target_taxon import (resolve_target_taxon_accessions,
                                                ensure_source_data,
                                                TargetTaxonError)
 from bit.modules.taxonomy.exclusion_list import load_exclusion_cores
-from bit.modules.taxonomy.get_accs_shared import parse_assembly_levels
+from bit.modules.taxonomy.get_accs_shared import (parse_assembly_levels,
+                                                  resolved_derep_rank)
 from bit.modules.ncbi.parse_ncbi_assembly_summary import parse_ncbi_assembly_summary
 from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data, ncbi_data_table_path
 
@@ -40,6 +41,8 @@ MAX_BACKOFF = 30
 MAX_RETRY_AFTER = 300
 
 SAWTOOTH_CYCLE = 5
+
+DOWNLOAD_TIMEOUT = 60
 
 def dl_ncbi_assemblies(args):
 
@@ -130,7 +133,7 @@ def _selection_kwargs(args):
 
     return {
         "target_rank": getattr(args, "target_rank", None),
-        "derep_rank": getattr(args, "derep_rank", "auto"),
+        "derep_rank": resolved_derep_rank(args),
         "target_domain": getattr(args, "target_domain", None),
         "ncbi_section": getattr(args, "ncbi_section", "refseq"),
         "assembly_levels": parse_assembly_levels(getattr(args, "assembly_level", None)),
@@ -439,12 +442,18 @@ def download_one(target_link, local_dest, retries=max_retries):
 
     local_path.parent.mkdir(parents=True, exist_ok=True)
 
+    if not os.access(local_path.parent, os.W_OK):
+        return (local_dest,
+                f"download directory '{local_path.parent}' is not writable", "failed")
+
     # clear any stale tmp left behind by a prior interrupted run
     tmp_path.unlink(missing_ok=True)
 
     for attempt in range(1, retries + 1):
         try:
-            resp = requests.get(target_link, stream=True, timeout=60)
+            resp = requests.get(target_link, stream=True,
+                                timeout=DOWNLOAD_TIMEOUT,
+                                headers={"User-Agent": "curl/8.0"})
 
             if resp.status_code == 404:
                 return (local_dest, "Not available in requested format (404)", "failed")
@@ -459,7 +468,8 @@ def download_one(target_link, local_dest, retries=max_retries):
                 sleep_backoff(attempt, resp, throttled=throttled)
                 continue
 
-            resp.raise_for_status()
+            if not resp.ok:
+                return (local_dest, f"HTTP {resp.status_code}", "failed")
 
             content_type = resp.headers.get("Content-Type", "")
             if "xml" in content_type.lower() or "html" in content_type.lower():

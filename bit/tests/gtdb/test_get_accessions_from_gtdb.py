@@ -220,7 +220,7 @@ def test_derep_keeps_one_genome_per_group(gtdb_parquet, tmp_path, monkeypatch):
 def test_all_writes_accessions_and_no_metadata(gtdb_parquet, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _run(gtdb_parquet, target_taxon="all")
-    accs = (tmp_path / "gtdb-arc-and-bac-accessions.txt").read_text().splitlines()
+    accs = (tmp_path / "gtdb-arc-and-bac-accs.txt").read_text().splitlines()
     assert len(accs) == 5
     assert not list(tmp_path.glob("*-rep-metadata.tsv"))
 
@@ -233,16 +233,16 @@ def test_all_with_gtdb_reps_names_the_source_actually_used(gtdb_parquet, tmp_pat
     """
     monkeypatch.chdir(tmp_path)
     _run(gtdb_parquet, target_taxon="all", gtdb_representatives_only=True)
-    accs = (tmp_path / "gtdb-arc-and-bac-gtdb-rep-accessions.txt").read_text().splitlines()
+    accs = (tmp_path / "gtdb-arc-and-bac-gtdb-rep-accs.txt").read_text().splitlines()
     assert len(accs) == 3
     assert (tmp_path / "gtdb-arc-and-bac-gtdb-rep-metadata.tsv").exists()
-    assert not (tmp_path / "gtdb-arc-and-bac-refseq-rep-accessions.txt").exists()
+    assert not (tmp_path / "gtdb-arc-and-bac-refseq-ref-accs.txt").exists()
 
 
 def test_all_with_refseq_reps_names_refseq(gtdb_parquet, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _run(gtdb_parquet, target_taxon="all", refseq_reference_genomes_only=True)
-    accs = (tmp_path / "gtdb-arc-and-bac-refseq-rep-accessions.txt").read_text().splitlines()
+    accs = (tmp_path / "gtdb-arc-and-bac-refseq-ref-accs.txt").read_text().splitlines()
     assert len(accs) == 3
 
 
@@ -454,7 +454,7 @@ def test_orchestrator_refseq_ref_only_filters_to_ref_genomes(gtdb_parquet, tmp_p
                 target_taxon="Escherichia",
                 refseq_reference_genomes_only=True,
             ))
-    accs = (out_dir / "gtdb-escherichia-genus-refseq-rep-accs.txt").read_text().splitlines()
+    accs = (out_dir / "gtdb-escherichia-genus-refseq-ref-accs.txt").read_text().splitlines()
     assert len(accs) == 1
 
 
@@ -531,7 +531,7 @@ def test_all_with_derep_rank_dereplicates_within_each_domain(gtdb_parquet, tmp_p
     """
     monkeypatch.chdir(tmp_path)
     _run(gtdb_parquet, target_taxon="all", derep_rank="domain")
-    accs = (tmp_path / "gtdb-arc-and-bac-accessions.txt").read_text().splitlines()
+    accs = (tmp_path / "gtdb-arc-and-bac-accs.txt").read_text().splitlines()
     assert len(accs) == 2      # one genome per domain
     out = capsys.readouterr().out
     assert "Dereplicating within each domain (Archaea, Bacteria)" in out
@@ -541,14 +541,14 @@ def test_all_with_derep_rank_dereplicates_within_each_domain(gtdb_parquet, tmp_p
 def test_all_with_derep_rank_at_a_finer_rank(gtdb_parquet, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _run(gtdb_parquet, target_taxon="all", derep_rank="genus")
-    accs = (tmp_path / "gtdb-arc-and-bac-accessions.txt").read_text().splitlines()
+    accs = (tmp_path / "gtdb-arc-and-bac-accs.txt").read_text().splitlines()
     assert len(accs) == 3      # Haloarcula + Escherichia + Salmonella
 
 
 def test_all_without_derep_rank_is_still_a_bulk_dump(gtdb_parquet, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _run(gtdb_parquet, target_taxon="all")
-    accs = (tmp_path / "gtdb-arc-and-bac-accessions.txt").read_text().splitlines()
+    accs = (tmp_path / "gtdb-arc-and-bac-accs.txt").read_text().splitlines()
     assert len(accs) == 5
 
 

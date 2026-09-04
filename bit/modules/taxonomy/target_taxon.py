@@ -7,6 +7,7 @@ turns a taxon name (+ the selection knobs) into a list of assembly accessions
 """
 
 from bit.modules.taxonomy.tax_derep import select_ref_genomes
+from bit.modules.taxonomy.empty_selection import empty_selection_message
 from bit.modules.taxonomy.tax_targets import expand_all_targets, is_all_target
 from bit.modules.gtdb.get_gtdb_data import gtdb_data_table_path, get_gtdb_data
 from bit.modules.ncbi.get_ncbi_assembly_data import (ncbi_data_table_path,
@@ -131,18 +132,17 @@ def resolve_target_taxon_accessions(source, taxon, target_rank=None,
         min_completeness=min_completeness,
         max_contamination=max_contamination,
         exclude_cores=exclude_cores,
-        include_rows=include_rows)
+        include_rows=include_rows,
+        diagnose_empty=True)
 
     if not selection.accessions:
-        detail = ""
-        if min_completeness is not None or max_contamination is not None:
-            detail = (" No genomes cleared the requested quality floor, so you may "
-                      "want to relax `--min-completeness` / `--max-contamination`.")
-        elif exclude_cores:
-            detail = (" Every candidate genome for it was named in the "
-                      "`--exclusion-list`.")
-        raise TargetTaxonError(
-            f"No accessions were found for the -t target "
-            f"'{selection.canonical}'.{detail}")
+        raise TargetTaxonError(empty_selection_message(
+            selection, taxon_flag="-t",
+            assembly_levels=assembly_levels,
+            ncbi_section=(None if str(source).strip().lower() == "gtdb"
+                          else ncbi_section),
+            reps_only_requested=bool(reps_only),
+            min_completeness=min_completeness,
+            max_contamination=max_contamination))
 
     return selection.accessions, selection

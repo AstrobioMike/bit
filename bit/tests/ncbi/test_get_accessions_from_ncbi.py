@@ -114,15 +114,15 @@ def test_cli_assembly_level_is_repeatable():
 def test_taxon_writes_both_files(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions_from_ncbi(_args(target_taxon="Alteromonas"))
-    assert (tmp_path / "ncbi-alteromonas-refseq-accessions.txt").exists()
-    assert (tmp_path / "ncbi-alteromonas-refseq-metadata.tsv").exists()
+    assert (tmp_path / "ncbi-alteromonas-genus-refseq-accs.txt").exists()
+    assert (tmp_path / "ncbi-alteromonas-genus-refseq-metadata.tsv").exists()
 
 
 def test_taxon_accs_file_contents(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     # source=both so GCA rows aren't prefix-filtered out
     get_accessions_from_ncbi(_args(target_taxon="Alteromonas", ncbi_section="both"))
-    accs = (tmp_path / "ncbi-alteromonas-accessions.txt").read_text().split()
+    accs = (tmp_path / "ncbi-alteromonas-genus-accs.txt").read_text().split()
     assert "GCF_000000001.1" in accs
     assert "GCA_000000003.1" in accs
 
@@ -131,20 +131,20 @@ def test_reference_only_filters_and_names_file(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions_from_ncbi(_args(target_taxon="Alteromonas",
                                    refseq_reference_genomes_only=True))
-    accs = (tmp_path / "ncbi-alteromonas-refseq-ref-accessions.txt").read_text().split()
+    accs = (tmp_path / "ncbi-alteromonas-genus-refseq-ref-accs.txt").read_text().split()
     assert accs == ["GCF_000000001.1"]     # only the reference genome
 
 
 def test_case_insensitive_match(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions_from_ncbi(_args(target_taxon="alteromonas"))
-    assert (tmp_path / "ncbi-alteromonas-refseq-accessions.txt").exists()
+    assert (tmp_path / "ncbi-alteromonas-genus-refseq-accs.txt").exists()
 
 
 def test_taxon_not_found_exits_without_files(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _run(_args(target_taxon="Nonexistentia"))
-    assert not list(tmp_path.glob("ncbi-*-accessions.txt"))
+    assert not list(tmp_path.glob("ncbi-*-accs.txt"))
     assert not list(tmp_path.glob("ncbi-*-metadata.tsv"))
 
 def test_counts_mode_reports_and_writes_nothing(table, tmp_path, monkeypatch, capsys):
@@ -154,7 +154,7 @@ def test_counts_mode_reports_and_writes_nothing(table, tmp_path, monkeypatch, ca
     # per-rank format, matching get-accs-from-gtdb
     assert "The rank 'genus' has" in out
     assert "Alteromonas entries" in out
-    assert not list(tmp_path.glob("ncbi-*-accessions.txt"))
+    assert not list(tmp_path.glob("ncbi-*-accs.txt"))
     assert not list(tmp_path.glob("ncbi-*-metadata.tsv"))
 
 
@@ -200,7 +200,7 @@ def test_counts_mode_derep_size_matches_what_a_pull_returns(table, tmp_path,
 
     get_accessions_from_ncbi(_args(target_taxon="Alteromonas", ncbi_section="both",
                                    derep_rank="species"))
-    accs = (tmp_path / "ncbi-alteromonas-accessions.txt").read_text().split()
+    accs = (tmp_path / "ncbi-alteromonas-genus-accs.txt").read_text().split()
     assert f"that would be {len(accs)} genome(s)." in reported
 
 
@@ -237,7 +237,7 @@ def test_taxid_path_matches_by_rank_taxid(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     # 28108 is the genus_taxid in the fixture
     get_accessions_from_ncbi(_args(target_taxon="28108", ncbi_section="both"))
-    assert (tmp_path / "ncbi-28108-accessions.txt").exists()
+    assert (tmp_path / "ncbi-taxid-28108-accs.txt").exists()
 
 
 def test_select_by_taxid_matches_specific_rank(tmp_path):
@@ -280,7 +280,7 @@ def test_assembly_level_still_filters_end_to_end(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions_from_ncbi(_args(target_taxon="Alteromonas", ncbi_section="both",
                                    assembly_level=["scaffold"]))
-    accs = (tmp_path / "ncbi-alteromonas-accessions.txt").read_text().split()
+    accs = (tmp_path / "ncbi-alteromonas-genus-accs.txt").read_text().split()
     assert accs == ["GCA_000000003.1"]
 
 
@@ -288,7 +288,7 @@ def test_assembly_level_still_filters_for_all(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions_from_ncbi(_args(target_taxon="all", ncbi_section="both",
                                    assembly_level=["scaffold"]))
-    accs = (tmp_path / "ncbi-all-accessions.txt").read_text().split()
+    accs = (tmp_path / "ncbi-all-accs.txt").read_text().split()
     assert accs == ["GCA_000000003.1"]
 
 
@@ -296,7 +296,7 @@ def test_assembly_level_still_filters_for_a_taxid(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions_from_ncbi(_args(target_taxon="28108", ncbi_section="both",
                                    assembly_level=["scaffold"]))
-    accs = (tmp_path / "ncbi-28108-accessions.txt").read_text().split()
+    accs = (tmp_path / "ncbi-taxid-28108-accs.txt").read_text().split()
     assert accs == ["GCA_000000003.1"]
 
 
@@ -319,7 +319,7 @@ def test_assembly_level_is_applied_before_dereplication(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions_from_ncbi(_args(target_taxon="Alteromonadales", ncbi_section="both",
                                    derep_rank="family", assembly_level=["complete"]))
-    accs = sorted((tmp_path / "ncbi-alteromonadales-accessions.txt").read_text().split())
+    accs = sorted((tmp_path / "ncbi-alteromonadales-order-accs.txt").read_text().split())
     assert accs == ["GCF_000000001.1", "GCF_000000003.1"]
 
 
@@ -340,7 +340,7 @@ def test_get_rank_counts_prints_all_ranks(table, tmp_path, monkeypatch, capsys):
 def test_get_rank_counts_writes_no_files(table, tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     _run(_args(get_rank_counts=True))
-    assert not list(tmp_path.glob("ncbi-*-accessions.txt"))
+    assert not list(tmp_path.glob("ncbi-*-accs.txt"))
     assert not list(tmp_path.glob("ncbi-*-metadata.tsv"))
 
 
@@ -410,7 +410,7 @@ def test_all_writes_every_row(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     # source=both so all three rows survive
     get_accessions_from_ncbi(_args(target_taxon="all", ncbi_section="both"))
-    accs = (tmp_path / "ncbi-all-accessions.txt").read_text().split()
+    accs = (tmp_path / "ncbi-all-accs.txt").read_text().split()
     assert sorted(accs) == ["GCA_3.1", "GCF_1.1", "GCF_2.1"]
 
 
@@ -422,7 +422,7 @@ def test_all_default_refseq_scopes_to_gcf(tmp_path, monkeypatch):
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
     get_accessions_from_ncbi(_args(target_taxon="all"))    # default source refseq
-    accs = (tmp_path / "ncbi-all-refseq-accessions.txt").read_text().split()
+    accs = (tmp_path / "ncbi-all-refseq-accs.txt").read_text().split()
     assert accs == ["GCF_1.1"]                             # GCA excluded
 
 
@@ -432,7 +432,7 @@ def test_all_is_case_insensitive(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     get_accessions_from_ncbi(_args(target_taxon="ALL"))
     # filename normalizes to lowercase 'all' regardless of input casing
-    assert (tmp_path / "ncbi-all-refseq-accessions.txt").exists()
+    assert (tmp_path / "ncbi-all-refseq-accs.txt").exists()
 
 
 def test_all_reference_only(tmp_path, monkeypatch):
@@ -443,7 +443,7 @@ def test_all_reference_only(tmp_path, monkeypatch):
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
     get_accessions_from_ncbi(_args(target_taxon="all", refseq_reference_genomes_only=True))
-    accs = (tmp_path / "ncbi-all-refseq-ref-accessions.txt").read_text().split()
+    accs = (tmp_path / "ncbi-all-refseq-ref-accs.txt").read_text().split()
     assert accs == ["GCF_1.1"]
 
 
@@ -453,7 +453,7 @@ def test_all_counts_mode(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     _run(_args(target_taxon="all", get_taxon_counts=True))
     assert "2 genome(s) under all genomes" in capsys.readouterr().out
-    assert not list(tmp_path.glob("ncbi-*-accessions.txt"))
+    assert not list(tmp_path.glob("ncbi-*-accs.txt"))
     assert not list(tmp_path.glob("ncbi-*-metadata.tsv"))
 
 
@@ -500,7 +500,7 @@ def test_all_with_derep_rank_includes_eukaryotes(tmp_path, monkeypatch, capsys):
     monkeypatch.chdir(tmp_path)
     get_accessions_from_ncbi(_args(target_taxon="all", ncbi_section="both",
                                    derep_rank="domain"))
-    accs = (tmp_path / "ncbi-all-accessions.txt").read_text().split()
+    accs = (tmp_path / "ncbi-all-accs.txt").read_text().split()
     assert len(accs) == 2                      # one bacterium, one eukaryote
     assert "GCF_000000020.1" in accs
     assert "Bacteria, Eukaryota" in capsys.readouterr().out
@@ -571,7 +571,7 @@ def test_all_without_derep_excludes_domainless_genomes(table_with_viruses, tmp_p
     out), so an unrelated flag decided whether viral genomes appeared.
     """
     _run(_args(target_taxon="all"))
-    accs = _accs(tmp_path, "ncbi-all-refseq-accessions.txt")
+    accs = _accs(tmp_path, "ncbi-all-refseq-accs.txt")
     assert sorted(accs) == ["GCF_000000001.1", "GCF_000000002.1"]
 
 
@@ -593,7 +593,7 @@ def test_rank_counts_with_all_are_scoped_to_what_all_pulls(table_with_viruses,
     assert "genus      2" in capsys.readouterr().out
 
     _run(_args(target_taxon="all", derep_rank="genus"))
-    assert len(_accs(tmp_path, "ncbi-all-refseq-accessions.txt")) == 2
+    assert len(_accs(tmp_path, "ncbi-all-refseq-accs.txt")) == 2
 
 
 def test_rank_counts_without_a_taxon_still_counts_the_whole_table(table_with_viruses,
@@ -606,7 +606,7 @@ def test_rank_counts_without_a_taxon_still_counts_the_whole_table(table_with_vir
 def test_domainless_genomes_are_still_reachable_by_name(table_with_viruses, tmp_path):
     """They're excluded from 'all', not from the tool."""
     _run(_args(target_taxon="Uroviricota"))
-    accs = _accs(tmp_path, "ncbi-uroviricota-refseq-accessions.txt")
+    accs = _accs(tmp_path, "ncbi-uroviricota-phylum-refseq-accs.txt")
     assert sorted(accs) == ["GCF_000000030.1", "GCF_000000031.1"]
 
 
@@ -635,4 +635,4 @@ def test_eukaryote_alias_resolves(tmp_path, monkeypatch):
     monkeypatch.setattr(M, "ncbi_table_path", lambda **k: p)
     monkeypatch.chdir(tmp_path)
     _run(_args(target_taxon="eukarya"))
-    assert _accs(tmp_path, "ncbi-eukarya-refseq-accessions.txt") == ["GCF_000000020.1"]
+    assert _accs(tmp_path, "ncbi-eukaryota-domain-refseq-accs.txt") == ["GCF_000000020.1"]

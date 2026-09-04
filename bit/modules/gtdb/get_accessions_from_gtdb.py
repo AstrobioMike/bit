@@ -20,8 +20,11 @@ from bit.modules.taxonomy.tax_counts import (representatives_filter, count_genom
                                              render_rank_count_table)
 from bit.modules.taxonomy.tax_targets import (domains_in_asset, is_all_target,
                                               unassigned_domain_summary)
+from bit.modules.taxonomy.empty_selection import empty_pull_message
 from bit.modules.taxonomy.get_accs_shared import (PoolSpec, all_derep_size,
+                                                  representatives_suffix,
                                                   apply_derep_default,
+                                                  resolved_derep_rank,
                                                   derep_note as _shared_derep_note,
                                                   is_derep_on, pull_count_lines,
                                                   scoped_counts_note)
@@ -151,9 +154,22 @@ def get_accessions_from_gtdb(args):
                            getattr(args, "exclusion_list", None)))
         sys.exit(0)
 
-    table, kept_rank, effective_derep_rank = _select_rows(
+    table, kept_rank, effective_derep_rank, ref_selection = _select_rows(
         gtdb_path, args, target_taxon, resolved_rank, representatives_source,
         resolved_domain)
+
+    label = f"{kept_rank} '{target_taxon}'"
+    if effective_derep_rank:
+        label += f" (dereplicated to one genome per {effective_derep_rank})"
+
+    if table.num_rows == 0:
+        report_message(empty_pull_message(
+            f"No genomes were found under {label}.", ref_selection,
+            reps_only_requested=bool(representatives_source),
+            emoticon=":("), "yellow")
+        print("")
+        sys.exit(0)
+
     _report_pull_counts(gtdb_path, target_taxon, kept_rank, effective_derep_rank,
                         table.num_rows, representatives_source,
                         exclude_cores=exclude_cores)
@@ -180,7 +196,12 @@ def _report_pull_counts(gtdb_path, taxon, rank, effective_derep_rank, kept_n,
 def _select_rows(gtdb_path, args, target_taxon, resolved_rank, representatives_source,
                  resolved_domain=None):
     """
-    The taxon slice to write, as a pyarrow Table carrying every column of the asset
+    The taxon slice to write, as a pyarrow Table carrying every column of the asset.
+
+    Returns (table, rank, effective_derep_rank, ref_selection). `ref_selection` is the
+    RefGenomeSelection behind a dereplicated pull, carried out so the caller's
+    empty-result check can explain itself from its attrition record; None with derep
+    off, where there is no selection to explain.
     """
     reps_only = representatives_source is not None
     cols = _all_columns(gtdb_path)
@@ -188,16 +209,16 @@ def _select_rows(gtdb_path, args, target_taxon, resolved_rank, representatives_s
     table = select(gtdb_path, "gtdb", resolved_rank, target_taxon,
                    reps_only=reps_only, columns=cols, domain=resolved_domain)
 
-    derep_rank = getattr(args, "derep_rank", "off")
+    derep_rank = resolved_derep_rank(args)
     if derep_rank in (None, "off", "none", "None"):
         table, n_dropped = _screen_table_to_live(table)
         _report_suppressed(n_dropped)
-        return table, resolved_rank, None
+        return table, resolved_rank, None, None
 
     try:
         selection = select_ref_genomes(
             gtdb_path, "gtdb", target_taxon, target_rank=resolved_rank,
-            derep_rank=derep_rank, reps_only=reps_only,
+            derep_rank=derep_rank, reps_only=reps_only, diagnose_empty=True,
             target_domain=resolved_domain,
             exclude_cores=load_exclusion_cores(
                 getattr(args, "exclusion_list", None)),
@@ -215,7 +236,7 @@ def _select_rows(gtdb_path, args, target_taxon, resolved_rank, representatives_s
 
     table = _restrict_to_accessions(table, selection.accessions)
 
-    return table, resolved_rank, selection.effective_derep_rank
+    return table, resolved_rank, selection.effective_derep_rank, selection
 
 
 def _restrict_to_accessions(table, accessions):
@@ -231,10 +252,8 @@ def _write_outputs(table, taxon, rank, representatives_source=None):
     """Write the accession list + metadata TSV for a resolved taxon."""
     taxon_for_filename = taxon.replace(" ", "-").replace("/", "-").lower()
 
-    if representatives_source:
-        stem = f"gtdb-{taxon_for_filename}-{rank}-{representatives_source}-rep"
-    else:
-        stem = f"gtdb-{taxon_for_filename}-{rank}"
+    stem = (f"gtdb-{taxon_for_filename}-{rank}"
+            + representatives_suffix(representatives_source))
 
     acc_out_filename = stem + "-accs.txt"
     tab_out_filename = stem + "-metadata.tsv"
@@ -255,7 +274,7 @@ def _write_outputs(table, taxon, rank, representatives_source=None):
 
 def _derep_is_on(args):
     """True when --derep-rank asks for actual dereplication."""
-    return is_derep_on(getattr(args, "derep_rank", "off"))
+    return is_derep_on(resolved_derep_rank(args))
 
 
 def _write_all_dereplicated(gtdb_path, args, representatives_source=None):
@@ -282,9 +301,8 @@ def _write_all_dereplicated(gtdb_path, args, representatives_source=None):
         wprint(color_text(w, "yellow"))
     print("")
 
-    stem = (f"gtdb-arc-and-bac-{representatives_source}-rep"
-            if representatives_source else "gtdb-arc-and-bac")
-    acc_out_filename = stem + "-accessions.txt"
+    stem = "gtdb-arc-and-bac" + representatives_suffix(representatives_source)
+    acc_out_filename = stem + "-accs.txt"
     tab_out_filename = stem + "-metadata.tsv"
 
     table = _restrict_to_accessions(
@@ -335,15 +353,14 @@ def _write_all(gtdb_path, representatives_source=None, exclude_cores=None):
         wprint(color_text(note, "yellow"))
         print("")
 
+    stem = "gtdb-arc-and-bac" + representatives_suffix(representatives_source)
     if representatives_source:
-        stem = f"gtdb-arc-and-bac-{representatives_source}-rep"
         tab_out_filename = stem + "-metadata.tsv"
         write_table_tsv(table, tab_out_filename)
     else:
-        stem = "gtdb-arc-and-bac"
         tab_out_filename = None
 
-    acc_out_filename = stem + "-accessions.txt"
+    acc_out_filename = stem + "-accs.txt"
     accs = table.column("ncbi_genbank_assembly_accession").to_pylist()
     write_accessions(acc_out_filename, accs)
 
@@ -433,11 +450,13 @@ def _derep_note(gtdb_path, rank, taxon, args, rep_filter=None, exclude_cores=Non
     pool = PoolSpec(gtdb_path, "gtdb", rep_filter=rep_filter, label="GTDB",
                     taxon_flag="-t",
                     exclude_cores=exclude_cores)
-    return _shared_derep_note(pool, rank, taxon, getattr(args, "derep_rank", "off"))
+    return _shared_derep_note(pool, rank, taxon, resolved_derep_rank(args))
 
 
 def _report_derep_note(gtdb_path, rank, taxon, args, rep_filter=None, exclude_cores=None):
-    """Print the dereplicated-count line (and any 'auto' advisory) for one rank."""
+    """
+    Print the dereplicated-count line (and any 'auto' advisory) for one rank
+    """
     if args is None:
         return
     line, warnings = _derep_note(gtdb_path, rank, taxon, args, rep_filter=rep_filter,

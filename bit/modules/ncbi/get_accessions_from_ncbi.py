@@ -1,5 +1,6 @@
 import os
 import sys
+from collections import namedtuple
 import pyarrow as pa # type: ignore
 import pyarrow.compute as pc # type: ignore
 import pyarrow.parquet as pq # type: ignore
@@ -26,9 +27,11 @@ from bit.modules.taxonomy.tax_counts import (representatives_filter, count_genom
                                              render_rank_count_table)
 from bit.modules.taxonomy.tax_targets import (is_all_target,
                                               unassigned_domain_summary)
+from bit.modules.taxonomy.empty_selection import empty_pull_message
 from bit.modules.taxonomy.get_accs_shared import (ASSEMBLY_LEVELS,
                                                   FILTERS_APPLIED_NOTE, PoolSpec,
                                                   apply_derep_default,
+                                                  resolved_derep_rank,
                                                   derep_note as _shared_derep_note,
                                                   is_derep_on,
                                                   parse_assembly_levels as _parse_levels,
@@ -52,11 +55,19 @@ _COLUMNS = [
     "domain", "phylum", "class", "order", "family", "genus", "species",
 ]
 
+_NcbiSelection = namedtuple(
+    "_NcbiSelection",
+    ["table", "label", "rank", "taxon", "effective_derep_rank", "ref_selection"],
+    defaults=[None, None],
+)
+
 _ASSEMBLY_LEVELS = ASSEMBLY_LEVELS
 
 
 def parse_assembly_levels(value):
-    """Kept as a name here; the body is shared with the GTDB helper's vocabulary."""
+    """
+    Kept as a name here; the body is shared with the GTDB helper's vocabulary
+    """
     return _parse_levels(value)
 
 
@@ -67,7 +78,9 @@ def ncbi_table_path(force_update=False, quiet=True):
 
 
 def _source_prefixes(source):
-    """Accession prefixes for an --ncbi-section value (None means no restriction)."""
+    """
+    Accession prefixes for an --ncbi-section value (None means no restriction)
+    """
     return _shared_prefixes(source)
 
 
@@ -122,84 +135,8 @@ def get_accessions_from_ncbi(args):
                                      exclude_cores=exclude_cores)
         sys.exit(0)
 
-    # the taxon-name path resolves to a single rank we can report a count block
-    # against; `all` and taxid pulls don't, so these stay None for them
-    pull_rank = pull_taxon = pull_derep = None
-
-    if is_all_target(args.target_taxon):
-        if _derep_is_on(args):
-            tab, label = _select_all_dereplicated(table_path, args, assembly_levels)
-        else:
-            tab = _select_all(table_path, args,
-                              reps_only=args.refseq_reference_genomes_only,
-                              assembly_levels=assembly_levels)
-            label = "all genomes"
-    elif str(args.target_taxon).isdigit():
-        tab = _select_by_taxid(table_path, str(args.target_taxon),
-                               assembly_levels=assembly_levels)
-        label = f"taxid {args.target_taxon}"
-    else:
-        try:
-            canonical, rank, domain = resolve_taxon(
-                table_path, args.target_taxon,
-                rank=getattr(args, "target_rank", None),
-                domain=getattr(args, "target_domain", None))
-        except AmbiguousTaxon as e:
-            report_message(
-                f"'{e.taxon}' occurs at more than one rank "
-                f"({', '.join(e.ranks_found)}). Specify which with `-r`, or pass "
-                f"the NCBI taxid to `-t` instead.", "yellow")
-            print("")
-            sys.exit(0)
-        except CrossDomainTaxon as e:
-            report_message(
-                f"'{e.taxon}' occurs in more than one domain "
-                f"({', '.join(e.domains_found)}). Specify which with "
-                f"`--target-domain`.", "yellow")
-            print("")
-            sys.exit(0)
-        except TaxonNotFound:
-            report_message(f"Input taxon '{args.target_taxon}' doesn't seem to "
-                           f"exist at any rank :(", "yellow")
-            print("")
-            sys.exit(0)
-
-        # if canonical != args.target_taxon:
-        #     wprint(color_text(f"Matched input '{args.target_taxon}' to NCBI taxon "
-        #                       f"'{canonical}'.", "yellow"))
-        #     print("")
-
-        try:
-            selection = select_ref_genomes(
-                table_path, "ncbi", canonical, target_rank=rank,
-                derep_rank=getattr(args, "derep_rank", "off"),
-                reps_only=args.refseq_reference_genomes_only,
-                accession_prefixes=_source_prefixes(args.ncbi_section),
-                assembly_levels=assembly_levels,
-                exclude_cores=load_exclusion_cores(
-                    getattr(args, "exclusion_list", None)),
-                target_domain=domain)
-        except ValueError as e:
-            report_message(str(e), "yellow")
-            print("")
-            sys.exit(0)
-
-        for w in selection.warnings:
-            wprint(color_text(w, "yellow"))
-        if selection.warnings:
-            print("")
-
-        tab = pa.Table.from_pylist(selection.rows) if selection.rows else \
-            select(table_path, "ncbi", rank, canonical,
-                   reps_only=args.refseq_reference_genomes_only,
-                   columns=_COLUMNS).slice(0, 0)
-        label = f"{rank} '{canonical}'"
-        if selection.effective_derep_rank:
-            label += f" (dereplicated to one genome per {selection.effective_derep_rank})"
-        pull_rank, pull_taxon, pull_derep = (
-            rank, canonical, selection.effective_derep_rank)
-
-    tab = _apply_filters(tab, args)
+    selection = _select_rows(table_path, args, assembly_levels)
+    tab, label = selection.table, selection.label
 
     if args.get_taxon_counts:
         report_message(with_filters_note(
@@ -210,19 +147,26 @@ def get_accessions_from_ncbi(args):
         sys.exit(0)
 
     if tab.num_rows == 0:
-        report_message(with_filters_note(
-                           f"No genomes were found under {label}."), "none",
+        report_message(empty_pull_message(
+                           f"No genomes were found under {label}.",
+                           selection.ref_selection,
+                           assembly_levels=assembly_levels,
+                           ncbi_section=getattr(args, "ncbi_section", None),
+                           reps_only_requested=bool(
+                               args.refseq_reference_genomes_only),
+                           emoticon=":("),
+                       "none",
                        initial_indent="    ", subsequent_indent="    ")
         print("")
         sys.exit(0)
 
-    _report_pull_counts(table_path, args, assembly_levels, pull_rank, pull_taxon,
-                        pull_derep, tab.num_rows, exclude_cores=exclude_cores)
-    _write_outputs(tab, args, label)
+    _report_pull_counts(table_path, args, assembly_levels, selection, tab.num_rows,
+                        exclude_cores=exclude_cores)
+    _write_outputs(tab, args, selection)
 
 
-def _report_pull_counts(table_path, args, assembly_levels, rank, taxon,
-                        effective_derep_rank, kept_n, exclude_cores=None):
+def _report_pull_counts(table_path, args, assembly_levels, selection, kept_n,
+                        exclude_cores=None):
     """
     The "The rank 'X' has N <taxon> entries." (+ dereplicated) block a taxon-name
     pull prints just above its "Wrote N accession(s)" lines.
@@ -230,6 +174,7 @@ def _report_pull_counts(table_path, args, assembly_levels, rank, taxon,
     Only the taxon-name path has a single resolved rank to report against; the `all`
     and taxid paths pass rank=None and are left alone.
     """
+    rank, taxon = selection.rank, selection.taxon
     if rank is None:
         return
 
@@ -239,7 +184,8 @@ def _report_pull_counts(table_path, args, assembly_levels, rank, taxon,
         accession_prefixes=_source_prefixes(getattr(args, "ncbi_section", "refseq")),
         assembly_levels=assembly_levels or None, label="NCBI", taxon_flag="-t",
         exclude_cores=exclude_cores)
-    header, derep = pull_count_lines(pool, rank, taxon, effective_derep_rank, kept_n)
+    header, derep = pull_count_lines(pool, rank, taxon,
+                                    selection.effective_derep_rank, kept_n)
     print("")
     wprint("  " + header)
     if derep:
@@ -299,7 +245,7 @@ def _derep_note(table_path, rank, taxon, args, prefixes, assembly_levels,
                     label="NCBI", taxon_flag="-t",
                     exclude_cores=exclude_cores)
     return _shared_derep_note(pool, rank, taxon,
-                              getattr(args, "derep_rank", "off"))
+                              resolved_derep_rank(args))
 
 
 def _report_derep_note(table_path, rank, taxon, args, prefixes, assembly_levels,
@@ -502,7 +448,7 @@ def _derep_is_on(args):
     """
     True when --derep-rank asks for actual dereplication.
     """
-    return is_derep_on(getattr(args, "derep_rank", "off"))
+    return is_derep_on(resolved_derep_rank(args))
 
 
 def _select_all_dereplicated(table_path, args, assembly_levels=None):
@@ -550,6 +496,92 @@ def _select_all(table_path, args, reps_only=False, assembly_levels=None):
     return tab
 
 
+def _select_rows(table_path, args, assembly_levels=None):
+    """
+    Resolve the target and return an _NcbiSelection(table, label, rank, taxon) where
+    `rank` is the resolved rank for a taxon-name search.
+
+    Mirrors GToTree's function of the same name. Every branch ends in one
+    _NcbiSelection so the caller has a single shape to work with, and an empty result
+    is NOT reported here, it goes back to the one check in
+    get_accessions_from_ncbi(), so all three paths produce one message built one way.
+    """
+    if is_all_target(args.target_taxon):
+        if _derep_is_on(args):
+            tab, label = _select_all_dereplicated(table_path, args, assembly_levels)
+        else:
+            tab = _select_all(table_path, args,
+                              reps_only=args.refseq_reference_genomes_only,
+                              assembly_levels=assembly_levels)
+            label = "all genomes"
+        return _NcbiSelection(_apply_filters(tab, args), label, None, "all")
+
+    if str(args.target_taxon).isdigit():
+        tab = _select_by_taxid(table_path, str(args.target_taxon),
+                               assembly_levels=assembly_levels)
+        label = f"taxid {args.target_taxon}"
+        return _NcbiSelection(_apply_filters(tab, args), label, None,
+                              f"taxid-{args.target_taxon}")
+
+    try:
+        canonical, rank, domain = resolve_taxon(
+            table_path, args.target_taxon,
+            rank=getattr(args, "target_rank", None),
+            domain=getattr(args, "target_domain", None))
+    except AmbiguousTaxon as e:
+        report_message(
+            f"'{e.taxon}' occurs at more than one rank "
+            f"({', '.join(e.ranks_found)}). Specify which with `-r`, or pass "
+            f"the NCBI taxid to `-t` instead.", "yellow")
+        print("")
+        sys.exit(0)
+    except CrossDomainTaxon as e:
+        report_message(
+            f"'{e.taxon}' occurs in more than one domain "
+            f"({', '.join(e.domains_found)}). Specify which with "
+            f"`--target-domain`.", "yellow")
+        print("")
+        sys.exit(0)
+    except TaxonNotFound:
+        report_message(f"Input taxon '{args.target_taxon}' doesn't seem to "
+                       f"exist at any rank :(", "yellow")
+        print("")
+        sys.exit(0)
+
+    try:
+        selection = select_ref_genomes(
+            table_path, "ncbi", canonical, target_rank=rank,
+            diagnose_empty=True,
+            derep_rank=resolved_derep_rank(args),
+            reps_only=args.refseq_reference_genomes_only,
+            accession_prefixes=_source_prefixes(args.ncbi_section),
+            assembly_levels=assembly_levels,
+            exclude_cores=load_exclusion_cores(
+                getattr(args, "exclusion_list", None)),
+            target_domain=domain)
+    except ValueError as e:
+        report_message(str(e), "yellow")
+        print("")
+        sys.exit(0)
+
+    for w in selection.warnings:
+        wprint(color_text(w, "yellow"))
+    if selection.warnings:
+        print("")
+
+    tab = pa.Table.from_pylist(selection.rows) if selection.rows else \
+        select(table_path, "ncbi", rank, canonical,
+               reps_only=args.refseq_reference_genomes_only,
+               columns=_COLUMNS).slice(0, 0)
+    label = f"{rank} '{canonical}'"
+    if selection.effective_derep_rank:
+        label += f" (dereplicated to one genome per {selection.effective_derep_rank})"
+
+    return _NcbiSelection(_apply_filters(tab, args), label, rank, canonical,
+                          selection.effective_derep_rank,
+                          ref_selection=selection)
+
+
 def _select_by_taxid(table_path, taxid, assembly_levels=None):
     from bit.modules.taxonomy.tax_ranks import RANKS
 
@@ -573,11 +605,18 @@ def _apply_filters(tab, args):
     return _filter_by_source(tab, getattr(args, "ncbi_section", "refseq"))
 
 
-def _write_outputs(tab, args, label):
-    taxon_raw = str(args.target_taxon)
-    if taxon_raw.lower() == "all":
-        taxon_raw = "all"
-    taxon_for_filename = taxon_raw.replace(" ", "-").replace("/", "-").lower()
+def _write_outputs(tab, args, selection):
+    """
+    Names match GToTree's NCBI helper and both GTDB helpers:
+    ncbi-<taxon>-<rank><suffix>-accs.txt
+
+    The taxon comes from the SELECTION, not the raw `-t` value, so the same organism
+    lands in the same filename however it was typed or aliased. The rank is included
+    because a name can exist at more than one, and is omitted for `all` and taxid
+    pulls, which resolve to no single rank.
+    """
+    taxon_for_filename = selection.taxon.replace(" ", "-").replace("/", "-").lower()
+    rank_bit = f"-{selection.rank}" if selection.rank else ""
 
     suffix_bits = []
     if args.refseq_reference_genomes_only:
@@ -586,8 +625,8 @@ def _write_outputs(tab, args, label):
         suffix_bits.append(args.ncbi_section.lower())
     suffix = ("-" + "-".join(suffix_bits)) if suffix_bits else ""
 
-    acc_out = f"ncbi-{taxon_for_filename}{suffix}-accessions.txt"
-    tab_out = f"ncbi-{taxon_for_filename}{suffix}-metadata.tsv"
+    acc_out = f"ncbi-{taxon_for_filename}{rank_bit}{suffix}-accs.txt"
+    tab_out = f"ncbi-{taxon_for_filename}{rank_bit}{suffix}-metadata.tsv"
 
     write_table_tsv(tab, tab_out)
 
