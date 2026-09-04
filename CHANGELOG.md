@@ -33,9 +33,6 @@
 
 ### Fixed
 - output metadata table from `bit get-accs-from-gtdb` could sometimes be mangled at the top, fixed now
-- `bit get-accs-from-ncbi` was broken for most invocations: the `--source` to `--ncbi-section` rename was applied to the parser but not to the 11 places reading the value, so anything resolving a taxon name raised an `AttributeError`
-  - the tests were building their own namespaces with the old `source` key, so they passed against code the real parser could never reach
-- the `-R | --refseq-ref-genomes-only` compatibility check in `bit get-accs-from-ncbi` referred to a `--reference-genomes-only` flag that doesn't exist
 
 ---
 
