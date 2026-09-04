@@ -14,7 +14,7 @@
 
 -->
 
-## v2.10.0 (NOT YET RELEASED)
+## v2.10.0 (4-Sep-2026)
 
 ### Added
 - `bit dl-ncbi-assemblies` can now be passed `-t | --target-taxon` instead of, or in addition to, accessions to the `-w` parameter
