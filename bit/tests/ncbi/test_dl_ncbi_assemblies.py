@@ -317,6 +317,57 @@ def test_report_finish_skipped_note(capsys):
     assert "already present" in out
 
 
+def test_report_finish_points_at_the_info_table(capsys, tmp_path):
+    info = tmp_path / "downloaded-assemblies-info.tsv"
+    rd = RunData(num_wanted=3, num_found=3, num_downloaded=3,
+                 ncbi_sub_table_path=info)
+    report_finish(rd)
+    out = capsys.readouterr().out
+    assert "Info written to:" in out
+    assert str(info) in out
+    # the pointer is the last thing on screen, after the success line
+    assert out.index("All 3") < out.index("Info written to:")
+
+
+def test_report_finish_points_at_the_info_table_when_some_failed(capsys, tmp_path):
+    """The table is written before any downloading, so a partial run still has one."""
+    info = tmp_path / "downloaded-assemblies-info.tsv"
+    rd = RunData(
+        num_wanted=3, num_found=3,
+        num_downloaded=2, num_not_downloaded=1,
+        not_downloaded_path=tmp_path / "failed.tsv",
+        ncbi_sub_table_path=info,
+    )
+    report_finish(rd)
+    assert "Info written to:" in capsys.readouterr().out
+
+
+def test_report_finish_points_at_the_info_table_when_nothing_downloaded(capsys, tmp_path):
+    """
+    Even a total wash still wrote the table (what was found at NCBI, and any requested
+    lineage), so the pointer has to survive the non-zero exit rather than be skipped
+    by it.
+    """
+    info = tmp_path / "downloaded-assemblies-info.tsv"
+    rd = RunData(
+        num_wanted=3, num_found=3,
+        num_downloaded=0, num_not_downloaded=3,
+        not_downloaded_path=tmp_path / "failed.tsv",
+        ncbi_sub_table_path=info,
+    )
+    with pytest.raises(SystemExit) as excinfo:
+        report_finish(rd)
+    assert excinfo.value.code == 1
+    assert "Info written to:" in capsys.readouterr().out
+
+
+def test_report_finish_info_table_pointer_respects_quiet(capsys, tmp_path):
+    rd = RunData(num_wanted=3, num_found=3, num_downloaded=3, quiet=True,
+                 ncbi_sub_table_path=tmp_path / "downloaded-assemblies-info.tsv")
+    report_finish(rd)
+    assert "Info written to:" not in capsys.readouterr().out
+
+
 # ---------------------------------------------------------------------------
 # Tier 2a - sleep_backoff
 # ---------------------------------------------------------------------------

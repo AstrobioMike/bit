@@ -132,3 +132,82 @@ def test_dl_wf_full_flow(mock_download, mock_check_dir, mock_get_versions):
 
     mock_check_dir.assert_called_once_with("bit-" + expected_full_name)
     mock_download.assert_called_once_with("metagenomics", expected_link)
+
+
+# ---------------------------------------------------------------------------
+# CLI shape
+#
+# `workflow` used to be a positional with `choices`, which parses the same as a
+# subparser level but isn't recognized as a group by bit.py's
+# _suppress_help_version_on_group_parsers() -- so TAB after `bit get-workflow` offered
+# -l/-w/-h/-v alongside the four workflow names. The tree-wide guard against that shape
+# lives in bit/tests/test_cli.py; these cover what the conversion has to preserve.
+# ---------------------------------------------------------------------------
+
+
+import argparse
+from bit.cli.get_workflow import build_parser, WORKFLOWS
+
+
+def _workflow_parser(workflow_name):
+    parser = build_parser()
+    action = next(a for a in parser._actions
+                  if isinstance(a, argparse._SubParsersAction))
+    return action.choices[workflow_name]
+
+
+def test_workflows_are_a_real_subparser_level():
+    parser = build_parser()
+    action = next((a for a in parser._actions
+                   if isinstance(a, argparse._SubParsersAction)), None)
+    assert action is not None
+    assert set(action.choices) == set(WORKFLOWS)
+
+
+def test_cli_workflow_names_match_the_module_workflow_dict():
+    """
+    The parser gates which names are accepted and dl_wf() looks each one up in
+    workflow_dict, so a name in one and not the other is either an unreachable entry
+    or a KeyError at download time.
+    """
+    assert set(WORKFLOWS) == set(gwf.workflow_dict)
+
+
+@pytest.mark.parametrize("workflow_name", sorted(WORKFLOWS))
+def test_every_workflow_takes_the_version_flags(workflow_name):
+    """
+    -l/-w moved from the shared parser onto each leaf, so every leaf has to carry
+    both -- a workflow that quietly lost them would only fail when someone asked for
+    a specific version.
+    """
+    flags = set()
+    for action in _workflow_parser(workflow_name)._actions:
+        flags.update(action.option_strings)
+    assert {"-l", "--list-available-versions", "-w", "--wanted-version"} <= flags
+
+
+@pytest.mark.parametrize("workflow_name", sorted(WORKFLOWS))
+def test_parsed_args_still_match_what_dl_wf_reads(workflow_name):
+    """
+    dl_wf() reads args.workflow, args.list_available_versions and args.wanted_version.
+    `dest="workflow"` on the subparsers action is what keeps the first of those
+    landing where it always did.
+    """
+    args = build_parser().parse_args([workflow_name, "-w", "1.2.3"])
+    assert args.workflow == workflow_name
+    assert args.wanted_version == "1.2.3"
+    assert args.list_available_versions is False
+
+    args = build_parser().parse_args([workflow_name, "-l"])
+    assert args.list_available_versions is True
+    assert args.wanted_version is None
+
+
+def test_version_flags_must_follow_the_workflow_name():
+    """
+    The one thing the conversion gave up: -l/-w live on the leaves now, so they can no
+    longer precede the workflow name. Asserted rather than left implicit so it's a
+    deliberate choice on the record instead of a surprise.
+    """
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["-l", "amplicon"])

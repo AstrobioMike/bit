@@ -625,11 +625,23 @@ def download_assemblies(run_data):
     return run_data
 
 
+def report_info_table(run_data):
+    """
+    Point at the per-accession info table the run wrote
+    """
+    if run_data.quiet or not run_data.ncbi_sub_table_path:
+        return
+
+    print(f"    Info written to: {color_text(str(run_data.ncbi_sub_table_path))}\n")
+
+
 def report_finish(run_data):
 
     skipped_note = ""
     if run_data.num_skipped > 0:
         skipped_note = f" ({run_data.num_skipped} already present, skipped)"
+
+    nothing_downloaded = False
 
     if run_data.num_downloaded == run_data.num_wanted:
         if not run_data.quiet:
@@ -650,4 +662,9 @@ def report_finish(run_data):
                 print(color_text(f"\n\n    The remaining {run_data.num_downloaded} found file(s) downloaded successfully.{skipped_note}\n", "yellow"))
         else:
             print(color_text(f"\n\n    No files were successfully downloaded...{skipped_note}\n", "orange"))
-            sys.exit(1)
+            nothing_downloaded = True
+
+    report_info_table(run_data)
+
+    if nothing_downloaded:
+        sys.exit(1)

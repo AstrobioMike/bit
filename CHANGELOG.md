@@ -14,7 +14,7 @@
 
 -->
 
-## v2.10.1 (NOT YET RELEASED)
+## v2.10.1 (10-Sep-2026)
 
 ### Changed
 - `bit dl-ncbi-assemblies`

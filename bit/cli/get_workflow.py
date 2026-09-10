@@ -4,6 +4,14 @@ from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 from bit.modules.get_workflow import dl_wf
 
 
+WORKFLOWS = {
+    "amplicon":         "amplicon workflow",
+    "genome-summarize": "genome-summarize workflow",
+    "metagenomics":     "metagenomics workflow",
+    "sra-download":     "sra-download workflow",
+}
+
+
 def build_parser(parent_subparsers=None):
 
     desc = """
@@ -26,31 +34,45 @@ def build_parser(parent_subparsers=None):
             add_help=False
         )
 
-    required = parser.add_argument_group("Required Parameters")
-    optional = parser.add_argument_group("Optional Parameters")
+    add_help(parser)
 
-    required.add_argument(
-        "workflow",
-        choices=["amplicon", "metagenomics", "genome-summarize", "sra-download"],
-        help="The first positional argument should be which one of these workflows you'd like to download",
-    )
+    add_version_arg(parser)
 
-    optional.add_argument(
-        "-l",
-        "--list-available-versions",
-        help="Provide this flag along with a specified workflow in order to get a printout of available versions",
-        action="store_true"
-    )
+    workflow_subparsers = parser.add_subparsers(dest="workflow", required=True, metavar='')
+    parser.subparsers = workflow_subparsers
 
-    optional.add_argument(
-        "-w",
-        "--wanted-version",
-        metavar="VERSION",
-        help="Specify the workflow version you'd like to download (leaving out this argument will pull the latest by default)"
-    )
+    def add_workflow_common_args(group):
+        group.add_argument(
+            "-l",
+            "--list-available-versions",
+            help="Print the versions available for this workflow",
+            action="store_true"
+        )
+        group.add_argument(
+            "-w",
+            "--wanted-version",
+            metavar="VERSION",
+            help="Specify the workflow version to download"
+        )
 
-    add_help(optional)
-    add_version_arg(optional)
+    for workflow_name, workflow_desc in WORKFLOWS.items():
+
+        workflow_parser = workflow_subparsers.add_parser(
+            workflow_name,
+            help=f"Download the {workflow_desc}",
+            description=f"This subcommand downloads bit's {workflow_desc}.",
+            epilog=f"Ex. usage: `bit get-workflow {workflow_name}`",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
+
+        workflow_optional = workflow_parser.add_argument_group("Optional Parameters")
+
+        add_workflow_common_args(workflow_optional)
+
+        add_help(workflow_optional)
+
+        add_version_arg(workflow_optional)
 
     return parser
 

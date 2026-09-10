@@ -4,6 +4,13 @@ import argcomplete # type: ignore
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
 
 
+TEST_DATA_TYPES = {
+    "amplicon":   "two tiny paired-end Illumina amplicon samples (4 files, ~1 MB)",
+    "genome":     "an E. coli genome (GCF_000005845.2)",
+    "metagenome": "a tiny paired-end Illumina metagenomics sample (2 files, ~15 MB)",
+}
+
+
 def build_parser(parent_subparsers=None):
 
     desc = """
@@ -91,7 +98,7 @@ def build_parser(parent_subparsers=None):
     add_get_common_args(get_go_dbs_optional)
     add_help(get_go_dbs_optional)
 
-    add_version_arg(get_go_dbs_parser)
+    add_version_arg(get_go_dbs_optional)
 
     get_go_dbs_parser.set_defaults(func="get_go_dbs")
 
@@ -115,7 +122,7 @@ def build_parser(parent_subparsers=None):
     add_get_common_args(get_gtdb_data_optional)
     add_help(get_gtdb_data_optional)
 
-    add_version_arg(get_gtdb_data_parser)
+    add_version_arg(get_gtdb_data_optional)
 
     get_gtdb_data_parser.set_defaults(func="get_gtdb_data")
 
@@ -139,7 +146,7 @@ def build_parser(parent_subparsers=None):
     add_get_common_args(get_ncbi_assembly_optional)
     add_help(get_ncbi_assembly_optional)
 
-    add_version_arg(get_ncbi_assembly_parser)
+    add_version_arg(get_ncbi_assembly_optional)
 
     get_ncbi_assembly_parser.set_defaults(func="get_ncbi_assembly_data")
 
@@ -163,7 +170,7 @@ def build_parser(parent_subparsers=None):
     add_get_common_args(get_ncbi_tax_optional)
     add_help(get_ncbi_tax_optional)
 
-    add_version_arg(get_ncbi_tax_parser)
+    add_version_arg(get_ncbi_tax_optional)
 
     get_ncbi_tax_parser.set_defaults(func="get_ncbi_tax_data")
 
@@ -183,20 +190,32 @@ def build_parser(parent_subparsers=None):
         add_help=False
     )
 
-    get_test_data_required = get_test_data_parser.add_argument_group("Required Parameters")
-    get_test_data_optional = get_test_data_parser.add_argument_group("Optional Parameters")
+    add_help(get_test_data_parser)
 
-    get_test_data_required.add_argument(
-        "datatype",
-        choices=["amplicon", "genome", "metagenome"],
-        help="What type of test data you'd like to download",
-    )
+    add_version_arg(get_test_data_parser)
 
-    add_help(get_test_data_optional)
+    get_test_data_subparsers = get_test_data_parser.add_subparsers(
+        dest="datatype", required=True, metavar='')
+    get_test_data_parser.subparsers = get_test_data_subparsers
 
-    add_version_arg(get_test_data_optional)
+    for datatype_name, datatype_desc in TEST_DATA_TYPES.items():
 
-    get_test_data_parser.set_defaults(func="get_test_data")
+        get_datatype_parser = get_test_data_subparsers.add_parser(
+            datatype_name,
+            help=f"Download {datatype_desc}",
+            description=f"This subcommand downloads {datatype_desc}.",
+            epilog=f"Ex. usage: `bit data get test-data {datatype_name}`",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
+
+        get_datatype_optional = get_datatype_parser.add_argument_group("Optional Parameters")
+
+        add_help(get_datatype_optional)
+
+        add_version_arg(get_datatype_optional)
+
+        get_datatype_parser.set_defaults(func="get_test_data")
 
 
     ############################################################################
@@ -319,6 +338,11 @@ def main():
 
                 if sub_cmd in ("-h", "--help"):
                     top_sub_parser.print_help(sys.stderr)
+                    sys.exit(0)
+
+                if sub_cmd in ("-v", "--version"):
+                    from bit.modules.general import report_version
+                    report_version()
                     sys.exit(0)
 
                 if sub_cmd in top_sub_parser.subparsers.choices:
