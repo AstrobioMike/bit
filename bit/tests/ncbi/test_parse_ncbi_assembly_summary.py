@@ -1,11 +1,16 @@
+from pathlib import Path
+
 import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest  # type: ignore
 
 from bit.modules.ncbi.parse_ncbi_assembly_summary import (parse_ncbi_assembly_summary,
                                                           build_base_link,
+                                                          _resolve_links,
                                                           sanitize_assembly_name)
 from bit.modules.ncbi.dl_ncbi_assemblies import RunData
+from bit.modules.taxonomy.tax_ranks import RANKS, accession_core
+from bit.modules.taxonomy.lineage_lookup import NO_LINEAGE
 
 
 # The reader now consumes the hosted NCBI Parquet, so fixtures are Parquet rather than
@@ -116,7 +121,7 @@ def test_parse_version_stripping(tmp_path):
     parse_ncbi_assembly_summary(summary, rd)
     assert rd.num_found == 1
     row = rd.ncbi_sub_table_path.read_text().splitlines()[1].split("\t")
-    assert row[0] == "GCF_000005845.2"        # input_accession = what the user asked
+    assert row[0] == "GCF_000005845.2"        # target_accession = what the user asked
     assert row[1] == "GCF_000005845.7"        # found_accession = what the table had
 
 
@@ -151,9 +156,9 @@ def test_output_tsv_header(tmp_path):
     rd = _make_run_data(tmp_path, ["GCF_000005845.2"])
     parse_ncbi_assembly_summary(summary, rd)
     header = rd.ncbi_sub_table_path.read_text().splitlines()[0].split("\t")
-    assert header == ["input_accession", "found_accession", "assembly_name", "taxid",
+    assert header == ["target_accession", "found_accession", "assembly_name", "taxid",
                       "organism_name", "infraspecific_name", "version_status",
-                      "assembly_level", "http_base_link"]
+                      "assembly_level"]
 
 
 def test_output_tsv_row_values(tmp_path):
@@ -207,30 +212,165 @@ def test_with_format_link_content(tmp_path):
 
 # --- link resolution: ftp_path vs the build_base_link fallback ------------
 
+# http_base_link is no longer a column, so these pin the resolver itself plus the
+# target_link it feeds -- the behaviour that column used to stand in for
+
 def test_ftp_path_used_when_present(tmp_path):
-    summary = _make_summary(tmp_path, [
-        _row("GCF_000005845.2", "ASM584v2",
-             ftp_path="ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2"),
-    ])
-    rd = _make_run_data(tmp_path, ["GCF_000005845.2"])
-    parse_ncbi_assembly_summary(summary, rd)
-    link = rd.ncbi_sub_table_path.read_text().splitlines()[1].split("\t")[8]
+    link, _ = _resolve_links(
+        "GCF_000005845.2", "ASM584v2",
+        "ftp://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2")
     assert link.startswith("https://")            # ftp:// -> https://
     assert link.endswith("/")
 
 
-def test_fallback_when_ftp_path_absent(tmp_path):
+def test_fallback_when_ftp_path_absent():
     """No ftp_path -> the URL is rebuilt from accession + assembly name."""
-    summary = _make_summary(tmp_path, [_row("GCF_000005845.2", "ASM584v2", ftp_path="")])
-    rd = _make_run_data(tmp_path, ["GCF_000005845.2"])
-    parse_ncbi_assembly_summary(summary, rd)
-    link = rd.ncbi_sub_table_path.read_text().splitlines()[1].split("\t")[8]
+    link, _ = _resolve_links("GCF_000005845.2", "ASM584v2", "")
     assert link == "https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/GCF_000005845.2_ASM584v2/"
 
 
 def test_fallback_sanitizes_assembly_name(tmp_path):
     summary = _make_summary(tmp_path, [_row("GCF_000005845.2", "ASM 584/v2", ftp_path="")])
-    rd = _make_run_data(tmp_path, ["GCF_000005845.2"])
+    rd = _make_run_data(tmp_path, ["GCF_000005845.2"], wanted_format="fasta")
     parse_ncbi_assembly_summary(summary, rd)
-    link = rd.ncbi_sub_table_path.read_text().splitlines()[1].split("\t")[8]
-    assert "ASM_584_v2" in link
+    header = rd.ncbi_sub_table_path.read_text().splitlines()[0].split("\t")
+    row = rd.ncbi_sub_table_path.read_text().splitlines()[1].split("\t")
+    assert "ASM_584_v2" in row[header.index("target_link")]
+
+
+def test_http_base_link_column_is_gone(tmp_path):
+    summary = _make_summary(tmp_path, [_row("GCF_000005845.2")])
+    rd = _make_run_data(tmp_path, ["GCF_000005845.2"], wanted_format="fasta")
+    parse_ncbi_assembly_summary(summary, rd)
+    header = rd.ncbi_sub_table_path.read_text().splitlines()[0].split("\t")
+    assert "http_base_link" not in header
+    assert "input_accession" not in header
+
+
+def test_local_destination_has_no_dot_slash_prefix(tmp_path, monkeypatch):
+    """
+    The default output dir is ".", which an f-string join turned into a "./" on the
+    front of every destination.
+    """
+    summary = _make_summary(tmp_path, [_row("GCF_000005845.2", "ASM584v2")])
+    monkeypatch.chdir(tmp_path)
+    rd = _make_run_data(tmp_path, ["GCF_000005845.2"], wanted_format="fasta")
+    rd.output_dir = "."
+    parse_ncbi_assembly_summary(summary, rd)
+    header = rd.ncbi_sub_table_path.read_text().splitlines()[0].split("\t")
+    row = rd.ncbi_sub_table_path.read_text().splitlines()[1].split("\t")
+    dest = row[header.index("local_destination")]
+    assert dest == "GCF_000005845.2.fasta.gz"
+    assert not dest.startswith("./")
+
+
+def test_explicit_output_dir_still_prefixes_destination(tmp_path):
+    summary = _make_summary(tmp_path, [_row("GCF_000005845.2", "ASM584v2")])
+    rd = _make_run_data(tmp_path, ["GCF_000005845.2"], wanted_format="fasta")
+    rd.output_dir = "genomes"
+    parse_ncbi_assembly_summary(summary, rd)
+    header = rd.ncbi_sub_table_path.read_text().splitlines()[0].split("\t")
+    row = rd.ncbi_sub_table_path.read_text().splitlines()[1].split("\t")
+    assert row[header.index("local_destination")] == "genomes/GCF_000005845.2.fasta.gz"
+
+
+# --- lineage columns in the info table ------------------------------------
+# --add-ncbi-tax / --add-gtdb-tax are independent of each other and of --source, and
+# both default off. NCBI lineage rides along on the asset scan; GTDB lineage comes
+# from a map the caller builds and hangs off run_data.
+
+_LINEAGE = ("Bacteria", "Pseudomonadota", "Gammaproteobacteria", "Enterobacterales",
+            "Enterobacteriaceae", "Escherichia", "Escherichia coli")
+
+
+def _lineage_summary(tmp_path, with_ranks=True):
+    """A one-row Parquet fixture, optionally carrying the asset's lineage columns."""
+    row = _row("GCF_000005845.2", "ASM584v2",
+               ftp_path="https://ftp.ncbi.nlm.nih.gov/genomes/all/GCF/000/005/845/"
+                        "GCF_000005845.2_ASM584v2")
+    cols = {c: pa.array([str(row.get(c, ""))]) for c in _PARQUET_COLUMNS}
+    if with_ranks:
+        for rank, value in zip(RANKS, _LINEAGE):
+            cols[rank] = pa.array([value])
+    path = tmp_path / "ncbi-data-lineage.parquet"
+    pq.write_table(pa.table(cols), str(path))
+    return path
+
+
+def _lineage_run_data(tmp_path):
+    return _make_run_data(tmp_path, ["GCF_000005845.2"], wanted_format="fasta")
+
+
+_lineage_parse = parse_ncbi_assembly_summary
+
+
+def _lineage_table(tmp_path, add_ncbi_tax=False, add_gtdb_tax=False,
+                   gtdb_lineage=None, with_ranks=True):
+    summary = _lineage_summary(tmp_path, with_ranks=with_ranks)
+    rd = _lineage_run_data(tmp_path)
+    rd.add_ncbi_tax = add_ncbi_tax
+    rd.add_gtdb_tax = add_gtdb_tax
+    rd.gtdb_lineage = gtdb_lineage
+    _lineage_parse(summary, rd)
+    lines = Path(rd.ncbi_sub_table_path).read_text().splitlines()
+    header = lines[0].split("\t")
+    return header, [dict(zip(header, line.split("\t"))) for line in lines[1:]]
+
+
+def test_no_lineage_columns_by_default(tmp_path):
+    header, _ = _lineage_table(tmp_path)
+    assert not [c for c in header if c.startswith(("ncbi_", "gtdb_"))]
+
+
+def test_add_ncbi_tax_adds_prefixed_ncbi_columns(tmp_path):
+    header, rows = _lineage_table(tmp_path, add_ncbi_tax=True)
+    assert header[-7:] == [f"ncbi_{r}" for r in RANKS]
+    assert rows[0]["ncbi_species"] == "Escherichia coli"
+    assert rows[0]["ncbi_domain"] == "Bacteria"
+    assert not [c for c in header if c.startswith("gtdb_")]
+
+
+def test_add_gtdb_tax_adds_prefixed_gtdb_columns(tmp_path):
+    mapping = {accession_core("GCF_000005845.2"): _LINEAGE}
+    header, rows = _lineage_table(tmp_path, add_gtdb_tax=True, gtdb_lineage=mapping,
+                                  with_ranks=False)
+    assert header[-7:] == [f"gtdb_{r}" for r in RANKS]
+    assert rows[0]["gtdb_species"] == "Escherichia coli"
+    assert not [c for c in header if c.startswith("ncbi_")]
+
+
+def test_both_taxonomies_can_be_on_at_once(tmp_path):
+    """
+    They're independent flags, and the prefixes are what keeps a mixed table
+    unambiguous when GTDB and NCBI disagree.
+    """
+    gtdb = ("Bacteria", "GtdbPhylum", "GtdbClass", "GtdbOrder", "GtdbFamily",
+            "GtdbGenus", "Gtdb species")
+    mapping = {accession_core("GCF_000005845.2"): gtdb}
+    header, rows = _lineage_table(tmp_path, add_ncbi_tax=True, add_gtdb_tax=True,
+                                  gtdb_lineage=mapping)
+    assert header[-14:] == ([f"ncbi_{r}" for r in RANKS] +
+                            [f"gtdb_{r}" for r in RANKS])
+    assert rows[0]["ncbi_phylum"] == "Pseudomonadota"
+    assert rows[0]["gtdb_phylum"] == "GtdbPhylum"
+
+
+def test_accession_missing_from_gtdb_gets_NA(tmp_path):
+    """GTDB is bacteria/archaea only, so a miss is expected, not an error."""
+    header, rows = _lineage_table(tmp_path, add_gtdb_tax=True, gtdb_lineage={},
+                                  with_ranks=False)
+    assert [rows[0][f"gtdb_{r}"] for r in RANKS] == list(NO_LINEAGE)
+
+
+def test_lineage_columns_come_after_the_link_columns(tmp_path):
+    header, _ = _lineage_table(tmp_path, add_ncbi_tax=True)
+    assert header.index("local_destination") < header.index("ncbi_domain")
+    assert header.index("target_link") < header.index("ncbi_domain")
+
+
+def test_every_row_has_the_full_width(tmp_path):
+    mapping = {accession_core("GCF_000005845.2"): _LINEAGE}
+    header, rows = _lineage_table(tmp_path, add_ncbi_tax=True, add_gtdb_tax=True,
+                                  gtdb_lineage=mapping)
+    assert all(len(row) == len(header) for row in rows)
+    assert "" not in rows[0].values()

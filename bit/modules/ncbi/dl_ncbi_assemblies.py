@@ -22,6 +22,8 @@ from bit.modules.taxonomy.get_accs_shared import (parse_assembly_levels,
                                                   resolved_derep_rank)
 from bit.modules.ncbi.parse_ncbi_assembly_summary import parse_ncbi_assembly_summary
 from bit.modules.ncbi.get_ncbi_assembly_data import get_ncbi_assembly_data, ncbi_data_table_path
+from bit.modules.gtdb.get_gtdb_data import get_gtdb_data, gtdb_data_table_path
+from bit.modules.taxonomy.lineage_lookup import gtdb_lineage_map
 
 
 TRANSIENT_STATUS = {429, 500, 502, 503, 504}
@@ -43,6 +45,13 @@ MAX_RETRY_AFTER = 300
 SAWTOOTH_CYCLE = 5
 
 DOWNLOAD_TIMEOUT = 60
+
+# Whole-pool sweeps over anything that failed for a transient reason, on top of the
+# per-file retries inside download_one()
+MAX_RETRY_PASSES = 2
+
+# Seconds to wait before each retry pass
+RETRY_PASS_WAITS = (3, 7)
 
 def dl_ncbi_assemblies(args):
 
@@ -108,6 +117,13 @@ def preflight_checks(args):
             attempt_to_make_dir(args.output_dir)
 
     get_ncbi_assembly_data(quiet=True)
+
+    # --add-gtdb-tax annotates whatever ends up in the info table, including
+    # accessions handed over with `-w`, so the GTDB asset can be needed on runs that
+    # never touch `-t`. A dry run writes no table, so it doesn't need it.
+    if (getattr(args, "add_gtdb_tax", False)
+            and not getattr(args, "dry_run", False)):
+        get_gtdb_data(quiet=True)
 
     if target_taxa:
         # fetches the selection asset (and, for GTDB, the NCBI table it screens against)
@@ -311,12 +327,17 @@ def setup(args, wanted_accs=None):
         output_dir=args.output_dir,
         wanted_accs=wanted_accs,
         num_wanted=len(wanted_accs),
-        ncbi_sub_table_path=Path(args.output_dir) / "wanted-ncbi-accessions-info.tsv",
+        ncbi_sub_table_path=Path(args.output_dir) / "downloaded-assemblies-info.tsv",
         not_found_path=Path(args.output_dir) / "ncbi-accessions-not-found.txt",
         not_downloaded_path=Path(args.output_dir) / "ncbi-accessions-not-downloaded.tsv",
         quiet=getattr(args, "quiet", False),
-        from_taxon=bool(getattr(args, "target_taxon", None))
+        from_taxon=bool(getattr(args, "target_taxon", None)),
+        add_ncbi_tax=bool(getattr(args, "add_ncbi_tax", False)),
+        add_gtdb_tax=bool(getattr(args, "add_gtdb_tax", False)),
         )
+
+    if run_data.add_gtdb_tax:
+        run_data.gtdb_lineage = gtdb_lineage_map(gtdb_data_table_path(), wanted_accs)
 
     return run_data
 
@@ -350,6 +371,9 @@ class RunData:
     not_downloaded_path: str = None
     quiet: bool = False
     from_taxon: bool = False
+    add_ncbi_tax: bool = False
+    add_gtdb_tax: bool = False
+    gtdb_lineage: dict = None
 
     @property
     def not_found_reason(self):
@@ -559,20 +583,29 @@ def download_assemblies(run_data):
 
     permanent, transient, num_skipped = run_download_pass(targets, run_data)
 
-    # second pass on transient-only failures
+    # extra sweeps on transient-only failures. Announced once up front, with the pass
+    # number carried by the progress bar's label, so a run that needs both passes
+    # doesn't repeat the same paragraph back at the user
     if transient:
-        retry_targets = [(link, dest) for link, dest, _ in transient]
-        print(color_text(f"\n    {len(transient)} file(s) failed with transient error messages, doing another pass", "yellow"))
-        print(color_text(f"    to see if we can grab them...\n", "yellow"))
+        report_message(f"{len(transient):,} file(s) failed with transient errors, "
+                       f"giving them up to {MAX_RETRY_PASSES} more passes to see "
+                       f"if we can grab them...", "yellow", width=80,
+                       initial_indent="    ", subsequent_indent="    ",
+                       trailing_newline=True)
 
-        time.sleep(3)
-        retry_permanent, retry_transient, retry_skipped = run_download_pass(
-            retry_targets, run_data, desc="Progress"
+    for retry_pass in range(1, MAX_RETRY_PASSES + 1):
+        if not transient:
+            break
+        retry_targets = [(link, dest) for link, dest, _ in transient]
+        time.sleep(RETRY_PASS_WAITS[retry_pass - 1])
+        retry_permanent, transient, retry_skipped = run_download_pass(
+            retry_targets, run_data, desc=f"Retry {retry_pass}"
         )
         num_skipped += retry_skipped
-        # anything still failing after the retry is final, regardless of category
         permanent.extend(retry_permanent)
-        permanent.extend(retry_transient)
+
+    # anything still transient once the passes are spent is final
+    permanent.extend(transient)
 
     failed = [(dest, error) for _, dest, error in permanent]
 

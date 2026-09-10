@@ -456,7 +456,7 @@ def phase_download(args, run): # pragma: no cover
 
     # rename dl-ncbi-assemblies' info table for consistency with the gtdb summary
     _rename_if_exists(
-        os.path.join(run.genomes_dir, "wanted-ncbi-accessions-info.tsv"),
+        os.path.join(run.genomes_dir, "downloaded-assemblies-info.tsv"),
         os.path.join(run.genomes_dir, "selected-genomes-ncbi-info.tsv"))
 
     # write the GTDB info summary for the final community

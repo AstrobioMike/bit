@@ -14,6 +14,14 @@
 
 -->
 
+## v2.10.1 (NOT YET RELEASED)
+
+### Changed
+- `bit dl-ncbi-assemblies`
+  - `--add-gtdb-tax` and `--add-ncbi-tax`, off by default, can be used independently or together to add taxonomy info to the output tsv
+  - output tsv name is changed from "wanted-ncbi-accessions-info.tsv" to "downloaded-assemblies-info.tsv"
+
+
 ## v2.10.0 (4-Sep-2026)
 
 ### Added

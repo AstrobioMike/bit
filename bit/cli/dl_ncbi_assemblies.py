@@ -187,6 +187,20 @@ def build_parser(parent_subparsers=None, show_fine=False):
     )
 
     optional.add_argument(
+        "--add-ncbi-tax",
+        dest="add_ncbi_tax",
+        action="store_true",
+        help=wrap_help("Add NCBI taxonomy info to the output table of downloaded assemblies"),
+    )
+
+    optional.add_argument(
+        "--add-gtdb-tax",
+        dest="add_gtdb_tax",
+        action="store_true",
+        help=wrap_help("Add GTDB taxonomy info to the output table of downlaoded assemblies"),
+    )
+
+    optional.add_argument(
         "-H",
         "--detailed-help",
         action="store_true",

@@ -1,7 +1,12 @@
 import re
+from pathlib import Path
 import pyarrow as pa # type: ignore
 import pyarrow.compute as pc # type: ignore
 import pyarrow.dataset as ds # type: ignore
+
+from bit.modules.taxonomy.tax_ranks import RANKS, accession_core
+from bit.modules.taxonomy.lineage_lookup import (NO_LINEAGE, lineage_columns,
+                                                 lineage_from_row)
 
 
 def sanitize_assembly_name(name):
@@ -33,10 +38,20 @@ FORMAT_EXTENSIONS = {
 }
 
 
-_NEEDED_COLUMNS = [
+_BASE_COLUMNS = [
     "assembly_accession", "asm_name", "taxid", "organism_name",
     "infraspecific_name", "version_status", "assembly_level", "ftp_path",
 ]
+
+
+def _needed_columns(add_ncbi_tax=False):
+    """
+    Asset columns to scan. The lineage columns are only requested when they'll be
+    written, so the common case doesn't pay to read seven extra columns.
+    """
+    if add_ncbi_tax:
+        return _BASE_COLUMNS + list(RANKS)
+    return list(_BASE_COLUMNS)
 
 
 def _clean(value):
@@ -83,16 +98,22 @@ def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
     predicate = pc.is_in(root_field,
                          value_set=pa.array(sorted(set(roots)), type=pa.string()))
 
+    add_ncbi_tax = bool(getattr(run_data, "add_ncbi_tax", False))
+    add_gtdb_tax = bool(getattr(run_data, "add_gtdb_tax", False))
+    gtdb_lineage = getattr(run_data, "gtdb_lineage", None) or {}
+
     with open(run_data.ncbi_sub_table_path, "w") as out_file:
 
-        cols = ["input_accession", "found_accession", "assembly_name", "taxid",
+        cols = ["target_accession", "found_accession", "assembly_name", "taxid",
                 "organism_name", "infraspecific_name", "version_status",
-                "assembly_level", "http_base_link"]
+                "assembly_level"]
         if run_data.wanted_format:
             cols.extend(["target_link", "local_destination"])
+        cols.extend(lineage_columns(add_ncbi_tax, add_gtdb_tax))
         out_file.write("\t".join(cols) + "\n")
 
-        scanner = dataset.scanner(columns=_NEEDED_COLUMNS, filter=predicate)
+        scanner = dataset.scanner(columns=_needed_columns(add_ncbi_tax),
+                                  filter=predicate)
 
         for batch in scanner.to_batches():
             rows = batch.to_pylist()
@@ -113,13 +134,14 @@ def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
                 assembly_level = _clean(row.get("assembly_level"))
                 ftp_path = (row.get("ftp_path") or "").strip()
 
+                # still resolved because target_link is built from it; it is no
+                # longer a column of its own
                 http_path, dir_basename = _resolve_links(dl_acc, assembly_name, ftp_path)
 
                 out_fields = [
                     wanted_dict[root], dl_acc, assembly_name, taxid, org_name,
-                    infra_name, version_status, assembly_level, http_path,
+                    infra_name, version_status, assembly_level,
                 ]
-                out_line = "\t".join(out_fields)
 
                 if run_data.wanted_format:
                     ncbi_ext, local_ext = FORMAT_EXTENSIONS[run_data.wanted_format]
@@ -127,10 +149,17 @@ def parse_ncbi_assembly_summary(assembly_summary_file, run_data):
                         target_link = f"{http_path}{dir_basename}{ncbi_ext}"
                     else:
                         target_link = "NA"
-                    local_path = f"{run_data.output_dir}/{dl_acc}{local_ext}"
-                    out_line += "\t" + target_link + "\t" + local_path
+                    local_path = str(Path(run_data.output_dir) /
+                                     f"{dl_acc}{local_ext}")
+                    out_fields.extend([target_link, local_path])
 
-                out_file.write(out_line + "\n")
+                if add_ncbi_tax:
+                    out_fields.extend(lineage_from_row(row))
+                if add_gtdb_tax:
+                    out_fields.extend(
+                        gtdb_lineage.get(accession_core(dl_acc), NO_LINEAGE))
+
+                out_file.write("\t".join(out_fields) + "\n")
 
     not_found = set(run_data.wanted_accs) - found
 
