@@ -90,7 +90,7 @@ def check_required_dbs(args, run):
     # and the NCBI assembly Parquet (download phase resolves accession -> FTP path,
     # and taxonomy resolution reads NCBI lineages from it). Fetch them up front so no
     # large download surprises the user mid-run.
-    run.gtdb_dir = get_gtdb_data(quiet=True)
+    get_gtdb_data(quiet=True)
     get_ncbi_assembly_data(quiet=True)
     log_data_source(run, "NCBI assembly summary retrieved",
                     _read_retrieved_date(os.environ.get("NCBI_assembly_data_dir")))

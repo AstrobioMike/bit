@@ -1,138 +1,89 @@
+#!/usr/bin/env python
+
+"""
+Ensures the prepared NCBI assembly-info table is present, downloading bit's hosted
+Parquet asset (ncbi-data.parquet) if it isn't. The asset is a combined, slimmed
+GenBank + RefSeq assembly summary with taxonomy resolved.
+
+The download/verify/cleanup machinery is shared with the GTDB table, see
+bit/modules/hosted_parquet_asset.py. What lives here is the NCBI-specific
+configuration and the names the rest of the codebase imports.
+"""
+
 import os
-import sys
-import socket
-import urllib
-import urllib.error
-from bit.modules.general import (wprint, color_text,
-                                 report_message, notify_premature_exit,
-                                 download_with_tqdm)
+
+from bit.modules.general import report_message
+from bit.modules.hosted_parquet_asset import (HostedParquetAsset,
+                                              validate_date_stamp)
 from bit.modules.ncbi.build_ncbi_data_parquet import PARQUET_FILENAME, DATE_FILENAME
 
 
 _RELEASE_BASE = "https://github.com/AstrobioMike/bit/releases/download/ncbi-assembly-info-latest"
 
+NCBI_ASSET = HostedParquetAsset(
+    env_var="NCBI_assembly_data_dir",
+    release_base=_RELEASE_BASE,
+    parquet_filename=PARQUET_FILENAME,
+    sidecar_filename=DATE_FILENAME,
+    sidecar_validator=validate_date_stamp,
+    display_name="NCBI assembly-info table",
+    download_label="NCBI prepared data",
+    sidecar_label="date stamp",
+)
 
-NCBI_DATA_URL = f"{_RELEASE_BASE}/{PARQUET_FILENAME}"
-NCBI_DATE_URL = f"{_RELEASE_BASE}/{DATE_FILENAME}"
+NCBI_DATA_URL = NCBI_ASSET.data_url
+NCBI_DATE_URL = NCBI_ASSET.sidecar_url
+
+
+def get_ncbi_assembly_data(force_update=False, quiet=False):
+    """
+    Ensure the NCBI Parquet table is present locally, and return its path.
+
+    `quiet` silences the "already present" note only. A failed download always
+    explains itself, since it's fatal and there's nothing else to go on.
+    """
+    ncbi_dir = check_ncbi_assembly_info_location_var_is_set()
+    data_present = check_if_data_present(ncbi_dir)
+
+    if data_present and not force_update:
+        if not quiet:
+            report_message("Assembly data already present at:")
+            print(f"        {ncbi_dir}")
+            report_message("Run `bit data get ncbi-assembly-data -f` if you want to re-download/update it.")
+            print("")
+    else:
+        get_slim_ncbi_assembly_data(ncbi_dir)
+
+    return ncbi_data_table_path(ncbi_dir)
 
 
 def check_ncbi_assembly_info_location_var_is_set():
-
-    # making sure there is a NCBI_assembly_data_dir env variable
-    try:
-        ncbi_assembly_data_dir = os.environ['NCBI_assembly_data_dir']
-    except KeyError:
-        wprint(color_text("The environment variable 'NCBI_assembly_data_dir' does not seem to be set :(", "yellow"))
-        wprint("This shouldn't happen, check on things with `bit data locations check`.")
-        print("")
-        sys.exit(0)
-
-    return ncbi_assembly_data_dir
+    return NCBI_ASSET.location()
 
 
 def ncbi_data_table_path(location=None):
-    if location is None:
-        location = check_ncbi_assembly_info_location_var_is_set()
-    return os.path.join(str(location), PARQUET_FILENAME)
+    """Path to the local NCBI Parquet asset (resolving the location if not given)."""
+    return NCBI_ASSET.table_path(location)
 
 
 def check_if_data_present(location):
-
-    table_path = os.path.join(str(location), PARQUET_FILENAME)
-    date_retrieved_path = os.path.join(str(location), DATE_FILENAME)
-
-    def is_nonempty_file(p):
-        return os.path.isfile(p) and os.path.getsize(p) > 0
-
-    if not is_nonempty_file(table_path) or not is_nonempty_file(date_retrieved_path):
-        for p in (table_path, date_retrieved_path):
-            if os.path.exists(p) and os.path.isfile(p):
-                os.remove(p)
-        return False
-    return True
-
-
-def _report_unavailable(err):
-    print("")
-    wprint(color_text("Couldn't download the prepared NCBI assembly-info table :(", "yellow"))
-    report_message(f"Underlying issue: {err}", initial_indent="    ",
-                   subsequent_indent="    ")
-    print("")
-    wprint("This is usually a transient network problem, and trying again in a few minutes "
-           "often works. If it persists, the table can be fetched manually from:")
-    print(f"        {color_text(NCBI_DATA_URL)}")
-    print(f"        {color_text(NCBI_DATE_URL)}")
-    wprint(f"and placed (as '{PARQUET_FILENAME}' and '{DATE_FILENAME}') in the directory "
-           "shown by `bit data locations check`.")
-    print("")
-
-
-def get_slim_ncbi_assembly_data(location, quiet=False):
-    table_path = os.path.join(location, PARQUET_FILENAME)
-    date_path = os.path.join(location, DATE_FILENAME)
-
-    print(color_text("\n    Downloading the prepared NCBI assembly-info table (only needs to be done once)...\n", "yellow"))
-
-    default_timeout = socket.getdefaulttimeout()
-    socket.setdefaulttimeout(30)
-    try:
-        download_with_tqdm(NCBI_DATA_URL, "        NCBI prepared data", table_path,
-                           speed_gate=True)
-
-        # confirm the file is a readable Parquet before we trust it
-        _verify_parquet(table_path)
-
-        _download_date_file(date_path)
-
-    except (urllib.error.URLError, socket.timeout, TimeoutError, ConnectionError,
-            ValueError, OSError) as err:
-        for p in (table_path, date_path):
-            if os.path.exists(p):
-                try:
-                    os.remove(p)
-                except OSError:
-                    pass
-        if not quiet:
-            _report_unavailable(err)
-        notify_premature_exit()
-        return
-    finally:
-        socket.setdefaulttimeout(default_timeout)
-
-    print("")
-
-
-def _verify_parquet(path):
     """
-    Cheap integrity check: open the Parquet footer and confirm the file has a schema
-    and at least one row group. This reads only the footer, not the whole table.
+    True if both the Parquet table and date-retrieved.txt are present and non-empty.
+    If either is missing/empty, any stray copy is cleaned up and we return False so a
+    fresh copy is pulled.
     """
-    import pyarrow.parquet as pq # type: ignore
-    md = pq.ParquetFile(path).metadata
-    if md.num_columns == 0 or md.num_row_groups == 0:
-        raise ValueError("downloaded NCBI table has no data (truncated download?)")
+    return NCBI_ASSET.is_present(location)
 
 
-def _download_date_file(date_path):
-    tmp = date_path + ".part"
-    try:
-        download_with_tqdm(NCBI_DATE_URL, "        date stamp", tmp, leave=False)
-        _validate_date_file(tmp)
-        os.replace(tmp, date_path)
-    finally:
-        if os.path.exists(tmp):
-            try:
-                os.remove(tmp)
-            except OSError:
-                pass
-
-
-def _validate_date_file(path):
-    with open(path) as fh:
-        first = fh.readline().strip()
-    parts = first.split(",")
-    if len(parts) != 3 or not all(p.isdigit() for p in parts):
-        raise ValueError(f"date-retrieved.txt is not a 'YYYY,MM,DD' stamp: {first!r}")
+def get_slim_ncbi_assembly_data(location):
+    """
+    Download the prepared NCBI Parquet asset and its date-retrieved file into
+    `location`. The Parquet footer is verified before we trust the table, and the
+    date file is written atomically. On any network/integrity failure the partial
+    artifacts are cleaned up and we exit with a helpful message -- there is no
+    NCBI-rebuild fallback, since the hosted asset is the prepared table.
+    """
+    NCBI_ASSET.download(location)
 
 
 def read_date_retrieved(location):
@@ -149,22 +100,3 @@ def read_date_retrieved(location):
         return datetime.date(y, m, d).strftime("%b %d, %Y")
     except (ValueError, TypeError):
         return stamp
-
-
-def get_ncbi_assembly_data(force_update=False, quiet=False):
-    """
-    Ensure the NCBI Parquet table is present locally, and return its path
-    """
-    ncbi_dir = check_ncbi_assembly_info_location_var_is_set()
-    data_present = check_if_data_present(ncbi_dir)
-
-    if data_present and not force_update:
-        if not quiet:
-            report_message("Assembly data already present at:")
-            print(f"        {ncbi_dir}")
-            report_message("Run `bit data get ncbi-assembly-data -f` if you want to re-download/update it.")
-            print()
-    else:
-        get_slim_ncbi_assembly_data(ncbi_dir, quiet=quiet)
-
-    return ncbi_data_table_path(ncbi_dir)

@@ -5,7 +5,7 @@ import pyarrow.parquet as pq # type: ignore
 from argparse import Namespace
 from unittest.mock import patch
 from bit.modules.gtdb.get_accessions_from_gtdb import (
-    report_gtdb_version_info,
+    _report_gtdb_version,
     copy_gtdb_table,
     report_taxon_counts,
     report_rank_counts_for_taxon,
@@ -141,12 +141,14 @@ def gtdb_parquet(tmp_path):
     return str(path)
 
 
-# ─── report_gtdb_version_info ─────────────────────────────────────────────────
+# ─── _report_gtdb_version ─────────────────────────────────────────────────────
 
-def test_report_gtdb_version_info_prints_version(gtdb_dir, capsys):
-    report_gtdb_version_info(str(gtdb_dir))
+def test_report_gtdb_version_prints_version_and_release_date(gtdb_dir, capsys):
+    # takes the table path and reads the version file sitting beside it
+    _report_gtdb_version(str(gtdb_dir / PARQUET_FILENAME))
     out = capsys.readouterr().out
     assert "R220" in out
+    assert "2024-04-24" in out
 
 
 # ─── copy_gtdb_table ──────────────────────────────────────────────────────────

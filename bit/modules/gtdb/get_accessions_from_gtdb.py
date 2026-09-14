@@ -408,19 +408,15 @@ def _resolve_or_exit(gtdb_path, taxon, rank=None, domain=None):
 
 
 def _report_gtdb_version(gtdb_path):
-    report_gtdb_version_info(os.path.dirname(gtdb_path))
-
-
-def report_gtdb_version_info(location):
-    gtdb_version, gtdb_release_date = _read_gtdb_version_info(location)
-    print("\n    Using GTDB " + gtdb_version + ": " + gtdb_release_date)
+    version, release_date = _read_gtdb_version_info(os.path.dirname(gtdb_path))
+    print("\n    Using GTDB " + version + ": " + release_date)
 
 
 def copy_gtdb_table(gtdb_path):
     """
     Write the parquet object as a tsv
     """
-    report_gtdb_version_info(os.path.dirname(gtdb_path))
+    _report_gtdb_version(gtdb_path)
 
     out_name = "gtdb-arc-and-bac-metadata.tsv"
     write_table_tsv(pq.read_table(gtdb_path), out_name)

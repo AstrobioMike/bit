@@ -1,197 +1,187 @@
-import socket
-import pyarrow as pa # type: ignore
-import pyarrow.parquet as pq # type: ignore
+"""
+Tests for the GTDB-specific half of the reference-table setup.
+
+As with the NCBI twin, the download/verify/cleanup machinery is shared and tested in
+bit/tests/test_hosted_parquet_asset.py against both assets. This module covers what's
+GTDB's alone: the asset spec, the wrappers, the present/absent/force routing (and
+bit's `quiet` flag, which lives in the wrapper), and report_gtdb_version_info().
+
+Mirrors gtotree/tests/utils/gtdb/test_get_gtdb_data.py.
+"""
+
 import pytest  # type: ignore
 from unittest.mock import patch
+
 from bit.modules.gtdb.get_gtdb_data import (
-    PARQUET_FILENAME,
-    VERSION_FILENAME,
+    GTDB_ASSET,
     GTDB_DATA_URL,
     GTDB_VERSION_URL,
+    PARQUET_FILENAME,
+    VERSION_FILENAME,
     check_gtdb_location_var_is_set,
-    gtdb_data_table_path,
     check_if_gtdb_data_present,
-    get_slim_gtdb_tab,
     get_gtdb_data,
+    gtdb_data_table_path,
     report_gtdb_version_info,
 )
 
-
-# --- helpers --------------------------------------------------------------
-
-def _valid_parquet(path):
-    pq.write_table(pa.table({"accession": pa.array(["GB_GCA_1"])}), str(path))
-
+MODPATH = "bit.modules.gtdb.get_gtdb_data"
 
 # GTDB's real VERSION.txt shape: version line, blank, "Released ..." line
 _VERSION_BODY = "v232\n\nReleased Apr 15, 2026\n"
 
 
-def _fake_downloader(version_body=_VERSION_BODY):
-    """Serves both assets by URL: the parquet URL -> a valid parquet, the version
-    URL -> `version_body`."""
-    def _dl(url, target, filename=None, **kw):
-        if url == GTDB_DATA_URL:
-            _valid_parquet(filename)
-        elif url == GTDB_VERSION_URL:
-            with open(filename, "w") as fh:
-                fh.write(version_body)
-        else:
-            raise AssertionError(f"unexpected download URL: {url}")
-    return _dl
+# --- the asset spec --------------------------------------------------------
+
+class TestAssetSpec:
+
+    def test_it_points_at_the_gtdb_variable_and_files(self):
+        assert GTDB_ASSET.env_var == "GTDB_DIR"
+        assert GTDB_ASSET.parquet_filename == PARQUET_FILENAME == "gtdb-data.parquet"
+        assert GTDB_ASSET.sidecar_filename == VERSION_FILENAME == "VERSION.txt"
+
+    def test_the_module_urls_match_the_asset(self):
+        assert GTDB_DATA_URL == GTDB_ASSET.data_url
+        assert GTDB_VERSION_URL == GTDB_ASSET.sidecar_url
+
+    def test_the_asset_is_pulled_from_the_rolling_release(self):
+        assert GTDB_DATA_URL.startswith("https://github.com/AstrobioMike/bit/releases")
+        assert GTDB_DATA_URL.endswith(PARQUET_FILENAME)
 
 
-# --- location var ---------------------------------------------------------
+# --- the wrappers delegate -------------------------------------------------
 
-def test_location_var_returns_path(monkeypatch, tmp_path):
-    monkeypatch.setenv("GTDB_DIR", str(tmp_path))
-    assert check_gtdb_location_var_is_set() == str(tmp_path)
+class TestWrappersDelegateToTheAsset:
+
+    def test_location_var_returns_the_path(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("GTDB_DIR", str(tmp_path))
+        assert check_gtdb_location_var_is_set() == str(tmp_path)
+
+    def test_location_var_exits_if_missing(self, monkeypatch):
+        monkeypatch.delenv("GTDB_DIR", raising=False)
+        with pytest.raises(SystemExit) as excinfo:
+            check_gtdb_location_var_is_set()
+        assert excinfo.value.code == 1
+
+    def test_table_path_derives_from_the_filename_constant(self, monkeypatch,
+                                                           tmp_path):
+        monkeypatch.setenv("GTDB_DIR", str(tmp_path))
+        assert gtdb_data_table_path() == str(tmp_path / PARQUET_FILENAME)
+        assert gtdb_data_table_path("/somewhere") == f"/somewhere/{PARQUET_FILENAME}"
+
+    def test_presence_check_delegates(self, tmp_path):
+        (tmp_path / PARQUET_FILENAME).write_text("x")
+        (tmp_path / VERSION_FILENAME).write_text(_VERSION_BODY)
+        assert check_if_gtdb_data_present(str(tmp_path)) is True
 
 
-def test_location_var_exits_if_missing(monkeypatch):
-    monkeypatch.delenv("GTDB_DIR", raising=False)
-    with pytest.raises(SystemExit):
-        check_gtdb_location_var_is_set()
+# --- routing ---------------------------------------------------------------
 
-
-def test_table_path_derives_from_the_single_filename_constant(monkeypatch, tmp_path):
-    monkeypatch.setenv("GTDB_DIR", str(tmp_path))
-    assert gtdb_data_table_path() == str(tmp_path / PARQUET_FILENAME)
-    assert gtdb_data_table_path("/somewhere") == f"/somewhere/{PARQUET_FILENAME}"
-
-
-# --- check_if_gtdb_data_present -------------------------------------------
-
-def test_present_when_both_files_nonempty(tmp_path):
+def _seed(tmp_path):
     (tmp_path / PARQUET_FILENAME).write_text("x")
-    (tmp_path / VERSION_FILENAME).write_text("v232\nReleased\n")
-    assert check_if_gtdb_data_present(str(tmp_path)) is True
+    (tmp_path / VERSION_FILENAME).write_text(_VERSION_BODY)
 
 
-def test_absent_when_table_missing(tmp_path):
-    (tmp_path / VERSION_FILENAME).write_text("v232\nReleased\n")
-    assert check_if_gtdb_data_present(str(tmp_path)) is False
+class TestRouting:
+    """
+    get_gtdb_data() returns the table path -- gen_metagenome and
+    get_accessions_from_gtdb both take os.path.dirname() of it, so the return value
+    is load-bearing.
+    """
+
+    def test_a_present_asset_is_not_re_downloaded_and_the_table_path_comes_back(
+            self, monkeypatch, tmp_path):
+        monkeypatch.setenv("GTDB_DIR", str(tmp_path))
+        _seed(tmp_path)
+
+        with patch(f"{MODPATH}.get_slim_gtdb_tab") as mock_dl:
+            result = get_gtdb_data(force_update=False, quiet=True)
+
+        assert result == str(tmp_path / PARQUET_FILENAME)
+        mock_dl.assert_not_called()
+
+    def test_an_absent_asset_is_downloaded_and_the_table_path_still_comes_back(
+            self, monkeypatch, tmp_path):
+        monkeypatch.setenv("GTDB_DIR", str(tmp_path))
+
+        with patch(f"{MODPATH}.get_slim_gtdb_tab") as mock_dl:
+            result = get_gtdb_data(quiet=True)
+
+        assert result == str(tmp_path / PARQUET_FILENAME)
+        mock_dl.assert_called_once()
+
+    def test_force_update_downloads_even_if_present(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("GTDB_DIR", str(tmp_path))
+        _seed(tmp_path)
+
+        with patch(f"{MODPATH}.get_slim_gtdb_tab") as mock_dl:
+            get_gtdb_data(force_update=True, quiet=True)
+
+        mock_dl.assert_called_once()
 
 
-def test_absent_when_version_missing(tmp_path):
-    (tmp_path / PARQUET_FILENAME).write_text("x")
-    assert check_if_gtdb_data_present(str(tmp_path)) is False
+# --- the quiet flag --------------------------------------------------------
+
+class TestQuiet:
+    """
+    `quiet` silences the "already present" note and nothing else. Everything outside
+    `bit data get gtdb-data` passes quiet=True, so this note is what would otherwise
+    land in the middle of a gen-mg or get-accs run.
+    """
+
+    def test_the_present_note_is_printed_by_default(self, monkeypatch, tmp_path,
+                                                    capsys):
+        monkeypatch.setenv("GTDB_DIR", str(tmp_path))
+        _seed(tmp_path)
+
+        get_gtdb_data()
+
+        out = capsys.readouterr().out
+        assert "GTDB data already present at:" in out
+        assert "bit data get gtdb-data -f" in out
+
+    def test_quiet_silences_the_present_note(self, monkeypatch, tmp_path, capsys):
+        monkeypatch.setenv("GTDB_DIR", str(tmp_path))
+        _seed(tmp_path)
+
+        get_gtdb_data(quiet=True)
+
+        assert capsys.readouterr().out == ""
+
+    def test_quiet_does_not_reach_the_download(self, monkeypatch, tmp_path):
+        """
+        The download path takes no `quiet`: a failure there is fatal, so it always
+        explains itself regardless of what the caller asked for.
+        """
+        monkeypatch.setenv("GTDB_DIR", str(tmp_path))
+
+        with patch(f"{MODPATH}.get_slim_gtdb_tab") as mock_dl:
+            get_gtdb_data(quiet=True)
+
+        mock_dl.assert_called_once_with(str(tmp_path))
 
 
-def test_a_half_present_pair_is_cleaned_up(tmp_path):
-    (tmp_path / PARQUET_FILENAME).write_text("x")
-    assert check_if_gtdb_data_present(str(tmp_path)) is False
-    assert not (tmp_path / PARQUET_FILENAME).exists()
+# --- report_gtdb_version_info ----------------------------------------------
 
+class TestReportGtdbVersionInfo:
 
-def test_empty_files_count_as_absent_and_are_removed(tmp_path):
-    (tmp_path / PARQUET_FILENAME).write_text("")
-    (tmp_path / VERSION_FILENAME).write_text("")
-    assert check_if_gtdb_data_present(str(tmp_path)) is False
-    assert not (tmp_path / PARQUET_FILENAME).exists()
-    assert not (tmp_path / VERSION_FILENAME).exists()
+    def test_the_two_lines_come_back_as_a_pair(self, tmp_path):
+        (tmp_path / VERSION_FILENAME).write_text(_VERSION_BODY)
+        assert report_gtdb_version_info(str(tmp_path)) == ("v232", "Apr 15, 2026")
 
+    def test_a_released_prefix_is_stripped(self, tmp_path):
+        # the published date line carries a "Released " prefix; GToTree strips it, so
+        # bit has to as well or the two print the release date differently
+        (tmp_path / VERSION_FILENAME).write_text("r220\nReleased 2024-04-24\n")
+        assert report_gtdb_version_info(str(tmp_path)) == ("r220", "2024-04-24")
 
-# --- download path --------------------------------------------------------
+    def test_blank_lines_are_skipped(self, tmp_path):
+        (tmp_path / VERSION_FILENAME).write_text("\nr220\n\n2024-04-24\n\n")
+        assert report_gtdb_version_info(str(tmp_path)) == ("r220", "2024-04-24")
 
-def test_download_writes_table_and_version(tmp_path):
-    with patch("bit.modules.gtdb.get_gtdb_data.download_with_tqdm", _fake_downloader()):
-        get_slim_gtdb_tab(str(tmp_path), quiet=True)
-    assert (tmp_path / PARQUET_FILENAME).exists()
-    assert (tmp_path / VERSION_FILENAME).exists()
-
-
-def test_version_file_comes_FROM_THE_ASSET(tmp_path):
-    """The recorded version must be the asset's actual GTDB release, fetched not
-    fabricated. A downloaded v999 body must land as v999."""
-    body = "v999\n\nReleased Jan 1, 2099\n"
-    with patch("bit.modules.gtdb.get_gtdb_data.download_with_tqdm", _fake_downloader(body)):
-        get_slim_gtdb_tab(str(tmp_path), quiet=True)
-    version, date = report_gtdb_version_info(str(tmp_path))
-    assert version == "v999"
-    assert date == "Released Jan 1, 2099"
-
-
-def test_version_asset_lands_under_its_asset_name(tmp_path):
-    """The version file keeps its asset name (VERSION.txt) on disk -- no rename --
-    and no stray .part is left behind."""
-    with patch("bit.modules.gtdb.get_gtdb_data.download_with_tqdm", _fake_downloader()):
-        get_slim_gtdb_tab(str(tmp_path), quiet=True)
-    assert (tmp_path / "VERSION.txt").exists()
-    assert not (tmp_path / (VERSION_FILENAME + ".part")).exists()
-
-
-def test_a_truncated_parquet_is_rejected_and_cleaned_up(tmp_path):
-    def _bad(url, target, filename=None, **kw):
-        if url == GTDB_DATA_URL:
-            with open(filename, "wb") as fh:
-                fh.write(b"not a parquet")
-        else:
-            with open(filename, "w") as fh:
-                fh.write(_VERSION_BODY)
-
-    with patch("bit.modules.gtdb.get_gtdb_data.download_with_tqdm", _bad), \
-         patch("bit.modules.gtdb.get_gtdb_data.notify_premature_exit"):
-        with pytest.raises(SystemExit):
-            get_slim_gtdb_tab(str(tmp_path), quiet=True)
-    assert not (tmp_path / PARQUET_FILENAME).exists()
-    assert not (tmp_path / VERSION_FILENAME).exists()
-
-
-def test_a_malformed_version_file_is_rejected(tmp_path):
-    """A version file without the two expected lines must fail, not be trusted."""
-    with patch("bit.modules.gtdb.get_gtdb_data.download_with_tqdm",
-               _fake_downloader(version_body="oneline\n")), \
-         patch("bit.modules.gtdb.get_gtdb_data.notify_premature_exit"):
-        with pytest.raises(SystemExit):
-            get_slim_gtdb_tab(str(tmp_path), quiet=True)
-    assert not (tmp_path / PARQUET_FILENAME).exists()
-    assert not (tmp_path / VERSION_FILENAME).exists()
-    assert not (tmp_path / (VERSION_FILENAME + ".part")).exists()
-
-
-def test_download_failure_exits_without_a_local_rebuild(tmp_path):
-    def boom(*a, **k):
-        raise socket.timeout("slow")
-    with patch("bit.modules.gtdb.get_gtdb_data.download_with_tqdm", boom), \
-         patch("bit.modules.gtdb.get_gtdb_data.notify_premature_exit"):
-        with pytest.raises(SystemExit):
-            get_slim_gtdb_tab(str(tmp_path), quiet=True)
-    assert not (tmp_path / PARQUET_FILENAME).exists()
-
-
-def test_socket_timeout_is_restored_after_download(tmp_path):
-    before = socket.getdefaulttimeout()
-    with patch("bit.modules.gtdb.get_gtdb_data.download_with_tqdm", _fake_downloader()):
-        get_slim_gtdb_tab(str(tmp_path), quiet=True)
-    assert socket.getdefaulttimeout() == before
-
-
-# --- get_gtdb_data (routing + the return-path contract) -------------------
-
-def test_present_data_skips_download_but_still_returns_path(tmp_path, monkeypatch):
-    monkeypatch.setenv("GTDB_DIR", str(tmp_path))
-    (tmp_path / PARQUET_FILENAME).write_text("x")
-    (tmp_path / VERSION_FILENAME).write_text("v232\nReleased\n")
-    with patch("bit.modules.gtdb.get_gtdb_data.get_slim_gtdb_tab") as mock_dl:
-        result = get_gtdb_data(quiet=True)
-    mock_dl.assert_not_called()
-    assert result == str(tmp_path / PARQUET_FILENAME)
-
-
-def test_missing_data_triggers_download_then_returns_path(tmp_path, monkeypatch):
-    monkeypatch.setenv("GTDB_DIR", str(tmp_path))
-    with patch("bit.modules.gtdb.get_gtdb_data.get_slim_gtdb_tab") as mock_dl:
-        result = get_gtdb_data(quiet=True)
-    mock_dl.assert_called_once()
-    assert result == str(tmp_path / PARQUET_FILENAME)
-
-
-def test_force_update_downloads_even_when_present(tmp_path, monkeypatch):
-    monkeypatch.setenv("GTDB_DIR", str(tmp_path))
-    (tmp_path / PARQUET_FILENAME).write_text("x")
-    (tmp_path / VERSION_FILENAME).write_text("v232\nReleased\n")
-    with patch("bit.modules.gtdb.get_gtdb_data.get_slim_gtdb_tab") as mock_dl:
-        result = get_gtdb_data(force_update=True, quiet=True)
-    mock_dl.assert_called_once()
-    assert result == str(tmp_path / PARQUET_FILENAME)
+    def test_a_one_line_file_raises_rather_than_returning_junk(self, tmp_path):
+        # the validator rejects this shape on download, so reaching it means the file
+        # was hand-placed; better to fail loudly than to report a bogus release date
+        (tmp_path / VERSION_FILENAME).write_text("r220\n")
+        with pytest.raises(IndexError):
+            report_gtdb_version_info(str(tmp_path))
