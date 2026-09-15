@@ -106,7 +106,7 @@ def get_accessions_from_gtdb(args):
 
     if args.gtdb_representatives_only and args.refseq_reference_genomes_only:
         print("")
-        wprint(color_text("Only one of `--gtdb-representatives-only` or `--refseq-reference-genomes-only` can be provided.", "yellow"))
+        wprint(color_text("Only one of `-G/--gtdb-representatives-only` or `-R/--refseq-ref-genomes-only` can be provided.", "yellow"))
         print("")
         sys.exit(0)
 
@@ -166,6 +166,7 @@ def get_accessions_from_gtdb(args):
         report_message(empty_pull_message(
             f"No genomes were found under {label}.", ref_selection,
             reps_only_requested=bool(representatives_source),
+            reps_flag=_reps_flag_for(representatives_source),
             emoticon=":("), "yellow")
         print("")
         sys.exit(0)
@@ -276,6 +277,16 @@ def _derep_is_on(args):
     """True when --derep-rank asks for actual dereplication."""
     return is_derep_on(resolved_derep_rank(args))
 
+
+
+def _reps_flag_for(representatives_source):
+    """
+    How this surface spells the representatives-only request, for empty-result
+    messaging.
+    """
+    if representatives_source == "refseq":
+        return "-R/--refseq-ref-genomes-only"
+    return "-G/--gtdb-representatives-only"
 
 def _write_all_dereplicated(gtdb_path, args, representatives_source=None):
     """`-t all` WITH --derep-rank: one selection per domain, merged."""

@@ -96,9 +96,20 @@ def resolve_target_taxon_accessions(source, taxon, target_rank=None,
                                     ncbi_section="refseq", assembly_levels=None,
                                     reps_only=None, min_completeness=None,
                                     max_contamination=None, include_rows=True,
-                                    exclude_cores=None):
+                                    exclude_cores=None, reps_only_requested=None,
+                                    reps_flag=None, reps_widen_hint=None):
     """
     Resolve one `-t <taxon>` to (accessions, selection).
+
+    reps_only_requested / reps_flag / reps_widen_hint
+        Empty-result messaging vocabulary, mirrored from GToTree's
+        `resolve_wanted_ref_tax_accessions` so the two resolvers stay portable.
+        `reps_only_requested` defaults to `reps_only`, which is right for every
+        current bit surface. Each gets its reps-only pool from an explicit flag, so
+        there is no default to avoid blaming. A surface whose DEFAULT is reps-only
+        would have to pass it explicitly. `reps_flag` is how that surface spells the
+        narrowing flag; `reps_widen_hint`, the way back out, has no user in bit (it
+        is what GToTree's `--gtdb-section all` fills in).
 
     `selection` is the RefGenomeSelection it came from, carrying the canonical name,
     resolved rank, effective derep rank, metadata rows, and any warnings -- everything
@@ -141,7 +152,10 @@ def resolve_target_taxon_accessions(source, taxon, target_rank=None,
             assembly_levels=assembly_levels,
             ncbi_section=(None if str(source).strip().lower() == "gtdb"
                           else ncbi_section),
-            reps_only_requested=bool(reps_only),
+            reps_only_requested=(bool(reps_only) if reps_only_requested is None
+                                 else bool(reps_only_requested)),
+            reps_flag=reps_flag,
+            reps_widen_hint=reps_widen_hint,
             min_completeness=min_completeness,
             max_contamination=max_contamination))
 

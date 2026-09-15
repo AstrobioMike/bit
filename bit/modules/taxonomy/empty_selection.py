@@ -27,6 +27,13 @@ POOL_FILTER_FLAGS = {
     "reps_only": "--representatives-only",
 }
 
+#: Surfaces do NOT agree on how to spell the representatives-only pool:
+#: `bit-dl-ncbi-assemblies` has `--representatives-only`, `bit-get-accessions-from-gtdb`
+#: has `-G/--gtdb-representatives-only` and `-R/--refseq-ref-genomes-only`. So
+#: POOL_FILTER_FLAGS["reps_only"] is only a fallback; callers pass `reps_flag` to name
+#: their own, and `reps_widen_hint` to name the way back out where one exists.
+DEFAULT_REPS_FLAG = POOL_FILTER_FLAGS["reps_only"]
+
 
 def _oxford(items, conjunction="and"):
     """'a', 'a and b', 'a, b, and c'."""
@@ -67,7 +74,7 @@ def _restricting_section(ncbi_section):
 
 
 def _pool_filter_clause(name, *, assembly_levels, ncbi_section, present_levels,
-                        reps_only_requested):
+                        reps_only_requested, reps_flag=None, reps_widen_hint=None):
     """The 'but none are ...' half of a sentence blaming one pool filter."""
     if name == "assembly_levels":
         asked = _oxford(_level_words(assembly_levels), "or")
@@ -85,16 +92,22 @@ def _pool_filter_clause(name, *, assembly_levels, ncbi_section, present_levels,
 
     if name == "reps_only":
         if reps_only_requested:
-            return ("none are flagged as representative genomes, so "
-                    "`--representatives-only` leaves nothing")
-        # the source default did this, not a flag the user typed
-        return ("none of them are representative genomes, which is the pool this "
-                "source uses by default")
+            clause = ("none are flagged as representative genomes, so "
+                      f"`{reps_flag or DEFAULT_REPS_FLAG}` leaves nothing")
+        else:
+            # a default did this, not a flag the user typed
+            clause = ("none of them are representative genomes, which is the pool "
+                      "this source uses by default")
+        # ... but a default the user CAN get out of should still say how
+        if reps_widen_hint:
+            clause += f"; `{reps_widen_hint}` would widen the pool"
+        return clause
 
     return f"none survive `{POOL_FILTER_FLAGS.get(name, name)}`"
 
 
-def _active_pool_flags(*, assembly_levels, ncbi_section, reps_only_requested):
+def _active_pool_flags(*, assembly_levels, ncbi_section, reps_only_requested,
+                       reps_flag=None):
     """The pool-narrowing flags actually in play, named as the user set them."""
     flags = []
     if assembly_levels:
@@ -103,12 +116,13 @@ def _active_pool_flags(*, assembly_levels, ncbi_section, reps_only_requested):
     if section:
         flags.append(f"`--ncbi-section {section}`")
     if reps_only_requested:
-        flags.append("`--representatives-only`")
+        flags.append(f"`{reps_flag or DEFAULT_REPS_FLAG}`")
     return flags
 
 
 def explain_empty_selection(selection, *, assembly_levels=None, ncbi_section=None,
-                            reps_only_requested=False,
+                            reps_only_requested=False, reps_flag=None,
+                            reps_widen_hint=None,
                             min_completeness=None, max_contamination=None):
     """
     Why did this selection come back with nothing?
@@ -151,7 +165,9 @@ def explain_empty_selection(selection, *, assembly_levels=None, ncbi_section=Non
                                            assembly_levels=assembly_levels,
                                            ncbi_section=ncbi_section,
                                            present_levels=a.present_levels,
-                                           reps_only_requested=reps_only_requested)
+                                           reps_only_requested=reps_only_requested,
+                                           reps_flag=reps_flag,
+                                           reps_widen_hint=reps_widen_hint)
                        for name in a.pool_culprits]
             # a source's default representatives pool is not one of "the user's
             # filters", so don't let it alone trigger the headline's filter note
@@ -162,7 +178,8 @@ def explain_empty_selection(selection, *, assembly_levels=None, ncbi_section=Non
         # no single filter explains it, so don't accuse one
         flags = _active_pool_flags(assembly_levels=assembly_levels,
                                    ncbi_section=ncbi_section,
-                                   reps_only_requested=reps_only_requested)
+                                   reps_only_requested=reps_only_requested,
+                                   reps_flag=reps_flag)
         if flags:
             return (held + f"none survive {_oxford(flags, 'plus')} together. "
                     f"Loosening any one of them should bring genomes back."), True
@@ -210,6 +227,7 @@ def explain_empty_selection(selection, *, assembly_levels=None, ncbi_section=Non
 
 def empty_selection_message(selection, *, taxon_flag="-t", assembly_levels=None,
                             ncbi_section=None, reps_only_requested=False,
+                            reps_flag=None, reps_widen_hint=None,
                             min_completeness=None, max_contamination=None,
                             emoticon=None):
     """
@@ -225,7 +243,8 @@ def empty_selection_message(selection, *, taxon_flag="-t", assembly_levels=None,
     """
     detail, filtered = explain_empty_selection(
         selection, assembly_levels=assembly_levels, ncbi_section=ncbi_section,
-        reps_only_requested=reps_only_requested,
+        reps_only_requested=reps_only_requested, reps_flag=reps_flag,
+        reps_widen_hint=reps_widen_hint,
         min_completeness=min_completeness, max_contamination=max_contamination)
 
     headline = (f"No accessions were found for the {taxon_flag} target "
@@ -239,6 +258,7 @@ def empty_selection_message(selection, *, taxon_flag="-t", assembly_levels=None,
 
 def empty_pull_message(headline, selection=None, *, assembly_levels=None,
                        ncbi_section=None, reps_only_requested=False,
+                       reps_flag=None, reps_widen_hint=None,
                        min_completeness=None, max_contamination=None,
                        emoticon=None):
     """
@@ -259,7 +279,8 @@ def empty_pull_message(headline, selection=None, *, assembly_levels=None,
 
     detail, filtered = explain_empty_selection(
         selection, assembly_levels=assembly_levels, ncbi_section=ncbi_section,
-        reps_only_requested=reps_only_requested,
+        reps_only_requested=reps_only_requested, reps_flag=reps_flag,
+        reps_widen_hint=reps_widen_hint,
         min_completeness=min_completeness, max_contamination=max_contamination)
 
     if filtered:

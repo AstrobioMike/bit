@@ -154,6 +154,10 @@ def get_accessions_from_ncbi(args):
                            ncbi_section=getattr(args, "ncbi_section", None),
                            reps_only_requested=bool(
                                args.refseq_reference_genomes_only),
+                           # this subcommand's own flag; the shared default names
+                           # `--representatives-only`, which lives on
+                           # `bit-dl-ncbi-assemblies`
+                           reps_flag="-R/--refseq-ref-genomes-only",
                            emoticon=":("),
                        "none",
                        initial_indent="    ", subsequent_indent="    ")
@@ -310,7 +314,7 @@ def _report_taxon_counts_or_exit(table_path, taxon, args, assembly_levels, exclu
 
     A primary per-rank block for the base pool (scoped by every pool filter --
     --ncbi-section, --assembly-level, --exclusion-list), then if
-    --refseq-reference-genomes-only is set a separate "in considering only RefSeq
+    -R/--refseq-ref-genomes-only is set a separate "in considering only RefSeq
     reference genomes" block, like GTDB's reps block.
 
     Each primary line carries the generic "(after any specified filters)" tag rather
