@@ -86,25 +86,25 @@ def build_parser(parent_subparsers=None, show_fine=False):
     assembly_general.add_argument(
         "-M",
         "--min-perc-cov",
-        help = 'Minimum percent coverage required of a target (also see --min-edge-perc-cov; default: 80)',
+        help = 'Minimum percent coverage required of a target (also see --min-edge-perc-cov; default: 75)',
         metavar = "<INT>",
-        default = 80,
+        default = 75,
         type = float
     )
 
     assembly_general.add_argument(
         "--min-nt-perc-id",
-        help = 'Minimum percent ID for a nucleotide target (default: 80)',
+        help = 'Minimum percent ID for a nucleotide target (default: 75)',
         metavar = "<INT>",
-        default = 80,
+        default = 75,
         type = float
     )
 
     assembly_general.add_argument(
         "--min-aa-perc-id",
-        help = 'Minimum percent ID for a protein target (default: 70)',
+        help = 'Minimum percent ID for a protein target (default: 65)',
         metavar = "<INT>",
-        default = 70,
+        default = 65,
         type = float
     )
 
@@ -250,18 +250,18 @@ def _add_fine_tuning_arguments(target, hidden=False):
         "--min-edge-perc-cov",
         help=h("Relaxed minimum percent coverage for a target whose hit is near a contig "
                "edge (within --edge-tolerance bp of a contig end), to rescue targets "
-               "likely truncated by a contig boundary (default: 50)"),
+               "likely truncated by a contig boundary (default: 35)"),
         metavar="<INT>",
-        default=50,
+        default=35,
         type=float)
 
     target.add_argument(
         "--edge-tolerance",
         help=h("A hit reaching within this many bp of a contig end is treated as 'near' "
                "the edge, making it eligible for the relaxed --min-edge-perc-cov threshold "
-               "(default: 100)"),
+               "(default: 250)"),
         metavar="<INT>",
-        default=100,
+        default=250,
         type=int)
 
     target.add_argument(

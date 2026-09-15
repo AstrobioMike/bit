@@ -17,6 +17,12 @@
 ## v2.10.2 (NOT YET RELEASED)
 
 ## Changed
+- `bit ez-screen assembly` defaults changed to be generally more sensitive, particularly on contig boundaries
+  - `--min-perc-cov` default changed from 80 to 75
+  - `--min-nt-perc-id` default changed from 80 to 75
+  - `--min-aa-perc-id` default changed from 70 to 65
+  - `--min-edge-perc-cov` default changed from 50 to 35
+  - `--edge-tolerance` default changed from 100 to 250
 - internal only, consolidated code for downloading my github assets
 
 
