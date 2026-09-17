@@ -14,7 +14,7 @@
 
 -->
 
-## v2.10.2 (NOT YET RELEASED)
+## v2.10.2 (17-Sep-2026)
 
 ## Changed
 - `bit ez-screen assembly` defaults changed to be generally more sensitive, particularly on contig boundaries
@@ -25,6 +25,10 @@
   - `--edge-tolerance` default changed from 100 to 250
 - internal only, consolidated code for downloading my github assets
 
+## Fixed
+- `bit aa-diff` now calculates percent identity based on the aligned region only, rather than of the full reference
+
+---
 
 ## v2.10.1 (10-Sep-2026)
 

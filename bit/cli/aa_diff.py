@@ -74,7 +74,7 @@ def build_parser(parent_subparsers=None):
     optional.add_argument(
         "--min-perc-id",
         metavar="<NUM>",
-        help="Minimum percent identity of aligned residues to reference to proceed (default: 30)",
+        help="Minimum percent identity over the aligned region to proceed (default: 30)",
         type=float,
         default=30,
     )

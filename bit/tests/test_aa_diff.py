@@ -255,10 +255,47 @@ class TestCalcStats:
         assert s["perc_id"] == 80.0
         assert s["perc_ref_cov"] == 100.0
 
-    def test_one_deletion_lowers_coverage(self):
+    def test_internal_deletion_lowers_identity_and_coverage(self):
         s = aa_diff._calc_stats_from_positions(_positions(["match", "deletion", "match", "match", "match"]))
         assert s["perc_id"] == 80.0
         assert s["perc_ref_cov"] == 80.0
+
+    def test_trimmed_identical_query_is_full_identity(self):
+        # identical to ref but missing both ends: terminal deletions don't count against identity
+        s = aa_diff._calc_stats_from_positions(_positions(["deletion"] * 2 + ["match"] * 6 + ["deletion"] * 2))
+        assert s["perc_id"] == 100.0
+        assert s["perc_ref_cov"] == 60.0
+
+    def test_terminal_trim_plus_internal_deletion(self):
+        # span is positions 2-5 (4 cols: 3 aligned + 1 internal del), trailing del excluded
+        s = aa_diff._calc_stats_from_positions(_positions(["deletion", "match", "deletion", "match", "match", "deletion"]))
+        assert s["perc_id"] == 75.0
+        assert s["perc_ref_cov"] == 50.0
+
+    def test_internal_insertion_lowers_identity_not_coverage(self):
+        pos = _positions(["match"] * 4)
+        ins = [{"after_ref_pos": 2, "inserted_seq": "KL"}]
+        s = aa_diff._calc_stats_from_positions(pos, ins)
+        assert round(s["perc_id"], 4) == round(4 / 6 * 100, 4)
+        assert s["perc_ref_cov"] == 100.0
+
+    def test_terminal_insertions_excluded_from_identity(self):
+        pos = _positions(["match"] * 4)
+        ins = [{"after_ref_pos": 0, "inserted_seq": "MM"}, {"after_ref_pos": 4, "inserted_seq": "KK"}]
+        s = aa_diff._calc_stats_from_positions(pos, ins)
+        assert s["perc_id"] == 100.0
+
+    def test_insertion_within_leading_deletions_is_terminal(self):
+        # ref pos 1-2 deleted, insertion after pos 1 is still before the first aligned ref residue (3)
+        pos = _positions(["deletion", "deletion", "match", "match"])
+        ins = [{"after_ref_pos": 1, "inserted_seq": "Q"}]
+        s = aa_diff._calc_stats_from_positions(pos, ins)
+        assert s["perc_id"] == 100.0
+
+    def test_all_deletions_is_zero_not_error(self):
+        s = aa_diff._calc_stats_from_positions(_positions(["deletion"] * 3))
+        assert s["perc_id"] == 0.0
+        assert s["perc_ref_cov"] == 0.0
 
     def test_empty_is_zero_not_error(self):
         s = aa_diff._calc_stats_from_positions([])

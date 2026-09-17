@@ -24,7 +24,7 @@ def run_aa_diff(input_query_fa, ref_faa, seq_type, output_dir, min_perc_id=30, m
     alignment = _align(ref_seq, query_seq)
     ref_gapped, qry_gapped = _get_gapped_seqs(alignment, ref_seq, query_seq)
     positions, insertions = _parse_alignment(ref_gapped, qry_gapped)
-    _check_alignment_thresholds(positions, min_perc_id, min_perc_ref_cov)
+    _check_alignment_thresholds(positions, min_perc_id, min_perc_ref_cov, insertions)
     mutations = _collect_mutations(positions, insertions, frameshifts)
 
     _write_tsv(positions, insertions, os.path.join(output_dir, f"{output_prefix}all-positions.tsv"))
@@ -180,7 +180,7 @@ def _parse_hit_stats(hit, ref_seq):
     alignment = _align(ref_seq, translated_aa)
     ref_gapped, qry_gapped = _get_gapped_seqs(alignment, ref_seq, translated_aa)
     positions, aln_insertions = _parse_alignment(ref_gapped, qry_gapped)
-    stats = _calc_stats_from_positions(positions)
+    stats = _calc_stats_from_positions(positions, aln_insertions)
 
     n_sub = sum(1 for p in positions if p["change_type"] == "substitution")
     del_pos_list = [p["ref_pos"] for p in positions if p["change_type"] == "deletion"]
@@ -571,23 +571,51 @@ def _parse_alignment(ref_gapped, qry_gapped):
     return positions, insertions
 
 
-def _calc_stats_from_positions(positions):
+def _calc_stats_from_positions(positions, insertions=None):
     """
     this computes percent identity and percent reference coverage from parsed alignment positions
+
+    percent reference coverage is the fraction of reference residues with a query residue aligned
+    to them (deletions anywhere lower it; insertions don't affect it as they sit on no ref position)
+
+    percent identity is computed over the aligned region only: the span from the first to the last
+    reference position the query aligned to. within that span, every column counts in the
+    denominator (matches, substitutions, internal deletions, and internal insertion residues),
+    while leading/trailing deletions and insertions hanging off either end are excluded. so a query
+    that is identical but trimmed at its ends reports 100% identity (percent ref covered still shows the
+    disparity), while real internal indels still lower it
     """
+    insertions = insertions or []
     ref_len = len(positions)
     n_match = sum(1 for p in positions if p["change_type"] == "match")
     n_aligned_to_ref = sum(1 for p in positions if p["change_type"] != "deletion")
+
+    aligned_ref_pos = [p["ref_pos"] for p in positions if p["change_type"] != "deletion"]
+    if aligned_ref_pos:
+        first_aligned, last_aligned = aligned_ref_pos[0], aligned_ref_pos[-1]
+        n_internal_del = sum(1 for p in positions
+                             if p["change_type"] == "deletion" and first_aligned < p["ref_pos"] < last_aligned)
+        # after_ref_pos is the last ref position consumed before the insertion, so an insertion is
+        # internal if it falls after the first aligned ref residue and before the last one
+        n_internal_ins = sum(len(ins["inserted_seq"]) for ins in insertions
+                             if first_aligned <= ins["after_ref_pos"] < last_aligned)
+    else:
+        n_internal_del = n_internal_ins = 0
+
+    identity_denom = n_aligned_to_ref + n_internal_del + n_internal_ins
+
     return {
         "ref_len": ref_len,
         "n_match": n_match,
         "n_aligned_to_ref": n_aligned_to_ref,
-        "perc_id": n_match / ref_len * 100 if ref_len > 0 else 0.0,
+        "n_internal_del": n_internal_del,
+        "n_internal_ins": n_internal_ins,
+        "perc_id": n_match / identity_denom * 100 if identity_denom > 0 else 0.0,
         "perc_ref_cov": n_aligned_to_ref / ref_len * 100 if ref_len > 0 else 0.0,
     }
 
 
-def _check_alignment_thresholds(positions, min_perc_id, min_perc_ref_cov):
+def _check_alignment_thresholds(positions, min_perc_id, min_perc_ref_cov, insertions=None):
     """
     this checks that the alignment meets minimum percent identity and percent reference
     coverage thresholds, and exits with a helpful message if not
@@ -598,7 +626,7 @@ def _check_alignment_thresholds(positions, min_perc_id, min_perc_ref_cov):
         report_message("No alignment positions were found.")
         notify_premature_exit()
 
-    stats = _calc_stats_from_positions(positions)
+    stats = _calc_stats_from_positions(positions, insertions)
     pct_id = stats["perc_id"]
     pct_ref_cov = stats["perc_ref_cov"]
 
@@ -754,7 +782,7 @@ def _report_summary(positions, insertions, mutations, frameshifts, output_dir, t
     n_inserted_total = sum(len(ins["inserted_seq"]) for ins in insertions)
     query_len = n_aligned_to_ref + n_inserted_total
 
-    stats = _calc_stats_from_positions(positions)
+    stats = _calc_stats_from_positions(positions, insertions)
     perc_id = stats["perc_id"]
     perc_ref_cov = stats["perc_ref_cov"]
 
