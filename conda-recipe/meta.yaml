@@ -30,6 +30,7 @@ requirements:
     - matplotlib=3.10
     - miniprot=0.18
     - mosdepth=0.3.14
+    - natsort
     - numpy=1.26.4
     - pandas
     - parallel
