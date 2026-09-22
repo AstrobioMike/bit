@@ -41,7 +41,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
     # detailed menu shows -- they are all taxon-selection parameters, so splitting
     # them into a separate "fine-tuning" section put related flags in two places
     selection = parser.add_argument_group("Taxon-selection Parameters (used with `-t`)")
-    optional = parser.add_argument_group("Optional Parameters")
+    optional = parser.add_argument_group("General Parameters")
 
     required.add_argument(
         "-t",

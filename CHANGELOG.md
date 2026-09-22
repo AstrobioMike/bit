@@ -14,6 +14,13 @@
 
 -->
 
+## v2.10.3 (NOT YET RELEASED)
+
+## Changed
+- small help menu tweaks
+
+---
+
 ## v2.10.2 (17-Sep-2026)
 
 ## Changed
