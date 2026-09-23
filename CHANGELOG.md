@@ -14,10 +14,13 @@
 
 -->
 
-## v2.10.3 (NOT YET RELEASED)
+## v2.10.3 (23-Sep-2026)
 
 ## Changed
 - small help menu tweaks
+- conda env update
+  - new builds were failing due to missing natsort, which must have previously been handled by another dependency that was listed in the env yaml
+  - set ci test to run every 3 days since this kind of dependecy drift was otherwise only caught when i pushed changes
 
 ---
 
