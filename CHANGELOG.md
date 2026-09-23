@@ -16,7 +16,7 @@
 
 ## v2.10.3 (23-Sep-2026)
 
-## Changed
+### Changed
 - small help menu tweaks
 - conda env update
   - new builds were failing due to missing natsort, which must have previously been handled by another dependency that was listed in the env yaml
@@ -26,7 +26,7 @@
 
 ## v2.10.2 (17-Sep-2026)
 
-## Changed
+### Changed
 - `bit ez-screen assembly` defaults changed to be generally more sensitive, particularly on contig boundaries
   - `--min-perc-cov` default changed from 80 to 75
   - `--min-nt-perc-id` default changed from 80 to 75
@@ -35,7 +35,7 @@
   - `--edge-tolerance` default changed from 100 to 250
 - internal only, consolidated code for downloading my github assets
 
-## Fixed
+### Fixed
 - `bit aa-diff` now calculates percent identity based on the aligned region only, rather than of the full reference
 
 ---
