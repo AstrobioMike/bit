@@ -8,9 +8,10 @@ from bit.modules.mapped_read_stats import (get_mapped_reads_pids,
 def build_parser(parent_subparsers=None):
 
     desc = """
-        This program takes an input bam file and generates percent-identity and clipping information for
-        mapped reads. By default, it just prints out some summary stats. Specify an output file if you also want it
-        to write out per-read info. To get coverage and detection information, use `bit cov-stats` instead.
+        This program takes an input bam file and reports various stats on mapped reads such as length,
+        aligned bases and clipped bases, and percent-identity. By default, it just prints out some summary
+        stats. Specify an output file if you also want it to write out per-read info. To get coverage and
+        detection information of mapped reads to specific references, use `bit cov-stats`.
         """
 
     if parent_subparsers is not None:

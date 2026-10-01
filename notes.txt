@@ -1,0 +1,1 @@
+# add parallelization to summarize-assembly when there are multiple input fastas
