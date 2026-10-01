@@ -333,13 +333,15 @@ def build_parser(parent_subparsers=None):
         "-f",
         "--forward-primer",
         help="Forward primer sequence",
-        metavar="<STR>"
+        metavar="<STR>",
+        required=True
     )
     extract_by_primers_required.add_argument(
         "-r",
         "--reverse-primer",
         help="Reverse primer sequence",
-        metavar="<STR>"
+        metavar="<STR>",
+        required=True
     )
 
     extract_by_primers_optional.add_argument(
