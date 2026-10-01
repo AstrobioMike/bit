@@ -1,5 +1,6 @@
+import shutil
 from bit.modules.general import get_package_path
-from bit.cli import summarize_assembly
+from bit.modules import summarize_assembly
 from bit.tests.utils import run_cli
 
 test_assembly = get_package_path("tests/data/ez-screen-targets.fasta")
@@ -47,3 +48,28 @@ def test_summarize_assembly(tmp_path):
         key, value = line.split("\t", 1)
         assert key in expected, f"Unexpected key in summary TSV: {key}"
         assert value == expected[key], f"Unexpected value for {key} in summary TSV: {value} (expected {expected[key]})"
+
+
+def test_summarize_assembly_parallel_matches_serial(tmp_path):
+    # three inputs, including an empty one, so we cover ordering and the NA path in workers
+    inputs = []
+    for name in ("asm-b", "asm-a", "asm-c"):
+        dest = tmp_path / f"{name}.fasta"
+        shutil.copy(test_assembly, dest)
+        inputs.append(str(dest))
+    empty = tmp_path / "empty.fasta"
+    empty.touch()
+    inputs.insert(1, str(empty))
+
+    serial_tsv = tmp_path / "serial.tsv"
+    parallel_tsv = tmp_path / "parallel.tsv"
+
+    summarize_assembly.summarize_assemblies(inputs, output_tsv=str(serial_tsv), jobs=1)
+    summarize_assembly.summarize_assemblies(inputs, output_tsv=str(parallel_tsv), jobs=2)
+
+    assert parallel_tsv.read_text() == serial_tsv.read_text()
+
+    # column order follows input order, and the empty input is all NA
+    lines = parallel_tsv.read_text().splitlines()
+    assert lines[0] == "Assembly\tasm-b\tempty\tasm-a\tasm-c"
+    assert lines[1] == "Total contigs\t2\tNA\t2\t2"

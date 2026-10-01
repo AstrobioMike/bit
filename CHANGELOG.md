@@ -14,6 +14,13 @@
 
 -->
 
+## v2.10.4 (NOT YET RELEASED)
+
+### Changed
+- `bit summarize-assembly` now has a `-j | --jobs` parameter to run jobs in parallel if there are multiple input assemblies
+
+---
+
 ## v2.10.3 (23-Sep-2026)
 
 ### Changed
