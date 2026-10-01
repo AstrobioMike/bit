@@ -229,6 +229,20 @@ class TestFindAllPrimerHits:
         assert len(hits_strict) == 0
 
 
+    def test_fwd_and_rev_at_identical_coords_both_kept(self):
+        # fwd and revcomp(rev) land on the same coordinates; both must survive dedup
+        seq = "TTTTTACGTAGCTAGGATCCTTTTT"
+        fwd = "ACGTAGCTAGGA"
+        rev = "TCCTAGCTACGT"  # revcomp of fwd
+
+        hits = find_all_primer_hits(seq, fwd, rev, max_mismatches=0)
+
+        assert hits == [
+            ("fwd", 5, 17, "ACGTAGCTAGGA"),
+            ("rev_rc", 5, 17, "ACGTAGCTAGGA"),
+        ]
+
+
 class TestFindAmplicons:
 
     def test_simple_amplicon(self):
@@ -258,6 +272,58 @@ class TestFindAmplicons:
 
         assert len(amplicons_relaxed) >= 1
         assert len(amplicons_strict) == 0
+
+
+    def test_fully_overlapping_primers(self):
+        seq = "TTTTTACGTAGCTAGGATCCTTTTT"
+        fwd = "ACGTAGCTAGGA"
+        rev = "TCCTAGCTACGT"  # revcomp of fwd
+
+        amplicons = find_amplicons(seq, fwd, rev, max_mismatches=0)
+
+        assert amplicons == [("fwd", "rev_rc", 5, 17, "ACGTAGCTAGGA", 12)]
+
+
+    def test_same_seq_given_as_both_primers(self):
+        # orientation of provided primers is not enforced
+        seq = "TTTTTACGTAGCTAGGATCCTTTTT"
+        primer = "ACGTAGCTAGGA"
+
+        amplicons = find_amplicons(seq, primer, primer, max_mismatches=0)
+
+        assert amplicons == [("fwd", "rev", 5, 17, "ACGTAGCTAGGA", 12)]
+
+
+    def test_partially_overlapping_primers(self):
+        # 20 bp target, 12 bp primers overlapping by 4
+        seq = "TTTTACGTAGCTAGGATCCAGTCATTTT"
+        fwd = "ACGTAGCTAGGA"
+        rev = "TGACTGGATCCT"  # revcomp of target[8:]
+
+        amplicons = find_amplicons(seq, fwd, rev, max_mismatches=0)
+
+        assert amplicons == [("fwd", "rev_rc", 4, 24, "ACGTAGCTAGGATCCAGTCA", 20)]
+
+
+    def test_rev_hit_contained_within_fwd_hit_not_reported(self):
+        seq = "TTTTACGTAGCTAGGATCCTTTT"
+        fwd = "ACGTAGCTAGGATCC"
+        rev = "CTAGCT"  # revcomp lands inside the fwd hit
+
+        amplicons = find_amplicons(seq, fwd, rev, max_mismatches=0)
+
+        assert amplicons == []
+
+
+    def test_palindromic_primer_reported_once(self):
+        # GAATTC hits as both fwd and fwd_rc at the same coords; region reported once
+        seq = "TTTTGAATTCCCCCCCCCGGGTTTAAAA"
+        fwd = "GAATTC"
+        rev = "AAACCC"
+
+        amplicons = find_amplicons(seq, fwd, rev, max_mismatches=0)
+
+        assert amplicons == [("fwd", "rev_rc", 4, 24, "GAATTCCCCCCCCCGGGTTT", 20)]
 
 
 class TestExtractSeqsByPrimers:

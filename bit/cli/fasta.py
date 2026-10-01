@@ -305,9 +305,10 @@ def build_parser(parent_subparsers=None):
     ### subcommand cli for extracting sequences by primers  ###
     ###########################################################
     extract_by_primers_desc = """
-        This subcommand takes a fasta file and forward and reverse primer sequences, and it
-        returns a multifasta of the sequences including the specified primers. It currently doesn't
-        allow for degenerate bases in the primers, but it does allow for up to 2 mismatches.
+        This subcommand takes a fasta file and forward and reverse primer sequences, and it returns
+        a multifasta of the sequences the primers would amplify (including the specified primers). It currently doesn't
+        allow for degenerate bases in the primers, but it does allow for up to 2 differences (mismatches
+        or indels). Primers may overlap each other on the target.
         """
 
     extract_by_primers_parser = subparsers.add_parser(
@@ -354,7 +355,7 @@ def build_parser(parent_subparsers=None):
     extract_by_primers_optional.add_argument(
         "-m",
         "--max-mismatches",
-        help="Maximum number of mismatches allowed between the primer and the target sequence (default: 0)",
+        help="Maximum number of differences (mismatches or indels) allowed between the primer and the target sequence (default: 0)",
         type=int,
         choices=[0, 1, 2],
         default=0

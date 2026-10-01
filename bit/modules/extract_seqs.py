@@ -196,14 +196,17 @@ def find_all_primer_hits(seq, fwd, rev, max_mismatches = 0):
                 )
             )
 
-    hits.sort(key = lambda x: x[1])
+    # sorting by start, then end, then label so ties resolve deterministically
+    hits.sort(key = lambda x: (x[1], x[2], x[0]))
 
     # remove potential duplicates
+    # label is part of the key so a forward and reverse primer hitting identical
+    # coordinates (e.g., fully overlapping primers) are both retained
     seen = set()
     unique_hits = []
 
     for hit in hits:
-        key = (hit[1], hit[2])  # using start and end positions as the key
+        key = (hit[0], hit[1], hit[2])
         if key not in seen:
             seen.add(key)
             unique_hits.append(hit)
@@ -222,6 +225,7 @@ def is_reverse_label(label):
 def find_amplicons(seq, fwd, rev, max_mismatches = 0):
     hits = find_all_primer_hits(seq, fwd, rev, max_mismatches)
     results = []
+    seen_regions = set()
 
     for i, left in enumerate(hits):
         left_label, left_start, left_end, left_primer = left
@@ -229,7 +233,9 @@ def find_amplicons(seq, fwd, rev, max_mismatches = 0):
         for right in hits[i + 1:]:
             right_label, right_start, right_end, right_primer = right
 
-            if right_start < left_end:
+            # hits are sorted by start, so right_start >= left_start here. primers may
+            # overlap (partially or fully), but the right primer can't end before the left one
+            if right_end < left_end:
                 continue
 
             left_is_forward = is_forward_label(left_label)
@@ -237,6 +243,12 @@ def find_amplicons(seq, fwd, rev, max_mismatches = 0):
 
             if left_is_forward == right_is_forward:
                 continue
+
+            # same region reached via different label combos (e.g., a palindromic primer
+            # hitting as both fwd and fwd_rc) is reported once
+            if (left_start, right_end) in seen_regions:
+                continue
+            seen_regions.add((left_start, right_end))
 
             amplicon = seq[left_start:right_end]
             length = len(amplicon)
