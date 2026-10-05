@@ -16,6 +16,8 @@ from bit.modules.assign_reads import (revcomp,
                                       load_refs,
                                       iter_pairs,
                                       FastxReader,
+                                      SortedRowWriter,
+                                      plural,
                                       assign_reads)
 from bit.tests.utils import run_cli
 
@@ -329,12 +331,12 @@ def test_assign_reads_with_edits_end_to_end(tmp_path, seqs):
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, reads)
 
-    prefix = str(tmp_path / "ed")
-    summary = assign_reads([str(refs_fa)], str(reads_fq), output_prefix=prefix, per_seq=True,
+    out = str(tmp_path / "ed")
+    summary = assign_reads([str(refs_fa)], str(reads_fq), output_dir=out, per_seq=True,
                            max_edits=2, jobs=2, show_progress=False)
     assert (summary["unique"], summary["ambiguous"]) == (2, 1)
 
-    hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
+    hits = read_hits_tsv(f"{out}/read-hits.tsv")
     assert set(hits) == {"exact_p3", "one_edit_p1", "tied"}
     assert hits["exact_p3"][2:] == ["unique", "1", "p3", "0", "NA"]
     assert hits["one_edit_p1"][2:] == ["unique", "1", "p1", "1", "2"]
@@ -351,10 +353,10 @@ def test_assign_reads_pairs_ranked_by_combined_edits(tmp_path, seqs):
     write_fastq(r1, [(f"{n}/1", a) for n, a, _ in pairs])
     write_fastq(r2, [(f"{n}/2", b) for n, _, b in pairs])
 
-    prefix = str(tmp_path / "pe-ed")
-    assign_reads([str(refs_fa)], str(r1), read_2=str(r2), output_prefix=prefix, per_seq=True,
+    out = str(tmp_path / "pe-ed")
+    assign_reads([str(refs_fa)], str(r1), read_2=str(r2), output_dir=out, per_seq=True,
                  max_edits=1, jobs=1, show_progress=False)
-    hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
+    hits = read_hits_tsv(f"{out}/read-hits.tsv")
     # p1: 1 + 0 = 1, p2: 1 + 1 = 2
     assert hits["pair"][2:] == ["unique", "1", "p1", "1", "2"]
 
@@ -507,15 +509,15 @@ def test_assign_reads_single_end(tmp_path, seqs, jobs, monkeypatch):
     reads_fq = tmp_path / "reads.fq.gz"
     write_fastq(reads_fq, reads, gz=True)
 
-    prefix = str(tmp_path / "out")
-    summary = assign_reads([str(refs_fa)], str(reads_fq), output_prefix=prefix, per_seq=True,
+    out = str(tmp_path / "out")
+    summary = assign_reads([str(refs_fa)], str(reads_fq), output_dir=out, per_seq=True,
                            circular=True, write_reads=True, jobs=jobs, show_progress=False)
 
     assert summary["total"] == len(reads)
     assert summary["unique"] == 3
     assert summary["ambiguous"] == 1
 
-    hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
+    hits = read_hits_tsv(f"{out}/read-hits.tsv")
     for name, exp in expected.items():
         if exp is None:
             assert name not in hits
@@ -523,19 +525,19 @@ def test_assign_reads_single_end(tmp_path, seqs, jobs, monkeypatch):
             assert hits[name][4] == exp
             assert hits[name][2] == ("unique" if "," not in exp else "ambiguous")
 
-    # output order follows input order regardless of jobs
-    assert list(hits) == [n for n, _ in reads if expected[n]]
+    # rows are sorted by read length, longest first (ties keep input order), regardless of jobs
+    assert list(hits) == ["full_p1", "full_p2_rc", "origin_p3", "partial_shared"]
 
-    summary_lines = open(f"{prefix}-summary.tsv").read().splitlines()
+    summary_lines = open(f"{out}/summary.tsv").read().splitlines()
     assert summary_lines[0].split("\t") == ["ref", "source_file", "num_seqs", "total_length",
                                             "unique_reads", "ambiguous_reads"]
     assert summary_lines[1].split("\t") == ["p1", "refs.fa", "1", "600", "1", "1"]
 
     # per-seq mode has no separate per-sequence outputs
-    assert not (tmp_path / "out-seq-summary.tsv").exists()
-    assert "matching_seqs" not in open(f"{prefix}-read-hits.tsv").readline()
+    assert not (tmp_path / "out" / "seq-summary.tsv").exists()
+    assert "matching_seqs" not in open(f"{out}/read-hits.tsv").readline()
 
-    written = (tmp_path / "out-reads" / "p1.fastq").read_text().split("\n")
+    written = (tmp_path / "out" / "reads" / "p1.fastq").read_text().split("\n")
     assert written[0] == "@full_p1"
 
 
@@ -555,38 +557,68 @@ def test_assign_reads_paired_end(tmp_path, seqs):
     write_fastq(r1, [(f"{n}/1", a) for n, a, _ in pairs])
     write_fastq(r2, [(f"{n}/2", b) for n, _, b in pairs])
 
-    prefix = str(tmp_path / "pe")
-    summary = assign_reads([str(refs_fa)], str(r1), read_2=str(r2), output_prefix=prefix,
+    out = str(tmp_path / "pe")
+    summary = assign_reads([str(refs_fa)], str(r1), read_2=str(r2), output_dir=out,
                            per_seq=True, write_reads=True, jobs=1, show_progress=False)
 
     assert summary["unit"] == "pairs"
-    hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
+    hits = read_hits_tsv(f"{out}/read-hits.tsv")
     assert set(hits) == {"pair_unique", "pair_ambig"}
     assert hits["pair_unique"][1] == "100,100"
     assert hits["pair_unique"][4] == "p1"
     assert hits["pair_ambig"][4] == "p1,p2"
 
-    assert (tmp_path / "pe-reads" / "p1_R1.fastq").read_text().startswith("@pair_unique/1")
-    assert (tmp_path / "pe-reads" / "p1_R2.fastq").read_text().startswith("@pair_unique/2")
+    assert (tmp_path / "pe" / "reads" / "p1_R1.fastq").read_text().startswith("@pair_unique/1")
+    assert (tmp_path / "pe" / "reads" / "p1_R2.fastq").read_text().startswith("@pair_unique/2")
 
 
-def test_cli_runs_and_respects_force(tmp_path, seqs):
+def test_cli_output_dir_force_and_prefix(tmp_path, seqs):
+    import subprocess
     refs_fa = tmp_path / "refs.fa"
     write_fasta(refs_fa, seqs.items())
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, [("r", seqs["p3"][:300])])
-    prefix = str(tmp_path / "cli")
+    out = tmp_path / "cli"
+    base = ["bit", "assign-reads", "-r", str(refs_fa), "-i", str(reads_fq), "-o", str(out),
+            "--per-seq", "-j", "1"]
 
-    cmd = ["bit", "assign-reads", "-r", str(refs_fa), "-1", str(reads_fq), "-o", prefix,
-           "--per-seq", "-j", "1"]
-    result = run_cli(cmd)
+    result = run_cli(base + ["--write-reads"])
     assert "Uniquely assigned" in result.stdout
+    assert sorted(p.name for p in out.iterdir()) == ["command-execution-info.txt", "read-hits.tsv",
+                                                     "reads", "summary.tsv"]
+    log = (out / "command-execution-info.txt").read_text()
+    assert "--write-reads" in log and "--max-edits 0" in log
 
-    import subprocess
-    rerun = subprocess.run(cmd, capture_output=True, text=True)
+    # an existing output dir stops the run without -F
+    rerun = subprocess.run(base, capture_output=True, text=True)
     assert rerun.returncode != 0
+    assert (out / "reads").is_dir()
 
-    run_cli(cmd + ["-F"])
+    # -F replaces the whole dir, so the earlier run's reads don't linger
+    run_cli(base + ["-F"])
+    assert not (out / "reads").exists()
+
+    # -O prepends to every output name
+    run_cli(base + ["-F", "-O", "s1-", "--write-reads"])
+    assert sorted(p.name for p in out.iterdir()) == ["s1-command-execution-info.txt", "s1-read-hits.tsv",
+                                                     "s1-reads", "s1-summary.tsv"]
+
+
+def test_cli_refuses_to_force_overwrite_current_dir(tmp_path, seqs):
+    import subprocess
+    refs_fa = tmp_path / "refs.fa"
+    write_fasta(refs_fa, seqs.items())
+    reads_fq = tmp_path / "reads.fq"
+    write_fastq(reads_fq, [("r", seqs["p3"][:300])])
+    work = tmp_path / "work"
+    work.mkdir()
+    (work / "keep.txt").write_text("x")
+
+    result = subprocess.run(["bit", "assign-reads", "-r", str(refs_fa), "-i", str(reads_fq),
+                             "-o", ".", "-F", "-j", "1"], cwd=work, capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "Not removing" in result.stdout
+    assert (work / "keep.txt").exists()
 
 
 def test_cli_rejects_min_frac_with_pairs(tmp_path, seqs):
@@ -595,8 +627,8 @@ def test_cli_rejects_min_frac_with_pairs(tmp_path, seqs):
     write_fasta(refs_fa, seqs.items())
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, [("r", seqs["p3"][:300])])
-    result = subprocess.run(["bit", "assign-reads", "-r", str(refs_fa), "-1", str(reads_fq),
-                             "-2", str(reads_fq), "--min-frac-of-seq", "0.5"],
+    result = subprocess.run(["bit", "assign-reads", "-r", str(refs_fa), "-i", str(reads_fq),
+                             "-I", str(reads_fq), "--min-frac-of-seq", "0.5"],
                             capture_output=True, text=True)
     assert result.returncode != 0
     assert "single-end" in result.stderr
@@ -640,23 +672,24 @@ def test_per_file_assignment(tmp_path, genomes):
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, reads)
 
-    prefix = str(tmp_path / "pf")
-    summary = assign_reads(ref_paths, str(reads_fq), output_prefix=prefix, jobs=1,
+    out = str(tmp_path / "pf")
+    summary = assign_reads(ref_paths, str(reads_fq), output_dir=out, jobs=1,
                            show_progress=False)
     assert (summary["unique"], summary["ambiguous"]) == (3, 1)
 
-    hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
+    hits = read_hits_tsv(f"{out}/read-hits.tsv")
     # status, num_hits, matching_refs, edit_distance, next_best, matching_seqs
     assert hits["repeat_in_A"][2:] == ["unique", "1", "A", "0", "NA", "A:chrom,A:plasmid"]
     assert hits["shared_A_B"][2:] == ["ambiguous", "2", "A,B", "0", "NA", "A:chrom,B:chrom"]
     assert hits["A_only"][2:] == ["unique", "1", "A", "0", "NA", "A:chrom"]
     assert hits["B_only"][2:] == ["unique", "1", "B", "0", "NA", "B:chrom"]
 
-    summary_rows = [l.split("\t") for l in open(f"{prefix}-summary.tsv").read().splitlines()]
+    summary_rows = [l.split("\t") for l in open(f"{out}/summary.tsv").read().splitlines()]
     assert summary_rows[1:] == [["A", "A.fasta", "2", str(len(parts["chrom_A"]) + len(parts["plasmid_A"])), "2", "1"],
                                 ["B", "B.fa.gz", "1", str(len(parts["chrom_B"])), "1", "1"]]
 
-    seq_rows = [l.split("\t") for l in open(f"{prefix}-seq-summary.tsv").read().splitlines()]
+    assert summary["wrote_seq_summary"]
+    seq_rows = [l.split("\t") for l in open(f"{out}/seq-summary.tsv").read().splitlines()]
     assert seq_rows[0] == ["ref", "seq", "seq_length", "unique_reads", "ambiguous_reads"]
     assert [r[:2] + r[3:] for r in seq_rows[1:]] == [["A", "chrom", "2", "1"],
                                                      ["A", "plasmid", "1", "0"],
@@ -669,12 +702,12 @@ def test_per_file_pairs_span_sequences_of_one_ref(tmp_path, genomes):
     write_fastq(r1, [("p/1", parts["U1"][0:150])])            # A's chromosome
     write_fastq(r2, [("p/2", revcomp(parts["V1"][0:150]))])   # A's plasmid
 
-    prefix = str(tmp_path / "pf-pe")
-    assign_reads(ref_paths, str(r1), read_2=str(r2), output_prefix=prefix, write_reads=True,
+    out = str(tmp_path / "pf-pe")
+    assign_reads(ref_paths, str(r1), read_2=str(r2), output_dir=out, write_reads=True,
                  jobs=1, show_progress=False)
-    hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
+    hits = read_hits_tsv(f"{out}/read-hits.tsv")
     assert hits["p"][2:] == ["unique", "1", "A", "0", "NA", "A:chrom,A:plasmid"]
-    assert (tmp_path / "pf-pe-reads" / "A_R1.fastq").read_text().startswith("@p/1")
+    assert (tmp_path / "pf-pe" / "reads" / "A_R1.fastq").read_text().startswith("@p/1")
 
 
 def test_per_file_edit_distance_is_lowest_among_a_refs_seqs(tmp_path, genomes):
@@ -688,12 +721,30 @@ def test_per_file_edit_distance_is_lowest_among_a_refs_seqs(tmp_path, genomes):
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, reads)
 
-    prefix = str(tmp_path / "pf-ed")
-    assign_reads(ref_paths, str(reads_fq), output_prefix=prefix, max_edits=1, jobs=1,
+    out = str(tmp_path / "pf-ed")
+    assign_reads(ref_paths, str(reads_fq), output_dir=out, max_edits=1, jobs=1,
                  show_progress=False)
-    hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
+    hits = read_hits_tsv(f"{out}/read-hits.tsv")
     assert hits["repeat_1_edit"][2:] == ["unique", "1", "A", "1", "NA", "A:chrom,A:plasmid"]
     assert hits["shared_1_edit"][2:] == ["ambiguous", "2", "A,B", "1", "NA", "A:chrom,B:chrom"]
+
+
+def test_no_seq_summary_when_every_ref_is_one_seq(tmp_path, seqs):
+    # per-file mode, but each file holds a single sequence
+    ref_paths = []
+    for name in ("p1", "p3"):
+        path = tmp_path / f"{name}.fa"
+        write_fasta(path, [(name, seqs[name])])
+        ref_paths.append(str(path))
+    reads_fq = tmp_path / "reads.fq"
+    write_fastq(reads_fq, [("r", seqs["p3"][:300])])
+
+    out = str(tmp_path / "single")
+    summary = assign_reads(ref_paths, str(reads_fq), output_dir=out, jobs=1,
+                           show_progress=False)
+    assert not summary["wrote_seq_summary"]
+    assert not (tmp_path / "single" / "seq-summary.tsv").exists()
+    assert read_hits_tsv(f"{out}/read-hits.tsv")["r"][2:] == ["unique", "1", "p3", "0", "NA", "p3:p3"]
 
 
 def test_note_for_single_multi_seq_ref_file(tmp_path, seqs, capsys):
@@ -702,11 +753,11 @@ def test_note_for_single_multi_seq_ref_file(tmp_path, seqs, capsys):
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, [("r", seqs["p3"][:300])])
 
-    assign_reads([str(refs_fa)], str(reads_fq), output_prefix=str(tmp_path / "n1"), jobs=1,
+    assign_reads([str(refs_fa)], str(reads_fq), output_dir=str(tmp_path / "n1"), jobs=1,
                  show_progress=False)
     assert "--per-seq" in capsys.readouterr().out
 
-    assign_reads([str(refs_fa)], str(reads_fq), output_prefix=str(tmp_path / "n2"), per_seq=True,
+    assign_reads([str(refs_fa)], str(reads_fq), output_dir=str(tmp_path / "n2"), per_seq=True,
                  jobs=1, show_progress=False)
     assert "--per-seq" not in capsys.readouterr().out
 
@@ -719,9 +770,108 @@ def test_identical_seqs_only_noted_across_refs(tmp_path, seqs, capsys):
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, [("r", p3[:300])])
 
-    assign_reads([str(a), str(b)], str(reads_fq), output_prefix=str(tmp_path / "id"), jobs=1,
+    assign_reads([str(a), str(b)], str(reads_fq), output_dir=str(tmp_path / "id"), jobs=1,
                  show_progress=False)
     out = " ".join(capsys.readouterr().out.split())
     assert "'a:x' and 'b:y' are identical" in out
     assert "'a:x_copy' and 'b:y' are identical" in out
     assert "'a:x' and 'a:x_copy'" not in out
+
+
+### output formatting and sorting ###
+
+def test_plural():
+    assert plural(1, "file") == "1 file"
+    assert plural(0, "file") == "0 files"
+    assert plural(8, "reference") == "8 references"
+    assert plural(1024, "sequence") == "1,024 sequences"
+
+
+def test_loaded_message_plurals(tmp_path, seqs, capsys):
+    reads_fq = tmp_path / "reads.fq"
+    write_fastq(reads_fq, [("r", seqs["p3"][:300])])
+    one = tmp_path / "plasmids.fa"
+    write_fasta(one, seqs.items())
+
+    assign_reads([str(one)], str(reads_fq), output_dir=str(tmp_path / "m1"), max_edits=1,
+                 jobs=1, show_progress=False)
+    out = capsys.readouterr().out
+    assert "Loaded 1 reference (3 sequences) from 1 file, treated as linear" in out
+    assert "Allowing up to 1 edit per read" in out
+    assert "Assigning reads with 1 job..." in out
+
+    assign_reads([str(one)], str(reads_fq), output_dir=str(tmp_path / "m2"), per_seq=True,
+                 max_edits=2, jobs=1, show_progress=False)
+    out = capsys.readouterr().out
+    assert "Loaded 3 references (3 sequences) from 1 file" in out
+    assert "Allowing up to 2 edits per read" in out
+    assert "(s)" not in out
+
+
+def sorted_rows_input(rng, n):
+    # few distinct keys, so there are plenty of ties to check stability on
+    return [((-rng.choice([100, 200, 300]), rng.randrange(3)), f"row{i}\tx\ty") for i in range(n)]
+
+
+@pytest.mark.parametrize("buffer_rows", [1000, 7, 1])
+def test_sorted_row_writer_matches_stable_sort(tmp_path, buffer_rows):
+    """In memory (1000) or spilled to many chunks (7, 1), output matches a stable sort."""
+    rows = sorted_rows_input(random.Random(2), 100)
+    path = tmp_path / "out.tsv"
+    writer = SortedRowWriter(str(path), ["a", "b", "c"], buffer_rows=buffer_rows)
+    for key, line in rows:
+        writer.add(key, line)
+    writer.finish()
+
+    expected = ["a\tb\tc"] + [line for _, line in sorted(rows, key=lambda r: r[0])]
+    assert path.read_text().splitlines() == expected
+    assert [p.name for p in tmp_path.iterdir()] == ["out.tsv"]   # temp chunks removed
+
+
+def test_sorted_row_writer_empty_and_cleanup(tmp_path):
+    path = tmp_path / "empty.tsv"
+    writer = SortedRowWriter(str(path), ["a"], buffer_rows=2)
+    writer.finish()
+    assert path.read_text() == "a\n"
+
+    # if a run fails partway, cleanup() removes spilled chunks and writes nothing
+    path = tmp_path / "failed.tsv"
+    writer = SortedRowWriter(str(path), ["a"], buffer_rows=2)
+    for key, line in sorted_rows_input(random.Random(3), 5):
+        writer.add(key, line)
+    assert any(p.name.startswith(".sorting-") for p in tmp_path.iterdir())
+    writer.cleanup()
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["empty.tsv"]
+
+
+def test_read_hits_sorted_by_length_then_edit_distance(tmp_path, seqs, monkeypatch):
+    """End to end, with spilling forced, pairs sorted by combined length."""
+    monkeypatch.setattr(assign_reads_module, "SORT_BUFFER_ROWS", 2)
+    refs_fa = tmp_path / "refs.fa"
+    write_fasta(refs_fa, seqs.items())
+    p3 = seqs["p3"]
+    reads = [
+        ("len300_e1", snp(p3[0:300], 100)),
+        ("len200_e0", p3[0:200]),
+        ("len300_e0_a", p3[100:400]),
+        ("len500_e1", snp(p3[0:500], 250)),
+        ("len300_e0_b", p3[200:500]),
+    ]
+    reads_fq = tmp_path / "reads.fq"
+    write_fastq(reads_fq, reads)
+    out = tmp_path / "sorted"
+    assign_reads([str(refs_fa)], str(reads_fq), output_dir=str(out), per_seq=True, max_edits=1,
+                 jobs=2, show_progress=False)
+    assert list(read_hits_tsv(f"{out}/read-hits.tsv")) == [
+        "len500_e1", "len300_e0_a", "len300_e0_b", "len300_e1", "len200_e0"]
+    assert sorted(p.name for p in out.iterdir()) == ["read-hits.tsv", "summary.tsv"]
+
+    r1, r2 = tmp_path / "r1.fq", tmp_path / "r2.fq"
+    write_fastq(r1, [("short/1", p3[0:100]), ("long/1", p3[0:150])])
+    write_fastq(r2, [("short/2", revcomp(p3[300:400])), ("long/2", revcomp(p3[300:450]))])
+    out = tmp_path / "sorted-pe"
+    assign_reads([str(refs_fa)], str(r1), read_2=str(r2), output_dir=str(out), per_seq=True,
+                 jobs=1, show_progress=False)
+    hits = read_hits_tsv(f"{out}/read-hits.tsv")
+    assert list(hits) == ["long", "short"]
+    assert hits["long"][1] == "150,150"

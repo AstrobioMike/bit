@@ -95,6 +95,19 @@ def check_files_are_found(paths_list):
             notify_premature_exit()
 
 
+def is_protected_dir(path):
+    """
+    True if removing `path` would take out the current working directory, any directory
+    containing it, the user's home directory, or the filesystem root. Symlinks are resolved.
+    """
+    target = Path(path).resolve()
+    cwd = Path.cwd().resolve()
+    return (target == cwd
+            or target in cwd.parents
+            or target == Path.home().resolve()
+            or target == Path(target.anchor))
+
+
 def check_if_output_dir_exists(output_dir, force_overwrite=False):
     if Path(output_dir).is_dir():
         if not force_overwrite:
@@ -102,6 +115,12 @@ def check_if_output_dir_exists(output_dir, force_overwrite=False):
             print("\n    Please specify a different output directory or add the `-F/--force-overwrite` flag.")
             notify_premature_exit()
         else:
+            if is_protected_dir(output_dir):
+                print(f"\n    {color_text(f'Not removing the output directory: {output_dir}', 'yellow')}")
+                print("\n    With `-F/--force-overwrite`, the output directory is deleted and replaced, and this "
+                      "\n    one is the current directory, a directory containing it, or your home directory."
+                      "\n    Please specify a dedicated output directory.")
+                notify_premature_exit()
             shutil.rmtree(output_dir)
 
 

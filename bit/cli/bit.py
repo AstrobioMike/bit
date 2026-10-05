@@ -98,7 +98,7 @@ PROGRAM_GROUPS = [
             },
             {
                 "name": "assign-reads",
-                "desc": "assign reads to the reference sequences they match exactly or nearly exactly",
+                "desc": "assign reads to the reference sequences they match exactly (or nearly exactly)",
             },
             {
                 "name": "ez-screen",

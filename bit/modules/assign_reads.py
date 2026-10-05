@@ -26,19 +26,23 @@ with edits allowed, ranked by the mates' combined edit distance).
 """
 
 import gzip
+import heapq
 import io
 import multiprocessing as mp
 import os
 import shutil
 import sys
+import tempfile
 from collections import Counter, defaultdict
 from itertools import chain, islice
+from operator import itemgetter
 from pathlib import Path
 
 import edlib # type: ignore
 from tqdm import tqdm # type: ignore
 
-from bit.modules.general import color_text, is_gzipped, notify_premature_exit, report_message
+from bit.modules.general import (check_if_output_dir_exists, is_gzipped, log_command_run,
+                                 notify_premature_exit, report_message)
 
 
 _COMP = str.maketrans("ACGTacgt", "TGCAtgca")
@@ -50,12 +54,18 @@ POSITION_STEP = 16
 KMER_SIZE = 31
 NUM_KMER_SAMPLES = 25   # k-mers sampled per read by the exact-match prefilter
 BATCH_SIZE = 500        # reads (or pairs) per batch sent to each worker
+SORT_BUFFER_ROWS = 500_000  # read-hits rows held in memory before a sorted chunk goes to disk
 
 FASTA_EXTENSIONS = (".fasta", ".fa", ".fna", ".fas", ".fsa", ".ffn", ".fsta")
 
 
 def revcomp(seq):
     return seq.translate(_COMP)[::-1]
+
+
+def plural(n, word):
+    """Count with the word made plural if needed, e.g. '1 file', '8 files', '1,024 sequences'."""
+    return f"{n:,} {word if n == 1 else word + 's'}"
 
 
 ### refs and k-mer index ###
@@ -694,31 +704,94 @@ def process_batch(batch_and_pos):
 
 ### outputs ###
 
-def output_paths(output_prefix):
+def output_paths(output_dir, output_prefix=""):
+    """Output locations within `output_dir`, with `output_prefix` prepended to each name."""
+    out = Path(output_dir)
     return {
-        "hits": f"{output_prefix}-read-hits.tsv",
-        "summary": f"{output_prefix}-summary.tsv",
-        "seq_summary": f"{output_prefix}-seq-summary.tsv",
-        "reads_dir": f"{output_prefix}-reads",
+        "hits": str(out / f"{output_prefix}read-hits.tsv"),
+        "summary": str(out / f"{output_prefix}summary.tsv"),
+        "seq_summary": str(out / f"{output_prefix}seq-summary.tsv"),
+        "reads_dir": str(out / f"{output_prefix}reads"),
+        "log": str(out / f"{output_prefix}command-execution-info.txt"),
     }
 
 
-def check_outputs(output_prefix, write_reads, force_overwrite):
-    paths = output_paths(output_prefix)
-    existing = [p for p in (paths["hits"], paths["summary"], paths["seq_summary"])
-                if Path(p).exists()]
-    if write_reads and Path(paths["reads_dir"]).exists():
-        existing.append(paths["reads_dir"])
+def setup_output_dir(output_dir, output_prefix, force_overwrite, full_cmd_executed):
+    """
+    Stops if `output_dir` exists (unless forced, in which case it's replaced), then creates
+    it and logs the command run there. Replacing the whole directory means outputs from an
+    earlier run (e.g., reads written with --write-reads) can't be left beside new ones.
+    """
+    check_if_output_dir_exists(output_dir, force_overwrite)
+    os.makedirs(output_dir)
+    log_command_run(full_cmd_executed, output_dir, output_paths(output_dir, output_prefix)["log"])
 
-    if existing and not force_overwrite:
-        print(f"\n    {color_text('Output(s) already exist:', 'yellow')}")
-        for p in existing:
-            print(f"        {p}")
-        print("\n    Please specify a different output prefix or add the `-F/--force-overwrite` flag.")
-        notify_premature_exit()
 
-    if write_reads and Path(paths["reads_dir"]).exists():
-        shutil.rmtree(paths["reads_dir"])
+class SortedRowWriter:
+    """
+    Collects (sort key, line) rows and writes them to `path` after `header`, sorted by key
+    (a tuple of ints). Up to `buffer_rows` rows are held in memory; beyond that, sorted
+    chunks are spilled to a temporary directory beside `path` and merged at the end, so
+    memory stays bounded however many rows there are. Both the sort and the merge are
+    stable, so rows with equal keys keep the order they were added in.
+    """
+
+    def __init__(self, path, header, buffer_rows=None):
+        self.path = path
+        self.header = header
+        self.buffer_rows = SORT_BUFFER_ROWS if buffer_rows is None else buffer_rows
+        self.rows = []
+        self.chunk_paths = []
+        self.key_len = None
+        self._tmp_dir = None
+
+    def add(self, key, line):
+        if self.key_len is None:
+            self.key_len = len(key)
+        self.rows.append((key, line))
+        if len(self.rows) >= self.buffer_rows:
+            self._spill()
+
+    def _spill(self):
+        if self._tmp_dir is None:
+            self._tmp_dir = tempfile.mkdtemp(prefix=".sorting-", dir=os.path.dirname(self.path) or ".")
+        self.rows.sort(key=itemgetter(0))
+        chunk_path = os.path.join(self._tmp_dir, f"chunk-{len(self.chunk_paths)}.tsv")
+        with open(chunk_path, "w") as f:
+            for key, line in self.rows:
+                f.write("\t".join(map(str, key)) + "\t" + line + "\n")
+        self.chunk_paths.append(chunk_path)
+        self.rows = []
+
+    def _read_chunk(self, chunk_path):
+        with open(chunk_path) as f:
+            for raw in f:
+                parts = raw.rstrip("\n").split("\t", self.key_len)
+                yield tuple(int(x) for x in parts[:self.key_len]), parts[self.key_len]
+
+    def finish(self):
+        try:
+            with open(self.path, "w") as out:
+                out.write("\t".join(self.header) + "\n")
+                if not self.chunk_paths:
+                    self.rows.sort(key=itemgetter(0))
+                    rows = self.rows
+                else:
+                    if self.rows:
+                        self._spill()
+                    # chunks are passed in the order they were spilled, so ties stay in input order
+                    rows = heapq.merge(*(self._read_chunk(c) for c in self.chunk_paths),
+                                       key=itemgetter(0))
+                for _, line in rows:
+                    out.write(line + "\n")
+        finally:
+            self.cleanup()
+
+    def cleanup(self):
+        self.rows = []
+        if self._tmp_dir is not None:
+            shutil.rmtree(self._tmp_dir, ignore_errors=True)
+            self._tmp_dir = None
 
 
 class ReadWriter:
@@ -755,7 +828,7 @@ class ReadWriter:
 
 ### driver ###
 
-def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", per_seq=False,
+def assign_reads(ref_paths, read_1, read_2=None, output_dir="assign-reads", output_prefix="", per_seq=False,
                  circular=False, max_edits=0, min_frac_of_seq=0.0,
                  write_reads=False, jobs=1, show_progress=True):
     """
@@ -763,17 +836,18 @@ def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", p
     """
 
     paired = read_2 is not None
-    paths = output_paths(output_prefix)
+    paths = output_paths(output_dir, output_prefix)
+    os.makedirs(output_dir, exist_ok=True)
     k = KMER_SIZE
 
     # loading refs and building the indexes
     refs, seqs = load_refs(ref_paths, per_seq)
     seq_to_ref = [ri for _, ri, _ in seqs]
 
-    print(f"\n    Loaded {len(refs):,} reference(s) ({len(seqs):,} sequence(s)) from "
-          f"{len(ref_paths):,} file(s), treated as {'circular' if circular else 'linear'}")
+    print(f"\n    Loaded {plural(len(refs), 'reference')} ({plural(len(seqs), 'sequence')}) from "
+          f"{plural(len(ref_paths), 'file')}, treated as {'circular' if circular else 'linear'}")
     if max_edits > 0:
-        print(f"    Allowing up to {max_edits} edit(s) per {'mate' if paired else 'read'}")
+        print(f"    Allowing up to {plural(max_edits, 'edit')} per {'mate' if paired else 'read'}")
 
     if not per_seq and len(ref_paths) == 1 and len(seqs) > 1:
         report_message(f"Note: the single reference file holds {len(seqs):,} sequences, which are all "
@@ -796,7 +870,8 @@ def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", p
 
     short_seqs = [si for si, (_, _, seq) in enumerate(seqs) if len(seq) < k]
     if short_seqs:
-        report_message(f"Note: {len(short_seqs):,} sequence(s) are shorter than {k} bases and can "
+        report_message(f"Note: {plural(len(short_seqs), 'sequence')} "
+                       f"{'is' if len(short_seqs) == 1 else 'are'} shorter than {k} bases and can "
                        f"only be matched by reads shorter than that (e.g., '{seq_label(short_seqs[0])}').",
                        initial_indent="    ", subsequent_indent="    ")
 
@@ -834,55 +909,57 @@ def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", p
     seq_unique_counts, seq_ambig_counts = Counter(), Counter()
     writer = ReadWriter(paths["reads_dir"], refs, paired) if write_reads else None
 
-    print(f"    Assigning {unit} with {jobs} job(s)...\n")
+    print(f"\n    Assigning {unit} with {plural(jobs, 'job')}...\n")
     pbar = tqdm(total=r1_reader.total_bytes, unit="B", unit_scale=True, unit_divisor=1024,
                 ncols=80, disable=not show_progress, file=sys.stdout,
                 bar_format="    {l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}{postfix}]")
     pbar.set_postfix_str(f"0 {unit}")
 
+    header = ["read_id", "read_lengths" if paired else "read_length", "status", "num_hits",
+              "matching_refs", "edit_distance", "next_best_edit_distance"]
+    if not per_seq:
+        header.append("matching_seqs")
+    # rows are sorted by read length (combined for pairs), longest first, then by edit distance
+    hits_writer = SortedRowWriter(paths["hits"], header)
+
     try:
-        with open(paths["hits"], "w") as out:
-            header = ["read_id", "read_lengths" if paired else "read_length", "status", "num_hits",
-                      "matching_refs", "edit_distance", "next_best_edit_distance"]
-            if not per_seq:
-                header.append("matching_seqs")
-            out.write("\t".join(header) + "\n")
+        last_pos = 0
+        for n_in_batch, pos, results in batch_results:
+            n_total += n_in_batch
+            pbar.update(pos - last_pos)
+            last_pos = pos
+            pbar.set_postfix_str(f"{n_total:,} {unit}", refresh=False)
 
-            last_pos = 0
-            for n_in_batch, pos, results in batch_results:
-                n_total += n_in_batch
-                pbar.update(pos - last_pos)
-                last_pos = pos
-                pbar.set_postfix_str(f"{n_total:,} {unit}", refresh=False)
+            for read_id, lengths, hits, hit_seqs, best, next_best, recs in results:
+                if len(hits) == 1:
+                    status = "unique"
+                    n_unique += 1
+                    unique_counts[hits[0]] += 1
+                    seq_unique_counts.update(hit_seqs)
+                    if writer is not None:
+                        writer.write(hits[0], recs)
+                else:
+                    status = "ambiguous"
+                    n_ambig += 1
+                    ambig_counts.update(hits)
+                    seq_ambig_counts.update(hit_seqs)
 
-                for read_id, lengths, hits, hit_seqs, best, next_best, recs in results:
-                    if len(hits) == 1:
-                        status = "unique"
-                        n_unique += 1
-                        unique_counts[hits[0]] += 1
-                        seq_unique_counts.update(hit_seqs)
-                        if writer is not None:
-                            writer.write(hits[0], recs)
-                    else:
-                        status = "ambiguous"
-                        n_ambig += 1
-                        ambig_counts.update(hits)
-                        seq_ambig_counts.update(hit_seqs)
+                line = (f"{read_id}\t{lengths}\t{status}\t{len(hits)}\t"
+                        f"{','.join(refs[i][0] for i in hits)}\t{best}\t"
+                        f"{'NA' if next_best is None else next_best}")
+                if not per_seq:
+                    line += "\t" + ",".join(seq_label(si) for si in hit_seqs)
+                total_length = sum(int(x) for x in lengths.split(","))
+                hits_writer.add((-total_length, best), line)
 
-                    line = (f"{read_id}\t{lengths}\t{status}\t{len(hits)}\t"
-                            f"{','.join(refs[i][0] for i in hits)}\t{best}\t"
-                            f"{'NA' if next_best is None else next_best}")
-                    if not per_seq:
-                        line += "\t" + ",".join(seq_label(si) for si in hit_seqs)
-                    out.write(line + "\n")
-
-            # finishing the bar cleanly (the buffered position can lag the file size)
-            pbar.update(r1_reader.total_bytes - last_pos)
+        # finishing the bar cleanly (the buffered position can lag the file size)
+        pbar.update(r1_reader.total_bytes - last_pos)
 
     except BaseException:
         if pool is not None:
             pool.terminate()
             pool = None
+        hits_writer.cleanup()
         raise
 
     finally:
@@ -896,6 +973,8 @@ def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", p
         if r2_reader is not None:
             r2_reader.close()
 
+    hits_writer.finish()
+
     ref_num_seqs, ref_lengths = Counter(), Counter()
     for _, ri, seq in seqs:
         ref_num_seqs[ri] += 1
@@ -907,7 +986,10 @@ def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", p
             out.write(f"{name}\t{src}\t{ref_num_seqs[i]}\t{ref_lengths[i]}\t"
                       f"{unique_counts[i]}\t{ambig_counts[i]}\n")
 
-    if not per_seq:
+    # the per-sequence summary only adds anything when some reference has multiple sequences
+    # (never the case with per_seq, where every reference is one sequence)
+    write_seq_summary = any(n > 1 for n in ref_num_seqs.values())
+    if write_seq_summary:
         with open(paths["seq_summary"], "w") as out:
             out.write(f"ref\tseq\tseq_length\tunique_{unit}\tambiguous_{unit}\n")
             for si, (name, ri, seq) in enumerate(seqs):
@@ -920,6 +1002,6 @@ def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", p
         "unique": n_unique,
         "ambiguous": n_ambig,
         "paths": paths,
-        "per_seq": per_seq,
+        "wrote_seq_summary": write_seq_summary,
         "write_reads": write_reads,
     }

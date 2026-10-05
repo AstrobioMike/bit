@@ -3,18 +3,18 @@ import argparse
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help,
                             add_force,
-                            add_version_arg)
+                            add_version_arg,
+                            reconstruct_invocation)
 
 
 def build_parser(parent_subparsers=None):
 
     desc = """
-        This program assigns reads to the reference sequences they exactly match or nearly exactly match
-        (within `--max-edits`). It can be useful for sorting reads among highly similar references,
-        like a mix of near-identical plasmids, where mapping-based approaches might struggle
-        with multimapping and low MAPQs that need to be annoyingly parsed. Note the `--per-seq` and `--circular`
-        options. Reads assigned to exactly one input reference are reported as "unique", and reads tied between more than
-        one as "ambiguous".
+        This program assigns reads to the reference sequences they exactly match (or nearly exactly match,
+        within `--max-edits`). It can be useful for finding the origins of reads from known references
+        where mapping-based approaches might struggle with multi-mapping and low MAPQs that need to be annoyingly parsed.
+        Note the `--per-seq` and `--circular` options. Reads assigned to exactly one input reference are reported
+        as "unique", and reads tied between more than one as "ambiguous".
         """
 
     if parent_subparsers is not None:
@@ -27,7 +27,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit assign-reads -r ref-1.fasta ref-2.fasta -1 reads.fastq.gz --circular`",
+            epilog="Ex. usage: `bit assign-reads -r ref-1.fasta ref-2.fasta -i reads.fastq.gz --circular`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )
@@ -46,32 +46,41 @@ def build_parser(parent_subparsers=None):
     )
 
     required.add_argument(
-        "-1",
-        "--read-1",
+        "-i",
+        "--input-reads",
         metavar="<FILE>",
         required=True,
         help="Input reads (read 1 if paired), fastq or fasta, gzipped or not",
     )
 
     optional.add_argument(
-        "-2",
-        "--read-2",
+        "-I",
+        "--input-reads-2",
         metavar="<FILE>",
-        help="Input read 2 file if paired",
+        help="Input read 2 file if paired, fastq or fasta, gzipped or not",
     )
 
     optional.add_argument(
         "-o",
+        "--output-dir",
+        metavar="<DIR>",
+        default="assign-reads",
+        help='Directory for output files (default: "assign-reads")',
+    )
+
+    optional.add_argument(
+        "-O",
         "--output-prefix",
         metavar="<STR>",
-        default="assign-reads",
-        help='Output-file prefix (default: "assign-reads")',
+        default="",
+        help=("String to be prepended to output files (including separator if wanted, "
+              "e.g., 'sample-1-'; default: '')"),
     )
 
     optional.add_argument(
         "--per-seq",
         action="store_true",
-        help=("Treat each sequence in the reference fasta(s) as its own reference, named by its "
+        help=("Treat each sequence in the input reference fasta(s) as its own reference, named by its "
               "sequence name, rather than each file being one reference"),
     )
 
@@ -142,19 +151,21 @@ def main():
         parser.error("--max-edits must be 0 or greater")
     if not 0 <= args.min_frac_of_seq <= 1:
         parser.error("--min-frac-of-seq must be between 0 and 1")
-    if args.read_2 and args.min_frac_of_seq > 0:
+    if args.input_reads_2:
         parser.error("--min-frac-of-seq only applies to single-end input")
 
     from bit.modules.general import check_files_are_found
-    from bit.modules.assign_reads import assign_reads, check_outputs
+    from bit.modules.assign_reads import assign_reads, setup_output_dir
 
-    check_files_are_found(args.refs + [args.read_1] + ([args.read_2] if args.read_2 else []))
-    check_outputs(args.output_prefix, args.write_reads, args.force_overwrite)
+    check_files_are_found(args.refs + [args.input_reads] + ([args.input_reads_2] if args.input_reads_2 else []))
+    setup_output_dir(args.output_dir, args.output_prefix, args.force_overwrite,
+                     reconstruct_invocation(parser, args))
 
     summary = assign_reads(
         ref_paths=args.refs,
-        read_1=args.read_1,
-        read_2=args.read_2,
+        read_1=args.input_reads,
+        read_2=args.input_reads_2,
+        output_dir=args.output_dir,
         output_prefix=args.output_prefix,
         per_seq=args.per_seq,
         circular=args.circular,
@@ -182,8 +193,9 @@ def print_summary(summary):
     paths = summary["paths"]
     print(f"    Per-{unit[:-1]} assignments written to: '{paths['hits']}'")
     print(f"    Per-reference summary written to: '{paths['summary']}'")
-    if not summary["per_seq"]:
+    if summary["wrote_seq_summary"]:
         print(f"    Per-sequence summary written to: '{paths['seq_summary']}'")
     if summary["write_reads"]:
         print(f"    Uniquely assigned reads written to: '{paths['reads_dir']}/'")
+    # print(f"    Command info written to: '{paths['log']}'")
     print()

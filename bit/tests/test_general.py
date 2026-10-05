@@ -8,7 +8,8 @@ import pytest # type: ignore
 import bit.modules.general as general_mod
 from bit.modules.general import (tee, report_failure, color_text, wprint,
                                  report_message, check_files_are_found,
-                                 check_if_output_dir_exists, notify_premature_exit,
+                                 check_if_output_dir_exists, is_protected_dir,
+                                 notify_premature_exit,
                                  is_gzipped, sniff_delimiter, colnames,
                                  log_command_run, report_version,
                                  download_with_tqdm, _TooSlow)
@@ -123,6 +124,44 @@ def test_check_if_output_dir_exists_force_removes(tmp_path):
     (d / "sentinel.txt").write_text("x")
     check_if_output_dir_exists(str(d), force_overwrite=True)
     assert not d.exists()
+
+
+def test_check_if_output_dir_exists_force_refuses_protected_dirs(tmp_path, monkeypatch, capsys):
+
+    home = tmp_path / "home"
+    work = home / "project" / "run"
+    work.mkdir(parents=True)
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.chdir(work)
+
+    # the current dir, directories containing it, and home are never removed
+    for protected in (".", "..", str(work), str(home / "project"), str(home), "~"):
+        with pytest.raises(SystemExit) as e:
+            check_if_output_dir_exists(os.path.expanduser(protected), force_overwrite=True)
+        assert e.value.code == 1
+        assert "Not removing" in capsys.readouterr().out
+    assert work.is_dir()
+
+    # a symlink pointing at a protected dir is resolved and refused too
+    link = tmp_path / "link-to-project"
+    link.symlink_to(home / "project")
+    with pytest.raises(SystemExit):
+        check_if_output_dir_exists(str(link), force_overwrite=True)
+    assert (home / "project").is_dir()
+
+    # ordinary output dirs, inside or beside the current one, are still replaced
+    for out in (work / "outputs", home / "project" / "other-outputs"):
+        out.mkdir()
+        (out / "sentinel.txt").write_text("x")
+        check_if_output_dir_exists(str(out), force_overwrite=True)
+        assert not out.exists()
+
+
+def test_is_protected_dir_root(tmp_path, monkeypatch):
+
+    monkeypatch.chdir(tmp_path)
+    assert is_protected_dir("/")
+    assert not is_protected_dir(tmp_path / "anything")
 
 
 def test_check_if_output_dir_exists_absent_is_noop(tmp_path):
