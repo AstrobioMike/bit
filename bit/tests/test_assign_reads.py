@@ -2,6 +2,7 @@ import gzip
 import random
 import edlib # type: ignore
 import pytest # type: ignore
+import bit.modules.assign_reads as assign_reads_module
 from bit.modules.assign_reads import (revcomp,
                                       build_kmer_index,
                                       build_position_index,
@@ -9,7 +10,9 @@ from bit.modules.assign_reads import (revcomp,
                                       ExactMatcher,
                                       EditMatcher,
                                       summarize_distances,
-                                      find_identical_refs,
+                                      find_identical_seqs,
+                                      ref_name_from_path,
+                                      collapse_to_refs,
                                       load_refs,
                                       iter_pairs,
                                       FastxReader,
@@ -125,7 +128,7 @@ def test_unique_when_read_covers_snp(seqs):
     assert hits_for(seqs["p2"][250:350], refs, circular=False) == ["p2"]
 
 
-def test_min_frac_of_ref(seqs):
+def test_min_frac_of_seq(seqs):
     refs = refs_list(seqs)
     read = seqs["p3"][:400]
     assert hits_for(read, refs, circular=False, min_frac=0.5) == ["p3"]
@@ -327,8 +330,8 @@ def test_assign_reads_with_edits_end_to_end(tmp_path, seqs):
     write_fastq(reads_fq, reads)
 
     prefix = str(tmp_path / "ed")
-    summary = assign_reads([str(refs_fa)], str(reads_fq), output_prefix=prefix, max_edits=2,
-                           k=K, jobs=2, batch_size=1, show_progress=False)
+    summary = assign_reads([str(refs_fa)], str(reads_fq), output_prefix=prefix, per_seq=True,
+                           max_edits=2, jobs=2, show_progress=False)
     assert (summary["unique"], summary["ambiguous"]) == (2, 1)
 
     hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
@@ -349,8 +352,8 @@ def test_assign_reads_pairs_ranked_by_combined_edits(tmp_path, seqs):
     write_fastq(r2, [(f"{n}/2", b) for n, _, b in pairs])
 
     prefix = str(tmp_path / "pe-ed")
-    assign_reads([str(refs_fa)], str(r1), read_2=str(r2), output_prefix=prefix,
-                 max_edits=1, k=K, jobs=1, show_progress=False)
+    assign_reads([str(refs_fa)], str(r1), read_2=str(r2), output_prefix=prefix, per_seq=True,
+                 max_edits=1, jobs=1, show_progress=False)
     hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
     # p1: 1 + 0 = 1, p2: 1 + 1 = 2
     assert hits["pair"][2:] == ["unique", "1", "p1", "1", "2"]
@@ -379,11 +382,11 @@ def test_index_shares_identical_sets(seqs):
     assert all(v is shared[0] for v in shared)
 
 
-def test_find_identical_refs(seqs):
+def test_find_identical_seqs(seqs):
     p1 = seqs["p1"]
     refs = [("a", "f", p1), ("b", "f", revcomp(p1[200:] + p1[:200])), ("c", "f", seqs["p3"])]
-    assert find_identical_refs(refs, circular=True) == [("a", "b")]
-    assert find_identical_refs(refs, circular=False) == []
+    assert find_identical_seqs(refs, circular=True) == [(0, 1)]
+    assert find_identical_seqs(refs, circular=False) == []
 
 
 ### input parsing ###
@@ -400,12 +403,58 @@ def test_fastx_reader_fasta_and_gz_fastq(tmp_path):
     assert reader.bytes_read() == reader.total_bytes
 
 
-def test_load_refs_rejects_duplicate_names(tmp_path):
-    a, b = tmp_path / "a.fa", tmp_path / "b.fa"
-    write_fasta(a, [("x", "ACGT")])
+def test_ref_name_from_path():
+    assert ref_name_from_path("dir/genome-1.fasta.gz") == "genome-1"
+    assert ref_name_from_path("genome.v2.fna") == "genome.v2"
+    assert ref_name_from_path("plasmids.fa") == "plasmids"
+    assert ref_name_from_path("no-extension") == "no-extension"
+    assert ref_name_from_path(".fa") == ".fa"
+
+
+def test_load_refs_per_file_and_per_seq(tmp_path):
+    a, b = tmp_path / "a.fa", tmp_path / "b.fasta"
+    write_fasta(a, [("x", "ACGT"), ("y", "GGGG")])
     write_fasta(b, [("x", "TTTT")])
+
+    # per-file: sequence names only need to be unique within a file
+    refs, seqs = load_refs([str(a), str(b)])
+    assert refs == [("a", "a.fa"), ("b", "b.fasta")]
+    assert seqs == [("x", 0, "ACGT"), ("y", 0, "GGGG"), ("x", 1, "TTTT")]
+
+    # per-seq: each sequence is a reference, so names must be unique across files
     with pytest.raises(SystemExit):
-        load_refs([str(a), str(b)])
+        load_refs([str(a), str(b)], per_seq=True)
+    refs, seqs = load_refs([str(a)], per_seq=True)
+    assert refs == [("x", "a.fa"), ("y", "a.fa")]
+    assert seqs == [("x", 0, "ACGT"), ("y", 1, "GGGG")]
+
+
+def test_load_refs_rejects_bad_inputs(tmp_path):
+    (tmp_path / "d1").mkdir()
+    (tmp_path / "d2").mkdir()
+    g1, g2 = tmp_path / "d1" / "g.fa", tmp_path / "d2" / "g.fasta"
+    write_fasta(g1, [("x", "ACGT")])
+    write_fasta(g2, [("x", "ACGT")])
+    with pytest.raises(SystemExit):   # same name from different files
+        load_refs([str(g1), str(g2)])
+
+    dup = tmp_path / "dup.fa"
+    write_fasta(dup, [("x", "ACGT"), ("x", "GGGG")])
+    with pytest.raises(SystemExit):   # duplicate sequence name within a file
+        load_refs([str(dup)])
+
+    empty = tmp_path / "empty.fa"
+    empty.write_text("")
+    with pytest.raises(SystemExit):
+        load_refs([str(empty)])
+
+
+def test_collapse_to_refs():
+    # seqs 0 and 1 belong to ref 0, seq 2 to ref 1
+    seq_to_ref = [0, 0, 1]
+    assert collapse_to_refs({0: 2, 1: 1, 2: 1}, seq_to_ref) == {0: (1, [1]), 1: (1, [2])}
+    assert collapse_to_refs({0: 0, 1: 0}, seq_to_ref) == {0: (0, [0, 1])}
+    assert collapse_to_refs({}, seq_to_ref) == {}
 
 
 def test_iter_pairs_checks_names_and_counts(tmp_path):
@@ -449,7 +498,8 @@ def read_hits_tsv(path):
 
 
 @pytest.mark.parametrize("jobs", [1, 3])
-def test_assign_reads_single_end(tmp_path, seqs, jobs):
+def test_assign_reads_single_end(tmp_path, seqs, jobs, monkeypatch):
+    monkeypatch.setattr(assign_reads_module, "BATCH_SIZE", 2)
     rng = random.Random(7)
     refs_fa = tmp_path / "refs.fa"
     write_fasta(refs_fa, seqs.items())
@@ -458,8 +508,8 @@ def test_assign_reads_single_end(tmp_path, seqs, jobs):
     write_fastq(reads_fq, reads, gz=True)
 
     prefix = str(tmp_path / "out")
-    summary = assign_reads([str(refs_fa)], str(reads_fq), output_prefix=prefix, circular=True,
-                           k=K, write_reads=True, jobs=jobs, batch_size=2, show_progress=False)
+    summary = assign_reads([str(refs_fa)], str(reads_fq), output_prefix=prefix, per_seq=True,
+                           circular=True, write_reads=True, jobs=jobs, show_progress=False)
 
     assert summary["total"] == len(reads)
     assert summary["unique"] == 3
@@ -477,7 +527,13 @@ def test_assign_reads_single_end(tmp_path, seqs, jobs):
     assert list(hits) == [n for n, _ in reads if expected[n]]
 
     summary_lines = open(f"{prefix}-summary.tsv").read().splitlines()
-    assert summary_lines[1].split("\t") == ["p1", "refs.fa", "600", "1", "1"]
+    assert summary_lines[0].split("\t") == ["ref", "source_file", "num_seqs", "total_length",
+                                            "unique_reads", "ambiguous_reads"]
+    assert summary_lines[1].split("\t") == ["p1", "refs.fa", "1", "600", "1", "1"]
+
+    # per-seq mode has no separate per-sequence outputs
+    assert not (tmp_path / "out-seq-summary.tsv").exists()
+    assert "matching_seqs" not in open(f"{prefix}-read-hits.tsv").readline()
 
     written = (tmp_path / "out-reads" / "p1.fastq").read_text().split("\n")
     assert written[0] == "@full_p1"
@@ -501,7 +557,7 @@ def test_assign_reads_paired_end(tmp_path, seqs):
 
     prefix = str(tmp_path / "pe")
     summary = assign_reads([str(refs_fa)], str(r1), read_2=str(r2), output_prefix=prefix,
-                           k=K, write_reads=True, jobs=1, show_progress=False)
+                           per_seq=True, write_reads=True, jobs=1, show_progress=False)
 
     assert summary["unit"] == "pairs"
     hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
@@ -522,7 +578,7 @@ def test_cli_runs_and_respects_force(tmp_path, seqs):
     prefix = str(tmp_path / "cli")
 
     cmd = ["bit", "assign-reads", "-r", str(refs_fa), "-1", str(reads_fq), "-o", prefix,
-           "-k", str(K), "-j", "1"]
+           "--per-seq", "-j", "1"]
     result = run_cli(cmd)
     assert "Uniquely assigned" in result.stdout
 
@@ -540,7 +596,132 @@ def test_cli_rejects_min_frac_with_pairs(tmp_path, seqs):
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, [("r", seqs["p3"][:300])])
     result = subprocess.run(["bit", "assign-reads", "-r", str(refs_fa), "-1", str(reads_fq),
-                             "-2", str(reads_fq), "--min-frac-of-ref", "0.5"],
+                             "-2", str(reads_fq), "--min-frac-of-seq", "0.5"],
                             capture_output=True, text=True)
     assert result.returncode != 0
     assert "single-end" in result.stderr
+
+
+### per-file references ###
+
+@pytest.fixture
+def genomes(tmp_path):
+    """
+    Two references as files. A has a chromosome and a plasmid, with a repeat R found twice
+    in A's chromosome and once in its plasmid. B's chromosome shares the region U2 with A's.
+    Both chromosomes are named 'chrom'.
+    """
+    rng = random.Random(5)
+    R = rand_seq(120, rng)
+    U1, U2, U3 = rand_seq(300, rng), rand_seq(300, rng), rand_seq(300, rng)
+    V1, V2 = rand_seq(200, rng), rand_seq(200, rng)
+    parts = {
+        "chrom_A": U1 + R + U2 + R + U3,
+        "plasmid_A": V1 + R + V2,
+        "chrom_B": rand_seq(250, rng) + U2 + rand_seq(250, rng),
+        "R": R, "U1": U1, "U2": U2, "V1": V1,
+    }
+    a = tmp_path / "A.fasta"
+    write_fasta(a, [("chrom", parts["chrom_A"]), ("plasmid", parts["plasmid_A"])])
+    b = tmp_path / "B.fa.gz"
+    with gzip.open(b, "wt") as f:
+        f.write(f">chrom\n{parts['chrom_B']}\n")
+    return [str(a), str(b)], parts
+
+
+def test_per_file_assignment(tmp_path, genomes):
+    ref_paths, parts = genomes
+    reads = [
+        ("repeat_in_A", parts["R"][10:110]),       # 2x in A's chrom, 1x in A's plasmid
+        ("shared_A_B", parts["U2"][50:250]),
+        ("A_only", revcomp(parts["U1"][0:250])),
+        ("B_only", parts["chrom_B"][0:200]),
+    ]
+    reads_fq = tmp_path / "reads.fq"
+    write_fastq(reads_fq, reads)
+
+    prefix = str(tmp_path / "pf")
+    summary = assign_reads(ref_paths, str(reads_fq), output_prefix=prefix, jobs=1,
+                           show_progress=False)
+    assert (summary["unique"], summary["ambiguous"]) == (3, 1)
+
+    hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
+    # status, num_hits, matching_refs, edit_distance, next_best, matching_seqs
+    assert hits["repeat_in_A"][2:] == ["unique", "1", "A", "0", "NA", "A:chrom,A:plasmid"]
+    assert hits["shared_A_B"][2:] == ["ambiguous", "2", "A,B", "0", "NA", "A:chrom,B:chrom"]
+    assert hits["A_only"][2:] == ["unique", "1", "A", "0", "NA", "A:chrom"]
+    assert hits["B_only"][2:] == ["unique", "1", "B", "0", "NA", "B:chrom"]
+
+    summary_rows = [l.split("\t") for l in open(f"{prefix}-summary.tsv").read().splitlines()]
+    assert summary_rows[1:] == [["A", "A.fasta", "2", str(len(parts["chrom_A"]) + len(parts["plasmid_A"])), "2", "1"],
+                                ["B", "B.fa.gz", "1", str(len(parts["chrom_B"])), "1", "1"]]
+
+    seq_rows = [l.split("\t") for l in open(f"{prefix}-seq-summary.tsv").read().splitlines()]
+    assert seq_rows[0] == ["ref", "seq", "seq_length", "unique_reads", "ambiguous_reads"]
+    assert [r[:2] + r[3:] for r in seq_rows[1:]] == [["A", "chrom", "2", "1"],
+                                                     ["A", "plasmid", "1", "0"],
+                                                     ["B", "chrom", "1", "1"]]
+
+
+def test_per_file_pairs_span_sequences_of_one_ref(tmp_path, genomes):
+    ref_paths, parts = genomes
+    r1, r2 = tmp_path / "r1.fq", tmp_path / "r2.fq"
+    write_fastq(r1, [("p/1", parts["U1"][0:150])])            # A's chromosome
+    write_fastq(r2, [("p/2", revcomp(parts["V1"][0:150]))])   # A's plasmid
+
+    prefix = str(tmp_path / "pf-pe")
+    assign_reads(ref_paths, str(r1), read_2=str(r2), output_prefix=prefix, write_reads=True,
+                 jobs=1, show_progress=False)
+    hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
+    assert hits["p"][2:] == ["unique", "1", "A", "0", "NA", "A:chrom,A:plasmid"]
+    assert (tmp_path / "pf-pe-reads" / "A_R1.fastq").read_text().startswith("@p/1")
+
+
+def test_per_file_edit_distance_is_lowest_among_a_refs_seqs(tmp_path, genomes):
+    ref_paths, parts = genomes
+    reads = [
+        # one error in the repeat: A's chrom and plasmid both at 1, and no other ref
+        # competing (A's own sequences never count as the next best)
+        ("repeat_1_edit", snp(parts["R"][10:110], 40)),
+        ("shared_1_edit", snp(parts["U2"][50:250], 100)),
+    ]
+    reads_fq = tmp_path / "reads.fq"
+    write_fastq(reads_fq, reads)
+
+    prefix = str(tmp_path / "pf-ed")
+    assign_reads(ref_paths, str(reads_fq), output_prefix=prefix, max_edits=1, jobs=1,
+                 show_progress=False)
+    hits = read_hits_tsv(f"{prefix}-read-hits.tsv")
+    assert hits["repeat_1_edit"][2:] == ["unique", "1", "A", "1", "NA", "A:chrom,A:plasmid"]
+    assert hits["shared_1_edit"][2:] == ["ambiguous", "2", "A,B", "1", "NA", "A:chrom,B:chrom"]
+
+
+def test_note_for_single_multi_seq_ref_file(tmp_path, seqs, capsys):
+    refs_fa = tmp_path / "plasmids.fa"
+    write_fasta(refs_fa, seqs.items())
+    reads_fq = tmp_path / "reads.fq"
+    write_fastq(reads_fq, [("r", seqs["p3"][:300])])
+
+    assign_reads([str(refs_fa)], str(reads_fq), output_prefix=str(tmp_path / "n1"), jobs=1,
+                 show_progress=False)
+    assert "--per-seq" in capsys.readouterr().out
+
+    assign_reads([str(refs_fa)], str(reads_fq), output_prefix=str(tmp_path / "n2"), per_seq=True,
+                 jobs=1, show_progress=False)
+    assert "--per-seq" not in capsys.readouterr().out
+
+
+def test_identical_seqs_only_noted_across_refs(tmp_path, seqs, capsys):
+    p3 = seqs["p3"]
+    a, b = tmp_path / "a.fa", tmp_path / "b.fa"
+    write_fasta(a, [("x", p3), ("x_copy", p3)])   # identical within one ref: fine
+    write_fasta(b, [("y", p3)])                    # identical across refs: noted
+    reads_fq = tmp_path / "reads.fq"
+    write_fastq(reads_fq, [("r", p3[:300])])
+
+    assign_reads([str(a), str(b)], str(reads_fq), output_prefix=str(tmp_path / "id"), jobs=1,
+                 show_progress=False)
+    out = " ".join(capsys.readouterr().out.split())
+    assert "'a:x' and 'b:y' are identical" in out
+    assert "'a:x_copy' and 'b:y' are identical" in out
+    assert "'a:x' and 'a:x_copy'" not in out

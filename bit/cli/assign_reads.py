@@ -11,12 +11,10 @@ def build_parser(parent_subparsers=None):
     desc = """
         This program assigns reads to the reference sequences they exactly match or nearly exactly match
         (within `--max-edits`). It can be useful for sorting reads among highly similar references,
-        like a mix of near-identical plasmids or constructs, where mapping-based approaches might struggle
-        with multimapping and low MAPQs that need to be annoying parsed. Add `--circular` for circular references
-        like plasmids so reads spanning the origin are matched. Reads assigned to exactly one input reference
-        are reported as "unique", and reads tied between more than one as "ambiguous".
-        For paired-end input, a pair is assigned to references that both mates match (ranked by the mates'
-        combined edit distance when edits are allowed).
+        like a mix of near-identical plasmids, where mapping-based approaches might struggle
+        with multimapping and low MAPQs that need to be annoyingly parsed. Note the `--per-seq` and `--circular`
+        options. Reads assigned to exactly one input reference are reported as "unique", and reads tied between more than
+        one as "ambiguous".
         """
 
     if parent_subparsers is not None:
@@ -43,7 +41,8 @@ def build_parser(parent_subparsers=None):
         metavar="<FILE(s)>",
         nargs="+",
         required=True,
-        help="Reference fasta file(s); every sequence is treated as a separate reference",
+        help=("Reference fasta file(s). By default, each file is one reference made up of all of its "
+              "sequences, named by its file name (see --per-seq)"),
     )
 
     required.add_argument(
@@ -70,10 +69,17 @@ def build_parser(parent_subparsers=None):
     )
 
     optional.add_argument(
+        "--per-seq",
+        action="store_true",
+        help=("Treat each sequence in the reference fasta(s) as its own reference, named by its "
+              "sequence name, rather than each file being one reference"),
+    )
+
+    optional.add_argument(
         "-c",
         "--circular",
         action="store_true",
-        help="Treat references as circular, so reads spanning the origin are matched",
+        help="Treat reference sequences as circular, so reads spanning the origin are matched",
     )
 
     optional.add_argument(
@@ -83,24 +89,16 @@ def build_parser(parent_subparsers=None):
         type=int,
         default=0,
         help=("Maximum edit distance (substitutions + indels) allowed between a read and a reference "
-              "(default: 0, exact matches only)"),
+              "(default: 0, exact matches only, higher values will slow things down)"),
     )
 
     optional.add_argument(
-        "--min-frac-of-ref",
+        "--min-frac-of-seq",
         metavar="<FLOAT>",
         type=float,
         default=0.0,
-        help=("Only count a match if the read is at least this fraction of the reference's length "
-              "(applies to single-end input only; default: 0)"),
-    )
-
-    optional.add_argument(
-        "--min-read-len",
-        metavar="<INT>",
-        type=int,
-        default=0,
-        help="Skip reads shorter than this (for paired-end, applies to each mate; default: 0)",
+        help=("Only count a match if the read is at least this fraction of the length of the "
+              "sequence it matches (applies to single-end input only; default: 0)"),
     )
 
     optional.add_argument(
@@ -117,34 +115,6 @@ def build_parser(parent_subparsers=None):
         type=int,
         default=5,
         help="Number of parallel processes for assigning reads (default: 5)",
-    )
-
-    optional.add_argument(
-        "-k",
-        "--kmer-size",
-        metavar="<INT>",
-        type=int,
-        default=31,
-        help="k-mer size for the prefilter; must be <= read lengths for the prefilter to apply (default: 31)",
-    )
-
-    optional.add_argument(
-        "-s",
-        "--num-kmer-samples",
-        metavar="<INT>",
-        type=int,
-        default=25,
-        help=("Number of k-mers sampled across each read for the exact-match prefilter. More samples "
-              "exclude non-matching references more often. With --max-edits, all non-overlapping k-mers "
-              "of each read are used instead (default: 25)"),
-    )
-
-    optional.add_argument(
-        "--batch-size",
-        metavar="<INT>",
-        type=int,
-        default=500,
-        help="Number of reads (or pairs) sent to each process at a time (default: 500)",
     )
 
     add_force(optional)
@@ -168,18 +138,12 @@ def main():
 
     if args.jobs < 1:
         parser.error("--jobs must be 1 or greater")
-    if args.kmer_size < 1:
-        parser.error("--kmer-size must be 1 or greater")
-    if args.num_kmer_samples < 1:
-        parser.error("--num-kmer-samples must be 1 or greater")
     if args.max_edits < 0:
         parser.error("--max-edits must be 0 or greater")
-    if args.batch_size < 1:
-        parser.error("--batch-size must be 1 or greater")
-    if not 0 <= args.min_frac_of_ref <= 1:
-        parser.error("--min-frac-of-ref must be between 0 and 1")
-    if args.read_2 and args.min_frac_of_ref > 0:
-        parser.error("--min-frac-of-ref only applies to single-end input")
+    if not 0 <= args.min_frac_of_seq <= 1:
+        parser.error("--min-frac-of-seq must be between 0 and 1")
+    if args.read_2 and args.min_frac_of_seq > 0:
+        parser.error("--min-frac-of-seq only applies to single-end input")
 
     from bit.modules.general import check_files_are_found
     from bit.modules.assign_reads import assign_reads, check_outputs
@@ -192,15 +156,12 @@ def main():
         read_1=args.read_1,
         read_2=args.read_2,
         output_prefix=args.output_prefix,
+        per_seq=args.per_seq,
         circular=args.circular,
         max_edits=args.max_edits,
-        k=args.kmer_size,
-        num_kmer_samples=args.num_kmer_samples,
-        min_read_len=args.min_read_len,
-        min_frac_of_ref=args.min_frac_of_ref,
+        min_frac_of_seq=args.min_frac_of_seq,
         write_reads=args.write_reads,
         jobs=args.jobs,
-        batch_size=args.batch_size,
     )
 
     print_summary(summary)
@@ -221,6 +182,8 @@ def print_summary(summary):
     paths = summary["paths"]
     print(f"    Per-{unit[:-1]} assignments written to: '{paths['hits']}'")
     print(f"    Per-reference summary written to: '{paths['summary']}'")
+    if not summary["per_seq"]:
+        print(f"    Per-sequence summary written to: '{paths['seq_summary']}'")
     if summary["write_reads"]:
         print(f"    Uniquely assigned reads written to: '{paths['reads_dir']}/'")
     print()

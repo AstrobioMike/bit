@@ -1,18 +1,24 @@
 """
 Core logic for `bit assign-reads`.
 
-A read is assigned to a reference if the read, or its reverse complement, is an
-exact substring of that reference. With `circular=True`, references are treated
-as circles (e.g., plasmids), so reads spanning the origin are matched too.
+By default, each input fasta file is one reference made up of all its sequences.
+With `per_seq=True`, each sequence is its own reference. Reads are matched against
+individual sequences, and those hits are then collapsed to references, so a read
+matching two sequences of the same reference is still assigned 'uniquely' to that reference.
 
-A canonical k-mer prefilter narrows the candidate references for each read before
+A read matches a sequence if the read, or its reverse complement, is an exact
+substring of that sequence. With `circular=True`, sequences are treated as circles
+(e.g., plasmids), so reads spanning the origin are matched too.
+
+A canonical k-mer prefilter narrows the candidate sequences for each read before
 the exact check. Every k-mer of an exactly matching read must also be a k-mer of
-that reference, so a reference is excluded only if it lacks a sampled k-mer, and
-the prefilter can't cause a true exact match to be missed.
+that sequence, so a sequence is excluded only if it lacks a sampled k-mer, and the
+prefilter can't cause a true exact match to be missed.
 
 With `max_edits` > 0, reads are instead assigned to the reference(s) they align to
-with the lowest edit distance (substitutions + indels), if within `max_edits`. Ties
-are ambiguous. That mode uses its own prefilter (see EditMatcher), which likewise
+with the lowest edit distance (substitutions + indels), if within `max_edits`, where
+a reference's distance is the lowest among its sequences. Ties are ambiguous.
+That mode uses its own prefilter (see EditMatcher), which likewise
 can't cause a read within `max_edits` of a reference to be missed.
 
 For paired-end input, a pair is assigned to the references both mates match (and
@@ -40,6 +46,13 @@ _COMP = str.maketrans("ACGTacgt", "TGCAtgca")
 # spacing of the sparse positional index (see build_position_index())
 POSITION_STEP = 16
 
+# fixed settings (not exposed as parameters)
+KMER_SIZE = 31
+NUM_KMER_SAMPLES = 25   # k-mers sampled per read by the exact-match prefilter
+BATCH_SIZE = 500        # reads (or pairs) per batch sent to each worker
+
+FASTA_EXTENSIONS = (".fasta", ".fa", ".fna", ".fas", ".fsa", ".ffn", ".fsta")
+
 
 def revcomp(seq):
     return seq.translate(_COMP)[::-1]
@@ -52,45 +65,84 @@ def canon(kmer):
     return kmer if kmer <= rc else rc
 
 
-def load_refs(ref_paths):
-    """Returns a list of (name, source_file_basename, uppercase seq), one per fasta record."""
-    refs, seen = [], {}
+def ref_name_from_path(path):
+    """File name minus any .gz and fasta extension, e.g. 'genome-1.fasta.gz' -> 'genome-1'."""
+    name = os.path.basename(str(path))
+    if name.endswith(".gz"):
+        name = name[:-3]
+    for ext in FASTA_EXTENSIONS:
+        if name.endswith(ext) and len(name) > len(ext):
+            return name[:-len(ext)]
+    return name
+
+
+def load_refs(ref_paths, per_seq=False):
+    """
+    Returns (refs, seqs):
+        refs: [(reference name, source file basename), ...]
+        seqs: [(sequence name, reference index, uppercase sequence), ...]
+
+    Reads are matched against sequences, and their hits are then collapsed to references.
+    By default, each input file is one reference made up of all of its sequences (e.g., a
+    genome's chromosome and plasmids), named by its file name minus fasta/gzip extensions.
+    With per_seq, each sequence is its own reference, named by the sequence name.
+    """
+    refs, seqs = [], []
+    seen_refs = {}
+
+    def add_ref(name, path):
+        if name in seen_refs:
+            kind = "sequence name" if per_seq else "reference name (from the file name)"
+            print(f"\n    Duplicate {kind} '{name}' from '{path}' (also from '{seen_refs[name]}').")
+            print("    Reference names need to be unique.")
+            notify_premature_exit()
+        seen_refs[name] = path
+        refs.append((name, os.path.basename(str(path))))
+        return len(refs) - 1
+
     for path in ref_paths:
+        file_ref_idx = None if per_seq else add_ref(ref_name_from_path(path), path)
+        seen_seqs = set()
         reader = FastxReader(path)
         try:
             for name, seq, _ in reader:
-                if name in seen:
-                    print(f"\n    Duplicate reference name '{name}' found in '{path}' "
-                          f"(also in '{seen[name]}'). Reference names need to be unique.")
-                    notify_premature_exit()
                 if not seq:
-                    print(f"\n    Reference '{name}' in '{path}' has no sequence.")
+                    print(f"\n    Sequence '{name}' in '{path}' has no sequence.")
                     notify_premature_exit()
-                seen[name] = path
-                refs.append((name, os.path.basename(path), seq.upper()))
+                if name in seen_seqs:
+                    print(f"\n    Duplicate sequence name '{name}' in '{path}'.")
+                    notify_premature_exit()
+                seen_seqs.add(name)
+                ref_idx = add_ref(name, path) if per_seq else file_ref_idx
+                seqs.append((name, ref_idx, seq.upper()))
         finally:
             reader.close()
-    return refs
+
+        if not seen_seqs:
+            print(f"\n    No sequences were found in '{path}'.")
+            notify_premature_exit()
+
+    return refs, seqs
 
 
-def find_identical_refs(refs, circular):
+def find_identical_seqs(seqs, circular):
     """
-    Returns pairs of ref names that are identical (in either orientation, and up to
-    rotation if circular). Reads matching these can never be assigned uniquely.
+    Returns index pairs of sequences that are identical (in either orientation, and up
+    to rotation if circular).
     """
     by_len = defaultdict(list)
-    for i, (_, _, seq) in enumerate(refs):
+    for i, (_, _, seq) in enumerate(seqs):
         by_len[len(seq)].append(i)
 
     identical = []
     for idxs in by_len.values():
         for pos, a in enumerate(idxs):
-            a_seq = refs[a][2]
+            a_seq = seqs[a][2]
             a_search = a_seq * 2 if circular else a_seq
             for b in idxs[pos + 1:]:
-                b_seq = refs[b][2]
+                b_seq = seqs[b][2]
                 if b_seq in a_search or revcomp(b_seq) in a_search:
-                    identical.append((refs[a][0], refs[b][0]))
+                    identical.append((a, b))
     return identical
 
 
@@ -233,11 +285,11 @@ class ExactMatcher(_RefMatcher):
         self.index = build_kmer_index(refs, k, circular)
         self.pos_index = build_position_index(refs, k, circular, step)
 
-    def distances(self, seq, min_frac_of_ref=0.0):
+    def distances(self, seq, min_frac_of_seq=0.0):
         """{ref index: edit distance} for refs `seq` matches; always 0 here (exact only)."""
-        return {i: 0 for i in self.hits(seq, min_frac_of_ref)}
+        return {i: 0 for i in self.hits(seq, min_frac_of_seq)}
 
-    def hits(self, seq, min_frac_of_ref=0.0):
+    def hits(self, seq, min_frac_of_seq=0.0):
         """Returns a sorted list of indices of refs that `seq` exactly matches."""
         L = len(seq)
         if L == 0:
@@ -252,7 +304,7 @@ class ExactMatcher(_RefMatcher):
             cands = range(len(self.ref_seqs))
 
         cands = {i for i in cands
-                 if L >= min_frac_of_ref * len(self.ref_seqs[i])
+                 if L >= min_frac_of_seq * len(self.ref_seqs[i])
                  and (self.circular or L <= len(self.ref_seqs[i]))}
         if not cands:
             return []
@@ -344,9 +396,9 @@ class EditMatcher(_RefMatcher):
             ids = frozenset(i for i, _ in entries)
             self.kmer_refs[km] = shared.setdefault(ids, ids)
 
-    def _eligible(self, i, n, min_frac_of_ref):
+    def _eligible(self, i, n, min_frac_of_seq):
         L = len(self.ref_seqs[i])
-        return n >= min_frac_of_ref * L and (self.circular or n <= L + self.max_edits)
+        return n >= min_frac_of_seq * L and (self.circular or n <= L + self.max_edits)
 
     def _window(self, i, start, length):
         """Ref sequence of `length` beginning at `start` (wrapping if circular)."""
@@ -362,7 +414,7 @@ class EditMatcher(_RefMatcher):
             return ref[start:] + ref[:end - L]
         return (ref * (end // L + 1))[start:end]
 
-    def distances(self, seq, min_frac_of_ref=0.0):
+    def distances(self, seq, min_frac_of_seq=0.0):
         """{ref index: edit distance} for refs `seq` aligns to within max_edits."""
         n = len(seq)
         if n == 0:
@@ -372,7 +424,7 @@ class EditMatcher(_RefMatcher):
         s = seq.upper()
         n_slots = n // k
         if n_slots - e < 1:
-            return self._distances_full_alignment(s, min_frac_of_ref)
+            return self._distances_full_alignment(s, min_frac_of_seq)
 
         needed = n_slots - e
 
@@ -382,7 +434,7 @@ class EditMatcher(_RefMatcher):
             ref_sets = [self.kmer_refs.get(km) for km in kmers]
             counts = Counter(chain.from_iterable(rs for rs in ref_sets if rs))
             passing = [i for i, c in counts.items()
-                       if c >= needed and self._eligible(i, n, min_frac_of_ref)]
+                       if c >= needed and self._eligible(i, n, min_frac_of_seq)]
             if not passing:
                 continue
 
@@ -431,12 +483,12 @@ class EditMatcher(_RefMatcher):
                 limit = best - 1
         return best
 
-    def _distances_full_alignment(self, s, min_frac_of_ref):
+    def _distances_full_alignment(self, s, min_frac_of_seq):
         n, e = len(s), self.max_edits
         s_rc = revcomp(s)
         best = {}
         for i, ref in enumerate(self.ref_seqs):
-            if not self._eligible(i, n, min_frac_of_ref):
+            if not self._eligible(i, n, min_frac_of_seq):
                 continue
             L = len(ref)
             if self.circular:
@@ -449,6 +501,22 @@ class EditMatcher(_RefMatcher):
             if dists:
                 best[i] = min(dists)
         return best
+
+
+def collapse_to_refs(seq_dists, seq_to_ref):
+    """
+    {sequence index: edit distance} -> {reference index: (lowest edit distance among its
+    sequences, [indices of its sequences at that distance])}
+    """
+    out = {}
+    for si, d in seq_dists.items():
+        ri = seq_to_ref[si]
+        current = out.get(ri)
+        if current is None or d < current[0]:
+            out[ri] = (d, [si])
+        elif d == current[0]:
+            current[1].append(si)
+    return out
 
 
 def summarize_distances(dists):
@@ -571,52 +639,55 @@ def batched_with_progress(records, reader, batch_size):
 _W = {}
 
 
-def init_worker(matcher, min_frac_of_ref, min_read_len, paired, keep_seqs):
-    _W.update(matcher=matcher, min_frac_of_ref=min_frac_of_ref,
-              min_read_len=min_read_len, paired=paired, keep_seqs=keep_seqs)
+def init_worker(matcher, seq_to_ref, min_frac_of_seq, paired, keep_seqs):
+    _W.update(matcher=matcher, seq_to_ref=seq_to_ref, min_frac_of_seq=min_frac_of_seq,
+              paired=paired, keep_seqs=keep_seqs)
 
 
 def process_batch(batch_and_pos):
     """
     Returns (num records in batch, bytes position, results), where results holds
-    (read_id, lengths, hit indices, best edit distance, next-best edit distance or None,
-    records-or-None) for each read/pair with >= 1 hit. Records only travel back for
-    unique hits when reads are being written.
+    (read_id, lengths, hit ref indices, hit seq indices, best edit distance, next-best
+    edit distance or None, records-or-None) for each read/pair assigned to >= 1 ref.
+
+    Hit seqs are the sequences of the hit refs at the best distance (for pairs, from
+    either mate). Records only travel back for unique hits when reads are being written.
     """
     batch, pos = batch_and_pos
     W = _W
-    matcher, min_frac = W["matcher"], W["min_frac_of_ref"]
-    min_len = W["min_read_len"]
+    matcher, seq_to_ref = W["matcher"], W["seq_to_ref"]
+    min_frac = W["min_frac_of_seq"]
 
     results = []
     if W["paired"]:
         for r1, r2 in batch:
-            if len(r1[1]) < min_len or len(r2[1]) < min_len:
+
+            c1 = collapse_to_refs(matcher.distances(r1[1], min_frac), seq_to_ref)
+            if not c1:
                 continue
-            d1 = matcher.distances(r1[1], min_frac)
-            if not d1:
-                continue
-            d2 = matcher.distances(r2[1], min_frac)
-            if not d2:
+            c2 = collapse_to_refs(matcher.distances(r2[1], min_frac), seq_to_ref)
+            if not c2:
                 continue
             # pairs are ranked by the mates' combined edit distance
-            summary = summarize_distances({i: d1[i] + d2[i] for i in d1.keys() & d2.keys()})
+            shared = c1.keys() & c2.keys()
+            summary = summarize_distances({ri: c1[ri][0] + c2[ri][0] for ri in shared})
             if summary is None:
                 continue
             hits, best, next_best = summary
+            hit_seqs = [si for ri in hits for si in sorted(set(c1[ri][1]) | set(c2[ri][1]))]
             recs = (r1, r2) if (W["keep_seqs"] and len(hits) == 1) else None
             results.append((_mate_base_name(r1[0]), f"{len(r1[1])},{len(r2[1])}",
-                            hits, best, next_best, recs))
+                            hits, hit_seqs, best, next_best, recs))
     else:
         for rec in batch:
-            if len(rec[1]) < min_len:
-                continue
-            summary = summarize_distances(matcher.distances(rec[1], min_frac))
+            collapsed = collapse_to_refs(matcher.distances(rec[1], min_frac), seq_to_ref)
+            summary = summarize_distances({ri: v[0] for ri, v in collapsed.items()})
             if summary is None:
                 continue
             hits, best, next_best = summary
+            hit_seqs = [si for ri in hits for si in sorted(collapsed[ri][1])]
             recs = (rec,) if (W["keep_seqs"] and len(hits) == 1) else None
-            results.append((rec[0], str(len(rec[1])), hits, best, next_best, recs))
+            results.append((rec[0], str(len(rec[1])), hits, hit_seqs, best, next_best, recs))
 
     return len(batch), pos, results
 
@@ -627,13 +698,15 @@ def output_paths(output_prefix):
     return {
         "hits": f"{output_prefix}-read-hits.tsv",
         "summary": f"{output_prefix}-summary.tsv",
+        "seq_summary": f"{output_prefix}-seq-summary.tsv",
         "reads_dir": f"{output_prefix}-reads",
     }
 
 
 def check_outputs(output_prefix, write_reads, force_overwrite):
     paths = output_paths(output_prefix)
-    existing = [p for p in (paths["hits"], paths["summary"]) if Path(p).exists()]
+    existing = [p for p in (paths["hits"], paths["summary"], paths["seq_summary"])
+                if Path(p).exists()]
     if write_reads and Path(paths["reads_dir"]).exists():
         existing.append(paths["reads_dir"])
 
@@ -682,60 +755,71 @@ class ReadWriter:
 
 ### driver ###
 
-def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", circular=False,
-                 max_edits=0, k=31, num_kmer_samples=25, min_read_len=0, min_frac_of_ref=0.0,
-                 write_reads=False, jobs=1, batch_size=500, show_progress=True):
+def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", per_seq=False,
+                 circular=False, max_edits=0, min_frac_of_seq=0.0,
+                 write_reads=False, jobs=1, show_progress=True):
     """
     Runs the full assignment and writes outputs. Returns a dict of summary counts.
     """
 
     paired = read_2 is not None
     paths = output_paths(output_prefix)
+    k = KMER_SIZE
 
-    # loading refs and building the index
-    refs = load_refs(ref_paths)
-    if not refs:
-        print("\n    No reference sequences were found.")
-        notify_premature_exit()
+    # loading refs and building the indexes
+    refs, seqs = load_refs(ref_paths, per_seq)
+    seq_to_ref = [ri for _, ri, _ in seqs]
 
-    print(f"\n    Loaded {len(refs):,} reference(s) from {len(ref_paths):,} file(s) "
-          f"({'circular' if circular else 'linear'})")
+    print(f"\n    Loaded {len(refs):,} reference(s) ({len(seqs):,} sequence(s)) from "
+          f"{len(ref_paths):,} file(s), treated as {'circular' if circular else 'linear'}")
     if max_edits > 0:
         print(f"    Allowing up to {max_edits} edit(s) per {'mate' if paired else 'read'}")
 
-    for a, b in find_identical_refs(refs, circular):
-        report_message(f"Note: references '{a}' and '{b}' are identical"
+    if not per_seq and len(ref_paths) == 1 and len(seqs) > 1:
+        report_message(f"Note: the single reference file holds {len(seqs):,} sequences, which are all "
+                       "being treated as one reference. Add `--per-seq` if each sequence should be "
+                       "its own reference (e.g., a mix of different plasmids in one fasta).",
+                       initial_indent="    ", subsequent_indent="    ")
+
+    def seq_label(si):
+        name, ri, _ = seqs[si]
+        return name if per_seq else f"{refs[ri][0]}:{name}"
+
+    for a, b in find_identical_seqs(seqs, circular):
+        if seq_to_ref[a] == seq_to_ref[b]:
+            # identical sequences within one reference don't affect assignment
+            continue
+        report_message(f"Note: sequences '{seq_label(a)}' and '{seq_label(b)}' are identical"
                        f"{' (up to rotation/strand)' if circular else ' (up to strand)'}, "
-                       "so reads matching them will always be ambiguous.",
-                       initial_indent="    ", subsequent_indent="    ", leading_newline=False)
+                       "so reads matching them can't be assigned uniquely.",
+                       initial_indent="    ", subsequent_indent="    ")
 
-    short_refs = [name for name, _, seq in refs if len(seq) < k]
-    if short_refs:
-        report_message(f"Note: {len(short_refs):,} reference(s) are shorter than k ({k}) and can't "
-                       "be matched by reads of length k or more (e.g., "
-                       f"'{short_refs[0]}'). Consider a smaller -k.",
-                       initial_indent="    ", subsequent_indent="    ", leading_newline=False)
+    short_seqs = [si for si, (_, _, seq) in enumerate(seqs) if len(seq) < k]
+    if short_seqs:
+        report_message(f"Note: {len(short_seqs):,} sequence(s) are shorter than {k} bases and can "
+                       f"only be matched by reads shorter than that (e.g., '{seq_label(short_seqs[0])}').",
+                       initial_indent="    ", subsequent_indent="    ")
 
-    print(f"    Building {k}-mer indexes...")
+    print(f"\n    Building indexes...")
     if max_edits > 0:
-        matcher = EditMatcher(refs, k, circular, max_edits)
+        matcher = EditMatcher(seqs, k, circular, max_edits)
     else:
-        matcher = ExactMatcher(refs, k, num_kmer_samples, circular)
+        matcher = ExactMatcher(seqs, k, NUM_KMER_SAMPLES, circular)
 
-    worker_args = (matcher, min_frac_of_ref, min_read_len, paired, write_reads)
+    worker_args = (matcher, seq_to_ref, min_frac_of_seq, paired, write_reads)
 
     # setting up reads input
     r1_reader = FastxReader(read_1)
     r2_reader = FastxReader(read_2) if paired else None
     records = iter_pairs(r1_reader, r2_reader) if paired else iter(r1_reader)
-    batches = batched_with_progress(records, r1_reader, batch_size)
+    batches = batched_with_progress(records, r1_reader, BATCH_SIZE)
 
     pool = None
     if jobs > 1:
         # using 'spawn' rather than 'fork' to match gen-reads and summarize-assembly (fork can
         # deadlock from multi-threaded contexts and warns on Python 3.12+). the indexes are pickled
         # once per worker at startup; identical k-mer sets are shared objects, so pickle keeps
-        # that compact even when the refs are highly similar
+        # that compact even when the sequences are highly similar
         ctx = mp.get_context("spawn")
         pool = ctx.Pool(jobs, initializer=init_worker, initargs=worker_args)
         # imap keeps results in input order
@@ -747,6 +831,7 @@ def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", c
     unit = "pairs" if paired else "reads"
     n_total = n_unique = n_ambig = 0
     unique_counts, ambig_counts = Counter(), Counter()
+    seq_unique_counts, seq_ambig_counts = Counter(), Counter()
     writer = ReadWriter(paths["reads_dir"], refs, paired) if write_reads else None
 
     print(f"    Assigning {unit} with {jobs} job(s)...\n")
@@ -757,8 +842,11 @@ def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", c
 
     try:
         with open(paths["hits"], "w") as out:
-            out.write(f"read_id\tread_length{'s' if paired else ''}\tstatus\tnum_hits\tmatching_refs\t"
-                      "edit_distance\tnext_best_edit_distance\n")
+            header = ["read_id", "read_lengths" if paired else "read_length", "status", "num_hits",
+                      "matching_refs", "edit_distance", "next_best_edit_distance"]
+            if not per_seq:
+                header.append("matching_seqs")
+            out.write("\t".join(header) + "\n")
 
             last_pos = 0
             for n_in_batch, pos, results in batch_results:
@@ -767,22 +855,26 @@ def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", c
                 last_pos = pos
                 pbar.set_postfix_str(f"{n_total:,} {unit}", refresh=False)
 
-                for read_id, lengths, hits, best, next_best, recs in results:
+                for read_id, lengths, hits, hit_seqs, best, next_best, recs in results:
                     if len(hits) == 1:
                         status = "unique"
                         n_unique += 1
                         unique_counts[hits[0]] += 1
+                        seq_unique_counts.update(hit_seqs)
                         if writer is not None:
                             writer.write(hits[0], recs)
                     else:
                         status = "ambiguous"
                         n_ambig += 1
-                        for i in hits:
-                            ambig_counts[i] += 1
+                        ambig_counts.update(hits)
+                        seq_ambig_counts.update(hit_seqs)
 
-                    out.write(f"{read_id}\t{lengths}\t{status}\t{len(hits)}\t"
-                              f"{','.join(refs[i][0] for i in hits)}\t{best}\t"
-                              f"{'NA' if next_best is None else next_best}\n")
+                    line = (f"{read_id}\t{lengths}\t{status}\t{len(hits)}\t"
+                            f"{','.join(refs[i][0] for i in hits)}\t{best}\t"
+                            f"{'NA' if next_best is None else next_best}")
+                    if not per_seq:
+                        line += "\t" + ",".join(seq_label(si) for si in hit_seqs)
+                    out.write(line + "\n")
 
             # finishing the bar cleanly (the buffered position can lag the file size)
             pbar.update(r1_reader.total_bytes - last_pos)
@@ -804,10 +896,23 @@ def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", c
         if r2_reader is not None:
             r2_reader.close()
 
+    ref_num_seqs, ref_lengths = Counter(), Counter()
+    for _, ri, seq in seqs:
+        ref_num_seqs[ri] += 1
+        ref_lengths[ri] += len(seq)
+
     with open(paths["summary"], "w") as out:
-        out.write(f"ref\tsource_file\tref_length\tunique_{unit}\tambiguous_{unit}\n")
-        for i, (name, src, seq) in enumerate(refs):
-            out.write(f"{name}\t{src}\t{len(seq)}\t{unique_counts[i]}\t{ambig_counts[i]}\n")
+        out.write(f"ref\tsource_file\tnum_seqs\ttotal_length\tunique_{unit}\tambiguous_{unit}\n")
+        for i, (name, src) in enumerate(refs):
+            out.write(f"{name}\t{src}\t{ref_num_seqs[i]}\t{ref_lengths[i]}\t"
+                      f"{unique_counts[i]}\t{ambig_counts[i]}\n")
+
+    if not per_seq:
+        with open(paths["seq_summary"], "w") as out:
+            out.write(f"ref\tseq\tseq_length\tunique_{unit}\tambiguous_{unit}\n")
+            for si, (name, ri, seq) in enumerate(seqs):
+                out.write(f"{refs[ri][0]}\t{name}\t{len(seq)}\t"
+                          f"{seq_unique_counts[si]}\t{seq_ambig_counts[si]}\n")
 
     return {
         "unit": unit,
@@ -815,5 +920,6 @@ def assign_reads(ref_paths, read_1, read_2=None, output_prefix="assign-reads", c
         "unique": n_unique,
         "ambiguous": n_ambig,
         "paths": paths,
+        "per_seq": per_seq,
         "write_reads": write_reads,
     }

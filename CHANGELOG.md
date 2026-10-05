@@ -21,6 +21,7 @@
   - takes fastq or fasta as "reads"
     - single- or paired-end input; pairs are assigned to the references both mates exactly match or within the set edit distance per read
   - handles linear or circular (`--circular`) references
+  - each input fasta is one reference by default (e.g., a genome's chromosome and plasmids), with per-sequence detail in the outputs; `--per-seq` treats each sequence as its own reference instead
   - reports unique vs ambiguous assignments, with optional per-reference read outputs (`--write-reads`)
 
 ### Changed
