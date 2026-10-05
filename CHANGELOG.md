@@ -14,7 +14,14 @@
 
 -->
 
-## v2.10.4 (NOT YET RELEASED)
+## v2.11.0 (5-Oct-2026)
+
+### Added
+- `bit assign-reads` for assigning reads to the reference sequences they match exactly, or nearly exactly within a set edit distance (`--max-edits`)
+  - takes fastq or fasta as "reads"
+    - single- or paired-end input; pairs are assigned to the references both mates exactly match or within the set edit distance per read
+  - handles linear or circular (`--circular`) references
+  - reports unique vs ambiguous assignments, with optional per-reference read outputs (`--write-reads`)
 
 ### Changed
 - `bit summarize-assembly` now has a `-j | --jobs` parameter to run jobs in parallel if there are multiple input assemblies

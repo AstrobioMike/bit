@@ -16,6 +16,7 @@ SUBCOMMAND_MAP = {
     "cov-stats":           "bit.cli.cov_stats",
     "mapped-read-stats":   "bit.cli.mapped_read_stats",
     "aa-diff":             "bit.cli.aa_diff",
+    "assign-reads":        "bit.cli.assign_reads",
     "ez-screen":           "bit.cli.ez_screen",
     "fasta":               "bit.cli.fasta",
     "assemble":            "bit.cli.assemble",
@@ -94,6 +95,10 @@ PROGRAM_GROUPS = [
             {
                 "name": "aa-diff",
                 "desc": "compare a query sequence to an amino-acid reference and report differences",
+            },
+            {
+                "name": "assign-reads",
+                "desc": "assign reads to the reference sequences they match exactly or nearly exactly",
             },
             {
                 "name": "ez-screen",

@@ -90,6 +90,7 @@ You can see an overview of available programs like below by running `bit` by its
 | Program | Purpose |
 | ------- | ------- |
 | `bit aa-diff` | compare a query sequence to an amino-acid reference and report differences |
+| `bit assign-reads` | assign reads to the reference sequences they match exactly or nearly exactly within a set edit distance |
 
 ##### Program: `bit ez-screen`
 | Subcommand | Purpose |
