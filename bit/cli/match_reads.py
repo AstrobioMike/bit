@@ -151,7 +151,7 @@ def main():
         parser.error("--max-edits must be 0 or greater")
     if not 0 <= args.min_frac_of_seq <= 1:
         parser.error("--min-frac-of-seq must be between 0 and 1")
-    if args.input_reads_2:
+    if args.input_reads_2 and args.min_frac_of_seq > 0:
         parser.error("--min-frac-of-seq only applies to single-end input")
 
     from bit.modules.general import check_files_are_found
@@ -180,19 +180,19 @@ def main():
 
 def print_summary(summary):
 
-    total = summary["total"]
+    from bit.modules.match_reads import summary_count_lines
+
     unit = summary["unit"]
-    pct = lambda x: f"{100 * x / total:.2f}%" if total else "NA"
 
     print()
-    print(f"        {'Total ' + unit + ':':<34}{total:,}")
-    print(f"        {'Uniquely assigned:':<34}{summary['unique']:,} ({pct(summary['unique'])})")
-    print(f"        {'Ambiguous (multiple refs):':<34}{summary['ambiguous']:,} ({pct(summary['ambiguous'])})")
+    for line in summary_count_lines(unit, summary["total"], summary["unique"], summary["ambiguous"]):
+        print(f"        {line}")
     print()
 
     paths = summary["paths"]
+    print(f"    Overall summary written to: '{paths['summary']}'")
     print(f"    Per-{unit[:-1]} assignments written to: '{paths['hits']}'")
-    print(f"    Per-reference summary written to: '{paths['summary']}'")
+    print(f"    Per-reference summary written to: '{paths['ref_summary']}'")
     if summary["wrote_seq_summary"]:
         print(f"    Per-sequence summary written to: '{paths['seq_summary']}'")
     if summary["write_reads"]:

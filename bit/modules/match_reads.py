@@ -34,6 +34,7 @@ import shutil
 import sys
 import tempfile
 from collections import Counter, defaultdict
+from contextlib import nullcontext
 from itertools import chain, islice
 from operator import itemgetter
 from pathlib import Path
@@ -42,7 +43,7 @@ import edlib # type: ignore
 from tqdm import tqdm # type: ignore
 
 from bit.modules.general import (check_if_output_dir_exists, is_gzipped, log_command_run,
-                                 notify_premature_exit, report_message)
+                                 notify_premature_exit, report_message, spinner)
 
 
 _COMP = str.maketrans("ACGTacgt", "TGCAtgca")
@@ -709,11 +710,27 @@ def output_paths(output_dir, output_prefix=""):
     out = Path(output_dir)
     return {
         "hits": str(out / f"{output_prefix}read-hits.tsv"),
-        "summary": str(out / f"{output_prefix}summary.tsv"),
+        "summary": str(out / f"{output_prefix}summary.txt"),
+        "ref_summary": str(out / f"{output_prefix}ref-summary.tsv"),
         "seq_summary": str(out / f"{output_prefix}seq-summary.tsv"),
         "reads_dir": str(out / f"{output_prefix}reads"),
         "log": str(out / f"{output_prefix}command-execution-info.txt"),
     }
+
+
+def summary_count_lines(unit, total, unique, ambiguous):
+    """
+    The overall counts, as printed to the terminal and written to summary.txt, e.g.:
+        Total reads:                      1,000
+        Uniquely assigned:                800 (80.00%)
+        Ambiguous (multiple refs):        50 (5.00%)
+    """
+    pct = lambda x: f"{100 * x / total:.2f}%" if total else "NA"
+    return [
+        f"{'Total ' + unit + ':':<34}{total:,}",
+        f"{'Uniquely assigned:':<34}{unique:,} ({pct(unique)})",
+        f"{'Ambiguous (multiple refs):':<34}{ambiguous:,} ({pct(ambiguous)})",
+    ]
 
 
 def setup_output_dir(output_dir, output_prefix, force_overwrite, full_cmd_executed):
@@ -875,11 +892,13 @@ def match_reads(ref_paths, read_1, read_2=None, output_dir="match-reads", output
                        f"only be matched by reads shorter than that (e.g., '{seq_label(short_seqs[0])}').",
                        initial_indent="    ", subsequent_indent="    ")
 
-    print(f"\n    Building indexes...")
-    if max_edits > 0:
-        matcher = EditMatcher(seqs, k, circular, max_edits)
-    else:
-        matcher = ExactMatcher(seqs, k, NUM_KMER_SAMPLES, circular)
+    print()
+    building = spinner("Building indexes...", "Built indexes ") if show_progress else nullcontext()
+    with building:
+        if max_edits > 0:
+            matcher = EditMatcher(seqs, k, circular, max_edits)
+        else:
+            matcher = ExactMatcher(seqs, k, NUM_KMER_SAMPLES, circular)
 
     worker_args = (matcher, seq_to_ref, min_frac_of_seq, paired, write_reads)
 
@@ -980,7 +999,7 @@ def match_reads(ref_paths, read_1, read_2=None, output_dir="match-reads", output
         ref_num_seqs[ri] += 1
         ref_lengths[ri] += len(seq)
 
-    with open(paths["summary"], "w") as out:
+    with open(paths["ref_summary"], "w") as out:
         out.write(f"ref\tsource_file\tnum_seqs\ttotal_length\tunique_{unit}\tambiguous_{unit}\n")
         for i, (name, src) in enumerate(refs):
             out.write(f"{name}\t{src}\t{ref_num_seqs[i]}\t{ref_lengths[i]}\t"
@@ -995,6 +1014,10 @@ def match_reads(ref_paths, read_1, read_2=None, output_dir="match-reads", output
             for si, (name, ri, seq) in enumerate(seqs):
                 out.write(f"{refs[ri][0]}\t{name}\t{len(seq)}\t"
                           f"{seq_unique_counts[si]}\t{seq_ambig_counts[si]}\n")
+
+    with open(paths["summary"], "w") as out:
+        for line in summary_count_lines(unit, n_total, n_unique, n_ambig):
+            out.write(line + "\n")
 
     return {
         "unit": unit,

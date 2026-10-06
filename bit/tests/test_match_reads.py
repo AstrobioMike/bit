@@ -528,7 +528,13 @@ def test_match_reads_single_end(tmp_path, seqs, jobs, monkeypatch):
     # rows are sorted by read length, longest first (ties keep input order), regardless of jobs
     assert list(hits) == ["full_p1", "full_p2_rc", "origin_p3", "partial_shared"]
 
-    summary_lines = open(f"{out}/summary.tsv").read().splitlines()
+    assert open(f"{out}/summary.txt").read().splitlines() == [
+        "Total reads:                      6",
+        "Uniquely assigned:                3 (50.00%)",
+        "Ambiguous (multiple refs):        1 (16.67%)",
+    ]
+
+    summary_lines = open(f"{out}/ref-summary.tsv").read().splitlines()
     assert summary_lines[0].split("\t") == ["ref", "source_file", "num_seqs", "total_length",
                                             "unique_reads", "ambiguous_reads"]
     assert summary_lines[1].split("\t") == ["p1", "refs.fa", "1", "600", "1", "1"]
@@ -562,6 +568,11 @@ def test_match_reads_paired_end(tmp_path, seqs):
                            per_seq=True, write_reads=True, jobs=1, show_progress=False)
 
     assert summary["unit"] == "pairs"
+    assert open(f"{out}/summary.txt").read().splitlines() == [
+        "Total pairs:                      4",
+        "Uniquely assigned:                1 (25.00%)",
+        "Ambiguous (multiple refs):        1 (25.00%)",
+    ]
     hits = read_hits_tsv(f"{out}/read-hits.tsv")
     assert set(hits) == {"pair_unique", "pair_ambig"}
     assert hits["pair_unique"][1] == "100,100"
@@ -585,7 +596,7 @@ def test_cli_output_dir_force_and_prefix(tmp_path, seqs):
     result = run_cli(base + ["--write-reads"])
     assert "Uniquely assigned" in result.stdout
     assert sorted(p.name for p in out.iterdir()) == ["command-execution-info.txt", "read-hits.tsv",
-                                                     "reads", "summary.tsv"]
+                                                     "reads", "ref-summary.tsv", "summary.txt"]
     log = (out / "command-execution-info.txt").read_text()
     assert "--write-reads" in log and "--max-edits 0" in log
 
@@ -601,7 +612,7 @@ def test_cli_output_dir_force_and_prefix(tmp_path, seqs):
     # -O prepends to every output name
     run_cli(base + ["-F", "-O", "s1-", "--write-reads"])
     assert sorted(p.name for p in out.iterdir()) == ["s1-command-execution-info.txt", "s1-read-hits.tsv",
-                                                     "s1-reads", "s1-summary.tsv"]
+                                                     "s1-reads", "s1-ref-summary.tsv", "s1-summary.txt"]
 
 
 def test_cli_refuses_to_force_overwrite_current_dir(tmp_path, seqs):
@@ -684,7 +695,7 @@ def test_per_file_assignment(tmp_path, genomes):
     assert hits["A_only"][2:] == ["unique", "1", "A", "0", "NA", "A:chrom"]
     assert hits["B_only"][2:] == ["unique", "1", "B", "0", "NA", "B:chrom"]
 
-    summary_rows = [l.split("\t") for l in open(f"{out}/summary.tsv").read().splitlines()]
+    summary_rows = [l.split("\t") for l in open(f"{out}/ref-summary.tsv").read().splitlines()]
     assert summary_rows[1:] == [["A", "A.fasta", "2", str(len(parts["chrom_A"]) + len(parts["plasmid_A"])), "2", "1"],
                                 ["B", "B.fa.gz", "1", str(len(parts["chrom_B"])), "1", "1"]]
 
@@ -864,7 +875,7 @@ def test_read_hits_sorted_by_length_then_edit_distance(tmp_path, seqs, monkeypat
                  jobs=2, show_progress=False)
     assert list(read_hits_tsv(f"{out}/read-hits.tsv")) == [
         "len500_e1", "len300_e0_a", "len300_e0_b", "len300_e1", "len200_e0"]
-    assert sorted(p.name for p in out.iterdir()) == ["read-hits.tsv", "summary.tsv"]
+    assert sorted(p.name for p in out.iterdir()) == ["read-hits.tsv", "ref-summary.tsv", "summary.txt"]
 
     r1, r2 = tmp_path / "r1.fq", tmp_path / "r2.fq"
     write_fastq(r1, [("short/1", p3[0:100]), ("long/1", p3[0:150])])
