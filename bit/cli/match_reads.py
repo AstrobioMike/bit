@@ -10,16 +10,16 @@ from bit.cli.common import (CustomRichHelpFormatter,
 def build_parser(parent_subparsers=None):
 
     desc = """
-        This program assigns reads to the reference sequences they exactly match (or nearly exactly match,
+        This program assigns reads to reference sequences that they match exactly (or nearly exactly,
         within `--max-edits`). It can be useful for finding the origins of reads from known references
-        where mapping-based approaches might struggle with multi-mapping and low MAPQs that need to be annoyingly parsed.
-        Note the `--per-seq` and `--circular` options. Reads assigned to exactly one input reference are reported
-        as "unique", and reads tied between more than one as "ambiguous".
+        that are highly similar, where mapping-based approaches might struggle with multi-mapping and low MAPQs
+        that need to be annoyingly parsed. Reads matched to exactly one input reference are reported
+        as "unique", and reads tied between more than one as "ambiguous". Note the `--per-seq` and `--circular` options.
         """
 
     if parent_subparsers is not None:
         parser = parent_subparsers.add_parser(
-            "assign-reads",
+            "match-reads",
             description=desc,
             formatter_class=CustomRichHelpFormatter,
             add_help=False,
@@ -27,7 +27,7 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit assign-reads -r ref-1.fasta ref-2.fasta -i reads.fastq.gz --circular`",
+            epilog="Ex. usage: `bit match-reads -r ref-1.fasta ref-2.fasta -i reads.fastq.gz --circular`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )
@@ -64,8 +64,8 @@ def build_parser(parent_subparsers=None):
         "-o",
         "--output-dir",
         metavar="<DIR>",
-        default="assign-reads",
-        help='Directory for output files (default: "assign-reads")',
+        default="match-reads",
+        help='Directory for output files (default: "match-reads")',
     )
 
     optional.add_argument(
@@ -113,7 +113,7 @@ def build_parser(parent_subparsers=None):
     optional.add_argument(
         "--write-reads",
         action="store_true",
-        help=("Write reads uniquely assigned to each reference to <prefix>-reads/ "
+        help=("Write reads uniquely matched to each reference to <prefix>-reads/ "
               "(one file per reference, or an R1/R2 pair of files if paired-end)"),
     )
 
@@ -123,7 +123,7 @@ def build_parser(parent_subparsers=None):
         metavar="<INT>",
         type=int,
         default=5,
-        help="Number of parallel processes for assigning reads (default: 5)",
+        help="Number of parallel processes for matching reads (default: 5)",
     )
 
     add_force(optional)
@@ -155,13 +155,13 @@ def main():
         parser.error("--min-frac-of-seq only applies to single-end input")
 
     from bit.modules.general import check_files_are_found
-    from bit.modules.assign_reads import assign_reads, setup_output_dir
+    from bit.modules.match_reads import match_reads, setup_output_dir
 
     check_files_are_found(args.refs + [args.input_reads] + ([args.input_reads_2] if args.input_reads_2 else []))
     setup_output_dir(args.output_dir, args.output_prefix, args.force_overwrite,
                      reconstruct_invocation(parser, args))
 
-    summary = assign_reads(
+    summary = match_reads(
         ref_paths=args.refs,
         read_1=args.input_reads,
         read_2=args.input_reads_2,

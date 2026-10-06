@@ -14,17 +14,17 @@
 
 -->
 
-## v2.11.0 (NOT YET RELEASED)
+## v2.11.0 (6-Oct-2026)
 
 ### Added
-- `bit assign-reads` for assigning reads to the reference sequences they match exactly, or nearly exactly within a set edit distance (`--max-edits`)
+- `bit match-reads` for assigning reads to reference sequences they match exactly, or nearly exactly within a set edit distance (`--max-edits`)
   - takes reads in fastq or fasta format, gzipped or not
-    - single- or paired-end input; pairs are assigned to the references both mates exactly match or within the set edit distance per read
+    - primarily designed for single- or paired-end input; pairs are assigned to the references both mates exactly match or within the set edit distance per read
   - handles linear or circular (`--circular`) references
   - reports unique vs ambiguous assignments, with optional per-reference read outputs (`--write-reads`)
 
 ### Changed
-- with `-F/--force-overwrite`, programs that replace their output directory (e.g., `assign-reads`, `cov-analyzer`, `gen-mg`) now refuse to delete it if it's the current directory, a directory containing it, or the user's home directory
+- with `-F/--force-overwrite`, programs that replace their output directory (e.g., `match-reads`, `cov-analyzer`, `gen-mg`) now refuse to delete it if it's the current directory, a directory containing it, or the user's home directory
 - `bit summarize-assembly` now has a `-j | --jobs` parameter to run jobs in parallel if there are multiple input assemblies
 
 ---

@@ -1,5 +1,5 @@
 """
-Core logic for `bit assign-reads`.
+Core logic for `bit match-reads`.
 
 By default, each input fasta file is one reference made up of all its sequences.
 With `per_seq=True`, each sequence is its own reference. Reads are matched against
@@ -828,7 +828,7 @@ class ReadWriter:
 
 ### driver ###
 
-def assign_reads(ref_paths, read_1, read_2=None, output_dir="assign-reads", output_prefix="", per_seq=False,
+def match_reads(ref_paths, read_1, read_2=None, output_dir="match-reads", output_prefix="", per_seq=False,
                  circular=False, max_edits=0, min_frac_of_seq=0.0,
                  write_reads=False, jobs=1, show_progress=True):
     """

@@ -2,8 +2,8 @@ import gzip
 import random
 import edlib # type: ignore
 import pytest # type: ignore
-import bit.modules.assign_reads as assign_reads_module
-from bit.modules.assign_reads import (revcomp,
+import bit.modules.match_reads as match_reads_module
+from bit.modules.match_reads import (revcomp,
                                       build_kmer_index,
                                       build_position_index,
                                       get_candidates,
@@ -18,7 +18,7 @@ from bit.modules.assign_reads import (revcomp,
                                       FastxReader,
                                       SortedRowWriter,
                                       plural,
-                                      assign_reads)
+                                      match_reads)
 from bit.tests.utils import run_cli
 
 
@@ -318,7 +318,7 @@ def test_exact_matcher_distances_are_zero(seqs):
     assert matcher.distances(seqs["p1"][0:250]) == {0: 0, 1: 0}
 
 
-def test_assign_reads_with_edits_end_to_end(tmp_path, seqs):
+def test_match_reads_with_edits_end_to_end(tmp_path, seqs):
     refs_fa = tmp_path / "refs.fa"
     write_fasta(refs_fa, seqs.items())
     p1, p3 = seqs["p1"], seqs["p3"]
@@ -332,7 +332,7 @@ def test_assign_reads_with_edits_end_to_end(tmp_path, seqs):
     write_fastq(reads_fq, reads)
 
     out = str(tmp_path / "ed")
-    summary = assign_reads([str(refs_fa)], str(reads_fq), output_dir=out, per_seq=True,
+    summary = match_reads([str(refs_fa)], str(reads_fq), output_dir=out, per_seq=True,
                            max_edits=2, jobs=2, show_progress=False)
     assert (summary["unique"], summary["ambiguous"]) == (2, 1)
 
@@ -343,7 +343,7 @@ def test_assign_reads_with_edits_end_to_end(tmp_path, seqs):
     assert hits["tied"][2:] == ["ambiguous", "2", "p1,p2", "1", "NA"]
 
 
-def test_assign_reads_pairs_ranked_by_combined_edits(tmp_path, seqs):
+def test_match_reads_pairs_ranked_by_combined_edits(tmp_path, seqs):
     refs_fa = tmp_path / "refs.fa"
     write_fasta(refs_fa, seqs.items())
     p1 = seqs["p1"]
@@ -354,7 +354,7 @@ def test_assign_reads_pairs_ranked_by_combined_edits(tmp_path, seqs):
     write_fastq(r2, [(f"{n}/2", b) for n, _, b in pairs])
 
     out = str(tmp_path / "pe-ed")
-    assign_reads([str(refs_fa)], str(r1), read_2=str(r2), output_dir=out, per_seq=True,
+    match_reads([str(refs_fa)], str(r1), read_2=str(r2), output_dir=out, per_seq=True,
                  max_edits=1, jobs=1, show_progress=False)
     hits = read_hits_tsv(f"{out}/read-hits.tsv")
     # p1: 1 + 0 = 1, p2: 1 + 1 = 2
@@ -500,8 +500,8 @@ def read_hits_tsv(path):
 
 
 @pytest.mark.parametrize("jobs", [1, 3])
-def test_assign_reads_single_end(tmp_path, seqs, jobs, monkeypatch):
-    monkeypatch.setattr(assign_reads_module, "BATCH_SIZE", 2)
+def test_match_reads_single_end(tmp_path, seqs, jobs, monkeypatch):
+    monkeypatch.setattr(match_reads_module, "BATCH_SIZE", 2)
     rng = random.Random(7)
     refs_fa = tmp_path / "refs.fa"
     write_fasta(refs_fa, seqs.items())
@@ -510,7 +510,7 @@ def test_assign_reads_single_end(tmp_path, seqs, jobs, monkeypatch):
     write_fastq(reads_fq, reads, gz=True)
 
     out = str(tmp_path / "out")
-    summary = assign_reads([str(refs_fa)], str(reads_fq), output_dir=out, per_seq=True,
+    summary = match_reads([str(refs_fa)], str(reads_fq), output_dir=out, per_seq=True,
                            circular=True, write_reads=True, jobs=jobs, show_progress=False)
 
     assert summary["total"] == len(reads)
@@ -541,7 +541,7 @@ def test_assign_reads_single_end(tmp_path, seqs, jobs, monkeypatch):
     assert written[0] == "@full_p1"
 
 
-def test_assign_reads_paired_end(tmp_path, seqs):
+def test_match_reads_paired_end(tmp_path, seqs):
     refs_fa = tmp_path / "refs.fa"
     write_fasta(refs_fa, seqs.items())
     p1, p2, p3 = seqs["p1"], seqs["p2"], seqs["p3"]
@@ -558,7 +558,7 @@ def test_assign_reads_paired_end(tmp_path, seqs):
     write_fastq(r2, [(f"{n}/2", b) for n, _, b in pairs])
 
     out = str(tmp_path / "pe")
-    summary = assign_reads([str(refs_fa)], str(r1), read_2=str(r2), output_dir=out,
+    summary = match_reads([str(refs_fa)], str(r1), read_2=str(r2), output_dir=out,
                            per_seq=True, write_reads=True, jobs=1, show_progress=False)
 
     assert summary["unit"] == "pairs"
@@ -579,7 +579,7 @@ def test_cli_output_dir_force_and_prefix(tmp_path, seqs):
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, [("r", seqs["p3"][:300])])
     out = tmp_path / "cli"
-    base = ["bit", "assign-reads", "-r", str(refs_fa), "-i", str(reads_fq), "-o", str(out),
+    base = ["bit", "match-reads", "-r", str(refs_fa), "-i", str(reads_fq), "-o", str(out),
             "--per-seq", "-j", "1"]
 
     result = run_cli(base + ["--write-reads"])
@@ -614,7 +614,7 @@ def test_cli_refuses_to_force_overwrite_current_dir(tmp_path, seqs):
     work.mkdir()
     (work / "keep.txt").write_text("x")
 
-    result = subprocess.run(["bit", "assign-reads", "-r", str(refs_fa), "-i", str(reads_fq),
+    result = subprocess.run(["bit", "match-reads", "-r", str(refs_fa), "-i", str(reads_fq),
                              "-o", ".", "-F", "-j", "1"], cwd=work, capture_output=True, text=True)
     assert result.returncode != 0
     assert "Not removing" in result.stdout
@@ -627,7 +627,7 @@ def test_cli_rejects_min_frac_with_pairs(tmp_path, seqs):
     write_fasta(refs_fa, seqs.items())
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, [("r", seqs["p3"][:300])])
-    result = subprocess.run(["bit", "assign-reads", "-r", str(refs_fa), "-i", str(reads_fq),
+    result = subprocess.run(["bit", "match-reads", "-r", str(refs_fa), "-i", str(reads_fq),
                              "-I", str(reads_fq), "--min-frac-of-seq", "0.5"],
                             capture_output=True, text=True)
     assert result.returncode != 0
@@ -673,7 +673,7 @@ def test_per_file_assignment(tmp_path, genomes):
     write_fastq(reads_fq, reads)
 
     out = str(tmp_path / "pf")
-    summary = assign_reads(ref_paths, str(reads_fq), output_dir=out, jobs=1,
+    summary = match_reads(ref_paths, str(reads_fq), output_dir=out, jobs=1,
                            show_progress=False)
     assert (summary["unique"], summary["ambiguous"]) == (3, 1)
 
@@ -703,7 +703,7 @@ def test_per_file_pairs_span_sequences_of_one_ref(tmp_path, genomes):
     write_fastq(r2, [("p/2", revcomp(parts["V1"][0:150]))])   # A's plasmid
 
     out = str(tmp_path / "pf-pe")
-    assign_reads(ref_paths, str(r1), read_2=str(r2), output_dir=out, write_reads=True,
+    match_reads(ref_paths, str(r1), read_2=str(r2), output_dir=out, write_reads=True,
                  jobs=1, show_progress=False)
     hits = read_hits_tsv(f"{out}/read-hits.tsv")
     assert hits["p"][2:] == ["unique", "1", "A", "0", "NA", "A:chrom,A:plasmid"]
@@ -722,7 +722,7 @@ def test_per_file_edit_distance_is_lowest_among_a_refs_seqs(tmp_path, genomes):
     write_fastq(reads_fq, reads)
 
     out = str(tmp_path / "pf-ed")
-    assign_reads(ref_paths, str(reads_fq), output_dir=out, max_edits=1, jobs=1,
+    match_reads(ref_paths, str(reads_fq), output_dir=out, max_edits=1, jobs=1,
                  show_progress=False)
     hits = read_hits_tsv(f"{out}/read-hits.tsv")
     assert hits["repeat_1_edit"][2:] == ["unique", "1", "A", "1", "NA", "A:chrom,A:plasmid"]
@@ -740,7 +740,7 @@ def test_no_seq_summary_when_every_ref_is_one_seq(tmp_path, seqs):
     write_fastq(reads_fq, [("r", seqs["p3"][:300])])
 
     out = str(tmp_path / "single")
-    summary = assign_reads(ref_paths, str(reads_fq), output_dir=out, jobs=1,
+    summary = match_reads(ref_paths, str(reads_fq), output_dir=out, jobs=1,
                            show_progress=False)
     assert not summary["wrote_seq_summary"]
     assert not (tmp_path / "single" / "seq-summary.tsv").exists()
@@ -753,11 +753,11 @@ def test_note_for_single_multi_seq_ref_file(tmp_path, seqs, capsys):
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, [("r", seqs["p3"][:300])])
 
-    assign_reads([str(refs_fa)], str(reads_fq), output_dir=str(tmp_path / "n1"), jobs=1,
+    match_reads([str(refs_fa)], str(reads_fq), output_dir=str(tmp_path / "n1"), jobs=1,
                  show_progress=False)
     assert "--per-seq" in capsys.readouterr().out
 
-    assign_reads([str(refs_fa)], str(reads_fq), output_dir=str(tmp_path / "n2"), per_seq=True,
+    match_reads([str(refs_fa)], str(reads_fq), output_dir=str(tmp_path / "n2"), per_seq=True,
                  jobs=1, show_progress=False)
     assert "--per-seq" not in capsys.readouterr().out
 
@@ -770,7 +770,7 @@ def test_identical_seqs_only_noted_across_refs(tmp_path, seqs, capsys):
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, [("r", p3[:300])])
 
-    assign_reads([str(a), str(b)], str(reads_fq), output_dir=str(tmp_path / "id"), jobs=1,
+    match_reads([str(a), str(b)], str(reads_fq), output_dir=str(tmp_path / "id"), jobs=1,
                  show_progress=False)
     out = " ".join(capsys.readouterr().out.split())
     assert "'a:x' and 'b:y' are identical" in out
@@ -793,14 +793,14 @@ def test_loaded_message_plurals(tmp_path, seqs, capsys):
     one = tmp_path / "plasmids.fa"
     write_fasta(one, seqs.items())
 
-    assign_reads([str(one)], str(reads_fq), output_dir=str(tmp_path / "m1"), max_edits=1,
+    match_reads([str(one)], str(reads_fq), output_dir=str(tmp_path / "m1"), max_edits=1,
                  jobs=1, show_progress=False)
     out = capsys.readouterr().out
     assert "Loaded 1 reference (3 sequences) from 1 file, treated as linear" in out
     assert "Allowing up to 1 edit per read" in out
     assert "Assigning reads with 1 job..." in out
 
-    assign_reads([str(one)], str(reads_fq), output_dir=str(tmp_path / "m2"), per_seq=True,
+    match_reads([str(one)], str(reads_fq), output_dir=str(tmp_path / "m2"), per_seq=True,
                  max_edits=2, jobs=1, show_progress=False)
     out = capsys.readouterr().out
     assert "Loaded 3 references (3 sequences) from 1 file" in out
@@ -846,7 +846,7 @@ def test_sorted_row_writer_empty_and_cleanup(tmp_path):
 
 def test_read_hits_sorted_by_length_then_edit_distance(tmp_path, seqs, monkeypatch):
     """End to end, with spilling forced, pairs sorted by combined length."""
-    monkeypatch.setattr(assign_reads_module, "SORT_BUFFER_ROWS", 2)
+    monkeypatch.setattr(match_reads_module, "SORT_BUFFER_ROWS", 2)
     refs_fa = tmp_path / "refs.fa"
     write_fasta(refs_fa, seqs.items())
     p3 = seqs["p3"]
@@ -860,7 +860,7 @@ def test_read_hits_sorted_by_length_then_edit_distance(tmp_path, seqs, monkeypat
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, reads)
     out = tmp_path / "sorted"
-    assign_reads([str(refs_fa)], str(reads_fq), output_dir=str(out), per_seq=True, max_edits=1,
+    match_reads([str(refs_fa)], str(reads_fq), output_dir=str(out), per_seq=True, max_edits=1,
                  jobs=2, show_progress=False)
     assert list(read_hits_tsv(f"{out}/read-hits.tsv")) == [
         "len500_e1", "len300_e0_a", "len300_e0_b", "len300_e1", "len200_e0"]
@@ -870,7 +870,7 @@ def test_read_hits_sorted_by_length_then_edit_distance(tmp_path, seqs, monkeypat
     write_fastq(r1, [("short/1", p3[0:100]), ("long/1", p3[0:150])])
     write_fastq(r2, [("short/2", revcomp(p3[300:400])), ("long/2", revcomp(p3[300:450]))])
     out = tmp_path / "sorted-pe"
-    assign_reads([str(refs_fa)], str(r1), read_2=str(r2), output_dir=str(out), per_seq=True,
+    match_reads([str(refs_fa)], str(r1), read_2=str(r2), output_dir=str(out), per_seq=True,
                  jobs=1, show_progress=False)
     hits = read_hits_tsv(f"{out}/read-hits.tsv")
     assert list(hits) == ["long", "short"]
