@@ -14,6 +14,13 @@
 
 -->
 
+## v2.11.1 (9-Oct-2026)
+
+### Fixed
+- pinned setuptools to <= 80 for now to work with older snakemakes i need to update
+
+---
+
 ## v2.11.0 (6-Oct-2026)
 
 ### Added

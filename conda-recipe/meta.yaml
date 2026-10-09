@@ -47,6 +47,7 @@ requirements:
     - rich
     - rich-argparse=1.7.1
     - samtools
+    - setuptools<=80
     - scikit-bio
     - snakemake=7.26.0
     - taxonkit>=0.20.0
