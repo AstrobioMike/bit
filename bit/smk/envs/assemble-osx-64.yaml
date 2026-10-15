@@ -4,6 +4,6 @@ channels:
     - bioconda
 dependencies:
     - fastp=1
-    - bbmap=39.52
+    - bbmap<40
     - megahit=1.2.9=h2ed8fcc_1 # this is likely only temporarily needed (https://github.com/bioconda/bioconda-recipes/pull/58191#issuecomment-3160962410)
     - spades=4

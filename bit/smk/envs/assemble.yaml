@@ -4,6 +4,6 @@ channels:
     - bioconda
 dependencies:
     - fastp=1
-    - bbmap=39.52
+    - bbmap<40
     - megahit=1.2.9
     - spades=4
