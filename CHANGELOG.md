@@ -14,7 +14,7 @@
 
 -->
 
-## v2.11.2 (NOT YET RELEASED)
+## v2.11.2 (15-Oct-2026)
 
 ### Fixed
 - pinned bbmap in env used by `bit assemble` to 39.52, as 40.02 was failing when run
