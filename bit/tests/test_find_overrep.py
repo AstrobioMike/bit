@@ -470,3 +470,26 @@ def test_long_reads_skip_the_positional_look(tmp_path, capsys):
         fo.extend_all = orig
     out = capsys.readouterr().out
     assert "pass 3 of 5): skipped, reads are longer than 1,000 bases" in out
+
+
+def test_cli_help_menus():
+    basic = run_cli(["bit", "find-overrep-seqs", "-h"]).stdout
+    detailed = subprocess.run(["bit", "find-overrep-seqs", "-H"], capture_output=True, text=True)
+    assert detailed.returncode == 0
+    detailed = detailed.stderr
+    fine = ["--min-perc", "--min-fold", "--max-diff", "--kmer-size", "--max-len", "--adapters",
+            "--no-builtin-adapter-trim", "--max-reads-for-discovery"]
+    # fine-tuning parameters, and how it works, only in the detailed menu
+    assert not any(f in basic for f in fine) and "How it works" not in basic
+    assert all(f in detailed for f in fine) and "How it works" in detailed
+    assert "Fine-tuning Parameters" in detailed
+
+
+def test_cli_hidden_parameters_still_parse(reads, tmp_path):
+    from bit.cli.find_overrep import build_parser
+    args = build_parser().parse_args(["-i", "x", "-m", "5", "-k", "9", "--no-builtin-adapter-trim", "-M", "0"])
+    assert (args.min_perc, args.kmer_size, args.no_builtin_adapter_trim, args.max_reads_for_discovery) == (5, 9, True, 0)
+    # and logged with the rest of the command
+    out = tmp_path / "cli-hidden"
+    run_cli(["bit", "find-overrep-seqs", "-i", str(reads[0]), "-o", str(out), "-m", "5"])
+    assert "--min-perc 5.0" in (out / "command-execution-info.txt").read_text()

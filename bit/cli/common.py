@@ -32,6 +32,23 @@ class CustomRichHelpFormatter(RichHelpFormatter):
         super().start_section(heading)
     group_name_formatter = lambda name: "Usage" if name.lower() == "usage" else name
 
+class ParagraphRichHelpFormatter(CustomRichHelpFormatter):
+    """
+    As CustomRichHelpFormatter, but keeps paragraph breaks (blank lines) in the description,
+    still wrapping each paragraph to the terminal width (find-overrep-seqs's detailed help uses it)
+    """
+
+    def _rich_fill_text(self, text, width, indent):
+        import rich.text as r # type: ignore
+        paragraphs = [p for p in text.split("\n\n") if p.plain.strip()]
+        filled = []
+        for p in paragraphs:
+            t = super()._rich_fill_text(p, width, indent)
+            t.rstrip()   # (in place)
+            filled.append(t)
+        return r.Text("\n\n").join(filled) + "\n\n"
+
+
 def add_help(group):
     group.add_argument(
         "-h",
