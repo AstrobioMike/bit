@@ -14,6 +14,24 @@
 
 -->
 
+## v2.12.0 (NOT YET RELEASED)
+
+### Added
+- `bit find-overrep-seqs` for finding and counting overrepresented sequences in reads without knowing them ahead of time, and can allow for error/variation
+  - takes single- or paired-end short reads (<= ~300 bp) in fastq or fasta format, gzipped or not
+  - finds the sequences from the first 10 million reads of each file by default (`-M/--max-reads-for-discovery`; 0 for all), then counts them across all reads
+  - finds overrepresented k-mers (default k=11) relative to the reads' own composition (over `--min-fold`) and relative abundance (with `--min-frac`), plus rarer ones that sit at a consistent place in reads (down to a tenth of `--min-frac`), and extends them into full sequences
+  - trims adapters before searching for overrepresented sequences, with built-in Illumina adapters, any given with `--adapters`, and, for paired reads, any inferred ones based on overlap
+  - counts each found sequence in reads within `--max-diff` edits per base, per read file and per pair, with where they start in reads, how often they're reverse complemented, and which found sequences hold others
+  - multi-threaded with `-j/--jobs`
+  - flags low-complexity sequences the same way `cov-analyzer` does
+- bit now has a compiled part (`rust/`, built with maturin as `bit._native`)
+
+### Changed
+- the build backend is now maturin, due to some Rust integration
+
+---
+
 ## v2.11.2 (15-Oct-2026)
 
 ### Fixed

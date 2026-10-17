@@ -10,6 +10,8 @@ fi
 
 rm -rf build/ bit.egg-info/
 
+# builds the compiled part (rust/, as bit._native) and installs in editable mode;
+# rerun after changing anything in rust/ (needs rust, maturin and cxx-compiler in the env)
 pip install --no-build-isolation -e .
 
 if command -v register-python-argcomplete >/dev/null 2>&1; then
@@ -18,4 +20,4 @@ fi
 
 ## if changing conda versions and wanting to install locally entirely (rather than using a prior official conda install of bit)
 # conda build -c conda-forge -c bioconda conda-recipe/
-# conda create -n bit-dev -c conda-forge -c bioconda --use-local bit
+# conda create -n bit-dev -c conda-forge -c bioconda --use-local bit rust maturin cxx-compiler

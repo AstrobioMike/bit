@@ -1,0 +1,7 @@
+# wherever i have a -F option to force-overwrite the output dir, i should put in a guard
+    # that checks it is a typical output dir for that command (otherwise folks might point
+    # to a directory of anything, and the program would clear it IF they passed the -F | --force-overwrite
+    # by accident)
+        # i could make the shared helper for this take a required marker-file, like each programs log
+
+# change --min-frac to --min-perc in find-overrep-seqs

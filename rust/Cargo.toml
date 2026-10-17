@@ -1,0 +1,25 @@
+[package]
+name = "bit-native"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-only"
+publish = false
+
+[lib]
+name = "_native"
+crate-type = ["cdylib"]
+
+[dependencies]
+flate2 = { version = "1", default-features = false, features = ["zlib-rs"] }
+memchr = "2"
+numpy = "0.29"
+pyo3 = "0.29"
+rayon = "1"
+rustc-hash = "2"
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[build-dependencies]
+cc = "1.8.0"

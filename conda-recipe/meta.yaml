@@ -11,11 +11,16 @@ build:
   number: 0
 
 requirements:
+  build:
+    - "{{ compiler('rust') }}"
+    - "{{ compiler('c') }}"
+    - "{{ compiler('cxx') }}"   # for the vendored edlib (rust/vendor/edlib)
+    - cargo-bundle-licenses
+
   host:
     - python=3.12
     - pip
-    - setuptools>=61.0
-    - wheel
+    - maturin >=1.5,<2
 
   run:
     - argcomplete=3.6
@@ -56,10 +61,16 @@ requirements:
     - zip
 
 test:
+  imports:
+    - bit._native
   commands:
-    bit -v
+    - bit -v
 
 about:
   home: https://github.com/AstrobioMike/bit
   license: GPL3
+  license_file:
+    - LICENSE
+    - THIRDPARTY.yml
+    - rust/vendor/edlib/LICENSE
   summary: A set of bioinformatics tools and workflows I use regularly enough to want to have accessible from anywhere.

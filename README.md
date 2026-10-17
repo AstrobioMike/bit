@@ -90,6 +90,7 @@ You can see an overview of available programs like below by running `bit` by its
 | Program | Purpose |
 | ------- | ------- |
 | `bit aa-diff` | compare a query sequence to an amino-acid reference and report differences |
+| `bit find-overrep-seqs` | find and count overrepresented sequences in short reads (e.g., primers) without knowing them ahead of time, allowing for errors |
 | `bit match-reads` | assign reads to reference sequences they match exactly (or nearly exactly within a set edit distance) |
 
 ##### Program: `bit ez-screen`

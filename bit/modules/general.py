@@ -551,3 +551,17 @@ def write_accessions(out_path, accessions):
             f.write(str(acc) + "\n")
 
     atomic_write_text(out_path, _write)
+
+
+def linguistic_complexity(seq, k=3):
+    """
+    we get the ratio of observed unique k-mers to the max possible unique k-mers in the seq
+    (used to flag low-complexity sequences, e.g., by cov-analyzer and find-overrep-seqs)
+    """
+    seq = seq.upper()
+    n = len(seq)
+    if n < k:
+        return 0.0
+    observed = len({seq[i:i + k] for i in range(n - k + 1)})
+    max_possible = min(n - k + 1, 4 ** k)
+    return observed / max_possible

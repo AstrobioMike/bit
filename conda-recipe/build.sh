@@ -21,8 +21,11 @@ echo 'export TAXONKIT_DB=${CONDA_PREFIX}/share/bit/ncbi-tax-info/' >> ${PREFIX}/
 echo 'export GO_DB_DIR=${CONDA_PREFIX}/share/bit/go-dbs/' >> ${PREFIX}/etc/conda/activate.d/bit.sh
 echo 'export NCBI_assembly_data_dir=${CONDA_PREFIX}/share/bit/ncbi-assembly-summaries/' >> ${PREFIX}/etc/conda/activate.d/bit.sh
 
-# running pip install of bit
-"${PYTHON}" -m pip install . --no-deps --ignore-installed -vv
+# licenses of the compiled part's Rust dependencies (listed in meta.yaml's license_file)
+(cd rust && cargo-bundle-licenses --format yaml --output ../THIRDPARTY.yml)
+
+# running pip install of bit (maturin builds the compiled part, rust/, as bit._native)
+"${PYTHON}" -m pip install . --no-deps --no-build-isolation --ignore-installed -vv
 
 # copying over the bit-subcommands-tab-completion.sh script
 mkdir -p ${PREFIX}/etc/conda/activate.d/

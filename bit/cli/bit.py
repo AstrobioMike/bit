@@ -16,7 +16,8 @@ SUBCOMMAND_MAP = {
     "cov-stats":           "bit.cli.cov_stats",
     "mapped-read-stats":   "bit.cli.mapped_read_stats",
     "aa-diff":             "bit.cli.aa_diff",
-    "match-reads":        "bit.cli.match_reads",
+    "match-reads":         "bit.cli.match_reads",
+    "find-overrep-seqs":        "bit.cli.find_overrep",
     "ez-screen":           "bit.cli.ez_screen",
     "fasta":               "bit.cli.fasta",
     "assemble":            "bit.cli.assemble",
@@ -95,6 +96,10 @@ PROGRAM_GROUPS = [
             {
                 "name": "aa-diff",
                 "desc": "compare a query sequence to an amino-acid reference and report differences",
+            },
+            {
+                "name": "find-overrep-seqs",
+                "desc": "find and count overrepresented sequences in reads",
             },
             {
                 "name": "match-reads",

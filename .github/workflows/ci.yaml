@@ -42,8 +42,10 @@ jobs:
 
     - name: Install package
       run: |
-        conda run -n bit conda install bit -y
-        conda run -n bit pip install -e . # the editable pip install is so test coverages make sense
+        conda run -n bit conda install bit rust maturin cxx-compiler -y
+        # the editable install (which rebuilds the compiled part, hence rust and maturin) is so
+        # test coverages make sense
+        conda run -n bit pip install --no-build-isolation -e .
 
     - name: Print installed bit version
       run: conda run -n bit bit -v

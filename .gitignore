@@ -5,3 +5,6 @@ build/
 __pycache__/
 htmlcov/
 .coverage*
+rust/target/
+THIRDPARTY.yml
+*.so

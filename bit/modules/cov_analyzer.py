@@ -18,6 +18,7 @@ from bit.modules.general import (check_if_output_dir_exists,
                                  report_message,
                                  report_failure,
                                  log_command_run,
+                                 linguistic_complexity,
                                  tee, spinner)
 
 init(autoreset=True)
@@ -428,19 +429,6 @@ def filter_nonATGCs_from_low_merged_regions(reference_fasta, low_merged_regions)
     low_merged_regions = low_merged_regions.loc[regions_to_keep].reset_index(drop=True)
 
     return low_merged_regions
-
-
-def linguistic_complexity(seq, k=3):
-    """
-    we get the ratio of observed unique k-mers to the max possible unique k-mers in the seq
-    """
-    seq = seq.upper()
-    n = len(seq)
-    if n < k:
-        return 0.0
-    observed = len({seq[i:i + k] for i in range(n - k + 1)})
-    max_possible = min(n - k + 1, 4 ** k)
-    return observed / max_possible
 
 
 # def filter_low_complexity_regions(reference_fasta, merged_regions, min_complexity=0.3, k=3):
