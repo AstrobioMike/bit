@@ -4,4 +4,3 @@
     # by accident)
         # i could make the shared helper for this take a required marker-file, like each programs log
 
-# change --min-frac to --min-perc in find-overrep-seqs

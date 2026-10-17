@@ -19,10 +19,10 @@ prep puts them in reads in either orientation, and counts are reported per read 
 
   2. Candidates. K-mers are counted again in the trimmed reads, along with the 2-mers and
      3-mers of an order-2 Markov model of the reads' own composition, as the background. A
-     k-mer is a candidate if it's in at least `min_frac` of reads and `min_fold` times its
+     k-mer is a candidate if it's in at least `min_perc` percent of reads and `min_fold` times its
      expected count, or in at least 1% of reads whatever its expected count (the model can
      expect a lot of what it predicts well, like a dominant low-complexity repeat). Things like primers often sit at one place in reads, where the
-     background is far lower, so k-mers down to a tenth of `min_frac` get a second look by
+     background is far lower, so k-mers down to a tenth of `min_perc` get a second look by
      position, and are candidates if at least a quarter of their occurrences start at one
      place, `min_fold` above expectation there. Ordinary sequence, even from a genome
      sequenced deeply, is spread across positions. Rare one-off error variants of abundant
@@ -66,7 +66,7 @@ from bit.modules.general import (check_if_output_dir_exists,
 
 
 DEFAULT_K = 11
-DEFAULT_MIN_FRAC = 0.001
+DEFAULT_MIN_PERC = 0.1      # percent of reads
 DEFAULT_MIN_FOLD = 10
 DEFAULT_MAX_DIFF = 0.1
 DEFAULT_MAX_LEN = 300
@@ -759,13 +759,14 @@ def load_adapters(path=None, use_builtin=True):
     return adapters
 
 
-def find_overrep(read_paths, k=DEFAULT_K, min_frac=DEFAULT_MIN_FRAC, min_fold=DEFAULT_MIN_FOLD,
+def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DEFAULT_MIN_FOLD,
                  max_diff=DEFAULT_MAX_DIFF, max_len=DEFAULT_MAX_LEN, adapters=None, jobs=None,
                  max_reads_for_discovery=DEFAULT_MAX_READS_FOR_DISCOVERY, verbose=False):
     """
     Finds and counts overrepresented sequences in reads (see module notes). Returns a dict
     with the found sequences, the adapters used (built-in, given and inferred), and the
-    tallies. `jobs` sets the threads used (once per process; all cores if never set). Only the
+    tallies. `min_perc` is the percent of reads a sequence must be in (as a fraction, `min_frac`,
+    everywhere below). `jobs` sets the threads used (once per process; all cores if never set). Only the
     first `max_reads_for_discovery` reads of each file (0: all) are used to find the sequences;
     counting them (the last pass) always uses all reads. With
     `verbose`, each pass over the reads shows a progress bar, and what was found along the way
@@ -773,6 +774,7 @@ def find_overrep(read_paths, k=DEFAULT_K, min_frac=DEFAULT_MIN_FRAC, min_fold=DE
     with the read files (not fasta/fastq, a record cut short, pairs out of step) raise
     ValueError, and ones reading them OSError.
     """
+    min_frac = min_perc / 100
     if jobs:
         native.set_threads(jobs)
     adapters = dict(BUILTIN_ADAPTERS) if adapters is None else dict(adapters)

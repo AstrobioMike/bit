@@ -1,0 +1,107 @@
+name: conda-release
+
+# Builds the conda package on each platform and uploads it to the astrobiomike anaconda channel
+#
+# Runs when a GitHub release is published (the release tag, e.g. v2.12.0, has to match the version
+# in pyproject.toml), or by hand from the Actions tab ("Run workflow"), which asks for the version to
+# confirm it (so it can't upload the wrong one by accident), and can overwrite what's already there
+#
+# bit has a compiled part (rust/, as bit._native), so each platform's package has to be built on that
+# platform; `conda convert` can't make one from the other
+#
+# needs a repo secret ANACONDA_API_TOKEN: an anaconda.org API token with upload permission
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to build and upload (has to match pyproject.toml, e.g. 2.12.0)"
+        required: true
+        type: string
+      force:
+        description: "Overwrite the package on anaconda if this version is already there"
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: conda-release
+  cancel-in-progress: false
+
+jobs:
+  build-and-upload:
+
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-latest", "macos-15-intel"]
+    runs-on: ${{ matrix.os }}
+
+    defaults:
+      run:
+        shell: bash -el {0}
+
+    steps:
+    - uses: actions/checkout@v5
+
+    - name: Check the version matches pyproject.toml
+      env:
+        RELEASE_TAG: ${{ github.event.release.tag_name }}
+        INPUT_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        version=$(grep -w "^version" pyproject.toml | cut -f 2 -d '=' | tr -d '" ')
+        if [ "${GITHUB_EVENT_NAME}" == "release" ]; then
+            wanted="${RELEASE_TAG#v}"
+            from="release tag '${RELEASE_TAG}'"
+        else
+            wanted="${INPUT_VERSION#v}"
+            from="the version entered ('${INPUT_VERSION}')"
+        fi
+        if [ "${wanted}" != "${version}" ]; then
+            echo "::error::${from} doesn't match the version in pyproject.toml (${version}), so not uploading"
+            exit 1
+        fi
+        echo "Building and uploading bit v${version}"
+
+    - name: Set up miniconda
+      uses: conda-incubator/setup-miniconda@v4
+      with:
+        architecture: "x86_64"
+        channels: conda-forge,bioconda
+        channel-priority: strict
+        conda-remove-defaults: true
+        auto-update-conda: true
+
+    - name: Build conda package
+      run: |
+        conda install -n base conda-build anaconda-client -y
+        conda build conda-recipe --output-folder build_artifacts
+        echo "PACKAGE=$(conda build conda-recipe --output-folder build_artifacts --output)" >> "${GITHUB_ENV}"
+
+    - name: Check the package installs and works
+      run: |
+        conda create -n bit-check -y -c "file://${PWD}/build_artifacts" -c conda-forge -c bioconda bit
+        conda activate bit-check
+        bit -v
+        python -c "import bit._native"
+
+    - name: Upload to anaconda
+      env:
+        ANACONDA_API_TOKEN: ${{ secrets.ANACONDA_API_TOKEN }}
+        FORCE: ${{ inputs.force }}
+      run: |
+        set -euo pipefail
+        if [ -z "${ANACONDA_API_TOKEN}" ]; then
+            echo "::error::The ANACONDA_API_TOKEN repo secret isn't set"
+            exit 1
+        fi
+        extra=""
+        if [ "${FORCE:-false}" == "true" ]; then
+            extra="--force"
+        fi
+        anaconda upload --user astrobiomike ${extra} "${PACKAGE}"

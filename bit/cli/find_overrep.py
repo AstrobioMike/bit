@@ -6,7 +6,7 @@ from bit.cli.common import (CustomRichHelpFormatter,
                             add_version_arg,
                             reconstruct_invocation)
 from bit.modules.find_overrep import (DEFAULT_K,
-                                      DEFAULT_MIN_FRAC,
+                                      DEFAULT_MIN_PERC,
                                       DEFAULT_MIN_FOLD,
                                       DEFAULT_MAX_DIFF,
                                       DEFAULT_MAX_LEN,
@@ -17,13 +17,8 @@ def build_parser(parent_subparsers=None):
 
     desc = """
         This program finds and counts overrepresented sequences in reads without needing to know
-        what they are ahead of time (e.g., primers in a short run of an unamplified library), allowing
-        for sequencing errors. Overrepresented k-mers are found relative to the reads' own composition,
-        extended into full sequences, trimmed of adapter read-through (known Illumina adapters, any
-        given with `--adapters`, and, for paired reads, any found), and then counted in the reads, with
-        where they start in reads. Things at a consistent place in reads (like primers at read starts)
-        are found down to a tenth of `--min-frac`. Intended for short reads (<= ~300 bp); not currently
-        suitable for long reads.
+        what they are ahead of time, allowing for variation or errors. It's designed 
+        for short reads (<= ~300 bp), and currently probably not suitable for long reads.
         """
 
     if parent_subparsers is not None:
@@ -78,12 +73,12 @@ def build_parser(parent_subparsers=None):
 
     optional.add_argument(
         "-m",
-        "--min-frac",
+        "--min-perc",
         metavar="<FLOAT>",
         type=float,
-        default=DEFAULT_MIN_FRAC,
-        help=(f"Minimum fraction of reads a sequence must be in to be reported (default: {DEFAULT_MIN_FRAC}, "
-              "i.e., 0.1%%; those at a consistent place in reads are reported down to a tenth of this)"),
+        default=DEFAULT_MIN_PERC,
+        help=(f"Minimum percent of reads a sequence must be in to be reported (default: {DEFAULT_MIN_PERC}; "
+              "those at a consistent place in reads are reported down to a tenth of this)"),
     )
 
     optional.add_argument(
@@ -175,8 +170,8 @@ def main():
 
     args = parser.parse_args()
 
-    if not 0 < args.min_frac <= 1:
-        parser.error("--min-frac must be greater than 0 and at most 1")
+    if not 0 < args.min_perc <= 100:
+        parser.error("--min-perc must be greater than 0 and at most 100")
     if args.min_fold < 1:
         parser.error("--min-fold must be 1 or greater")
     if not 0 <= args.max_diff < 0.5:
@@ -223,7 +218,7 @@ def run(args, read_paths):
     return find_overrep(
         read_paths,
         k=args.kmer_size,
-        min_frac=args.min_frac,
+        min_perc=args.min_perc,
         min_fold=args.min_fold,
         max_diff=args.max_diff,
         max_len=args.max_len,

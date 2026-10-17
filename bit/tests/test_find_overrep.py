@@ -321,7 +321,8 @@ def test_cli(reads, tmp_path):
 
 @pytest.mark.parametrize("bad, message", [
     (["-k", "13"], "--kmer-size"),
-    (["--min-frac", "0"], "--min-frac"),
+    (["--min-perc", "0"], "--min-perc"),
+    (["--min-perc", "101"], "--min-perc"),
     (["--max-diff", "0.6"], "--max-diff"),
     (["--min-fold", "0.5"], "--min-fold"),
 ])
@@ -333,13 +334,13 @@ def test_cli_rejects_bad_values(reads, tmp_path, bad, message):
 
 
 def test_find_overrep_by_position(reads):
-    # with --min-frac above the dimer's ~2% of reads, it's still found, since it always
-    # starts reads (down to a tenth of min_frac)
-    result = find_overrep([str(p) for p in reads], min_frac=0.05)
+    # with --min-perc above the dimer's ~2% of reads, it's still found, since it always
+    # starts reads (down to a tenth of min_perc)
+    result = find_overrep([str(p) for p in reads], min_perc=5)
     how = {result["found"][i]["insert"]: result["found"][i]["how"] for i in result["order"]}
     assert how == {canon(P1): "overall", canon(P2): "overall", canon(DIMER): "position"}
     # but not below a tenth of it: at 0.3, P2 (~17% of reads) is found by position, the dimer isn't
-    result = find_overrep([str(p) for p in reads], min_frac=0.3)
+    result = find_overrep([str(p) for p in reads], min_perc=30)
     how = {result["found"][i]["insert"]: result["found"][i]["how"] for i in result["order"]}
     assert how == {canon(P1): "overall", canon(P2): "position"}
 
