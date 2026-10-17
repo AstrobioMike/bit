@@ -85,8 +85,6 @@ jobs:
         conda create -n bit-check -y -c "file://${PWD}/build_artifacts" -c conda-forge -c bioconda bit
         conda activate bit-check
         bit -v
-        # -I (isolated): otherwise python looks in the current directory first, which here is the
-        # repo checkout, and would find its bit/ (with no compiled module) instead of the installed one
         python -I -c "import bit._native"
 
     - name: Upload to anaconda
@@ -103,4 +101,5 @@ jobs:
         if [ "${FORCE:-false}" == "true" ]; then
             extra="--force"
         fi
+        conda activate base
         anaconda upload --user astrobiomike ${extra} "${PACKAGE}"
