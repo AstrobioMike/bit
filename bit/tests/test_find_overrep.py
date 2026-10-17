@@ -310,7 +310,7 @@ def test_cli(reads, tmp_path):
     base = ["bit", "find-overrep-seqs", "-i", str(reads[0]), "-I", str(reads[1]), "-o", str(out)]
     result = run_cli(base)
     assert "Overrepresented sequences found:" in result.stdout
-    assert sorted(p.name for p in out.iterdir()) == ["adapters.tsv", "command-execution-info.txt",
+    assert sorted(p.name for p in out.iterdir()) == ["command-execution-info.txt", "identified-adapters.tsv",
                                                      "overrep-seqs.fasta", "overrep-seqs.tsv",
                                                      "start-positions.tsv", "summary.txt"]
     # an existing output dir stops the run without -F
@@ -469,7 +469,7 @@ def test_long_reads_skip_the_positional_look(tmp_path, capsys):
     finally:
         fo.extend_all = orig
     out = capsys.readouterr().out
-    assert "pass 3 of 5): skipped, reads are longer than 1,000 bases" in out
+    assert "skipped, reads are longer than 1,000 bases" in out
 
 
 def test_cli_help_menus():
@@ -480,8 +480,8 @@ def test_cli_help_menus():
     fine = ["--min-perc", "--min-fold", "--max-diff", "--kmer-size", "--max-len", "--adapters",
             "--no-builtin-adapter-trim", "--max-reads-for-discovery"]
     # fine-tuning parameters, and how it works, only in the detailed menu
-    assert not any(f in basic for f in fine) and "How it works" not in basic
-    assert all(f in detailed for f in fine) and "How it works" in detailed
+    assert not any(f in basic for f in fine) and "HOW IT WORKS" not in basic
+    assert all(f in detailed for f in fine) and "HOW IT WORKS" in detailed
     assert "Fine-tuning Parameters" in detailed
 
 

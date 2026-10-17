@@ -249,11 +249,11 @@ def main():
 
     print()
     for line in summary_lines(result):
-        print(f"    {line}")
-    print()
-    print(f"    Overrepresented sequences written to: '{paths['seqs']}' (and '{paths['fasta']}')")
-    print(f"    Where they start in reads written to: '{paths['starts']}'")
-    print(f"    Adapter read-through counts written to: '{paths['adapters']}'")
+        print(f"    {line}".rstrip())
+    print("\n")
+    print("    Overrepresented sequences written to:")
+    print(f"      {paths['seqs']}")
+    print(f"      {paths['fasta']}")
     print()
 
 

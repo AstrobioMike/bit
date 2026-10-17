@@ -14,7 +14,7 @@
 
 -->
 
-## v2.12.0 (NOT YET RELEASED)
+## v2.12.0 (17-Oct-2026)
 
 ### Added
 - `bit find-overrep-seqs` for finding and counting overrepresented sequences in reads, while allowing for error/variation

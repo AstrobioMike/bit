@@ -202,14 +202,18 @@ def with_progress_bar(read_paths):
         thread = threading.Thread(target=work, daemon=True)
         thread.start()
         with tqdm(total=total, unit="B", unit_scale=True, unit_divisor=1024, ncols=80, file=sys.stdout,
-                  bar_format="    {l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}{postfix}]") as bar:
+                  bar_format="      {l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}{postfix}]") as bar:
             while thread.is_alive():
                 thread.join(0.2)
                 bar.update(min(prog.bytes, total) - bar.n)
                 bar.set_postfix_str(f"{prog.reads:,} reads", refresh=False)
             if error[0] is None:
-                # (a pass can stop early once it has what it needs)
+                # (a pass can stop early once it has what it needs; and one quicker than a
+                # refresh would otherwise end without its read count)
+                bar.set_postfix_str(f"{prog.reads:,} reads", refresh=False)
                 bar.update(total - bar.n)
+                bar.refresh()
+        print()
         if error[0] is not None:
             raise error[0]
         return result[0]
@@ -794,7 +798,7 @@ def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DE
         inferred = infer_adapters(seeds, raw.by_mate, k, rc_all, adapters)
     all_adapters = dict(adapters, **inferred)
     if inferred:
-        say(f"\n    Inferred {len(inferred)} adapter(s) not among those given (see adapters.tsv)")
+        say(f"      Inferred {len(inferred)} adapter(s) not among those given (see identified-adapters.tsv)\n")
 
     # then counting again with adapter read-through trimmed off
     counts = KmerCounts(read_paths, k, all_adapters, run=run,
@@ -814,13 +818,13 @@ def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DE
     candidates, both = find_candidates(counts, min_frac, min_fold, None if long_reads else positions,
                                        error_ref=raw_both)
     if long_reads:
-        say(f"\n    Checking where candidate overrepresented k-mers start in reads (pass 3 of 5): skipped, "
-            f"reads are longer than {MAX_READ_LEN_FOR_POSITIONS:,} bases")
+        say(f"\n    Checking where candidate overrepresented k-mers start in reads (pass 3 of 5)...\n\n"
+            f"      skipped, reads are longer than {MAX_READ_LEN_FOR_POSITIONS:,} bases\n")
     elif not looked_by_position:
-        say("\n    Checking where candidate overrepresented k-mers start in reads (pass 3 of 5): nothing to check")
+        say("\n    Checking where candidate overrepresented k-mers start in reads (pass 3 of 5)...\n\n"
+            "      nothing to check\n")
     del raw, counts
-    by_position = sum(1 for _, h in candidates if h == "position")
-    say(f"\n    {len(candidates):,} candidate k-mers identified ({by_position:,} by position)")
+    say(f"      {len(candidates):,} candidate seed k-mers identified\n")
 
     extended = refine_ends(extend_all(candidates, both, rc_all, k, max_len), read_paths, all_adapters, k,
                            max_len, run=run, desc="Extending candidates using the reads that hold them (pass 4 of 5)...",
@@ -828,11 +832,11 @@ def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DE
 
     inserts = []
     for f in extended:
-        left, right, flanks = adapter_cuts(f["consensus"], all_adapters)
+        left, right, _ = adapter_cuts(f["consensus"], all_adapters)
         insert = f["consensus"][left:right]
         if len(insert) < max(MIN_INSERT_LEN, k):
             continue
-        f.update(insert=insert, flanks=flanks)
+        f.update(insert=insert)
         inserts.append(f)
     kept = collapse(inserts, max_diff, all_adapters)
     # a consistent orientation to report: whichever strand sorts first
@@ -890,7 +894,7 @@ def output_paths(output_dir, output_prefix=""):
         "seqs": str(out / f"{output_prefix}overrep-seqs.tsv"),
         "fasta": str(out / f"{output_prefix}overrep-seqs.fasta"),
         "starts": str(out / f"{output_prefix}start-positions.tsv"),
-        "adapters": str(out / f"{output_prefix}adapters.tsv"),
+        "adapters": str(out / f"{output_prefix}identified-adapters.tsv"),
         "summary": str(out / f"{output_prefix}summary.txt"),
         "log": str(out / f"{output_prefix}command-execution-info.txt"),
     }
@@ -902,26 +906,26 @@ def setup_output_dir(output_dir, output_prefix, force_overwrite, full_cmd_execut
     log_command_run(full_cmd_executed, output_dir, output_paths(output_dir, output_prefix)["log"])
 
 
-def _pct(n, d):
-    return f"{100 * n / d:.3f}" if d else "NA"
+def _pct(n, d, places=3):
+    return f"{100 * n / d:.{places}f}" if d else "NA"
 
 
 def summary_lines(result):
-    lines = []
+    """the summary, as printed (indented) and written to summary.txt; blank lines between blocks"""
+    lines = [f"{'Overrepresented sequences found:':<44}{len(result['order']):,}"]
     for lab, t in result["tallies"].items():
         name = "Reads" if lab == "reads" else f"{lab} reads"
-        lines.append(f"{name + ':':<44}{t['reads']:,}")
-        lines.append(f"{'  holding a found sequence:':<44}{t['explained']:,} ({_pct(t['explained'], t['reads'])}%)")
-        lines.append(f"{'  adapter read-through:':<44}{sum(t['adapters'].values()):,} "
-                     f"({_pct(sum(t['adapters'].values()), t['reads'])}%)")
-        lines.append(f"{'  adapter-only (no insert):':<44}{t['adapter_only']:,} ({_pct(t['adapter_only'], t['reads'])}%)")
+        lines += ["",
+                  f"{name + ':':<44}{t['reads']:,}",
+                  f"{'  holding a found sequence:':<44}{t['explained']:,} ({_pct(t['explained'], t['reads'], 2)}%)"]
     p = result["pairs"]
     if p:
-        lines.append(f"{'Read pairs:':<44}{p['pairs']:,}")
-        lines.append(f"{'  either read holding a found sequence:':<44}{p['explained']:,} ({_pct(p['explained'], p['pairs'])}%)")
-        lines.append(f"{'  both reads holding a found sequence:':<44}{p['explained_both']:,} "
-                     f"({_pct(p['explained_both'], p['pairs'])}%)")
-    lines.append(f"{'Overrepresented sequences found:':<44}{len(result['order']):,}")
+        lines += ["",
+                  f"{'Read pairs:':<44}{p['pairs']:,}",
+                  f"{'  either read holding a found sequence:':<44}{p['explained']:,} "
+                  f"({_pct(p['explained'], p['pairs'], 2)}%)",
+                  f"{'  both reads holding a found sequence:':<44}{p['explained_both']:,} "
+                  f"({_pct(p['explained_both'], p['pairs'], 2)}%)"]
     return lines
 
 
@@ -937,7 +941,7 @@ def write_outputs(result, output_dir, output_prefix=""):
                    f"{pre}mean_edits", f"{pre}top_start", f"{pre}pct_at_top_start"]
     if pairs:
         header += ["either_read", "either_read_pct", "both_reads", "both_reads_pct"]
-    header += ["low_complexity", "trimmed_flanks", "contains", "found_by"]
+    header += ["low_complexity", "contains", "found_by"]
 
     with open(paths["seqs"], "w") as out, open(paths["fasta"], "w") as fa:
         out.write("\t".join(header) + "\n")
@@ -957,7 +961,6 @@ def write_outputs(result, output_dir, output_prefix=""):
                 row += [str(pairs["pairs_with"][i]), _pct(pairs["pairs_with"][i], pairs["pairs"]),
                         str(pairs["pairs_both"][i]), _pct(pairs["pairs_both"][i], pairs["pairs"])]
             row += ["yes" if f["low_complexity"] else "no",
-                    ",".join(f["flanks"]) or "none",
                     ",".join(g["id"] for g in f["contains"] if g["id"]) or "none",
                     f["how"]]
             out.write("\t".join(row) + "\n")
@@ -985,7 +988,14 @@ def write_outputs(result, output_dir, output_prefix=""):
                 source = "either (same start, read ends too soon to tell)"
             else:
                 source = "given"
-            seq = result["adapters"].get(name, "G" * POLY_G_RUN + "..." if name == "poly-G" else "")
+            if name == "poly-G":
+                seq = "G" * POLY_G_RUN + "..."
+            elif "|" in name:
+                # the start the adapters share (all a read ending in it can show)
+                seqs = [result["adapters"][n] for n in name.split("|") if n in result["adapters"]]
+                seq = os.path.commonprefix(seqs) + "..." if seqs else "NA"
+            else:
+                seq = result["adapters"].get(name, "NA")
             row = [name, source, seq]
             for lab in labels:
                 n = tallies[lab]["adapters"][name]
