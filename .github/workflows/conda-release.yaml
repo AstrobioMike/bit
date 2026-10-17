@@ -6,9 +6,6 @@ name: conda-release
 # in pyproject.toml), or by hand from the Actions tab ("Run workflow"), which asks for the version to
 # confirm it (so it can't upload the wrong one by accident), and can overwrite what's already there
 #
-# bit has a compiled part (rust/, as bit._native), so each platform's package has to be built on that
-# platform; `conda convert` can't make one from the other
-#
 # needs a repo secret ANACONDA_API_TOKEN: an anaconda.org API token with upload permission
 
 on:
@@ -88,7 +85,9 @@ jobs:
         conda create -n bit-check -y -c "file://${PWD}/build_artifacts" -c conda-forge -c bioconda bit
         conda activate bit-check
         bit -v
-        python -c "import bit._native"
+        # -I (isolated): otherwise python looks in the current directory first, which here is the
+        # repo checkout, and would find its bit/ (with no compiled module) instead of the installed one
+        python -I -c "import bit._native"
 
     - name: Upload to anaconda
       env:
