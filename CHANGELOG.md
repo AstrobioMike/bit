@@ -23,7 +23,7 @@
 
 ### Changed
 - the build backend is now maturin, due to some Rust integration
-- conda packages are now built and uploaded by a GitHub Actions workflow when a release is published (`.github/workflows/conda-release.yaml`), building each platform natively since the compiled part means `conda convert` can no longer be used
+- conda packages are now built and uploaded by a GitHub Actions workflow when a release is published (`.github/workflows/conda-release.yaml`)
 
 ---
 
