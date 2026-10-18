@@ -39,18 +39,30 @@ pub fn allowed_edits(len: usize, max_diff: f64) -> usize {
 }
 
 impl Matcher {
-    pub fn new(seqs: &[Vec<u8>], max_diff: f64, min_read_len: usize) -> Self {
+    /// `groups`, if given, says which sequence each of `seqs` counts as (e.g., the variants
+    /// of a degenerate primer all as one); otherwise each is its own
+    pub fn new(
+        seqs: &[Vec<u8>],
+        max_diff: f64,
+        min_read_len: usize,
+        groups: Option<&[usize]>,
+    ) -> Self {
+        let group = |i: usize| groups.map_or(i, |g| g[i]);
+        let n = (0..seqs.len()).map(|i| group(i) + 1).max().unwrap_or(0);
+        let mut lengths = vec![usize::MAX; n];
         let mut patterns = Vec::with_capacity(2 * seqs.len());
         for (i, s) in seqs.iter().enumerate() {
+            let g = group(i);
+            lengths[g] = lengths[g].min(s.len());
             let e = allowed_edits(s.len(), max_diff);
             patterns.push(Pattern {
-                seq: i,
+                seq: g,
                 is_rc: false,
                 bases: s.clone(),
                 edits: e,
             });
             patterns.push(Pattern {
-                seq: i,
+                seq: g,
                 is_rc: true,
                 bases: revcomp(s),
                 edits: e,
@@ -74,7 +86,7 @@ impl Matcher {
         }
         Matcher {
             patterns,
-            lengths: seqs.iter().map(|s| s.len()).collect(),
+            lengths,
             max_diff,
             min_read_len,
             q,

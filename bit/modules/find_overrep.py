@@ -99,6 +99,12 @@ CONTAINED_SHARE = 0.8        # see the end of find_overrep()
 ERROR_VARIANT_SHARE = 0.05   # see the end of find_overrep()
 MIN_PARTIAL_LEN = 15         # a (trimmed) read shorter than this isn't checked for being within a found sequence
 
+# given sequences to count
+IUPAC = {"A": "A", "C": "C", "G": "G", "T": "T", "R": "AG", "Y": "CT", "S": "CG", "W": "AT", "K": "GT",
+         "M": "AC", "B": "CGT", "D": "AGT", "H": "ACT", "V": "ACG", "N": "ACGT"}
+MAX_VARIANTS = 4096          # most variants a given degenerate sequence may expand to
+COMPARE_VARIANTS = 64        # variants of a given sequence used when comparing it to others
+
 BUILTIN_ADAPTERS = {
     "illumina_truseq_r1": "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA",
     "illumina_truseq_r2": "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT",
@@ -690,7 +696,7 @@ def trim_read(seq, probes):
     return native.trim_read(seq, list(probes))
 
 
-def Matcher(seqs, max_diff, min_read_len=MIN_PARTIAL_LEN):
+def Matcher(seqs, max_diff, min_read_len=MIN_PARTIAL_LEN, groups=None):
     """
     Places found sequences in (trimmed) reads: `.hits(read)` gives {seq index: (start in
     read, or None if the read is within it; is reverse complement; edits)}, the best
@@ -702,17 +708,20 @@ def Matcher(seqs, max_diff, min_read_len=MIN_PARTIAL_LEN):
     out first, with q chosen so a sequence within its allowed edits must share an exact
     q-mer with the read (pigeonhole), so it can't cause a miss (`.hits(read, False)` skips
     it, for checking). `.count_in_reads(...)` counts over read files (see count_in_reads).
+    `groups`, if given, is which sequence each of `seqs` counts as (e.g., the variants of a
+    degenerate primer as one), and results are indexed by those.
     """
-    return native.Matcher(list(seqs), max_diff, min_read_len)
+    return native.Matcher(list(seqs), max_diff, min_read_len, None if groups is None else list(groups))
 
 
 def count_in_reads(read_paths, seqs, adapters, max_diff, min_insert_len=MIN_INSERT_LEN, run=quietly,
-                   desc=""):
+                   desc="", groups=None):
     """
     Counts the found sequences in reads, trimmed with `adapters`. Returns per-file tallies
-    (keyed by "R1"/"R2", or "reads" for one file) and, for paired reads, pair-level ones.
+    (keyed by "R1"/"R2", or "reads" for one file) and, for paired reads, pair-level ones,
+    indexed by sequence (or by group, if `groups` is given; see Matcher).
     """
-    tallies, pairs = run(desc, Matcher(seqs, max_diff).count_in_reads, [str(p) for p in read_paths],
+    tallies, pairs = run(desc, Matcher(seqs, max_diff, groups=groups).count_in_reads, [str(p) for p in read_paths],
                          list(adapters.items()), min_insert_len)
     labels = ["R1", "R2"] if len(read_paths) == 2 else ["reads"]
     out = {}
@@ -736,34 +745,76 @@ def count_in_reads(read_paths, seqs, adapters, max_diff, min_insert_len=MIN_INSE
 
 ### putting it together ###
 
+def read_fasta(path, unnamed="seq"):
+    """[(name, sequence)] from a fasta, names being the first word of headers (`unnamed`_N if blank)"""
+    records, name, chunks = [], None, []
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if line.startswith(">"):
+                if name:
+                    records.append((name, "".join(chunks).upper()))
+                name, chunks = line[1:].split()[0] if len(line) > 1 else f"{unnamed}_{len(records) + 1}", []
+            elif line:
+                chunks.append(line)
+    if name:
+        records.append((name, "".join(chunks).upper()))
+    return records
+
+
 def load_adapters(path=None, use_builtin=True):
     adapters = dict(BUILTIN_ADAPTERS) if use_builtin else {}
     if path:
-        name, chunks = None, []
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if line.startswith(">"):
-                    if name:
-                        adapters[name] = "".join(chunks).upper()
-                    name, chunks = line[1:].split()[0] if len(line) > 1 else f"adapter_{len(adapters) + 1}", []
-                elif line:
-                    chunks.append(line)
-        if name:
-            adapters[name] = "".join(chunks).upper()
+        for name, seq in read_fasta(path, "adapter"):
+            adapters[name] = seq
     return adapters
+
+
+def expand_degenerate(seq, max_variants=MAX_VARIANTS):
+    """every sequence a degenerate one (IUPAC codes) stands for, in a set order"""
+    variants = [""]
+    for b in seq:
+        variants = [v + x for v in variants for x in IUPAC[b]]
+        if len(variants) > max_variants:
+            raise ValueError(f"A sequence to count stands for more than {max_variants:,} sequences with its "
+                             f"degenerate bases (IUPAC codes), which is more than can be counted: {seq}")
+    return variants
+
+
+def load_seqs_to_count(path):
+    """
+    {name: sequence} from a fasta of sequences to count (U read as T, IUPAC codes allowed);
+    raises ValueError for a sequence that's empty or has anything else in it, or a repeated name
+    """
+    seqs = {}
+    for name, seq in read_fasta(path):
+        seq = seq.replace("U", "T")
+        if name in seqs:
+            raise ValueError(f"The sequences to count have more than one named '{name}', but names need to be unique.")
+        if not seq:
+            raise ValueError(f"The sequence to count named '{name}' is empty.")
+        bad = sorted(set(seq) - set(IUPAC))
+        if bad:
+            raise ValueError(f"The sequence to count named '{name}' has characters that aren't bases or "
+                             f"IUPAC codes: {''.join(bad)}")
+        seqs[name] = seq
+    if not seqs:
+        raise ValueError(f"No sequences were found in '{path}'.")
+    return seqs
 
 
 def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DEFAULT_MIN_FOLD,
                  max_diff=DEFAULT_MAX_DIFF, max_len=DEFAULT_MAX_LEN, adapters=None, jobs=None,
-                 max_reads_for_discovery=DEFAULT_MAX_READS_FOR_DISCOVERY, verbose=False):
+                 max_reads_for_discovery=DEFAULT_MAX_READS_FOR_DISCOVERY, seqs_to_count=None, verbose=False):
     """
     Finds and counts overrepresented sequences in reads (see module notes). Returns a dict
     with the found sequences, the adapters used (built-in, given and inferred), and the
     tallies. `min_perc` is the percent of reads a sequence must be in (as a fraction, `min_frac`,
     everywhere below). `jobs` sets the threads used (once per process; all cores if never set). Only the
     first `max_reads_for_discovery` reads of each file (0: all) are used to find the sequences;
-    counting them (the last pass) always uses all reads. With
+    counting them (the last pass) always uses all reads. `seqs_to_count` ({name: sequence},
+    IUPAC codes allowed) are counted too, and always reported, before what's found; a found
+    sequence that's just a variant of one of them is left out for it. With
     `verbose`, each pass over the reads shows a progress bar, and what was found along the way
     is printed. Problems
     with the read files (not fasta/fastq, a record cut short, pairs out of step) raise
@@ -816,9 +867,34 @@ def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DE
     for f in kept:
         f["insert"] = min(f["insert"], revcomp(f["insert"]))
         f["low_complexity"] = low_complexity(f["insert"])
-    tallies, pairs = count_in_reads(read_paths, [f["insert"] for f in kept], all_adapters, max_diff,
-                                    run=run, desc=f"Counting the {len(kept):,} determined overrepresented sequence(s) across "
-                                                  "all reads (pass 4 of 4)...")
+        f["given"] = False
+
+    # sequences given to count: a found one that's just a variant of one (e.g., the same
+    # primer) is left out for it
+    given = []
+    for name, seq in (seqs_to_count or {}).items():
+        variants = expand_degenerate(seq)
+        given.append(dict(id=name, insert=seq, variants=variants, given=True,
+                          low_complexity=low_complexity(variants[0])))
+    if given:
+        kept = [f for f in kept if not any(is_variant(f["insert"], v, max_diff)
+                                          for g in given for v in g["variants"][:COMPARE_VARIANTS])]
+    n_found = len(kept)
+    kept += given
+    for f in kept:
+        f["contains"] = [g for g in kept if g is not f and len(g["insert"]) < len(f["insert"])
+                         and _within_any(g, f, max_diff)]
+
+    seqs, groups = [], []
+    for i, f in enumerate(kept):
+        for v in f.get("variants", [f["insert"]]):
+            seqs.append(v)
+            groups.append(i)
+    what = f"the {n_found:,} determined overrepresented sequence(s)"
+    if given:
+        what += f" and {len(given):,} given sequence(s)"
+    tallies, pairs = count_in_reads(read_paths, seqs, all_adapters, max_diff, groups=groups,
+                                    run=run, desc=f"Counting {what} across all reads (pass 4 of 4)...")
 
     # ordered by how many reads hold them, leaving out any too rare once counted (a seed's
     # count can't be fully trusted to carry over to its extended sequence)
@@ -826,25 +902,35 @@ def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DE
         return max(t["reads_with"][i] / t["reads"] if t["reads"] else 0 for t in tallies.values()) >= min_frac
 
     reads = lambda i: sum(t["reads_with"][i] for t in tallies.values())
-    order = sorted((i for i in range(len(kept)) if keep(i)), key=lambda i: -reads(i))
+    order = sorted((i for i in range(n_found) if keep(i)), key=lambda i: -reads(i))
     # a piece of another that's in nearly all the same reads is just that one, found from
     # another seed that stopped short; and a rare near-copy of a far more common one is that
     # one with errors in it
     def redundant(i, j):
-        s, t = kept[i]["insert"], kept[j]["insert"]
-        if len(t) > len(s) and reads(j) >= CONTAINED_SHARE * reads(i) and within(s, t, max_diff):
+        s, t = kept[i], kept[j]
+        if (len(t["insert"]) > len(s["insert"]) and reads(j) >= CONTAINED_SHARE * reads(i)
+                and _within_any(s, t, max_diff)):
             return True
-        return reads(i) <= ERROR_VARIANT_SHARE * reads(j) and within(s, t, 2 * max_diff)
+        return reads(i) <= ERROR_VARIANT_SHARE * reads(j) and _within_any(s, t, 2 * max_diff)
 
-    order = [i for i in order if not any(j != i and redundant(i, j) for j in order)]
+    # (given ones are always reported, first, in the order given)
+    given_order = list(range(n_found, len(kept)))
+    order = [i for i in order if not any(j != i and redundant(i, j) for j in order + given_order)]
     for new, i in enumerate(order, start=1):
         kept[i]["id"] = f"overrep_{new}"
-    for i in set(range(len(kept))) - set(order):
+    for i in set(range(n_found)) - set(order):
         kept[i]["id"] = None
     for i in order:
         orient_as_most_seen(i, kept[i], tallies)
+    order = given_order + order
     return dict(found=kept, order=order, adapters=all_adapters, inferred=inferred,
                 tallies=tallies, pairs=pairs, k=k, n_candidates=len(candidates))
+
+
+def _within_any(s, t, max_diff):
+    """whether found or given sequence `s` is within `t` (any of their variants, for given ones)"""
+    return any(within(a, b, max_diff) for a in s.get("variants", [s["insert"]])[:COMPARE_VARIANTS]
+               for b in t.get("variants", [t["insert"]])[:COMPARE_VARIANTS])
 
 
 def orient_as_most_seen(i, f, tallies):
@@ -886,21 +972,25 @@ def _pct(n, d, places=3):
 
 def summary_lines(result):
     """the summary, as printed (indented) and written to summary.txt; blank lines between blocks"""
-    lines = [f"{'Overrepresented sequences found:':<44}{len(result['order']):,}"]
+    n_given = sum(result["found"][i]["given"] for i in result["order"])
+    what = "a found or given sequence" if n_given else "a found sequence"
+    rows = [("Overrepresented sequences found:", f"{len(result['order']) - n_given:,}")]
+    if n_given:
+        rows.append(("Given sequences counted:", f"{n_given:,}"))
     for lab, t in result["tallies"].items():
         name = "Reads" if lab == "reads" else f"{lab} reads"
-        lines += ["",
-                  f"{name + ':':<44}{t['reads']:,}",
-                  f"{'  holding a found sequence:':<44}{t['explained']:,} ({_pct(t['explained'], t['reads'], 2)}%)"]
+        rows += [None,
+                 (name + ":", f"{t['reads']:,}"),
+                 (f"  holding {what}:", f"{t['explained']:,} ({_pct(t['explained'], t['reads'], 2)}%)")]
     p = result["pairs"]
     if p:
-        lines += ["",
-                  f"{'Read pairs:':<44}{p['pairs']:,}",
-                  f"{'  either read holding a found sequence:':<44}{p['explained']:,} "
-                  f"({_pct(p['explained'], p['pairs'], 2)}%)",
-                  f"{'  both reads holding a found sequence:':<44}{p['explained_both']:,} "
-                  f"({_pct(p['explained_both'], p['pairs'], 2)}%)"]
-    return lines
+        rows += [None,
+                 ("Read pairs:", f"{p['pairs']:,}"),
+                 (f"  either read holding {what}:", f"{p['explained']:,} ({_pct(p['explained'], p['pairs'], 2)}%)"),
+                 (f"  both reads holding {what}:",
+                  f"{p['explained_both']:,} ({_pct(p['explained_both'], p['pairs'], 2)}%)")]
+    width = max(44, max(len(r[0]) + 2 for r in rows if r))
+    return ["" if r is None else f"{r[0]:<{width}}{r[1]}" for r in rows]
 
 
 def _adapter_source(name, result):
@@ -923,7 +1013,7 @@ def write_outputs(result, output_dir, output_prefix=""):
                    f"{pre}mean_edits", f"{pre}top_start", f"{pre}pct_at_top_start"]
     if pairs:
         header += ["either_read", "either_read_pct", "both_reads", "both_reads_pct"]
-    header += ["low_complexity", "contains"]
+    header += ["low_complexity", "contains", "source"]
 
     with open(paths["seqs"], "w") as out, open(paths["fasta"], "w") as fa:
         out.write("\t".join(header) + "\n")
@@ -943,7 +1033,8 @@ def write_outputs(result, output_dir, output_prefix=""):
                 row += [str(pairs["pairs_with"][i]), _pct(pairs["pairs_with"][i], pairs["pairs"]),
                         str(pairs["pairs_both"][i]), _pct(pairs["pairs_both"][i], pairs["pairs"])]
             row += ["yes" if f["low_complexity"] else "no",
-                    ",".join(g["id"] for g in f["contains"] if g["id"]) or "none"]
+                    ",".join(g["id"] for g in f["contains"] if g["id"]) or "none",
+                    "given" if f["given"] else "found"]
             out.write("\t".join(row) + "\n")
             fa.write(f">{f['id']}\n{f['insert']}\n")
 

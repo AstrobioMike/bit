@@ -33,7 +33,9 @@ def build_parser(parent_subparsers=None, show_fine=False):
         edits per base) are counted across all reads, along with where they start in the reads, how often
         they're reverse-complemented, and which searched sequences may hold other sequences (e.g., primer dimers).
         Each is reported in the orientation it's most often in, in the read file it's most common in.
-        Passes 1-3 use up to --max-reads-for-discovery reads per file, while pass 4 always uses all reads.
+        Any sequences given with --seqs-to-count are counted in pass 4 too, and always reported (in the
+        orientation given), with found sequences that are just variants of them left out of the outputs to avoid
+        the redundancy. Passes 1-3 use up to --max-reads-for-discovery reads per file, while pass 4 always uses all reads.
         """
 
     description = detailed_desc if show_fine else desc
@@ -76,7 +78,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "-s",
         "--seqs-to-count",
         metavar="<FILE>",
-        help="Fasta file containing known sequences you want to count in the reads",
+        help=("Fasta file containing known sequences you want to count in the reads (IUPAC degenerate "
+              "bases allowed); these are always reported, along with any overrepresented sequences found"),
     )
 
     general.add_argument(
@@ -243,7 +246,7 @@ def main():
     from bit.modules.find_overrep import setup_output_dir, write_outputs, summary_lines
 
     read_paths = [args.input_reads] + ([args.input_reads_2] if args.input_reads_2 else [])
-    check_files_are_found(read_paths + ([args.adapters] if args.adapters else []))
+    check_files_are_found(read_paths + [p for p in (args.adapters, args.seqs_to_count) if p])
     setup_output_dir(args.output_dir, args.output_prefix, args.force_overwrite,
                      reconstruct_invocation(parser, args))
 
@@ -267,7 +270,7 @@ def main():
 
 def run(args, read_paths):
 
-    from bit.modules.find_overrep import find_overrep, load_adapters
+    from bit.modules.find_overrep import find_overrep, load_adapters, load_seqs_to_count
 
     return find_overrep(
         read_paths,
@@ -279,5 +282,6 @@ def run(args, read_paths):
         adapters=load_adapters(args.adapters, use_builtin=not args.no_builtin_adapter_trim),
         jobs=args.jobs,
         max_reads_for_discovery=args.max_reads_for_discovery,
+        seqs_to_count=load_seqs_to_count(args.seqs_to_count) if args.seqs_to_count else None,
         verbose=True,
     )

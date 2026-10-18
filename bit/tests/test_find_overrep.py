@@ -20,6 +20,8 @@ from bit.modules.find_overrep import (BUILTIN_ADAPTERS,
                                       mate_asymmetry,
                                       split_by_mate_symmetry,
                                       load_adapters,
+                                      load_seqs_to_count,
+                                      expand_degenerate,
                                       find_overrep,
                                       write_outputs,
                                       summary_lines)
@@ -452,6 +454,83 @@ def test_adapter_cuts_starting_partway_into_an_adapter():
     assert adapter_cuts(revcomp(seq), BUILTIN_ADAPTERS)[:2] == (len(seq), len(seq))
     # and an insert followed by the adapter keeps the insert
     assert adapter_cuts(P1 + A1[:25], BUILTIN_ADAPTERS)[:2] == (0, len(P1))
+
+
+### given sequences to count ###
+
+def test_load_seqs_to_count(tmp_path):
+    fa = tmp_path / "seqs.fa"
+    fa.write_text(">515F the forward one\nGTGYCAGCMG\nCCGCGGTAA\n>rna\nacguacgu\n")
+    assert load_seqs_to_count(str(fa)) == {"515F": "GTGYCAGCMGCCGCGGTAA", "rna": "ACGTACGT"}
+    for text, message in [(">a\nACGT\n>a\nACGT\n", "more than one named 'a'"),
+                          (">a\n>b\nACGT\n", "named 'a' is empty"),
+                          (">a\nACGT-X\n", "aren't bases or IUPAC codes: -X"),
+                          ("\n", "No sequences")]:
+        fa.write_text(text)
+        with pytest.raises(ValueError, match=message):
+            load_seqs_to_count(str(fa))
+
+
+def test_expand_degenerate():
+    assert expand_degenerate("ACGT") == ["ACGT"]
+    assert sorted(expand_degenerate("AYN")) == sorted("A" + a + b for a in "CT" for b in "ACGT")
+    assert len(expand_degenerate("GGACTACNVGGGTWTCTAAT")) == 4 * 3 * 2
+    with pytest.raises(ValueError, match="more than 4,096"):
+        expand_degenerate("N" * 7)
+
+
+def test_matcher_groups():
+    # variants given as one group count as one sequence, with the best placement
+    m = Matcher([P1, P1[:5] + "T" + P1[6:], P2], 0.1, groups=[0, 0, 1])
+    assert m.hits("CC" + P1 + "AA") == {0: (2, False, 0)}
+    assert m.hits(P2) == {1: (0, False, 0)}
+
+
+def test_seqs_to_count(reads):
+    seqs = {"515F": "GTGYCAGCMGCCGCGGTAA", "806R": "GGACTACNVGGGTWTCTAAT", "p2": P2,
+            "absent": "ACGTTGCAACGTTGCAACGT"}
+    result = find_overrep([str(p) for p in reads], seqs_to_count=seqs)
+    found = [result["found"][i] for i in result["order"]]
+    # given ones first, in the order given, and as given; found ones that are the same primers
+    # are left out for them, leaving the dimer
+    assert [f["id"] for f in found] == ["515F", "806R", "p2", "absent", "overrep_1"]
+    assert [f["insert"] for f in found[:4]] == list(seqs.values())
+    assert canon(found[4]["insert"]) == canon(DIMER)
+    pairs = result["pairs"]["pairs_with"]
+    assert [pairs[i] for i in result["order"][1:4]] == [3477, 3477, 0]
+    # P1 is a few bases longer than 515F, so a few reads with errors in it no longer hold it in
+    # full, but every pair still does in one read or the other
+    assert pairs[result["order"][0]] == 6418
+    # the exact P2 counted just as when it's found
+    p2 = result["order"][2]
+    assert [t["reads_with"][p2] for t in result["tallies"].values()] == [3457, 3459]
+    assert {g["id"] for g in found[4]["contains"]} == {"515F", "806R", "p2"}
+    lines = summary_lines(result)
+    assert lines[0].startswith("Overrepresented sequences found:") and lines[0].endswith(" 1")
+    assert lines[1].startswith("Given sequences counted:") and lines[1].endswith(" 4")
+    assert any("holding a found or given sequence:" in line for line in lines)
+
+
+def test_seqs_to_count_outputs_and_cli(reads, tmp_path):
+    fa = tmp_path / "seqs.fa"
+    fa.write_text(f">p2\n{P2}\n>absent\nACGTTGCAACGTTGCAACGT\n")
+    out = tmp_path / "cli"
+    run_cli(["bit", "find-overrep-seqs", "-i", str(reads[0]), "-I", str(reads[1]), "-s", str(fa), "-o", str(out)])
+    rows = [line.split("\t") for line in open(out / "overrep-seqs.tsv").read().splitlines()]
+    header, rows = rows[0], rows[1:]
+    assert header[-1] == "source"
+    assert [(r[0], r[-1]) for r in rows] == [("p2", "given"), ("absent", "given"),
+                                             ("overrep_1", "found"), ("overrep_2", "found")]
+    assert rows[1][header.index("R1_reads")] == "0"
+    assert rows[1][header.index("R1_pct_of_reads")] == "0.000"
+    assert rows[1][header.index("R1_top_start")] == "NA"
+    fasta = open(out / "overrep-seqs.fasta").read().split()
+    assert fasta[:4] == [">p2", P2, ">absent", "ACGTTGCAACGTTGCAACGT"]
+    # a bad file stops the run
+    fa.write_text(">x\nACGTJ\n")
+    result = subprocess.run(["bit", "find-overrep-seqs", "-i", str(reads[0]), "-s", str(fa),
+                             "-o", str(tmp_path / "bad")], capture_output=True, text=True)
+    assert "aren't bases or IUPAC codes" in result.stdout + result.stderr
 
 
 def test_low_complexity():

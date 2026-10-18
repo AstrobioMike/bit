@@ -165,12 +165,22 @@ struct Matcher {
 #[pymethods]
 impl Matcher {
     #[new]
-    #[pyo3(signature = (seqs, max_diff, min_read_len))]
-    fn new(seqs: Vec<String>, max_diff: f64, min_read_len: usize) -> Self {
-        let seqs: Vec<Vec<u8>> = seqs.into_iter().map(|s| s.into_bytes()).collect();
-        Matcher {
-            inner: matcher::Matcher::new(&seqs, max_diff, min_read_len),
+    #[pyo3(signature = (seqs, max_diff, min_read_len, groups=None))]
+    fn new(
+        seqs: Vec<String>,
+        max_diff: f64,
+        min_read_len: usize,
+        groups: Option<Vec<usize>>,
+    ) -> PyResult<Self> {
+        if let Some(g) = &groups
+            && g.len() != seqs.len()
+        {
+            return Err(PyValueError::new_err("groups must be as long as seqs"));
         }
+        let seqs: Vec<Vec<u8>> = seqs.into_iter().map(|s| s.into_bytes()).collect();
+        Ok(Matcher {
+            inner: matcher::Matcher::new(&seqs, max_diff, min_read_len, groups.as_deref()),
+        })
     }
 
     /// {seq index: (start in read or None if the read is within it, is reverse complement,
