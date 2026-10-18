@@ -103,6 +103,7 @@ BUILTIN_ADAPTERS = {
     "illumina_truseq_r1": "AGATCGGAAGAGCACACGTCTGAACTCCAGTCA",
     "illumina_truseq_r2": "AGATCGGAAGAGCGTCGTGTAGGGAAAGAGTGT",
     "illumina_nextera": "CTGTCTCTTATACACATCT",
+    "illumina_pcr_free_me_rc": "ATGTGTATAAGAGACA",
     "illumina_small_rna_3p": "TGGAATTCTCGGGTGCCAAGG",
 }
 
