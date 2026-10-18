@@ -9,7 +9,7 @@ mod matcher;
 mod reads;
 mod trim;
 
-use numpy::{PyArray1, PyReadonlyArray1};
+use numpy::PyArray1;
 use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
@@ -113,29 +113,6 @@ fn count_kmers<'py>(
         PyArray1::from_vec(py, c.windows_at),
         c.n_reads,
     ))
-}
-
-/// [(canonical code, position, count)] for k-mers marked in `wanted` (by either strand's code)
-#[pyfunction]
-#[pyo3(signature = (paths, k, wanted, adapters=None, progress=None, max_reads=0))]
-fn count_positions(
-    py: Python<'_>,
-    paths: Vec<String>,
-    k: usize,
-    wanted: PyReadonlyArray1<bool>,
-    adapters: Option<Vec<(String, String)>>,
-    progress: Option<PyRef<Progress>>,
-    max_reads: u64,
-) -> PyResult<Vec<(u64, u32, u64)>> {
-    let t = trimmer(adapters);
-    let wanted = wanted.as_slice()?.to_vec();
-    let pr = arc(&progress);
-    let found = py
-        .detach(|| kmers::positions(&paths, k, t.as_ref(), &wanted, pr.as_ref(), max_reads))
-        .map_err(to_py_err)?;
-    let mut out: Vec<(u64, u32, u64)> = found.into_iter().map(|((c, p), n)| (c, p, n)).collect();
-    out.sort_unstable();
-    Ok(out)
 }
 
 /// up to max_contexts reads holding each seed k-mer, oriented so the seed reads forward, as
@@ -279,7 +256,6 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(set_threads, m)?)?;
     m.add_function(wrap_pyfunction!(trim_read, m)?)?;
     m.add_function(wrap_pyfunction!(count_kmers, m)?)?;
-    m.add_function(wrap_pyfunction!(count_positions, m)?)?;
     m.add_function(wrap_pyfunction!(collect_contexts, m)?)?;
     m.add_class::<Matcher>()?;
     m.add_class::<Progress>()?;

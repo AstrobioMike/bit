@@ -24,16 +24,16 @@ def build_parser(parent_subparsers=None, show_fine=False):
 
     detailed_desc = desc + """
 
-        HOW IT WORKS: Reads are read through five times. (1) All k-mers (default k=11) are counted, and
+        HOW IT WORKS: Reads are read through four times. (1) All k-mers (default k=11) are counted, and
         for paired reads, adapters not among the built-in or given ones are inferred. (2) K-mers are counted
         again with adapters trimmed off, and those in at least --min-perc percent of reads and at least
         --min-fold times what the reads' composition predicts, as well as any that are in at least 1% of reads,
-        become candidate seed k-mers. (3) Rarer k-mers (down to a tenth of --min-perc) that tend to start at the
-        same spot in the reads become candidates too. (4) K-mer candidates are extended into full sequences, first from
-        the k-mer counts, and then using the reads that hold them. (5) These full sequences (allowing up to --max-diff
+        become seed k-mers. (3) These seed K-mers are extended into full sequences, first from
+        the k-mer counts, and then using the reads that hold them. (4) These full sequences (allowing up to --max-diff
         edits per base) are counted across all reads, along with where they start in the reads, how often
         they're reverse-complemented, and which searched sequences may hold other sequences (e.g., primer dimers).
-        Passes 1-4 use up to --max-reads-for-discovery reads per file, while pass 5 always uses all of them.
+        Each is reported in the orientation it's most often in, in the read file it's most common in.
+        Passes 1-3 use up to --max-reads-for-discovery reads per file, while pass 4 always uses all reads.
         """
 
     description = detailed_desc if show_fine else desc
@@ -134,8 +134,7 @@ def _add_fine_tuning_arguments(target, hidden=False):
         metavar="<FLOAT>",
         type=float,
         default=DEFAULT_MIN_PERC,
-        help=h(f"Minimum percent of reads a sequence must be in to be reported (default: {DEFAULT_MIN_PERC}; "
-               "those at a consistent place in reads are reported down to a tenth of this)"),
+        help=h(f"Minimum percent of reads a sequence must be in to be reported (default: {DEFAULT_MIN_PERC})"),
     )
 
     target.add_argument(

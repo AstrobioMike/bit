@@ -59,13 +59,13 @@ impl Trimmer {
         let mut which_seq: &[u8] = b"";
         for (idx, a) in self.adapters.iter().enumerate() {
             let mut i: Option<usize> = a.first.find(seq);
-            // the adapter's next stretch, in case of an error in its first
+            // the adapter's next stretch, in case of an error in its first, or a read that
+            // starts partway into the adapter (cut from its start then)
             if i.is_none()
                 && let Some(second) = &a.second
                 && let Some(j) = second.find(seq)
-                && j >= TRIM_PROBE_LEN
             {
-                i = Some(j - TRIM_PROBE_LEN);
+                i = Some(j.saturating_sub(TRIM_PROBE_LEN));
             }
             if i.is_none() {
                 let probe = &a.seq[..a.seq.len().min(TRIM_PROBE_LEN)];

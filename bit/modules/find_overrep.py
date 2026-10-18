@@ -21,12 +21,8 @@ prep puts them in reads in either orientation, and counts are reported per read 
      3-mers of an order-2 Markov model of the reads' own composition, as the background. A
      k-mer is a candidate if it's in at least `min_perc` percent of reads and `min_fold` times its
      expected count, or in at least 1% of reads whatever its expected count (the model can
-     expect a lot of what it predicts well, like a dominant low-complexity repeat). Things like primers often sit at one place in reads, where the
-     background is far lower, so k-mers down to a tenth of `min_perc` get a second look by
-     position, and are candidates if at least a quarter of their occurrences start at one
-     place, `min_fold` above expectation there. Ordinary sequence, even from a genome
-     sequenced deeply, is spread across positions. Rare one-off error variants of abundant
-     k-mers are dropped.
+     expect a lot of what it predicts well, like a dominant low-complexity repeat). Rare
+     one-off error variants of abundant k-mers are dropped.
 
   3. Extension. From the most abundant candidate down, each is extended a base at a time
      in both directions while most occurrences of the current k-mer carry on to the same
@@ -41,7 +37,8 @@ prep puts them in reads in either orientation, and counts are reported per read 
      full, the read aligns within it (e.g., a primer missing a few bases, or a read from
      something longer than reads). Start positions in reads are tallied too. Sequences too
      rare once counted, pieces of another found from a seed that stopped short, and rare
-     near-copies of a far more common one are left out of what's reported.
+     near-copies of a far more common one are left out of what's reported. Each is reported
+     in the orientation it's most often in, in the read file it's most common in.
 
 The per-read loops (reading, trimming, k-mer counting, gathering reads around seeds, and
 placing found sequences in reads) run in bit's compiled core (rust/, as bit._native);
@@ -55,7 +52,7 @@ import threading
 from collections import Counter, defaultdict
 from pathlib import Path
 
-import numpy as np
+import numpy as np # type: ignore
 from tqdm import tqdm # type: ignore
 import edlib # type: ignore
 
@@ -71,14 +68,10 @@ DEFAULT_MIN_FOLD = 10
 DEFAULT_MAX_DIFF = 0.1
 DEFAULT_MAX_LEN = 300
 DEFAULT_MAX_READS_FOR_DISCOVERY = 10_000_000   # per file; 0 for all
-MAX_READ_LEN_FOR_POSITIONS = 1000              # reads longer than this skip the by-position look
 
 # finding candidates
 DOMINANT_FRAC = 0.01         # a k-mer in at least this share of reads is a candidate whatever its fold
 ERROR_VARIANT_RATIO = 20     # a k-mer this many times rarer than one a substitution away is taken for an error
-POSITION_FRAC_FACTOR = 0.1   # k-mers mostly at one position need only this share of min_frac...
-POSITION_MIN_SHARE = 0.25    # ...if at least this share of their occurrences start at one position...
-POSITION_MIN_COUNT = 20      # ...and at least this many there
 
 # adapters
 ADAPTER_SEARCH_SEEDS = 200   # most abundant candidates extended to look for unknown adapters
@@ -273,27 +266,13 @@ class KmerCounts:
         return both
 
 
-### pass 2: positions ###
+### finding candidates ###
 
-def count_positions(read_paths, adapters, k, codes_of_interest, rc_all, run=quietly, desc="", max_reads=0):
+def find_candidates(counts, min_frac, min_fold, error_ref=None):
     """
-    {(canonical code, position): count} for the given canonical codes, where they start in
-    reads (positions past 1023 counted as 1023)
-    """
-    wanted = np.zeros(4 ** k, dtype=bool)
-    wanted[codes_of_interest] = True
-    wanted[rc_all[codes_of_interest]] = True
-    found = run(desc, native.count_positions, [str(p) for p in read_paths], k, wanted,
-                _adapter_list(adapters), max_reads=max_reads)
-    return {(code, pos): n for code, pos, n in found}
-
-
-def find_candidates(counts, min_frac, min_fold, positions=None, error_ref=None):
-    """
-    Canonical codes of candidate k-mers (see module notes), most abundant first, and why each
-    was picked ("overall" or "position"). `positions(codes)` gives counts by position for the
-    second look (see count_positions); without it there's none. Error variants are judged
-    against `error_ref` (canonical counts, e.g., from untrimmed reads) if given.
+    Canonical codes of candidate k-mers (see module notes), most abundant first, and the
+    canonical counts. Error variants are judged against `error_ref` (canonical counts, e.g.,
+    from untrimmed reads) if given.
     """
     k = counts.k
     both, rc, pal = counts.canonical()
@@ -303,28 +282,16 @@ def find_candidates(counts, min_frac, min_fold, positions=None, error_ref=None):
     total_windows = counts.windows_at.sum()
     frac = both / max(counts.n_reads, 1)
 
-    overall = canonical & (frac >= min_frac) & (both >= min_fold * probs * total_windows)
+    picked = canonical & (frac >= min_frac) & (both >= min_fold * probs * total_windows)
     # and anything in a large share of reads, whatever the background model expects (it can
     # expect a lot of a sequence it predicts well, like a dominant low-complexity repeat)
-    overall |= canonical & (frac >= max(min_frac, DOMINANT_FRAC))
-    picked = {int(c): "overall" for c in codes[overall]}
+    picked |= canonical & (frac >= max(min_frac, DOMINANT_FRAC))
+    picked = codes[picked]
 
-    # a second look by position, down to a tenth of min_frac, for those mostly at one place
-    # in reads (like primers at read starts), which ordinary sequence isn't
-    rest = codes[canonical & (frac >= min_frac * POSITION_FRAC_FACTOR) & ~overall]
-    if positions is not None and len(rest):
-        windows_at = counts.windows_at
-        for (code, pos), n in positions(rest).items():
-            if (pos < len(windows_at) and n >= min_fold * probs[code] * windows_at[pos]
-                    and n >= POSITION_MIN_SHARE * both[code] and n >= POSITION_MIN_COUNT):
-                picked.setdefault(code, "position")
-
-    if picked:
-        keep = not_error_variants(np.array(sorted(picked), dtype=np.int64),
-                                  both if error_ref is None else error_ref, k)
-        picked = {c: picked[c] for c in keep.tolist()}
-    order = sorted(picked, key=lambda c: (-both[c], c))
-    return [(c, picked[c]) for c in order], both
+    if len(picked):
+        picked = not_error_variants(picked, both if error_ref is None else error_ref, k)
+    order = sorted(picked.tolist(), key=lambda c: (-both[c], c))
+    return order, both
 
 
 def not_error_variants(codes, both, k, ratio=None):
@@ -409,17 +376,17 @@ def canonical_kmers_of(seq, k, rc_all):
 def extend_all(candidates, both, rc_all, k, max_len=DEFAULT_MAX_LEN):
     """
     Extends candidates in order, skipping any already inside an extended sequence. Returns
-    [dict(consensus, seed_count, left_stop, right_stop, how)].
+    [dict(consensus, seed_count, left_stop, right_stop)].
     """
     used = np.zeros(4 ** k, dtype=bool)
     out = []
-    for code, how in candidates:
+    for code in candidates:
         if used[code]:
             continue
         seq, left_stop, right_stop = extend(code, both, k, max_len)
         used[canonical_kmers_of(seq, k, rc_all)] = True
         out.append(dict(consensus=seq, seed_count=int(both[code]), left_stop=left_stop,
-                        right_stop=right_stop, how=how))
+                        right_stop=right_stop))
     return out
 
 
@@ -490,16 +457,23 @@ def adapter_cuts(seq, adapters):
     (left, right, [names]): where adapter sequence ends on the left of `seq` and starts on
     its right. Read-through is the adapter's start following an insert, so on the right it's
     the adapter as given, and on the left its reverse complement (the same molecule seen from
-    the other read). An adapter's start cut off by the end of `seq` is found too.
+    the other read). An adapter's start cut off by the end of `seq` is found too, and so is
+    one missing its first few bases where `seq` starts partway into it (by its next stretch,
+    as in trim_read).
     """
     left, right, names = 0, len(seq), []
     for name, a in adapters.items():
         probe = a[:20]
         e = 2 if len(probe) >= 15 else 1
+        # the stretch after the first TRIM_PROBE_LEN bases, if the adapter's long enough
+        later = a[TRIM_PROBE_LEN:TRIM_PROBE_LEN + 20] if len(a) >= TRIM_PROBE_LEN + 15 else ""
         hits = _locate(probe, seq, e)
+        later_hits = _locate(later, seq, e) if later and not hits else []
         cut = None
         if hits:
             cut = min(s for s, _ in hits)
+        elif later_hits:
+            cut = max(0, min(s for s, _ in later_hits) - TRIM_PROBE_LEN)
         else:
             for L in range(min(len(probe) - 1, len(seq)), TRIM_MIN_END_OVERLAP - 1, -1):
                 if _near(seq[-L:], a[:L]):
@@ -510,9 +484,12 @@ def adapter_cuts(seq, adapters):
             names.append(name)
         rprobe = revcomp(probe)
         hits = _locate(rprobe, seq, e)
+        later_hits = _locate(revcomp(later), seq, e) if later and not hits else []
         cut = None
         if hits:
             cut = max(end for _, end in hits) + 1
+        elif later_hits:
+            cut = min(len(seq), max(end for _, end in later_hits) + 1 + TRIM_PROBE_LEN)
         else:
             for L in range(min(len(probe) - 1, len(seq)), TRIM_MIN_END_OVERLAP - 1, -1):
                 if _near(seq[:L], revcomp(a[:L])):
@@ -693,8 +670,10 @@ def trim_read(seq, probes):
     names joined by "|" for adapters sharing a start where the read ends too soon to tell
     them apart, "poly-G", or None). `probes` is [(name, adapter sequence)], each as it reads
     following an insert. An adapter is found by its first TRIM_PROBE_LEN bases, or, in case
-    of an error there, its next TRIM_PROBE_LEN; or by at least TRIM_MIN_END_OVERLAP of its
-    start where a read ends. A run of POLY_G_RUN or more G's at the end is cut too.
+    of an error there or a read starting partway into the adapter, its next TRIM_PROBE_LEN
+    (cutting where the adapter would start, or from the read's start if that's before it);
+    or by at least TRIM_MIN_END_OVERLAP of its start where a read ends. A run of POLY_G_RUN
+    or more G's at the end is cut too.
     """
     return native.trim_read(seq, list(probes))
 
@@ -788,7 +767,7 @@ def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DE
     # first, any adapters not already known, from the most abundant k-mers in the raw reads
     # (otherwise every insert's end next to an adapter makes for an overrepresented k-mer)
     n_disc = max_reads_for_discovery
-    raw = KmerCounts(read_paths, k, run=run, desc="Counting k-mers and identifying adapters (pass 1 of 5)...",
+    raw = KmerCounts(read_paths, k, run=run, desc="Counting k-mers and identifying adapters (pass 1 of 4)...",
                      max_reads=n_disc)
     candidates, raw_both = find_candidates(raw, min_frac, min_fold)
     _, rc_all, _ = raw.canonical()
@@ -802,32 +781,13 @@ def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DE
 
     # then counting again with adapter read-through trimmed off
     counts = KmerCounts(read_paths, k, all_adapters, run=run,
-                        desc="Counting k-mers excluding adapters (pass 2 of 5)...", max_reads=n_disc)
-    max_read_len = len(raw.windows_at) + k - 1
-    looked_by_position = []
-
-    def positions(codes):
-        looked_by_position.append(True)
-        return count_positions(read_paths, all_adapters, k, codes, rc_all, run=run,
-                               desc="Checking where candidate overrepresented k-mers start in reads (pass 3 of 5)...",
-                               max_reads=n_disc)
-
-    # where things sit in reads only means something when reads start at a set place in the
-    # molecule (short reads); for long reads the by-position look is skipped
-    long_reads = max_read_len > MAX_READ_LEN_FOR_POSITIONS
-    candidates, both = find_candidates(counts, min_frac, min_fold, None if long_reads else positions,
-                                       error_ref=raw_both)
-    if long_reads:
-        say(f"\n    Checking where candidate overrepresented k-mers start in reads (pass 3 of 5)...\n\n"
-            f"      skipped, reads are longer than {MAX_READ_LEN_FOR_POSITIONS:,} bases\n")
-    elif not looked_by_position:
-        say("\n    Checking where candidate overrepresented k-mers start in reads (pass 3 of 5)...\n\n"
-            "      nothing to check\n")
+                        desc="Counting k-mers excluding adapters (pass 2 of 4)...", max_reads=n_disc)
+    candidates, both = find_candidates(counts, min_frac, min_fold, error_ref=raw_both)
     del raw, counts
     say(f"      {len(candidates):,} candidate seed k-mers identified\n")
 
     extended = refine_ends(extend_all(candidates, both, rc_all, k, max_len), read_paths, all_adapters, k,
-                           max_len, run=run, desc="Extending candidates using the reads that hold them (pass 4 of 5)...",
+                           max_len, run=run, desc="Extending candidates using the reads that hold them (pass 3 of 4)...",
                            max_reads=n_disc)
 
     inserts = []
@@ -839,32 +799,19 @@ def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DE
         f.update(insert=insert)
         inserts.append(f)
     kept = collapse(inserts, max_diff, all_adapters)
-    # a consistent orientation to report: whichever strand sorts first
+    # one orientation for each while sorting things out (whichever strand sorts first); each is
+    # turned to how it's most often seen in reads at the end (orient_as_most_seen)
     for f in kept:
         f["insert"] = min(f["insert"], revcomp(f["insert"]))
         f["low_complexity"] = low_complexity(f["insert"])
     tallies, pairs = count_in_reads(read_paths, [f["insert"] for f in kept], all_adapters, max_diff,
                                     run=run, desc=f"Counting the {len(kept):,} determined overrepresented sequence(s) across "
-                                                  "all reads (pass 5 of 5)...")
+                                                  "all reads (pass 4 of 4)...")
 
     # ordered by how many reads hold them, leaving out any too rare once counted (a seed's
     # count can't be fully trusted to carry over to its extended sequence)
     def keep(i):
-        share = max(t["reads_with"][i] / t["reads"] if t["reads"] else 0 for t in tallies.values())
-        if kept[i]["how"] == "overall":
-            return share >= min_frac
-        # one found by position needs to be mostly at one position once counted, too
-        # and not just running into the end of reads there (pieces of something cut off by the
-        # read end look positional too)
-        full = sum(t["full"][i] for t in tallies.values())
-        starts = Counter()
-        for t in tallies.values():
-            starts.update(t["starts"][i])
-        if not full or not starts:
-            return False
-        top_start, top = starts.most_common(1)[0]
-        return (share >= min_frac * POSITION_FRAC_FACTOR and top >= POSITION_MIN_SHARE * full
-                and top >= POSITION_MIN_COUNT and top_start + len(kept[i]["insert"]) < max_read_len - 1)
+        return max(t["reads_with"][i] / t["reads"] if t["reads"] else 0 for t in tallies.values()) >= min_frac
 
     reads = lambda i: sum(t["reads_with"][i] for t in tallies.values())
     order = sorted((i for i in range(len(kept)) if keep(i)), key=lambda i: -reads(i))
@@ -882,8 +829,23 @@ def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DE
         kept[i]["id"] = f"overrep_{new}"
     for i in set(range(len(kept))) - set(order):
         kept[i]["id"] = None
+    for i in order:
+        orient_as_most_seen(i, kept[i], tallies)
     return dict(found=kept, order=order, adapters=all_adapters, inferred=inferred,
                 tallies=tallies, pairs=pairs, k=k, n_candidates=len(candidates))
+
+
+def orient_as_most_seen(i, f, tallies):
+    """
+    Turns found sequence `i` around (and its tallies' reverse-complement counts with it) if
+    it's more often reverse complemented than not in the read file it's most common in, so
+    it's reported as it's most often seen in reads.
+    """
+    top = max(tallies.values(), key=lambda t: t["reads_with"][i])
+    if top["rc"][i] * 2 > top["reads_with"][i]:
+        f["insert"] = revcomp(f["insert"])
+        for t in tallies.values():
+            t["rc"][i] = t["reads_with"][i] - t["rc"][i]
 
 
 ### outputs ###
@@ -941,7 +903,7 @@ def write_outputs(result, output_dir, output_prefix=""):
                    f"{pre}mean_edits", f"{pre}top_start", f"{pre}pct_at_top_start"]
     if pairs:
         header += ["either_read", "either_read_pct", "both_reads", "both_reads_pct"]
-    header += ["low_complexity", "contains", "found_by"]
+    header += ["low_complexity", "contains"]
 
     with open(paths["seqs"], "w") as out, open(paths["fasta"], "w") as fa:
         out.write("\t".join(header) + "\n")
@@ -961,8 +923,7 @@ def write_outputs(result, output_dir, output_prefix=""):
                 row += [str(pairs["pairs_with"][i]), _pct(pairs["pairs_with"][i], pairs["pairs"]),
                         str(pairs["pairs_both"][i]), _pct(pairs["pairs_both"][i], pairs["pairs"])]
             row += ["yes" if f["low_complexity"] else "no",
-                    ",".join(g["id"] for g in f["contains"] if g["id"]) or "none",
-                    f["how"]]
+                    ",".join(g["id"] for g in f["contains"] if g["id"]) or "none"]
             out.write("\t".join(row) + "\n")
             fa.write(f">{f['id']}\n{f['insert']}\n")
 

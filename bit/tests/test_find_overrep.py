@@ -77,12 +77,12 @@ def reads(tmp_path_factory):
 
 
 def found_counts(result):
-    """{sequence: (reads holding it per file, pairs)}"""
+    """{sequence (either strand, as canon gives it): (reads holding it per file, pairs)}"""
     out = {}
     for i in result["order"]:
         f = result["found"][i]
         per_file = tuple(t["reads_with"][i] for t in result["tallies"].values())
-        out[f["insert"]] = (per_file, result["pairs"]["pairs_with"][i] if result["pairs"] else None)
+        out[canon(f["insert"])] = (per_file, result["pairs"]["pairs_with"][i] if result["pairs"] else None)
     return out
 
 
@@ -132,6 +132,11 @@ def test_trim_read():
     assert trim_read(revcomp(P1) + A2[:28], probes) == (revcomp(P1), "illumina_truseq_r2")
     # an error in the adapter's first stretch, found by its next one
     assert trim_read(P1 + "AGTTCGGAAG" + A1[10:28], probes) == (P1, "illumina_truseq_r1")
+    # a read starting partway into the adapter (missing its first few bases), cut from its start
+    assert trim_read(A1[8:] + "AAGTCCAAATCTCGTATG", probes) == ("", "illumina_truseq_r1")
+    assert trim_read("C" + A1[3:], probes) == ("", "illumina_truseq_r1")
+    # (cut where the adapter would start, if that's in the read)
+    assert trim_read("ACG" + A1[2:], probes) == ("A", "illumina_truseq_r1")
     # cut off by the read end
     nextera = BUILTIN_ADAPTERS["illumina_nextera"]
     assert trim_read(P1 + nextera[:7], probes) == (P1, "illumina_nextera")
@@ -261,7 +266,7 @@ def test_find_overrep_paired(reads):
     r1 = result["tallies"]["R1"]
     assert r1["reads"] == 20_000
     # P1 and P2 sit at read starts
-    p1 = next(i for i in result["order"] if result["found"][i]["insert"] == canon(P1))
+    p1 = next(i for i in result["order"] if canon(result["found"][i]["insert"]) == canon(P1))
     assert r1["starts"][p1].most_common(1)[0][0] == 0
 
 
@@ -291,11 +296,11 @@ def test_write_outputs(reads, tmp_path):
     header, rows = rows[0], rows[1:]
     assert header[:5] == ["id", "sequence", "length", "R1_reads", "R1_pct_of_reads"]
     assert [r[0] for r in rows] == ["overrep_1", "overrep_2", "overrep_3"]
-    assert rows[0][1] == canon(P1) and rows[0][3] == "6418"
+    assert canon(rows[0][1]) == canon(P1) and rows[0][3] == "6418"
     # the dimer is noted as holding both primers
     assert rows[2][header.index("contains")] == "overrep_1,overrep_2"
     fasta = open(paths["fasta"]).read().split()
-    assert fasta[:2] == [">overrep_1", canon(P1)]
+    assert fasta[:2] == [">overrep_1", rows[0][1]]
     starts = [line.split("\t") for line in open(paths["starts"]).read().splitlines()[1:]]
     assert sum(int(c) for i, lab, _, c in starts if i == "overrep_1" and lab == "R1") == result["tallies"]["R1"]["full"][result["order"][0]]
     adapters = {line.split("\t")[0]: line.split("\t") for line in open(paths["adapters"]).read().splitlines()[1:]}
@@ -333,16 +338,37 @@ def test_cli_rejects_bad_values(reads, tmp_path, bad, message):
     assert message in result.stderr
 
 
-def test_find_overrep_by_position(reads):
-    # with --min-perc above the dimer's ~2% of reads, it's still found, since it always
-    # starts reads (down to a tenth of min_perc)
+def test_find_overrep_min_perc(reads):
+    # with --min-perc above the dimer's ~2% of reads, only the primers are found
     result = find_overrep([str(p) for p in reads], min_perc=5)
-    how = {result["found"][i]["insert"]: result["found"][i]["how"] for i in result["order"]}
-    assert how == {canon(P1): "overall", canon(P2): "overall", canon(DIMER): "position"}
-    # but not below a tenth of it: at 0.3, P2 (~17% of reads) is found by position, the dimer isn't
+    assert set(found_counts(result)) == {canon(P1), canon(P2)}
+    # and above P2's ~17%, only P1
     result = find_overrep([str(p) for p in reads], min_perc=30)
-    how = {result["found"][i]["insert"]: result["found"][i]["how"] for i in result["order"]}
-    assert how == {canon(P1): "overall", canon(P2): "position"}
+    assert set(found_counts(result)) == {canon(P1)}
+
+
+def test_reported_as_most_often_seen(tmp_path):
+    # P2 always forward in reads, though its reverse complement sorts first
+    assert canon(P2) != P2
+    rng = random.Random(3)
+    fq = tmp_path / "fwd.fq"
+    with open(fq, "w") as out:
+        for i in range(3000):
+            seq = (P2 + A1)[:50] if i % 3 == 0 else rand_seq(50, rng)
+            out.write(f"@r{i}\n{seq}\n+\n{'I' * 50}\n")
+    result = find_overrep([str(fq)])
+    (i,) = result["order"]
+    assert result["found"][i]["insert"] == P2
+    assert result["tallies"]["reads"]["rc"][i] == 0
+    # and turned around (with its reverse-complement counts) when seen the other way more
+    rc_fq = tmp_path / "rc.fq"
+    with open(fq) as f, open(rc_fq, "w") as out:
+        for n, line in enumerate(f):
+            out.write(revcomp(line.strip()) + "\n" if n % 4 == 1 else line)
+    result = find_overrep([str(rc_fq)])
+    (i,) = result["order"]
+    assert result["found"][i]["insert"] == revcomp(P2)
+    assert result["tallies"]["reads"]["rc"][i] == 0
 
 
 def test_find_overrep_fasta_input(reads, tmp_path):
@@ -407,8 +433,8 @@ def test_dominant_kmers_are_candidates_whatever_their_fold(reads):
 def test_progress_shown_when_verbose(reads, capsys):
     result = find_overrep([str(p) for p in reads], verbose=True)
     out = capsys.readouterr().out
-    for n in range(1, 6):
-        assert f"pass {n} of 5" in out
+    for n in range(1, 5):
+        assert f"pass {n} of 4" in out
     assert "100%" in out
     # and the same results as without
     assert found_counts(result) == found_counts(find_overrep([str(p) for p in reads]))
@@ -441,35 +467,6 @@ def test_max_reads_for_discovery(reads):
         fo.native.count_kmers = orig
     assert seen == [2_000, 2_000]
     assert r["tallies"]["R1"]["reads"] == 20_000   # counting still used all reads
-
-
-def test_long_reads_skip_the_positional_look(tmp_path, capsys):
-    rng = random.Random(4)
-    genome = rand_seq(100_000, rng)
-    fq = tmp_path / "long.fq"
-    with open(fq, "w") as out:
-        for i in range(500):
-            s = rng.randint(0, len(genome) - 1500)
-            out.write(f"@r{i}\n{genome[s:s + 1500]}\n+\n{'I' * 1500}\n")
-    # (only the decision is of interest; stopping right after it keeps this quick, since with
-    # thresholds sized for short reads, long reads make for hundreds of candidates to extend)
-    import bit.modules.find_overrep as fo
-
-    class Stop(Exception):
-        pass
-
-    def bail(*a, **k):
-        raise Stop
-
-    orig = fo.extend_all
-    fo.extend_all = bail
-    try:
-        with pytest.raises(Stop):
-            find_overrep([str(fq)], verbose=True)
-    finally:
-        fo.extend_all = orig
-    out = capsys.readouterr().out
-    assert "skipped, reads are longer than 1,000 bases" in out
 
 
 def test_cli_help_menus():

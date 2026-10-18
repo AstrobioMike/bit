@@ -14,6 +14,17 @@
 
 -->
 
+## v2.12.1 (18-Oct-2026)
+
+### Changed
+- `bit find-overrep-seqs`
+  - dropped the second look by position (k-mers down to a tenth of `--min-perc` that mostly start at one place in reads), as it was picking up a lot of noise; sequences now need to be in at least `--min-perc` percent of reads (so the run is now 4 passes over the reads, and the `found_by` column is gone)
+  - each sequence is now reported in the orientation it's most often in, in the read file it's most common in (rather than whichever strand sorts first), so `pct_revcomp` is at most 50 for that file
+  - now trims reads that start partway into an adapter, which were previously coming through as overrepresented sequences
+
+
+---
+
 ## v2.12.0 (17-Oct-2026)
 
 ### Added

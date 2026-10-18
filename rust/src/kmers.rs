@@ -1,7 +1,6 @@
 //! K-mer counting passes over reads (see bit/modules/find_overrep.py): counts of every
 //! k-mer, per read file, with the 2- and 3-mers of the background model and the valid k-mer
-//! windows at each read position; counts by position for chosen k-mers; and reads holding
-//! chosen seed k-mers.
+//! windows at each read position; and reads holding chosen seed k-mers.
 
 use crate::reads::{Progress, SeqReader};
 use crate::trim::Trimmer;
@@ -237,38 +236,6 @@ pub fn count(
         c.n_reads += a.n_reads;
     }
     Ok(c)
-}
-
-/// {(canonical code, position (capped at 1023)): count} for k-mers marked in `wanted`
-/// (indexed by either strand's code)
-pub fn positions(
-    paths: &[String],
-    k: usize,
-    trimmer: Option<&Trimmer>,
-    wanted: &[bool],
-    progress: Prog,
-    max_reads: u64,
-) -> io::Result<FxHashMap<(u64, u32), u64>> {
-    let slots: Vec<Mutex<FxHashMap<(u64, u32), u64>>> = per_thread();
-    all_batches(paths, trimmer, progress, max_reads, |_, batch| {
-        batch.par_chunks(CHUNK).for_each(|chunk| {
-            let mut out = mine(&slots);
-            for read in chunk {
-                for_each_kmer(read, k, |p, fwd, rev| {
-                    if wanted[fwd as usize] {
-                        *out.entry((fwd.min(rev), p.min(1023) as u32)).or_insert(0) += 1;
-                    }
-                });
-            }
-        });
-    })?;
-    let mut out: FxHashMap<(u64, u32), u64> = FxHashMap::default();
-    for slot in slots {
-        for (key, n) in slot.into_inner().unwrap() {
-            *out.entry(key).or_insert(0) += n;
-        }
-    }
-    Ok(out)
 }
 
 /// up to max_contexts reads holding each seed k-mer (either strand), oriented so the seed
