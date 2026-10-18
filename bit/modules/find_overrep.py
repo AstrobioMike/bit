@@ -77,7 +77,8 @@ ERROR_VARIANT_RATIO = 20     # a k-mer this many times rarer than one a substitu
 ADAPTER_SEARCH_SEEDS = 200   # most abundant candidates extended to look for unknown adapters
 MAX_INSERT_ASYMMETRY = 0.5   # k-mers at most this asymmetric between the reads of a pair are insert
 ADAPTER_PROBE_LEN = 16       # start of a found adapter compared to others, to tell if it's the same
-TRIM_PROBE_LEN = 10          # start of an adapter looked for in reads to trim read-through
+TRIM_PROBE_LEN = 10          # stretches of an adapter looked for in reads to trim read-through...
+TRIM_PROBE_SPAN = 40         # ...every TRIM_PROBE_LEN bases over this much of its start (see probe_offsets)
 TRIM_MIN_END_OVERLAP = 6     # shortest adapter start trimmed when it's cut off by a read end
 POLY_G_RUN = 8               # runs of G this long at a read end are trimmed (no-signal on 2-color instruments)
 
@@ -452,28 +453,40 @@ def _near(a, b):
     return len(a) == len(b) and sum(x != y for x, y in zip(a, b)) <= len(a) // 10
 
 
+def probe_offsets(length):
+    """
+    Where the stretches of an adapter `length` long that trim_read looks for start: every
+    TRIM_PROBE_LEN bases over its first TRIM_PROBE_SPAN, and the last full stretch there
+    """
+    span = min(length, TRIM_PROBE_SPAN)
+    if span <= TRIM_PROBE_LEN:
+        return [0]
+    out = list(range(0, span - TRIM_PROBE_LEN + 1, TRIM_PROBE_LEN))
+    if out[-1] != span - TRIM_PROBE_LEN:
+        out.append(span - TRIM_PROBE_LEN)
+    return out
+
+
 def adapter_cuts(seq, adapters):
     """
     (left, right, [names]): where adapter sequence ends on the left of `seq` and starts on
     its right. Read-through is the adapter's start following an insert, so on the right it's
     the adapter as given, and on the left its reverse complement (the same molecule seen from
     the other read). An adapter's start cut off by the end of `seq` is found too, and so is
-    one missing its first few bases where `seq` starts partway into it (by its next stretch,
+    one missing its first bases where `seq` starts partway into it (by a later stretch of it,
     as in trim_read).
     """
     left, right, names = 0, len(seq), []
     for name, a in adapters.items():
         probe = a[:20]
-        e = 2 if len(probe) >= 15 else 1
-        # the stretch after the first TRIM_PROBE_LEN bases, if the adapter's long enough
-        later = a[TRIM_PROBE_LEN:TRIM_PROBE_LEN + 20] if len(a) >= TRIM_PROBE_LEN + 15 else ""
-        hits = _locate(probe, seq, e)
-        later_hits = _locate(later, seq, e) if later and not hits else []
+        # 20-base stretches starting where trim_read's probes do (at least 12 bases long)
+        windows = [(0, probe)] + [(o, a[o:o + 20]) for o in probe_offsets(len(a))[1:] if len(a) - o >= 12]
         cut = None
-        if hits:
-            cut = min(s for s, _ in hits)
-        elif later_hits:
-            cut = max(0, min(s for s, _ in later_hits) - TRIM_PROBE_LEN)
+        for o, w in windows:
+            hits = _locate(w, seq, 2 if len(w) >= 15 else 1)
+            if hits:
+                cut = max(0, min(s for s, _ in hits) - o)
+                break
         else:
             for L in range(min(len(probe) - 1, len(seq)), TRIM_MIN_END_OVERLAP - 1, -1):
                 if _near(seq[-L:], a[:L]):
@@ -482,14 +495,12 @@ def adapter_cuts(seq, adapters):
         if cut is not None and cut < right:
             right = cut
             names.append(name)
-        rprobe = revcomp(probe)
-        hits = _locate(rprobe, seq, e)
-        later_hits = _locate(revcomp(later), seq, e) if later and not hits else []
         cut = None
-        if hits:
-            cut = max(end for _, end in hits) + 1
-        elif later_hits:
-            cut = min(len(seq), max(end for _, end in later_hits) + 1 + TRIM_PROBE_LEN)
+        for o, w in windows:
+            hits = _locate(revcomp(w), seq, 2 if len(w) >= 15 else 1)
+            if hits:
+                cut = min(len(seq), max(end for _, end in hits) + 1 + o)
+                break
         else:
             for L in range(min(len(probe) - 1, len(seq)), TRIM_MIN_END_OVERLAP - 1, -1):
                 if _near(seq[:L], revcomp(a[:L])):
@@ -670,10 +681,10 @@ def trim_read(seq, probes):
     names joined by "|" for adapters sharing a start where the read ends too soon to tell
     them apart, "poly-G", or None). `probes` is [(name, adapter sequence)], each as it reads
     following an insert. An adapter is found by its first TRIM_PROBE_LEN bases, or, in case
-    of an error there or a read starting partway into the adapter, its next TRIM_PROBE_LEN
-    (cutting where the adapter would start, or from the read's start if that's before it);
-    or by at least TRIM_MIN_END_OVERLAP of its start where a read ends. A run of POLY_G_RUN
-    or more G's at the end is cut too.
+    of an error there or a read starting partway into the adapter, a later stretch of that
+    length (see probe_offsets), cutting where the adapter would start, or from the read's
+    start if that's before it; or by at least TRIM_MIN_END_OVERLAP of its start where a read
+    ends. A run of POLY_G_RUN or more G's at the end is cut too.
     """
     return native.trim_read(seq, list(probes))
 
@@ -891,6 +902,14 @@ def summary_lines(result):
     return lines
 
 
+def _adapter_source(name, result):
+    if name in result["inferred"]:
+        return "inferred"
+    if BUILTIN_ADAPTERS.get(name) == result["adapters"].get(name):
+        return "builtin"
+    return "given"
+
+
 def write_outputs(result, output_dir, output_prefix=""):
     paths = output_paths(output_dir, output_prefix)
     found, tallies, pairs = result["found"], result["tallies"], result["pairs"]
@@ -941,14 +960,17 @@ def write_outputs(result, output_dir, output_prefix=""):
         for lab in labels:
             names += [n for n in tallies[lab]["adapters"] if n not in names]
         for name in names:
-            if name in result["inferred"]:
-                source = "inferred"
-            elif name == "poly-G":
+            if name == "poly-G":
                 source = "poly-G"
-            elif "|" in name:
-                source = "either (same start, read ends too soon to tell)"
             else:
-                source = "given"
+                # (a "|" name is read-through that could be any of those adapters: they share a
+                # start, and the read ends too soon to tell them apart)
+                sources = []
+                for n in name.split("|"):
+                    src = _adapter_source(n, result)
+                    if src not in sources:
+                        sources.append(src)
+                source = "|".join(sources)
             if name == "poly-G":
                 seq = "G" * POLY_G_RUN + "..."
             elif "|" in name:

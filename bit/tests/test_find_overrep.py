@@ -3,6 +3,8 @@ import subprocess
 import numpy as np
 import pytest # type: ignore
 from bit.modules.find_overrep import (BUILTIN_ADAPTERS,
+                                      adapter_cuts,
+                                      probe_offsets,
                                       Matcher,
                                       encode,
                                       window_codes,
@@ -135,6 +137,10 @@ def test_trim_read():
     # a read starting partway into the adapter (missing its first few bases), cut from its start
     assert trim_read(A1[8:] + "AAGTCCAAATCTCGTATG", probes) == ("", "illumina_truseq_r1")
     assert trim_read("C" + A1[3:], probes) == ("", "illumina_truseq_r1")
+    # further in, found by a later stretch of it (like an i7 primer's end: adapter, index, P7)
+    junk = "CAAGTCCAAATCTGGTATTCCG"
+    assert trim_read(A1[13:] + junk, probes) == ("", "illumina_truseq_r1")
+    assert trim_read(A1[21:] + junk, probes) == ("", "illumina_truseq_r1")
     # (cut where the adapter would start, if that's in the read)
     assert trim_read("ACG" + A1[2:], probes) == ("A", "illumina_truseq_r1")
     # cut off by the read end
@@ -305,6 +311,9 @@ def test_write_outputs(reads, tmp_path):
     assert sum(int(c) for i, lab, _, c in starts if i == "overrep_1" and lab == "R1") == result["tallies"]["R1"]["full"][result["order"][0]]
     adapters = {line.split("\t")[0]: line.split("\t") for line in open(paths["adapters"]).read().splitlines()[1:]}
     assert int(adapters["illumina_truseq_r1"][3]) > 9000
+    assert adapters["illumina_truseq_r1"][1] == "builtin"
+    assert adapters["illumina_truseq_r1|illumina_truseq_r2"][1] == "builtin"
+    assert adapters["poly-G"][1] == "poly-G"
     assert any("Overrepresented sequences found:" in line and line.endswith("3") for line in summary_lines(result))
 
 
@@ -413,6 +422,36 @@ def test_bad_inputs(reads, tmp_path):
         fewer.write_text("".join(f.readlines()[:400]))
     with pytest.raises(ValueError, match="same number of reads"):
         find_overrep([str(reads[0]), str(fewer)])
+
+
+def test_adapter_sources():
+    from bit.modules.find_overrep import _adapter_source
+    result = dict(adapters=dict(BUILTIN_ADAPTERS, mine="ACGTACGTACGGTT", illumina_nextera="ACGTTT",
+                                inferred_1="AGATCGGAAGAGCTTT"),
+                  inferred={"inferred_1": "AGATCGGAAGAGCTTT"})
+    assert _adapter_source("illumina_truseq_r1", result) == "builtin"
+    assert _adapter_source("mine", result) == "given"
+    # one given under a built-in's name, but with its own sequence
+    assert _adapter_source("illumina_nextera", result) == "given"
+    assert _adapter_source("inferred_1", result) == "inferred"
+
+
+def test_probe_offsets():
+    # the same as the compiled core's (rust/src/trim.rs)
+    assert probe_offsets(33) == [0, 10, 20, 23]
+    assert probe_offsets(19) == [0, 9]
+    assert probe_offsets(20) == [0, 10]
+    assert probe_offsets(8) == [0]
+    assert probe_offsets(300) == [0, 10, 20, 30]
+
+
+def test_adapter_cuts_starting_partway_into_an_adapter():
+    # a found sequence that's the end of the R1 adapter and what follows it is all adapter
+    seq = A1[13:] + "CAAGTCCAAATCTGGTATTCCG"
+    assert adapter_cuts(seq, BUILTIN_ADAPTERS)[:2] == (0, 0)
+    assert adapter_cuts(revcomp(seq), BUILTIN_ADAPTERS)[:2] == (len(seq), len(seq))
+    # and an insert followed by the adapter keeps the insert
+    assert adapter_cuts(P1 + A1[:25], BUILTIN_ADAPTERS)[:2] == (0, len(P1))
 
 
 def test_low_complexity():
