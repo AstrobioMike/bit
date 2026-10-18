@@ -104,7 +104,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "-H",
         "--detailed-help",
         action="store_true",
-        help="Show detailed help, including how it works and fine-tuning parameters",
+        help="Show detailed help, including fine-tuning parameters and how the program works",
     )
 
     add_help(general)
@@ -154,7 +154,7 @@ def _add_fine_tuning_arguments(target, hidden=False):
         type=float,
         default=DEFAULT_MAX_DIFF,
         help=h("Maximum edits (substitutions + indels) allowed when counting sequences in reads, as a "
-               f"fraction of the sequence's length (default: {DEFAULT_MAX_DIFF}, e.g., 2 for a 20-25 bp primer)"),
+               f"fraction of the sequence's length (default: {DEFAULT_MAX_DIFF})"),
     )
 
     target.add_argument(
@@ -164,7 +164,7 @@ def _add_fine_tuning_arguments(target, hidden=False):
         type=int,
         default=DEFAULT_K,
         help=h(f"K-mer size for finding overrepresented sequences, 7-12 (default: {DEFAULT_K}; "
-               "smaller finds shorter sequences but with more chance matches, larger the reverse)"),
+               "smaller finds shorter sequences but with more chance matches)"),
     )
 
     target.add_argument(
@@ -179,8 +179,7 @@ def _add_fine_tuning_arguments(target, hidden=False):
         "-a",
         "--adapters",
         metavar="<FILE>",
-        help=h("Fasta of adapter sequences to trim read-through of, as it appears in reads (i.e., the "
-               "start of the adapter right after the insert), in addition to the built-in Illumina ones"),
+        help=h("Fasta of adapter sequences to trim off before searching for overrepresented sequences, in addition to the built-in Illumina ones"),
     )
 
     target.add_argument(
