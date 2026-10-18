@@ -73,6 +73,13 @@ def build_parser(parent_subparsers=None, show_fine=False):
     )
 
     general.add_argument(
+        "-s",
+        "--seqs-to-count",
+        metavar="<FILE>",
+        help="Fasta file containing known sequences you want to count in the reads",
+    )
+
+    general.add_argument(
         "-o",
         "--output-dir",
         metavar="<DIR>",
@@ -138,6 +145,7 @@ def _add_fine_tuning_arguments(target, hidden=False):
     )
 
     target.add_argument(
+        "-f",
         "--min-fold",
         metavar="<FLOAT>",
         type=float,
@@ -167,6 +175,7 @@ def _add_fine_tuning_arguments(target, hidden=False):
     )
 
     target.add_argument(
+        "-l",
         "--max-len",
         metavar="<INT>",
         type=int,
@@ -182,6 +191,7 @@ def _add_fine_tuning_arguments(target, hidden=False):
     )
 
     target.add_argument(
+        "-n",
         "--no-builtin-adapter-trim",
         action="store_true",
         help=h("Don't trim standard Illumina adapters before searching for overrepresented sequences "
