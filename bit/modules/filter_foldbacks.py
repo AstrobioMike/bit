@@ -32,6 +32,7 @@ shifia/modules/pta.py and rust/src/pta.rs.
 
 import gzip
 import os
+import sys
 from itertools import islice
 
 from tqdm import tqdm # type: ignore
@@ -82,6 +83,38 @@ def _write(handle, name, seq, qual):
         handle.write(f"@{name}\n{seq}\n+\n{qual}\n")
     else:
         handle.write(f">{name}\n{seq}\n")
+
+
+class _LazyGzip:
+    """ a gzipped text output that is only created once something is written to it """
+
+    def __init__(self, path):
+        self.path = path
+        self.handle = None
+
+    def write(self, text):
+        if self.handle is None:
+            self.handle = gzip.open(self.path, "wt", compresslevel=1)
+        self.handle.write(text)
+
+    @property
+    def written(self):
+        return self.handle is not None
+
+    def close(self):
+        if self.handle is not None:
+            self.handle.close()
+
+
+def _progress_bar(total, unit, show_progress):
+    """ bit's usual capped, kept bar over the bytes of the input, with a running count """
+    if show_progress:
+        print()
+    bar = tqdm(total=total, unit="B", unit_scale=True, unit_divisor=1024, ncols=80,
+               disable=not show_progress, file=sys.stdout,
+               bar_format="    {l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}{postfix}]")
+    bar.set_postfix_str(f"0 {unit}")
+    return bar
 
 
 def _cut(rec, start, end):
@@ -157,10 +190,13 @@ def filter_foldbacks(read_1, read_2=None, output_dir="filter-foldbacks", output_
         return gzip.open(path, "wt", compresslevel=1)
 
     records = iter_pairs(r1_reader, r2_reader) if paired else ((r, None) for r in r1_reader)
-    bar = tqdm(total=r1_reader.total_bytes, unit="B", unit_scale=True, disable=not show_progress,
-               desc="    Scanning reads", leave=False)
+    unit = "pairs" if paired else "reads"
+    bar = _progress_bar(r1_reader.total_bytes, unit, show_progress)
 
-    handles = {key: opener(paths[key]) for key in (("r1", "r2", "singles") if paired else ("reads",))}
+    handles = {key: opener(paths[key]) for key in (("r1", "r2") if paired else ("reads",))}
+    if paired:
+        # only made if a fold-back pair leaves a mate long enough to keep
+        handles["singles"] = _LazyGzip(paths["singles"])
     try:
         while True:
             batch = list(islice(records, batch_size))
@@ -207,6 +243,9 @@ def filter_foldbacks(read_1, read_2=None, output_dir="filter-foldbacks", output_
                     else:
                         counts.reads_dropped_short += 1
             bar.update(r1_reader.bytes_read() - bar.n)
+            bar.set_postfix_str(f"{counts.reads_or_pairs_in:,} {unit}", refresh=False)
+        # finishing the bar cleanly (the buffered position can lag the file size)
+        bar.update(r1_reader.total_bytes - bar.n)
     finally:
         bar.close()
         for h in handles.values():
@@ -215,6 +254,8 @@ def filter_foldbacks(read_1, read_2=None, output_dir="filter-foldbacks", output_
         if r2_reader is not None:
             r2_reader.close()
 
+    if paired and not handles["singles"].written:
+        paths["singles"] = None
     _write_summary(paths, counts, paired)
     return counts, paths
 
@@ -248,8 +289,7 @@ def _filter_long(read_1, output_dir, output_prefix, min_length, batch_size, show
     fastq = first is not None and first[2] is not None
     paths = output_paths(output_dir, output_prefix, paired=False, fastq=fastq)
     counts = Counts()
-    bar = tqdm(total=reader.total_bytes, unit="B", unit_scale=True, disable=not show_progress,
-               desc="    Scanning reads", leave=False)
+    bar = _progress_bar(reader.total_bytes, "reads", show_progress)
     handle = gzip.open(paths["reads"], "wt", compresslevel=1)
     records = iter(reader)
     try:
@@ -274,6 +314,8 @@ def _filter_long(read_1, output_dir, output_prefix, min_length, batch_size, show
                 counts.reads_out += 1
                 counts.bases_out += len(rec[1])
             bar.update(reader.bytes_read() - bar.n)
+            bar.set_postfix_str(f"{counts.reads_or_pairs_in:,} reads", refresh=False)
+        bar.update(reader.total_bytes - bar.n)
     finally:
         bar.close()
         handle.close()

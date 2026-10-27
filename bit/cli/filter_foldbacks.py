@@ -255,7 +255,8 @@ def print_summary(counts, paths, paired, hifi=False):
     print()
     if paired:
         print(f"    Filtered pairs written to: '{paths['r1']}' and '{paths['r2']}'")
-        print(f"    Mates of fold-back pairs written to: '{paths['singles']}'")
+        if paths["singles"] is not None:
+            print(f"    Mates of fold-back pairs written to: '{paths['singles']}'")
     else:
         print(f"    Filtered reads written to: '{paths['reads']}'")
     print(f"    Summary written to: '{paths['summary']}'")

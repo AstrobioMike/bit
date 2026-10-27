@@ -128,9 +128,23 @@ def test_cli(tmp_path, template):
     result = run_cli(["bit", "filter-foldbacks", "-i", str(tmp_path / "r1.fq"),
                       "-I", str(tmp_path / "r2.fq"), "-o", str(out), "-j", "1"])
     assert "pairs scanned" in result.stdout
+    # no fold-back pairs: no mates file, and no line pointing to one
+    assert "Mates of fold-back pairs" not in result.stdout
     assert sorted(p.name for p in out.iterdir()) == ["command-execution-info.txt",
                                                      "filtered_R1.fastq.gz", "filtered_R2.fastq.gz",
-                                                     "foldback-mates.fastq.gz", "summary.tsv"]
+                                                     "summary.tsv"]
+
+
+def test_no_foldback_mates_file_without_foldbacks(tmp_path, template):
+    pairs = [pair_from(template[i:i + 400], f"n{i}") for i in range(0, 2400, 300)]
+    write_fastq(tmp_path / "r1.fq", [p[0] for p in pairs])
+    write_fastq(tmp_path / "r2.fq", [p[1] for p in pairs])
+    out = tmp_path / "out"
+    out.mkdir()
+    counts, paths = filter_foldbacks(str(tmp_path / "r1.fq"), str(tmp_path / "r2.fq"), str(out),
+                                     show_progress=False)
+    assert counts.foldback_pairs == 0 and paths["singles"] is None
+    assert not (out / "foldback-mates.fastq.gz").exists()
 
 
 # long reads (--hifi)
