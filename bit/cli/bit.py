@@ -79,7 +79,7 @@ PROGRAM_GROUPS = [
         "programs": [
             {
                 "name": "filter-foldbacks",
-                "desc": "remove fold-back artifacts of whole-genome amplification (PTA/MDA) from short or long reads",
+                "desc": "remove fold-back artifacts of PTA/MDA from short or long reads",
             },
         ],
     },

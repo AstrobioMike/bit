@@ -39,8 +39,14 @@ from tqdm import tqdm # type: ignore
 from bit.modules.general import check_if_output_dir_exists, log_command_run
 from bit.modules.match_reads import FastxReader, iter_pairs
 
-KMER_SIZE = 17
-MIN_SHARED = 20          # k-mers (17-mers: at least 36 bp shared as a stretch)
+# short reads: 13-mers, 16 shared (at least 28 bp shared as one stretch). Tested on pairs cut
+# from real PTA molecules and from reference genomes (Oct 2026): against 17-mers with 20 shared
+# (36 bp), it catches more fold-backs (2x150: 27% of pairs with a fold in a read vs 22%; 2x250:
+# 53% vs 48%) for more false calls at real short inverted repeats in some genomes (Pseudomonas,
+# rich in short palindromic repeats: 0.28% of 2x150 and 0.88% of 2x250 pairs vs 0.07% / 0.26%;
+# most others under 0.1%). Shorter still (24 bp) gained little more for twice the false calls
+KMER_SIZE = 13
+MIN_SHARED = 16
 BATCH_SIZE = 20_000
 MIN_LENGTH = 50
 

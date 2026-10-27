@@ -141,7 +141,7 @@ fn shared(r1: &[u8], r2: &[u8], k: usize) -> (usize, usize) {
 /// cut; distinct k-mers read 2 shares with read 1 in the same orientation; and reverse
 /// complemented). Read 2's fields are 0 for single-end input.
 #[pyfunction]
-#[pyo3(signature = (r1, r2=None, k=17, min_shared=20, tolerance=20))]
+#[pyo3(signature = (r1, r2=None, k=13, min_shared=16, tolerance=20))]
 #[allow(clippy::type_complexity)]
 pub fn scan_foldbacks(
     py: Python<'_>,

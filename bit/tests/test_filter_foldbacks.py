@@ -205,3 +205,27 @@ def test_cli_hifi(tmp_path, long_template):
     assert "reads cut at a fold" in result.stdout and "unpaired middle" in result.stdout
     assert sorted(p.name for p in out.iterdir()) == ["command-execution-info.txt",
                                                      "filtered.fastq.gz", "summary.tsv"]
+
+
+def test_cli_rejects_bad_kmer_size(tmp_path, template):
+    import subprocess
+    write_fastq(tmp_path / "r.fq", [("a", template[:150], "I" * 150)])
+    result = subprocess.run(["bit", "filter-foldbacks", "-i", str(tmp_path / "r.fq"), "-o",
+                             str(tmp_path / "o"), "-k", "4"], capture_output=True, text=True)
+    assert result.returncode != 0 and "kmer-size" in result.stderr
+
+
+def test_short_read_defaults():
+    from bit.modules.filter_foldbacks import KMER_SIZE, MIN_SHARED
+    # 16 shared 13-mers: a 28 bp stretch (see the module's notes)
+    assert (KMER_SIZE, MIN_SHARED) == (13, 16)
+
+
+def test_cli_detailed_help_shows_fine_tuning():
+    import subprocess
+    plain = subprocess.run(["bit", "filter-foldbacks", "-h"], capture_output=True, text=True)
+    detailed = subprocess.run(["bit", "filter-foldbacks", "-H"], capture_output=True, text=True)
+    out_plain = plain.stdout + plain.stderr
+    out_detailed = detailed.stdout + detailed.stderr
+    assert "--kmer-size" not in out_plain and "HOW IT WORKS" not in out_plain
+    assert "--kmer-size" in out_detailed and "HOW IT WORKS" in out_detailed

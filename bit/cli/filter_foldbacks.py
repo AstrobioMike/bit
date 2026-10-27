@@ -1,46 +1,77 @@
 import sys
 import argparse
 from bit.cli.common import (CustomRichHelpFormatter,
+                            ParagraphRichHelpFormatter,
                             add_help,
                             add_force,
                             add_version_arg,
                             reconstruct_invocation)
+from bit.modules.filter_foldbacks import (KMER_SIZE,
+                                          MIN_SHARED,
+                                          MIN_LENGTH,
+                                          LONG_MIN_LENGTH)
 
 
-def build_parser(parent_subparsers=None):
+def build_parser(parent_subparsers=None, show_fine=False):
 
     desc = """
-        This program removes fold-back artifacts of whole-genome amplification (e.g., PTA or MDA)
-        from short reads (the default) or long reads (`--hifi`). An amplified molecule that switched to the opposite strand nearby reads as
-        a stretch and then its own reverse complement. A read with such a fold in it is cut to its
-        longer arm, up to where that arm's paired stretch ends (dropping the join and any unpaired,
-        possibly untemplated, bases beside it). With paired reads, a pair whose fragment folded back
-        between the mates (read 2 holds read 1's sequence in the same orientation) is also caught.
-        Pairs with neither are written as pairs; both mates of a fold-back pair are written as single
-        reads, since each is still real sequence though the pairing isn't. With `--hifi` (long reads,
-        e.g., PacBio HiFi), each read is cut at its folds the same way `shifia --pta` does: a long
-        read holds whole fold-backs, so no pairs are needed. Works from the reads alone (no reference
-        needed).
+        This program removes fold-back artifacts of PTA/MDA in short Illumina reads (default) or long reads
+        (--hifi)). Run with `-H` to see the detailed help menu, including how the
+        program works and fine-tuning parameters.
         """
+
+
+
+    detailed_desc = desc + """
+
+        The most common artifact of PTA (and frequent in MDA) is a fold-back, where partway through being
+        copied, the molecule folds back on itself and the polymerase carries on copying the strand it just
+        made. This results in the output read holding a stretch of sequence followed by its own reverse complement.
+        This program cuts reads with such a fold down to their longer arm. With paired reads, pairs whose
+        fragment folded back between the mates have both mates written as single reads (because they don't
+        form a proper pair orientation-wise).
+
+        HOW IT WORKS: With the default of short reads, each read, or each pair, is checked two ways with
+        k-mers (default 13-mers). (1) A fold within a read: when there are at least k-mers (--min-shared, default 16)
+        whose reverse complement is also in the same read. The read is cut to its longer arm, ending where
+        that arm's paired stretch ends, so the join and anything unpaired beside it go; it's then checked again,
+        as a read can fold more than once. (2) With pairs, a fold between the mates: read 2 holding at least --min-shared
+        of read 1's k-mers in the same orientation. Here the unpaired sequence is trimmed from both, and the remaining
+        pieces are sent as individual reads to the output (not the filtered_R1/R2).
+
+        OUTPUTS: Input pairs with neither signature detected go as they are to filtered_R1/R2. Both mates of a
+        pair with either found go to foldback-mates as single reads (again, because they aren't proper pairs).
+        Cut pieces under --min-length are dropped.
+
+        LONG READS (--hifi): For each read, about 1 in 4 21-mers are used as anchors. It is deterined to have fold
+        if 5 or more anchors that appear both forward and reverse-complemented agree on where the read "turns", and those
+        pairs comprise at least a quarter of the anchors on the read's shorter side of the turn (which helps delineate
+        amplification artifacts from legit inverted repeats). A folded read is cut to its longer arm and checked again.
+        --kmer-size and --min-shared are for short reads and aren't used in this mode.
+        """
+
+    description = detailed_desc if show_fine else desc
+    formatter = ParagraphRichHelpFormatter if show_fine else CustomRichHelpFormatter
+    epilog = ("Ex. usage: `bit filter-foldbacks -i R1.fastq.gz -I R2.fastq.gz -o filtered`, "
+              "or `bit filter-foldbacks --hifi -i hifi-reads.fastq.gz -o filtered`")
 
     if parent_subparsers is not None:
         parser = parent_subparsers.add_parser(
             "filter-foldbacks",
-            description=desc,
-            formatter_class=CustomRichHelpFormatter,
+            description=description,
+            formatter_class=formatter,
             add_help=False,
         )
     else:
         parser = argparse.ArgumentParser(
-            description=desc,
-            epilog=("Ex. usage: `bit filter-foldbacks -i R1.fastq.gz -I R2.fastq.gz -o filtered`, "
-                    "or `bit filter-foldbacks --hifi -i hifi-reads.fastq.gz -o filtered`"),
-            formatter_class=CustomRichHelpFormatter,
+            description=description,
+            epilog=epilog,
+            formatter_class=formatter,
             add_help=False
         )
 
     required = parser.add_argument_group("Required Parameters")
-    optional = parser.add_argument_group("Optional Parameters")
+    general = parser.add_argument_group("General Parameters")
 
     required.add_argument(
         "-i",
@@ -50,24 +81,20 @@ def build_parser(parent_subparsers=None):
         help="Input reads (read 1 if paired), fastq or fasta, gzipped or not",
     )
 
-    optional.add_argument(
+    general.add_argument(
         "-I",
         "--input-reads-2",
         metavar="<FILE>",
-        help=("Input read 2 file if paired, fastq or fasta, gzipped or not (paired reads catch "
-              "more fold-backs: those between the mates as well as those within a read)"),
+        help=("Input read 2 file if paired, fastq or fasta, gzipped or not"),
     )
 
-    optional.add_argument(
+    general.add_argument(
         "--hifi",
         action="store_true",
-        help=("Input reads are long single reads (e.g., PacBio HiFi): each is cut at its folds as "
-              "`shifia --pta` does (21-mers, a fold's arms pairing at least a quarter of the read's "
-              "shorter side, so inverted repeats in long flanks are left alone); --min-shared isn't "
-              "used (default: short reads)"),
+        help=("Add this flag if the input are pacbio hifi reads (run with -H for detailed help)"),
     )
 
-    optional.add_argument(
+    general.add_argument(
         "-o",
         "--output-dir",
         metavar="<DIR>",
@@ -75,7 +102,7 @@ def build_parser(parent_subparsers=None):
         help='Directory for output files (default: "filter-foldbacks")',
     )
 
-    optional.add_argument(
+    general.add_argument(
         "-O",
         "--output-prefix",
         metavar="<STR>",
@@ -84,26 +111,7 @@ def build_parser(parent_subparsers=None):
               "e.g., 'sample-1-'; default: '')"),
     )
 
-    optional.add_argument(
-        "-m",
-        "--min-length",
-        metavar="<INT>",
-        type=int,
-        default=None,
-        help="Minimum length of a read cut at a fold for it to be kept (default: 50; 100 with --hifi)",
-    )
-
-    optional.add_argument(
-        "--min-shared",
-        metavar="<INT>",
-        type=int,
-        default=20,
-        help=("Shared k-mers (17-mers) needed to call a fold in short reads, within a read or "
-              "between mates; 20 means at least 36 bp shared as one stretch, more than most short "
-              "inverted repeats in genomes (default: 20)"),
-    )
-
-    optional.add_argument(
+    general.add_argument(
         "-j",
         "--jobs",
         metavar="<INT>",
@@ -112,16 +120,74 @@ def build_parser(parent_subparsers=None):
         help="Number of threads to use (default: 5)",
     )
 
-    add_force(optional)
+    add_force(general)
 
-    add_help(optional)
+    general.add_argument(
+        "-H",
+        "--detailed-help",
+        action="store_true",
+        help="Show detailed help, including fine-tuning parameters and how the program works",
+    )
 
-    add_version_arg(optional)
+    add_help(general)
+
+    add_version_arg(general)
+
+    if show_fine:
+        # visible fine-tuning group, with real help strings, for the detailed menu
+        fine = parser.add_argument_group("Fine-tuning Parameters")
+        _add_fine_tuning_arguments(fine, hidden=False)
+    else:
+        # standard menu: leave the group out of the help entirely, but still register the same
+        # arguments (hidden) so they parse and get their defaults
+        _add_fine_tuning_arguments(parser, hidden=True)
 
     return parser
 
 
+def _add_fine_tuning_arguments(target, hidden=False):
+
+    def h(text):
+        return argparse.SUPPRESS if hidden else text
+
+    target.add_argument(
+        "-m",
+        "--min-length",
+        metavar="<INT>",
+        type=int,
+        default=None,
+        help=h(f"Minimum length of a read cut at a fold for it to be kept (default: {MIN_LENGTH}; "
+               f"{LONG_MIN_LENGTH} with --hifi)"),
+    )
+
+    target.add_argument(
+        "-k",
+        "--kmer-size",
+        metavar="<INT>",
+        type=int,
+        default=KMER_SIZE,
+        help=h(f"K-mer size for finding folds in short reads, 5-31 (default: {KMER_SIZE}). Not used "
+               "with --hifi"),
+    )
+
+    target.add_argument(
+        "-s",
+        "--min-shared",
+        metavar="<INT>",
+        type=int,
+        default=MIN_SHARED,
+        help=h(f"Shared k-mers needed to call a fold in short reads, within a read or between mates "
+               f"(default: {MIN_SHARED}). Lower catches more fold-backs but also potentially more, legit short inverted "
+               "repeats real genomes carry. Not used with --hifi"),
+    )
+
+
 def main():
+
+    argv = sys.argv[1:]
+    if "-H" in argv or "--detailed-help" in argv:
+        build_parser(show_fine=True).print_help(sys.stderr)
+        sys.exit(0)
 
     parser = build_parser()
 
@@ -137,6 +203,8 @@ def main():
         parser.error("--min-length must be 1 or greater")
     if args.hifi and args.input_reads_2:
         parser.error("--hifi takes single long reads: no --input-reads-2")
+    if not 5 <= args.kmer_size <= 31:
+        parser.error("--kmer-size must be between 5 and 31")
     if args.min_shared < 1:
         parser.error("--min-shared must be 1 or greater")
 
@@ -156,6 +224,7 @@ def main():
         output_prefix=args.output_prefix,
         min_length=args.min_length,
         min_shared=args.min_shared,
+        k=args.kmer_size,
         hifi=args.hifi,
     )
 

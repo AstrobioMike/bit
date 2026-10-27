@@ -21,6 +21,8 @@
   - removes fold-back artifacts of amplification (like PTA/MDA) from illumina or pacbio (--hifi) reads
     - single-end (or long) reads with a fold in them are cut to their longer arm (dropping the join and any unpaired bases beside it)
     - paired reads whose fragment folded back between the mates (read 2 holding read 1's sequence in the same orientation) have both mates written as single reads
+    - short reads: a fold needs 16 shared 13-mers (a 28 bp stretch) by default (`--kmer-size`, `--min-shared`); fewer catch more fold-backs but also more real inverted repeats in some genomes (e.g., Pseudomonas)
+    - `-H` / `--detailed-help` shows how it works, what it catches, and the fine-tuning parameters (`--min-length`, `--kmer-size`, `--min-shared`)
 
 ---
 
