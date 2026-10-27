@@ -131,3 +131,77 @@ def test_cli(tmp_path, template):
     assert sorted(p.name for p in out.iterdir()) == ["command-execution-info.txt",
                                                      "filtered_R1.fastq.gz", "filtered_R2.fastq.gz",
                                                      "foldback-mates.fastq.gz", "summary.tsv"]
+
+
+# long reads (--hifi)
+
+@pytest.fixture
+def long_template():
+    return rand_seq(20000, random.Random(11))
+
+
+def test_trim_long_folds_cuts_to_longer_arm(long_template):
+    from bit._native import trim_long_folds
+    t = long_template
+    # 3 kb out to 3,000, back from 2,800 (200 bp unpaired middle) to 1,500
+    folded = t[:3000] + rc(t[1500:2800])
+    plain = t[5000:17000]
+    (s1, e1, f1, _, m1), (s2, e2, f2, _, m2) = trim_long_folds([folded, plain])
+    assert (s1, f1) == (0, 1) and 2750 <= e1 <= 2800 and 150 <= m1 <= 250
+    assert (s2, e2, f2, m2) == (0, len(plain), 0, -1)
+
+
+def test_trim_long_folds_leaves_inverted_repeat_in_long_flanks(long_template):
+    from bit._native import trim_long_folds
+    t = long_template
+    # a genomic inverted repeat: 300 bp arm, 150 bp spacer, the arm reverse complemented, in 3 kb flanks
+    read = t[:3450] + rc(t[3000:3300]) + t[6000:9000]
+    assert trim_long_folds([read])[0][2] == 0
+
+
+def test_filter_foldbacks_hifi(tmp_path, long_template):
+    t = long_template
+    folded = t[:3000] + rc(t[1500:2800])
+    short_left = t[10000:10120] + rc(t[9000:10080])   # longer arm on the right, kept
+    recs = [("plain", t[4000:9000]), ("fold", folded), ("right", short_left)]
+    write_fastq(tmp_path / "hifi.fq", [(n, s, "I" * len(s)) for n, s in recs])
+    out = tmp_path / "out"
+    out.mkdir()
+    counts, paths = filter_foldbacks(str(tmp_path / "hifi.fq"), None, str(out), show_progress=False,
+                                     hifi=True)
+    seqs = dict(zip(read_names(paths["reads"]), read_seqs(paths["reads"])))
+    assert counts.reads_or_pairs_in == 3 and counts.reads_cut_at_a_fold == 2
+    assert seqs["plain"] == t[4000:9000]
+    assert folded.startswith(seqs["fold"]) and 2750 <= len(seqs["fold"]) <= 2800
+    assert short_left.endswith(seqs["right"]) and 1000 <= len(seqs["right"]) <= 1080
+    summary = dict(l.rstrip("\n").split("\t") for l in open(paths["summary"]))
+    assert summary["folds_cut"] == "2" and "unpaired_middle_median" in summary
+
+
+def test_filter_foldbacks_hifi_drops_short_pieces(tmp_path, long_template):
+    t = long_template
+    # the kept arm (~950 bp) is under min_length, so the read goes
+    folded = t[:1000] + rc(t[700:950])
+    write_fastq(tmp_path / "hifi.fq", [("fold", folded, "I" * len(folded))])
+    out = tmp_path / "out"
+    out.mkdir()
+    counts, paths = filter_foldbacks(str(tmp_path / "hifi.fq"), None, str(out), show_progress=False,
+                                     hifi=True, min_length=2000)
+    assert counts.reads_dropped_short == 1 and counts.reads_out == 0
+
+
+def test_filter_foldbacks_hifi_refuses_pairs(tmp_path):
+    with pytest.raises(ValueError):
+        filter_foldbacks("r1.fq", "r2.fq", str(tmp_path), show_progress=False, hifi=True)
+
+
+def test_cli_hifi(tmp_path, long_template):
+    t = long_template
+    folded = t[:3000] + rc(t[1500:2800])
+    write_fastq(tmp_path / "hifi.fq", [("fold", folded, "I" * len(folded))])
+    out = tmp_path / "cli"
+    result = run_cli(["bit", "filter-foldbacks", "--hifi", "-i", str(tmp_path / "hifi.fq"),
+                      "-o", str(out), "-j", "1"])
+    assert "reads cut at a fold" in result.stdout and "unpaired middle" in result.stdout
+    assert sorted(p.name for p in out.iterdir()) == ["command-execution-info.txt",
+                                                     "filtered.fastq.gz", "summary.tsv"]

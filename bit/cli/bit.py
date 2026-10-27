@@ -72,9 +72,14 @@ PROGRAM_GROUPS = [
                 "name": "add-insertion",
                 "desc": "add insertions into nucleotide or amino-acid fasta sequences",
             },
+        ],
+    },
+    {
+        "title": "Read QC",
+        "programs": [
             {
                 "name": "filter-foldbacks",
-                "desc": "remove fold-back artifacts of whole-genome amplification (PTA/MDA) from short reads",
+                "desc": "remove fold-back artifacts of whole-genome amplification (PTA/MDA) from short or long reads",
             },
         ],
     },

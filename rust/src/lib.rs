@@ -1,9 +1,10 @@
 //! bit's compiled core: the per-read loops of `bit find-overrep-seqs` (reading, adapter trimming,
 //! k-mer counting, gathering reads around seeds, and placing found sequences in reads
-//! allowing for edits) and of `bit filter-foldbacks` (finding fold-back reads and pairs).
+//! allowing for edits) and of `bit filter-foldbacks` (finding fold-back reads and pairs, short or long).
 //! Everything else stays in Python (bit/modules/find_overrep.py,
 //! bit/modules/filter_foldbacks.py), which calls into this as `bit._native`.
 
+mod anchors;
 mod edlib;
 mod foldback;
 mod kmers;
@@ -270,6 +271,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(count_kmers, m)?)?;
     m.add_function(wrap_pyfunction!(collect_contexts, m)?)?;
     m.add_function(wrap_pyfunction!(foldback::scan_foldbacks, m)?)?;
+    m.add_function(wrap_pyfunction!(foldback::trim_long_folds, m)?)?;
     m.add_class::<Matcher>()?;
     m.add_class::<Progress>()?;
     Ok(())

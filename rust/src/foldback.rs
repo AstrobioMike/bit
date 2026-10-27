@@ -192,6 +192,182 @@ pub fn scan_foldbacks(
     }))
 }
 
+// Long reads (`--hifi`): the same fold finding and cutting as `shifia --pta`
+// (github.com/AstrobioMike/shifia, rust/src/pta.rs), on the same sampled anchors (see
+// anchors.rs), so the two cut reads at the same places. A long read can hold whole arms and the
+// unpaired middle between them (PTA's is ~50-400 bp), and both arms of a fold share many anchors.
+// Unlike short reads, a long read is mostly NOT fold, so a fold also has to pair a fair share of
+// the anchors on the read's shorter side of it (min_fraction): a genomic inverted repeat inside
+// long flanks pairs only a few.
+
+/// one fold in seq: (end of the left arm's paired stretch, start of the right arm's paired
+/// stretch, unpaired middle), from the pairs of anchors seen both ways that agree on the fold
+fn long_fold(
+    seq: &[u8],
+    k: usize,
+    threshold: u64,
+    min_pairs: usize,
+    min_fraction: f64,
+    tolerance: i64,
+) -> Option<(usize, usize, i64)> {
+    let mut by_hash: FxHashMap<u64, Vec<(i64, bool)>> = FxHashMap::default();
+    let mut positions: Vec<i64> = Vec::new();
+    crate::anchors::for_each_anchor(seq, k, threshold, |p, h, f| {
+        by_hash.entry(h).or_default().push((p as i64, f));
+        positions.push(p as i64);
+    });
+    if positions.len() < 2 * min_pairs {
+        return None;
+    }
+    // pairs (lo, hi) of one k-mer seen both ways; their fold is (lo + hi + k) / 2, kept doubled
+    let mut pairs: Vec<(i64, i64, i64)> = Vec::new();
+    for occ in by_hash.values() {
+        if occ.len() < 2 {
+            continue;
+        }
+        for &(a, fa) in occ {
+            if !fa {
+                continue;
+            }
+            for &(b, fb) in occ {
+                if fb {
+                    continue;
+                }
+                let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+                pairs.push((lo + hi + k as i64, lo, hi));
+            }
+        }
+    }
+    if pairs.len() < min_pairs {
+        return None;
+    }
+    pairs.sort_unstable();
+    // the most agreeing window of folds (2 * tolerance wide, in doubled units)
+    let w = 2 * tolerance;
+    let (mut best, mut best_at, mut j) = (0usize, 0usize, 0usize);
+    for i in 0..pairs.len() {
+        while pairs[i].0 - pairs[j].0 > w {
+            j += 1;
+        }
+        if i + 1 - j > best {
+            best = i + 1 - j;
+            best_at = j;
+        }
+    }
+    if best < min_pairs {
+        return None;
+    }
+    let chosen = &pairs[best_at..best_at + best];
+    let fold2 = chosen[best / 2].0;
+    let left_end = chosen.iter().map(|x| x.1).max().unwrap() + k as i64;
+    let right_start = chosen.iter().map(|x| x.2).min().unwrap();
+    // enough of the shorter side's anchors paired (a stray inverted repeat pairs a few)
+    let shorter = if fold2 <= seq.len() as i64 {
+        positions
+            .iter()
+            .filter(|&&p| 2 * (p + k as i64) <= fold2)
+            .count()
+    } else {
+        positions.iter().filter(|&&p| 2 * p >= fold2).count()
+    };
+    if (best as f64) < min_fraction * shorter.max(1) as f64 {
+        return None;
+    }
+    let middle = (right_start - left_end).max(0);
+    Some((
+        left_end.max(0) as usize,
+        right_start.max(0) as usize,
+        middle,
+    ))
+}
+
+/// (start, end) of the long read to keep, folds cut, a sharp fold left whole (0/1, only with
+/// min_middle > 0), and the first fold's unpaired middle (-1 for no fold found)
+#[allow(clippy::too_many_arguments)]
+fn long_trim(
+    b: &[u8],
+    k: usize,
+    threshold: u64,
+    min_middle: i64,
+    min_pairs: usize,
+    min_fraction: f64,
+    tolerance: i64,
+    max_folds: usize,
+) -> (u32, u32, u8, u8, i32) {
+    let (mut start, mut end) = (0usize, b.len());
+    let (mut cuts, mut sharp, mut first) = (0u8, 0u8, -1i32);
+    for _ in 0..max_folds {
+        let Some((left_end, right_start, middle)) = long_fold(
+            &b[start..end],
+            k,
+            threshold,
+            min_pairs,
+            min_fraction,
+            tolerance,
+        ) else {
+            break;
+        };
+        if first < 0 {
+            first = middle as i32;
+        }
+        if middle < min_middle {
+            sharp = 1;
+            break;
+        }
+        let left = left_end.min(end - start);
+        let right = (end - start).saturating_sub(right_start);
+        if left >= right {
+            end = start + left;
+        } else {
+            start += right_start;
+        }
+        cuts += 1;
+    }
+    (start as u32, end as u32, cuts, sharp, first)
+}
+
+/// For each long read: (start, end) of what to keep, folds cut, a sharp fold left whole (0/1),
+/// and the first fold's unpaired middle (-1 for no fold found). Anchors are k-mers sampled at
+/// about 1 in `density`; defaults are shifia's.
+#[pyfunction]
+#[pyo3(signature = (seqs, k=21, density=4, min_middle=0, min_pairs=5, min_fraction=0.25,
+                    tolerance=50, max_folds=4))]
+#[allow(clippy::too_many_arguments, clippy::type_complexity)]
+pub fn trim_long_folds(
+    py: Python<'_>,
+    seqs: Vec<PyBackedStr>,
+    k: usize,
+    density: u64,
+    min_middle: i64,
+    min_pairs: usize,
+    min_fraction: f64,
+    tolerance: i64,
+    max_folds: usize,
+) -> PyResult<Vec<(u32, u32, u8, u8, i32)>> {
+    if !(5..=31).contains(&k) {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "k must be between 5 and 31",
+        ));
+    }
+    let threshold = crate::anchors::threshold(density);
+    Ok(py.detach(|| {
+        seqs.par_iter()
+            .map(|s| {
+                long_trim(
+                    s.as_bytes(),
+                    k,
+                    threshold,
+                    min_middle,
+                    min_pairs,
+                    min_fraction,
+                    tolerance,
+                    max_folds,
+                )
+            })
+            .collect()
+    }))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -261,5 +437,51 @@ mod tests {
         // a normal pair from the same template shares nothing
         let r2n = rc(&t[300..450]);
         assert_eq!(shared(&t[100..250], &r2n, 17), (0, 0));
+    }
+
+    fn long_cut(read: &[u8]) -> (u32, u32, u8, u8, i32) {
+        long_trim(read, 21, crate::anchors::threshold(4), 0, 5, 0.25, 50, 4)
+    }
+
+    #[test]
+    fn long_fold_cut_to_longer_arm() {
+        let t = random(6000, 5);
+        // 2,000 bp to 2,000, back from 1,800 (200 bp unpaired middle) down to 1,000
+        let mut read = t[..2000].to_vec();
+        read.extend(rc(&t[1000..1800]));
+        let (s, e, f, _, middle) = long_cut(&read);
+        assert_eq!((s, f), (0, 1));
+        assert!((1750..=1800).contains(&e), "{e}");
+        assert!((150..=250).contains(&middle), "{middle}");
+    }
+
+    #[test]
+    fn long_fold_keeps_the_longer_right_arm() {
+        let t = random(6000, 6);
+        // 600 bp out to 1,600, back from 1,500 down to -1,000 (past where the read began)
+        let mut read = t[1000..1600].to_vec();
+        read.extend(rc(&t[0..1500]));
+        let (s, e, f, _, _) = long_cut(&read);
+        assert_eq!(f, 1);
+        assert_eq!(e as usize, read.len());
+        // the kept piece starts where the right arm's paired stretch starts: after the 600 bp
+        // left arm, whose last 100 bp (1,500-1,600) are the unpaired middle
+        assert!((595..=650).contains(&s), "{s}");
+    }
+
+    #[test]
+    fn long_read_without_fold_untouched() {
+        let r = random(12000, 7);
+        assert_eq!(long_cut(&r), (0, 12000, 0, 0, -1));
+    }
+
+    #[test]
+    fn genomic_inverted_repeat_in_long_flanks_untouched() {
+        let t = random(9000, 8);
+        // 3 kb, a 300 bp arm, 150 bp spacer, the arm reverse complemented, 3 kb
+        let mut read = t[..3450].to_vec();
+        read.extend(rc(&t[3000..3300]));
+        read.extend(&t[5000..8000]);
+        assert_eq!(long_cut(&read).2, 0);
     }
 }

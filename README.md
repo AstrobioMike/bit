@@ -72,7 +72,14 @@ You can see an overview of available programs like below by running `bit` by its
 | `bit gen-reads` | generate reads from fasta files |
 | `bit mutate-seqs` | introduce point mutations (substitutions/indels) into nucleotide or amino-acid fasta files |
 | `bit add-insertion` | add insertions into nucleotide or amino-acid fasta sequences |
-| `bit filter-foldbacks` | remove fold-back artifacts of whole-genome amplification (e.g., PTA or MDA) from short reads: reads cut at a fold, pairs folded between the mates split into single reads |
+
+---
+
+#### Read QC
+
+| Program | Purpose |
+| ------- | ------- |
+| `bit filter-foldbacks` | remove fold-back artifacts of whole-genome amplification (e.g., PTA or MDA) from reads. Short reads (default): reads cut at a fold, pairs folded between the mates split into single reads. Long reads (`--hifi`): each read cut at its folds as [shifia](https://github.com/AstrobioMike/shifia)'s `--pta` does |
 
 ---
 

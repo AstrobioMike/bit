@@ -11,14 +11,16 @@ def build_parser(parent_subparsers=None):
 
     desc = """
         This program removes fold-back artifacts of whole-genome amplification (e.g., PTA or MDA)
-        from short reads. An amplified molecule that switched to the opposite strand nearby reads as
+        from short reads (the default) or long reads (`--hifi`). An amplified molecule that switched to the opposite strand nearby reads as
         a stretch and then its own reverse complement. A read with such a fold in it is cut to its
         longer arm, up to where that arm's paired stretch ends (dropping the join and any unpaired,
         possibly untemplated, bases beside it). With paired reads, a pair whose fragment folded back
         between the mates (read 2 holds read 1's sequence in the same orientation) is also caught.
         Pairs with neither are written as pairs; both mates of a fold-back pair are written as single
-        reads, since each is still real sequence though the pairing isn't. Works from the reads alone
-        (no reference needed).
+        reads, since each is still real sequence though the pairing isn't. With `--hifi` (long reads,
+        e.g., PacBio HiFi), each read is cut at its folds the same way `shifia --pta` does: a long
+        read holds whole fold-backs, so no pairs are needed. Works from the reads alone (no reference
+        needed).
         """
 
     if parent_subparsers is not None:
@@ -31,7 +33,8 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit filter-foldbacks -i R1.fastq.gz -I R2.fastq.gz -o filtered`",
+            epilog=("Ex. usage: `bit filter-foldbacks -i R1.fastq.gz -I R2.fastq.gz -o filtered`, "
+                    "or `bit filter-foldbacks --hifi -i hifi-reads.fastq.gz -o filtered`"),
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )
@@ -56,6 +59,15 @@ def build_parser(parent_subparsers=None):
     )
 
     optional.add_argument(
+        "--hifi",
+        action="store_true",
+        help=("Input reads are long single reads (e.g., PacBio HiFi): each is cut at its folds as "
+              "`shifia --pta` does (21-mers, a fold's arms pairing at least a quarter of the read's "
+              "shorter side, so inverted repeats in long flanks are left alone); --min-shared isn't "
+              "used (default: short reads)"),
+    )
+
+    optional.add_argument(
         "-o",
         "--output-dir",
         metavar="<DIR>",
@@ -77,8 +89,8 @@ def build_parser(parent_subparsers=None):
         "--min-length",
         metavar="<INT>",
         type=int,
-        default=50,
-        help="Minimum length of a read cut at a fold for it to be kept (default: 50)",
+        default=None,
+        help="Minimum length of a read cut at a fold for it to be kept (default: 50; 100 with --hifi)",
     )
 
     optional.add_argument(
@@ -86,9 +98,9 @@ def build_parser(parent_subparsers=None):
         metavar="<INT>",
         type=int,
         default=20,
-        help=("Shared k-mers (17-mers) needed to call a fold, within a read or between mates; 20 "
-              "means at least 36 bp shared as one stretch, more than most short inverted repeats "
-              "in genomes (default: 20)"),
+        help=("Shared k-mers (17-mers) needed to call a fold in short reads, within a read or "
+              "between mates; 20 means at least 36 bp shared as one stretch, more than most short "
+              "inverted repeats in genomes (default: 20)"),
     )
 
     optional.add_argument(
@@ -121,8 +133,10 @@ def main():
 
     if args.jobs < 1:
         parser.error("--jobs must be 1 or greater")
-    if args.min_length < 1:
+    if args.min_length is not None and args.min_length < 1:
         parser.error("--min-length must be 1 or greater")
+    if args.hifi and args.input_reads_2:
+        parser.error("--hifi takes single long reads: no --input-reads-2")
     if args.min_shared < 1:
         parser.error("--min-shared must be 1 or greater")
 
@@ -142,12 +156,13 @@ def main():
         output_prefix=args.output_prefix,
         min_length=args.min_length,
         min_shared=args.min_shared,
+        hifi=args.hifi,
     )
 
-    print_summary(counts, paths, paired=args.input_reads_2 is not None)
+    print_summary(counts, paths, paired=args.input_reads_2 is not None, hifi=args.hifi)
 
 
-def print_summary(counts, paths, paired):
+def print_summary(counts, paths, paired, hifi=False):
 
     unit = "pairs" if paired else "reads"
     n = max(counts.reads_or_pairs_in, 1)
@@ -162,6 +177,10 @@ def print_summary(counts, paths, paired):
     else:
         print(f"        {counts.reads_cut_at_a_fold:,} reads cut at a fold "
               f"({100 * counts.reads_cut_at_a_fold / n:.2f}%)")
+        q = counts.middle_quartiles() if hifi else None
+        if q:
+            print(f"        unpaired middle between the arms: median {q[1]:,} bp "
+                  f"(quartiles {q[0]:,}-{q[2]:,})")
     if counts.reads_dropped_short:
         print(f"        {counts.reads_dropped_short:,} reads shorter than --min-length after cutting dropped")
     print()
