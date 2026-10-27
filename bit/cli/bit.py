@@ -12,6 +12,7 @@ SUBCOMMAND_MAP = {
     "gen-reads":           "bit.cli.gen_reads",
     "mutate-seqs":         "bit.cli.mutate_seqs",
     "add-insertion":       "bit.cli.add_insertion",
+    "filter-foldbacks":    "bit.cli.filter_foldbacks",
     "cov-analyzer":        "bit.cli.cov_analyzer",
     "cov-stats":           "bit.cli.cov_stats",
     "mapped-read-stats":   "bit.cli.mapped_read_stats",
@@ -70,6 +71,10 @@ PROGRAM_GROUPS = [
             {
                 "name": "add-insertion",
                 "desc": "add insertions into nucleotide or amino-acid fasta sequences",
+            },
+            {
+                "name": "filter-foldbacks",
+                "desc": "remove fold-back artifacts of whole-genome amplification (PTA/MDA) from short reads",
             },
         ],
     },

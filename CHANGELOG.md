@@ -14,6 +14,14 @@
 
 -->
 
+## v2.13.0 (NOT YET RELEASED)
+
+### Added
+- `bit filter-foldbacks`
+  - removes fold-back artifacts of amplification (like PTA/MDA) from short reads, from the reads alone: reads with a fold in them are cut to their longer arm (dropping the join and any unpaired bases beside it), and paired reads whose fragment folded back between the mates (read 2 holding read 1's sequence in the same orientation) have both mates written as single reads
+
+---
+
 ## v2.12.1 (18-Oct-2026)
 
 ### Changed
