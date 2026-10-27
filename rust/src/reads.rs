@@ -174,21 +174,44 @@ impl SeqReader {
 
     /// the next sequence into `seq` (cleared first); false at the end of the file
     pub fn next_seq(&mut self, seq: &mut Vec<u8>) -> io::Result<bool> {
+        self.next(seq, None)
+    }
+
+    /// the next record: its sequence into `seq` and the whole record as in the file (header,
+    /// sequence, and for fastq the '+' line and qualities, each line with its newline) into
+    /// `raw` (both cleared first); false at the end of the file
+    pub fn next_record(&mut self, seq: &mut Vec<u8>, raw: &mut Vec<u8>) -> io::Result<bool> {
+        raw.clear();
+        self.next(seq, Some(raw))
+    }
+
+    fn next(&mut self, seq: &mut Vec<u8>, raw: Option<&mut Vec<u8>>) -> io::Result<bool> {
         seq.clear();
         let got = match self.format {
             Format::Empty => false,
-            Format::Fasta => self.next_fasta(seq)?,
-            Format::Fastq => self.next_fastq(seq)?,
+            Format::Fasta => self.next_fasta(seq, raw)?,
+            Format::Fastq => self.next_fastq(seq, raw)?,
         };
         seq.make_ascii_uppercase();
         Ok(got)
     }
 
-    fn next_fasta(&mut self, seq: &mut Vec<u8>) -> io::Result<bool> {
+    /// the current line onto `raw`, ending in a newline even if the file's last line has none
+    fn keep_line(line: &[u8], raw: &mut Option<&mut Vec<u8>>) {
+        if let Some(r) = raw {
+            r.extend_from_slice(line);
+            if line.last() != Some(&b'\n') {
+                r.push(b'\n');
+            }
+        }
+    }
+
+    fn next_fasta(&mut self, seq: &mut Vec<u8>, mut raw: Option<&mut Vec<u8>>) -> io::Result<bool> {
         if !self.pending_header {
             return Ok(false);
         }
         self.pending_header = false;
+        Self::keep_line(&self.line, &mut raw);
         loop {
             if self.read_line()? == 0 {
                 break;
@@ -197,12 +220,13 @@ impl SeqReader {
                 self.pending_header = true;
                 break;
             }
+            Self::keep_line(&self.line, &mut raw);
             seq.extend_from_slice(self.line.trim_ascii());
         }
         Ok(true)
     }
 
-    fn next_fastq(&mut self, seq: &mut Vec<u8>) -> io::Result<bool> {
+    fn next_fastq(&mut self, seq: &mut Vec<u8>, mut raw: Option<&mut Vec<u8>>) -> io::Result<bool> {
         loop {
             if self.read_line()? == 0 {
                 return Ok(false);
@@ -220,6 +244,7 @@ impl SeqReader {
                 self.path
             )));
         }
+        Self::keep_line(&self.line, &mut raw);
         // sequence line(s) up to the '+' line, then as many quality characters as bases
         loop {
             if self.read_line()? == 0 {
@@ -228,6 +253,7 @@ impl SeqReader {
                     self.path
                 )));
             }
+            Self::keep_line(&self.line, &mut raw);
             if self.line.first() == Some(&b'+') {
                 break;
             }
@@ -241,9 +267,14 @@ impl SeqReader {
                     self.path
                 )));
             }
+            Self::keep_line(&self.line, &mut raw);
             quals += self.line.trim_ascii().len();
         }
         Ok(true)
+    }
+
+    pub fn is_fastq(&self) -> bool {
+        self.format == Format::Fastq
     }
 
     /// up to n sequences; fewer only at the end of the file

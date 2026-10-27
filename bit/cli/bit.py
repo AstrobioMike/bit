@@ -13,6 +13,7 @@ SUBCOMMAND_MAP = {
     "mutate-seqs":         "bit.cli.mutate_seqs",
     "add-insertion":       "bit.cli.add_insertion",
     "filter-foldbacks":    "bit.cli.filter_foldbacks",
+    "normalize-reads":     "bit.cli.normalize_reads",
     "cov-analyzer":        "bit.cli.cov_analyzer",
     "cov-stats":           "bit.cli.cov_stats",
     "mapped-read-stats":   "bit.cli.mapped_read_stats",
@@ -80,6 +81,10 @@ PROGRAM_GROUPS = [
             {
                 "name": "filter-foldbacks",
                 "desc": "remove fold-back artifacts of PTA/MDA from short or long reads",
+            },
+            {
+                "name": "normalize-reads",
+                "desc": "normalize read depth with efforts to still keep rare members and minority variants",
             },
         ],
     },

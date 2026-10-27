@@ -79,7 +79,8 @@ You can see an overview of available programs like below by running `bit` by its
 
 | Program | Purpose |
 | ------- | ------- |
-| `bit filter-foldbacks` | remove fold-back artifacts of whole-genome amplification (e.g., PTA or MDA) from reads. Short reads (default): reads cut at a fold, pairs folded between the mates split into single reads. Long reads (`--hifi`): each read cut at its folds as [shifia](https://github.com/AstrobioMike/shifia)'s `--pta` does |
+| `bit filter-foldbacks` | remove fold-back artifacts of PTA/MDA from short or long reads |
+| `bit normalize-reads` | normalize read depth with efforts to keep rare members and minority variants |
 
 ---
 

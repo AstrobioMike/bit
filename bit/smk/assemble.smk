@@ -11,6 +11,7 @@ assembler = config['assembler']
 threads = config['threads']
 run_fastp = config['run_fastp']
 run_bbnorm = config['run_bbnorm']
+run_normalize = config.get('run_normalize', False)
 memory = config['memory']
 if assembler == 'megahit':
     if isinstance(memory, float) and memory.is_integer():
@@ -92,6 +93,35 @@ if run_bbnorm:
 
             bbnorm.sh in={input.R1} in2={input.R2} out={output.R1} out2={output.R2} \
                      threads={params.threads} target={params.target} > {log} 2>&1
+            """
+elif run_normalize:
+    post_bbnorm_reads_dict = {
+        sample: {
+            'R1': output_dir + "/" + sample + "/normalized-reads/" + sample + "-normalized_R1.fastq.gz",
+            'R2': output_dir + "/" + sample + "/normalized-reads/" + sample + "-normalized_R2.fastq.gz"
+        } for sample in samples
+    }
+
+    # (bit normalize-reads is part of bit itself, so this runs where bit assemble does, not in the
+    # workflow's conda environment)
+    rule bit_normalize:
+        input:
+            R1=lambda wildcards: post_fastp_reads_dict[wildcards.sample]['R1'],
+            R2=lambda wildcards: post_fastp_reads_dict[wildcards.sample]['R2']
+        output:
+            R1=output_dir + "/{sample}/normalized-reads/{sample}-normalized_R1.fastq.gz",
+            R2=output_dir + "/{sample}/normalized-reads/{sample}-normalized_R2.fastq.gz"
+        params:
+            output_dir=output_dir + "/{sample}/normalized-reads",
+            prefix="{sample}-",
+            target="100",
+            threads=threads,
+        log:
+            log_files_dir + "/{sample}-normalize.log"
+        shell:
+            """
+            bit normalize-reads -i {input.R1} -I {input.R2} -o {params.output_dir} -O {params.prefix} \
+                          -d {params.target} -j {params.threads} -F > {log} 2>&1
             """
 else:
     post_bbnorm_reads_dict = post_fastp_reads_dict

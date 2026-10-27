@@ -86,3 +86,20 @@ def test_check_conda_env_creation_failure(mock_run, mock_exists):
         check_conda_env(config)
 
     assert e.value.code == 1
+
+
+def test_normalize_and_bbnorm_are_exclusive(tmp_path):
+    import subprocess
+    result = subprocess.run(["bit", "assemble", "-1", str(test_R1), "-2", str(test_R2), "-o",
+                             str(tmp_path / "out"), "--normalize", "--run-bbnorm"],
+                            capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "normalize one way" in result.stdout + result.stderr
+
+
+def test_run_config_carries_normalize():
+    from bit.cli.assemble import build_parser
+    args = build_parser().parse_args(["-1", "a", "-2", "b", "--normalize"])
+    config = RunConfig.from_args(args)
+    assert config.run_normalize is True and config.run_bbnorm is False
+    assert "run_normalize=True" in config.key_value_pairs

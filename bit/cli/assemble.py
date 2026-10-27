@@ -89,6 +89,13 @@ def build_parser(parent_subparsers=None):
         action="store_true",
         help=wrap_help("Run bbnorm digital normalization"),
     )
+    general.add_argument(
+        "--normalize",
+        action="store_true",
+        help=wrap_help("Normalize read depth with `bit normalize-reads`, which keeps low-abundance members "
+                       "and minority variants that median-depth normalization thins out (target depth "
+                       "100; incompatible with --run-bbnorm)"),
+    )
 
     add_help(general)
     add_version_arg(general)
@@ -154,6 +161,11 @@ def check_required_inputs(args):
                        "Please use one method or the other to specify inputs. -1 "
                        "and -2 are good when you have a single sample to do. The "
                        "--reads-dir is good for when you have many in a directory.",
+                       initial_indent = "    ", subsequent_indent = "    ")
+        notify_premature_exit()
+
+    if args.run_bbnorm and args.normalize:
+        report_message("We can only normalize one way: please use either --normalize or --run-bbnorm.",
                        initial_indent = "    ", subsequent_indent = "    ")
         notify_premature_exit()
 

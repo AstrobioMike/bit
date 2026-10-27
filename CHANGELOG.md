@@ -14,14 +14,26 @@
 
 -->
 
-## v2.13.0 (NOT YET RELEASED)
+## v2.14.0 (NOT YET RELEASED)
+
+- `bit normalize-reads`
+  - normalizes read depth (single-end or paired) while keeping reads that hold sequence still under the target depth, building on [shifia](https://github.com/AstrobioMike/shifia)'s normalizer
+    - each read (or pair, judged on both mates together) is judged by its least-covered 10% of sampled k-mers rather than its median depth, so reads from low-abundance members and minority variants that are mostly shared, deep sequence are kept for their rare part
+    - a first pass counts every k-mer in a fixed amount of memory (a count-min sketch, `--memory`); the second takes k-mers in too few reads, or far rarer than those around them, for sequencing errors, keeps each read with probability target / its depth, and keeps reads on a minor branch (a minority variant) up to half the target. What's kept depends only on the reads, not their order, and is the same run to run
+    - kept reads are written as they were in the input (names, comments, qualities), in input order; `--depth-table` also writes each kept read's k-mer depth in the whole input
+    - `-H` / `--detailed-help` shows how it works and the fine-tuning parameters (`--kmer-size`, `--density`, `--novel-fraction`, `--min-reads`, `--no-minor-branches`)
+- `bit assemble`
+  - `--normalize` normalizes reads with `bit normalize-reads` before assembly (instead of `--run-bbnorm`)
+
+---
+
+## v2.13.0 (27-Oct-2026)
 
 ### Added
 - `bit filter-foldbacks`
-  - removes fold-back artifacts of amplification (like PTA/MDA) from illumina or pacbio (--hifi) reads
+  - removes fold-back artifacts from PTA/MDA from illumina or pacbio hifi reads
     - single-end (or long) reads with a fold in them are cut to their longer arm (dropping the join and any unpaired bases beside it)
-    - paired reads whose fragment folded back between the mates (read 2 holding read 1's sequence in the same orientation) have both mates written as single reads
-    - short reads: a fold needs 16 shared 13-mers (a 28 bp stretch) by default (`--kmer-size`, `--min-shared`); fewer catch more fold-backs but also more real inverted repeats in some genomes (e.g., Pseudomonas)
+    - paired reads whose fragment folded back between the mates (read 2 holding read 1's sequence in the same orientation) have both mates written as single reads to a new file, with unaffected pairs being written out to filtered R1/R2 files
     - `-H` / `--detailed-help` shows how it works, what it catches, and the fine-tuning parameters (`--min-length`, `--kmer-size`, `--min-shared`)
 
 ---

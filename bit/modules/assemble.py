@@ -42,6 +42,7 @@ class RunConfig:
     threads: int = field(init=None)
     run_fastp: bool = field(init=False)
     run_bbnorm: bool = field(init=False)
+    run_normalize: bool = field(init=False)
     memory: str = field(init=None)
     min_contig_len: int = field(init=None)
     isolate: bool = field(init=False)
@@ -66,6 +67,7 @@ class RunConfig:
         self.threads = args.threads
         self.run_fastp = args.run_fastp
         self.run_bbnorm = args.run_bbnorm
+        self.run_normalize = args.normalize
         self.memory = args.memory
         self.min_contig_len = args.min_contig_len
         self.isolate = args.isolate

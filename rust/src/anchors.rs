@@ -1,5 +1,5 @@
 //! Sampled canonical k-mers ("anchors") of a read, for the long-read (`--hifi`) mode of
-//! `bit filter-foldbacks`.
+//! `bit filter-foldbacks` and for `bit normalize-reads`.
 //!
 //! The same hashing as shifia's (github.com/AstrobioMike/shifia, rust/src/hash.rs), so the
 //! long-read mode cuts reads exactly where `shifia --pta` does: a polynomial rolling hash
@@ -104,6 +104,12 @@ pub fn for_each_anchor<F: FnMut(usize, u64, bool)>(seq: &[u8], k: usize, thresho
         }
         emit(s + 1, fwd, rev);
     }
+}
+
+/// the anchors of `seq` as (position, hash), in order, into `out` (cleared first)
+pub fn anchors_into(seq: &[u8], k: usize, threshold: u64, out: &mut Vec<(u32, u64)>) {
+    out.clear();
+    for_each_anchor(seq, k, threshold, |p, h, _| out.push((p as u32, h)));
 }
 
 #[cfg(test)]
