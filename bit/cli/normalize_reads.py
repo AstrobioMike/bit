@@ -10,7 +10,9 @@ from bit.modules.normalize_reads import (TARGET_DEPTH,
                                    KMER_SIZE,
                                    DENSITY,
                                    NOVEL_FRACTION,
-                                   MIN_READS)
+                                   MIN_READS,
+                                   ERROR_WEIGHT,
+                                   ERROR_SHARE)
 
 
 def build_parser(parent_subparsers=None, show_fine=False):
@@ -194,6 +196,34 @@ def _add_fine_tuning_arguments(target, hidden=False):
     )
 
     target.add_argument(
+        "--error-weight",
+        metavar="<FLOAT>",
+        type=float,
+        default=ERROR_WEIGHT,
+        help=h(f"Where reads are thinned, keep ones holding a k-mer judged an error at this "
+               f"times the usual rate, and error-free ones more often to make up for it "
+               f"(0-1; default: {ERROR_WEIGHT:g}, which treats them alike)"),
+    )
+
+    target.add_argument(
+        "--error-share",
+        metavar="<FLOAT>",
+        type=float,
+        default=ERROR_SHARE,
+        help=h(f"K-mers in under this share of the reads around them are taken for sequencing "
+               f"errors (0-1; default: {ERROR_SHARE:g}). Raising it drops recurrent errors at "
+               f"very high depth, and with them variants under that share"),
+    )
+
+    target.add_argument(
+        "--strand-aware",
+        action="store_true",
+        help=h("Also count k-mers by the strand reads hold them on (50%% more memory), and take "
+               "well-covered k-mers seen almost only on one strand, well under the depth around "
+               "them, for systematic sequencing errors"),
+    )
+
+    target.add_argument(
         "--no-minor-branches",
         action="store_true",
         help=h("Don't keep reads for k-mers of a minor branch (minority variants)"),
@@ -227,6 +257,10 @@ def main():
         parser.error("--novel-fraction must be greater than 0 and at most 1")
     if args.min_reads < 1:
         parser.error("--min-reads must be 1 or greater")
+    if not 0 < args.error_share < 1:
+        parser.error("--error-share must be between 0 and 1")
+    if not 0 <= args.error_weight <= 1:
+        parser.error("--error-weight must be between 0 and 1")
     if args.memory is not None and args.memory <= 0:
         parser.error("--memory must be greater than 0")
 
@@ -251,6 +285,9 @@ def main():
         minor_branches=not args.no_minor_branches,
         min_reads=args.min_reads,
         sketch_bytes=None if args.memory is None else int(args.memory * 2**30),
+        error_weight=args.error_weight,
+        error_share=args.error_share,
+        strand_aware=args.strand_aware,
         depth_table=args.depth_table,
     )
 

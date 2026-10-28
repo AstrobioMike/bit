@@ -55,7 +55,7 @@ impl Sketch {
     pub fn add(&self, h: u64) {
         for s in self.slots(h) {
             let _ = self.cells[s].fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| {
-                (v < u16::MAX).then_some(v + 1)
+                (v < u16::MAX).then(|| v + 1)
             });
         }
     }

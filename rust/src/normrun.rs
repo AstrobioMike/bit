@@ -5,7 +5,7 @@
 //! ones written as they were in the input (names, comments, qualities and all), gzipped in
 //! parallel.
 
-use crate::anchors::{anchors_into, threshold};
+use crate::anchors::{anchors_into, for_each_anchor, threshold};
 use crate::reads::{Progress, SeqReader};
 use crate::sketch::Sketch;
 use flate2::Compression;
@@ -26,6 +26,15 @@ const BATCH: usize = 8192;
 // an anchor in under this share of the reads around it (within 2k bases) is taken for a
 // recurrent sequencing error, not sequence of its own (see judge_read())
 const ERROR_SHARE: f64 = 0.01;
+// strand-aware judging (--strand-aware): an anchor in at least STRAND_MIN_READS reads, under
+// STRAND_DEPTH_SHARE of the read's deepest anchor, and on one strand in under STRAND_SHARE of
+// the reads holding it is taken for a systematic (strand-specific) sequencing error. Real
+// sequence, a rare variant's included, is read off both strands about equally.
+const STRAND_MIN_READS: u32 = 20;
+const STRAND_DEPTH_SHARE: f64 = 0.25;
+const STRAND_SHARE: f64 = 0.1;
+// what an anchor's hash is xored with to count it on the reverse strand in the strand sketch
+const REV_SALT: u64 = 0x5bd1e9955bd1e995;
 // output is gzipped this many bytes at a time, each its own gzip member (a file of several
 // members is still one gzip file to every reader), so it can be done on several threads
 const GZ_CHUNK: usize = 4 << 20;
@@ -326,11 +335,22 @@ fn distinct_anchors(rec: &Rec, k: usize, t: u64, along: &mut Vec<(u32, u64)>, ou
     out.dedup();
 }
 
+/// each read's distinct anchors keyed by the strand it holds them on (the hash for forward,
+/// the hash xor REV_SALT for reverse), for the strand sketch
+fn stranded_anchors(seq: &[u8], k: usize, t: u64, out: &mut Vec<u64>) {
+    out.clear();
+    for_each_anchor(seq, k, t, |_, h, fwd| out.push(if fwd { h } else { h ^ REV_SALT }));
+    out.sort_unstable();
+    out.dedup();
+}
+
 /// The read counts of every anchor in the reads, from the counting pass, and the judging
 /// and writing pass that uses them.
 #[pyclass(frozen)]
 pub struct AnchorCounts {
     sketch: Arc<Sketch>,
+    // with strand-aware counting, how many reads hold each anchor on each strand
+    strand: Option<Arc<Sketch>>,
     k: usize,
     density: u64,
     reads: u64,
@@ -340,7 +360,8 @@ pub struct AnchorCounts {
 /// the counting pass: every read's (or pair's) distinct anchors into a sketch of about
 /// `sketch_bytes` (see sketch.rs)
 #[pyfunction]
-#[pyo3(signature = (read_1, read_2, k, density, sketch_bytes, progress=None))]
+#[pyo3(signature = (read_1, read_2, k, density, sketch_bytes, strand_bytes=0, progress=None))]
+#[allow(clippy::too_many_arguments)]
 pub fn count_anchors(
     py: Python<'_>,
     read_1: String,
@@ -348,6 +369,7 @@ pub fn count_anchors(
     k: usize,
     density: u64,
     sketch_bytes: usize,
+    strand_bytes: usize,
     progress: Option<PyRef<crate::Progress>>,
 ) -> PyResult<AnchorCounts> {
     if !(1..=32).contains(&k) {
@@ -356,6 +378,7 @@ pub fn count_anchors(
     let pr = crate::arc(&progress);
     py.detach(|| {
         let sketch = Sketch::new(sketch_bytes);
+        let strand = (strand_bytes > 0).then(|| Sketch::new(strand_bytes));
         let t = threshold(density);
         let (rx, _) = spawn_reader(read_1, read_2, BATCH, pr)?;
         let (mut reads, mut nbases) = (0u64, 0u64);
@@ -370,11 +393,20 @@ pub fn count_anchors(
                     for &h in hs.iter() {
                         sketch.add(h);
                     }
+                    if let Some(st) = &strand {
+                        for seq in std::iter::once(&rec.seq1).chain(rec.seq2.as_ref()) {
+                            stranded_anchors(seq, k, t, hs);
+                            for &h in hs.iter() {
+                                st.add(h);
+                            }
+                        }
+                    }
                 },
             );
         }
         Ok(AnchorCounts {
             sketch: Arc::new(sketch),
+            strand: strand.map(Arc::new),
             k,
             density,
             reads,
@@ -392,6 +424,8 @@ struct Call {
     errors: u64,
     has_anchors: bool,
     has_solid: bool,
+    // keep_prob was raised for a minor branch
+    minor: bool,
 }
 
 #[derive(Clone, Copy)]
@@ -405,6 +439,7 @@ struct Rules {
     minor_anchors: usize,
     minor_cap: f64,
     min_reads: u32,
+    error_share: f64,
 }
 
 /// the median of `v` (sorted in place), 0 for none
@@ -416,24 +451,18 @@ fn median(v: &mut [u32]) -> u32 {
     *v.select_nth_unstable(mid).1
 }
 
-/// the upper quartile of `v` (reordered in place), 0 for none
-fn upper_quartile(v: &mut [u32]) -> u32 {
-    if v.is_empty() {
-        return 0;
-    }
-    let at = (3 * v.len()) / 4;
-    *v.select_nth_unstable(at.min(v.len() - 1)).1
-}
-
 /// a read's anchors as (position, read count), in read order; each is solid when it's in at
-/// least min_reads reads and at least ERROR_SHARE of the upper quartile of those within 2k
-/// bases of it (an error's neighbors are the same sequence without it). The upper quartile
-/// rather than the median: two errors close together put about half the anchors around
-/// either one on an error, which brought the median down to the errors' own counts, so at
-/// 1,000x (where an error recurs in 2-3 reads) reads with two or three errors were kept at 3-6
-/// times the rate of clean ones (Oct 2026). Adds (hash, count, solid) for each to `out`
-fn judge_read(seq: &[u8], r: &Rules, sketch: &Sketch, along: &mut Vec<(u32, u64)>,
-              out: &mut Vec<(u64, u32, bool)>) {
+/// least min_reads reads and at least ERROR_SHARE of its neighbors' typical count (an error's
+/// neighbors are the same sequence without it): the median of those within 2k bases of it
+/// that are at least ERROR_SHARE of the deepest of them. Errors among its neighbors are left
+/// out because errors close together vouched for each other: with the median of all of them,
+/// two errors close together brought it down to the errors' own counts, and with their upper
+/// quartile three or more still did, so at 1,000x, where an error recurs in 2-4 reads, those
+/// errors passed as solid, set the read's least-covered depth, and reads holding them were kept
+/// at 1.4 (and earlier 3-6) times the rate of clean ones (Oct 2026). Adds (hash, count, solid)
+/// for each to `out`
+fn judge_read(seq: &[u8], r: &Rules, sketch: &Sketch, strand: Option<&Sketch>,
+              along: &mut Vec<(u32, u64)>, out: &mut Vec<(u64, u32, bool)>) {
     anchors_into(seq, r.k, r.t, along);
     let counts: Vec<u32> = along.iter().map(|a| sketch.get(a.1)).collect();
     // only an anchor under ERROR_SHARE of the read's deepest one can be under that share of
@@ -447,20 +476,29 @@ fn judge_read(seq: &[u8], r: &Rules, sketch: &Sketch, along: &mut Vec<(u32, u64)
             lo += 1;
         }
         let c = counts[i];
-        if (c as f64) >= ERROR_SHARE * deepest {
+        if let Some(st) = strand {
+            if (c as f64) < STRAND_DEPTH_SHARE * deepest {
+                let (f, rv) = (st.get(h), st.get(h ^ REV_SALT));
+                if f + rv >= STRAND_MIN_READS && (f.min(rv) as f64) < STRAND_SHARE * (f + rv) as f64 {
+                    out.push((h, c, false));
+                    continue;
+                }
+            }
+        }
+        if (c as f64) >= r.error_share * deepest {
             out.push((h, c, c >= r.min_reads));
             continue;
         }
+        let window = along[lo..]
+            .iter()
+            .zip(&counts[lo..])
+            .take_while(|(a, _)| a.0 <= p + reach)
+            .map(|(_, c)| *c);
+        let top = window.clone().max().unwrap_or(0) as f64;
         near.clear();
-        near.extend(
-            along[lo..]
-                .iter()
-                .zip(&counts[lo..])
-                .take_while(|(a, _)| a.0 <= p + reach)
-                .map(|(_, c)| *c),
-        );
-        let local = upper_quartile(&mut near) as f64;
-        out.push((h, c, c >= r.min_reads && (c as f64) >= ERROR_SHARE * local));
+        near.extend(window.filter(|&c| (c as f64) >= r.error_share * top));
+        let local = median(&mut near) as f64;
+        out.push((h, c, c >= r.min_reads && (c as f64) >= r.error_share * local));
     }
 }
 
@@ -473,30 +511,31 @@ fn judge_read(seq: &[u8], r: &Rules, sketch: &Sketch, along: &mut Vec<(u32, u64)
 /// minor_ratio to half the read's typical depth), it's kept with at least probability
 /// minor_cap / the branch's depth. A read with anchors but none solid is in no more than one
 /// or two reads' worth of anything, and is kept.
-fn call(rec: &Rec, r: &Rules, sketch: &Sketch, along: &mut Vec<(u32, u64)>,
-        all: &mut Vec<(u64, u32, bool)>) -> Call {
+fn call(rec: &Rec, r: &Rules, sketch: &Sketch, strand: Option<&Sketch>,
+        along: &mut Vec<(u32, u64)>, all: &mut Vec<(u64, u32, bool)>) -> Call {
     all.clear();
-    judge_read(&rec.seq1, r, sketch, along, all);
+    judge_read(&rec.seq1, r, sketch, strand, along, all);
     if let Some(s2) = &rec.seq2 {
-        judge_read(s2, r, sketch, along, all);
+        judge_read(s2, r, sketch, strand, along, all);
     }
     let occurrences = all.len() as u64;
     let errors = all.iter().filter(|a| !a.2).count() as u64;
     if all.is_empty() {
-        return Call { keep_prob: 0.0, typical: 0, occurrences, errors, has_anchors: false, has_solid: false };
+        return Call { keep_prob: 0.0, typical: 0, occurrences, errors, has_anchors: false, has_solid: false, minor: false };
     }
     // distinct anchors (a stretch both mates hold counts once), solid if any copy is
     all.sort_unstable_by_key(|a| (a.0, !a.2));
     all.dedup_by_key(|a| a.0);
     let mut solid: Vec<u32> = all.iter().filter(|a| a.2).map(|a| a.1).collect();
     if solid.is_empty() {
-        return Call { keep_prob: 1.0, typical: 0, occurrences, errors, has_anchors: true, has_solid: false };
+        return Call { keep_prob: 1.0, typical: 0, occurrences, errors, has_anchors: true, has_solid: false, minor: false };
     }
     solid.sort_unstable();
     let typical = solid[solid.len() / 2];
     let at = ((r.novel_fraction * solid.len() as f64).ceil() as usize).clamp(1, solid.len()) - 1;
     let low = solid[at].max(1) as f64;
     let mut p = (r.target / low).min(1.0);
+    let mut minor = false;
     if r.minor_anchors > 0 {
         let lo_d = (r.minor_ratio * typical as f64).max(r.minor_reads as f64);
         let hi_d = 0.5 * typical as f64;
@@ -507,10 +546,63 @@ fn call(rec: &Rec, r: &Rules, sketch: &Sketch, along: &mut Vec<(u32, u64)>,
             .collect();
         if branch.len() >= r.minor_anchors {
             let d = median(&mut branch).max(1) as f64;
-            p = p.max((r.minor_cap / d).min(1.0));
+            let q = (r.minor_cap / d).min(1.0);
+            if q > p {
+                p = q;
+                minor = true;
+            }
         }
     }
-    Call { keep_prob: p, typical, occurrences, errors, has_anchors: true, has_solid: true }
+    Call { keep_prob: p, typical, occurrences, errors, has_anchors: true, has_solid: true, minor }
+}
+
+/// reads (or pairs) at the start of the input whose calls set the clean reads' weight (see
+/// clean_weight())
+const PRESCAN: usize = 200_000;
+
+/// Weights for reads being thinned (kept with probability under 1, not for a minor branch), with
+/// error_weight under 1: one holding no anchor judged an error is kept at the returned weight
+/// times its probability, (1 - e * error_weight) / (1 - e), with e (also returned) the share of
+/// the thinned reads' keep probability held by reads with errors, among the first PRESCAN
+/// reads (from the input's start rather than as reads come, so what's kept doesn't depend on
+/// threads or batches). See weighted() for those with errors.
+fn clean_weight(calls: &[Call], error_weight: f64) -> (f64, f64) {
+    let (mut with_errors, mut all) = (0.0, 0.0);
+    for c in calls.iter().filter(|c| thinned(c)) {
+        all += c.keep_prob;
+        if c.errors > 0 {
+            with_errors += c.keep_prob;
+        }
+    }
+    if all == 0.0 || with_errors >= all {
+        return (1.0, 0.0);
+    }
+    let e = with_errors / all;
+    ((1.0 - e * error_weight) / (1.0 - e), e)
+}
+
+fn thinned(c: &Call) -> bool {
+    c.has_solid && c.keep_prob < 1.0 && !c.minor
+}
+
+/// A thinned read's keep probability p with the weights: an error-free one's is p times the
+/// clean weight, at most 1. One with errors is kept at error_weight times p, or more where
+/// error-free reads reach 1 and can't make up the rest: as much as keeps a spot's expected
+/// depth where it was ((1 - e) * clean + e * with_errors = p), so spots just over the target
+/// aren't taken under it.
+fn weighted(c: &Call, error_weight: f64, clean_weight: f64, e: f64) -> f64 {
+    if !thinned(c) {
+        return c.keep_prob;
+    }
+    let p = c.keep_prob;
+    let clean = (p * clean_weight).min(1.0);
+    if c.errors == 0 {
+        return clean;
+    }
+    if e <= 0.0 {
+        return p;
+    }
+    (p * error_weight).max((p - (1.0 - e) * clean) / e).min(1.0)
 }
 
 /// a number in [0, 1) from the read's own sequence and `seed`, the same whatever the order
@@ -538,7 +630,8 @@ impl AnchorCounts {
     /// summary.
     #[pyo3(signature = (read_1, read_2, out_1, out_2, target_depth, novel_fraction=0.1,
                         minor_ratio=0.05, minor_reads=3, minor_anchors=3, min_reads=2, seed=1,
-                        depth_table=None, progress=None))]
+                        error_weight=1.0, error_share=ERROR_SHARE, depth_table=None,
+                        progress=None))]
     #[allow(clippy::too_many_arguments)]
     fn normalize<'py>(
         &self,
@@ -554,11 +647,16 @@ impl AnchorCounts {
         minor_anchors: usize,
         min_reads: u32,
         seed: u64,
+        error_weight: f64,
+        error_share: f64,
         depth_table: Option<String>,
         progress: Option<PyRef<crate::Progress>>,
     ) -> PyResult<Bound<'py, PyDict>> {
         if target_depth == 0 {
             return Err(PyValueError::new_err("target_depth must be 1 or greater"));
+        }
+        if !(0.0..=1.0).contains(&error_weight) {
+            return Err(PyValueError::new_err("error_weight must be between 0 and 1"));
         }
         let rules = Rules {
             k: self.k,
@@ -570,11 +668,31 @@ impl AnchorCounts {
             minor_anchors,
             minor_cap: (target_depth / 2).max(10).min(target_depth) as f64,
             min_reads,
+            error_share,
         };
         let pr = crate::arc(&progress);
         let sketch = self.sketch.clone();
-        let totals = py
-            .detach(|| -> io::Result<Totals> {
+        let strand = self.strand.clone();
+        let (totals, clean_w) = py
+            .detach(|| -> io::Result<(Totals, f64)> {
+                let (clean_w, err_share) = if error_weight < 1.0 {
+                    let (rx, _) = spawn_reader(read_1.clone(), read_2.clone(), BATCH, None)?;
+                    let mut calls = Vec::new();
+                    for batch in rx {
+                        let batch = batch?;
+                        calls.par_extend(batch.par_iter().map_init(
+                            || (Vec::new(), Vec::new()),
+                            |(along, all), rec| call(rec, &rules, &sketch, strand.as_deref(), along, all),
+                        ));
+                        if calls.len() >= PRESCAN {
+                            break;
+                        }
+                    }
+                    calls.truncate(PRESCAN);
+                    clean_weight(&calls, error_weight)
+                } else {
+                    (1.0, 0.0)
+                };
                 let (rx, _) = spawn_reader(read_1, read_2, BATCH, pr)?;
                 let mut outs = Outputs::create(&out_1, out_2.as_deref(), depth_table.as_deref())?;
                 let mut tot = Totals::new();
@@ -584,7 +702,7 @@ impl AnchorCounts {
                         .par_iter()
                         .map_init(
                             || (Vec::new(), Vec::new()),
-                            |(along, all), rec| call(rec, &rules, &sketch, along, all),
+                            |(along, all), rec| call(rec, &rules, &sketch, strand.as_deref(), along, all),
                         )
                         .collect();
                     for (rec, c) in batch.iter().zip(&calls) {
@@ -597,22 +715,26 @@ impl AnchorCounts {
                             continue;
                         }
                         tot.depth_in[bin(c.typical as f64)] += 1;
-                        if c.keep_prob >= 1.0 || coin(rec, seed) < c.keep_prob {
+                        let p = weighted(c, error_weight, clean_w, err_share);
+                        if p >= 1.0 || coin(rec, seed) < p {
                             tot.reads_out += 1;
                             tot.bases_out += bases(rec);
                             tot.kept_no_solid += !c.has_solid as u64;
-                            tot.depth_out[bin(c.typical as f64 * c.keep_prob)] += 1;
+                            tot.depth_out[bin(c.typical as f64 * p)] += 1;
                             outs.write(rec, c.typical)?;
                         }
                     }
                 }
                 outs.finish()?;
-                Ok(tot)
+                Ok((tot, clean_w))
             })
             .map_err(to_py_err)?;
         let d = totals.to_dict(py)?;
         d.set_item("sketch_bytes", self.sketch.bytes())?;
         d.set_item("sketch_fill", self.sketch.fill())?;
+        if error_weight < 1.0 {
+            d.set_item("clean_weight", clean_w)?;
+        }
         Ok(d)
     }
 
@@ -645,6 +767,29 @@ mod tests {
         assert_eq!(base_name(b"@r1/2\n"), b"r1");
         assert_eq!(base_name(b">contig_3 len=4\n"), b"contig_3");
         assert_eq!(base_name(b"@SRR1.1 1/1\n"), b"SRR1.1");
+    }
+
+    fn c(keep_prob: f64, errors: u64, minor: bool) -> Call {
+        Call { keep_prob, typical: 100, occurrences: 10, errors, has_anchors: true, has_solid: true, minor }
+    }
+
+    #[test]
+    fn clean_weight_keeps_the_expected_count() {
+        // thinned reads: half the keep probability on reads with errors
+        let calls = vec![c(0.2, 0, false), c(0.2, 3, false), c(1.0, 2, false), c(0.5, 1, true)];
+        let (w, e) = clean_weight(&calls, 0.25);
+        assert!((w - 1.75).abs() < 1e-9 && (e - 0.5).abs() < 1e-9);
+        let before: f64 = calls.iter().filter(|c| thinned(c)).map(|c| c.keep_prob).sum();
+        let after: f64 = calls.iter().filter(|c| thinned(c)).map(|c| weighted(c, 0.25, w, e)).sum();
+        assert!((before - after).abs() < 1e-9);
+        // reads kept anyway, or for a minor branch, keep their probability
+        assert_eq!(weighted(&calls[2], 0.25, w, e), 1.0);
+        assert_eq!(weighted(&calls[3], 0.25, w, e), 0.5);
+        assert_eq!(clean_weight(&[c(0.3, 1, false)], 0.25), (1.0, 0.0));
+        // near 1, error-free reads cap at 1 and those with errors make up the rest
+        let (hi_clean, hi_err) = (weighted(&c(0.8, 0, false), 0.25, w, e), weighted(&c(0.8, 2, false), 0.25, w, e));
+        assert_eq!(hi_clean, 1.0);
+        assert!(((1.0 - e) * hi_clean + e * hi_err - 0.8).abs() < 1e-9);
     }
 
     #[test]

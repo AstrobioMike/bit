@@ -48,6 +48,8 @@ DENSITY = 2
 NOVEL_FRACTION = 0.1
 MIN_READS = 2
 SEED = 1
+ERROR_WEIGHT = 1.0
+ERROR_SHARE = 0.01
 # the counting pass's sketch, when --memory isn't given: about as many bytes as the input on
 # disk, within these bounds and at most half the computer's memory
 MIN_SKETCH = 256 * 2**20
@@ -145,7 +147,7 @@ class Counts:
     FIELDS = ["reads_or_pairs_in", "bases_in", "reads_or_pairs_out", "bases_out",
               "no_anchors", "kept_without_solid_kmers", "kmer_occurrences",
               "kmer_occurrences_judged_errors", "median_depth_in", "median_depth_out",
-              "sketch_bytes", "sketch_fill"]
+              "sketch_bytes", "sketch_fill", "clean_weight"]
 
     def __init__(self, totals):
         for f in self.FIELDS:
@@ -178,7 +180,8 @@ class Counts:
 def normalize(read_1, read_2=None, output_dir="normalize-reads", output_prefix="",
               target_depth=TARGET_DEPTH, k=KMER_SIZE, density=DENSITY,
               novel_fraction=NOVEL_FRACTION, minor_branches=True, min_reads=MIN_READS,
-              sketch_bytes=None, depth_table=False, seed=SEED, show_progress=True):
+              sketch_bytes=None, depth_table=False, seed=SEED, error_weight=ERROR_WEIGHT,
+              error_share=ERROR_SHARE, strand_aware=False, show_progress=True):
     """
     Writes the normalized reads to output_dir and returns (Counts, output paths). With
     read_2, mates are judged and kept together.
@@ -199,12 +202,17 @@ def normalize(read_1, read_2=None, output_dir="normalize-reads", output_prefix="
     if sketch_bytes is None:
         sketch_bytes = default_sketch_bytes(inputs)
     try:
+        # strand-aware: a second sketch, half the first's size, of anchors by the strand reads
+        # hold them on
+        strand_bytes = int(sketch_bytes) // 2 if strand_aware else 0
         counted = _run("Counting", total, show_progress, native.count_anchors,
-                       read_1, read_2, k, density, int(sketch_bytes))
+                       read_1, read_2, k, density, int(sketch_bytes), strand_bytes)
         totals = _run("Writing ", total, show_progress, counted.normalize,
                       read_1, read_2, out_1, out_2, target_depth,
                       novel_fraction=novel_fraction, minor_anchors=minor_anchors,
-                      min_reads=min_reads, seed=seed, depth_table=table)
+                      min_reads=min_reads, seed=seed, error_weight=error_weight,
+                      error_share=error_share,
+                      depth_table=table)
     except ValueError as e:
         if "Read names" in str(e) or "ran out before" in str(e):
             print(f"\n    {e}", file=sys.stderr)

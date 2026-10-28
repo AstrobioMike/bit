@@ -243,6 +243,117 @@ def test_deep_isolate_errors_not_kept(tmp_path, rng):
     assert len(kept) < 0.15 * len(reads)
 
 
+def test_reads_with_clustered_errors_not_favored(tmp_path, rng):
+    # 1,000x with Illumina-like errors, a sixth of the reads with three more within 30 bp: at this depth each error
+    # recurs in a few reads, and errors close together once passed as sequence (their
+    # neighbors being errors too), set those reads' least-covered depth, and got them kept
+    # at about 1.4 times the rate of the rest
+    genome = rand_seq(20_000, rng)
+    reads = sample_reads(genome, 1000, "clean", rng, error_rate=0.003)
+    for i in range(0, len(reads), 6):
+        name, seq, qual = reads[i]
+        at = rng.randrange(10, READ - 40)
+        out = list(seq)
+        for p in rng.sample(range(at, at + 30), 3):
+            out[p] = rng.choice([b for b in "ACGT" if b != out[p]])
+        reads[i] = (name.replace("clean_", "clustered_"), "".join(out), qual)
+    _, paths = run(tmp_path, reads, target_depth=100)
+    names = read_names(paths["reads"])
+    n_in = sum(1 for n, _, _ in reads if n.startswith("clustered_"))
+    clustered = sum(1 for n in names if n.startswith("clustered_")) / n_in
+    clean = sum(1 for n in names if n.startswith("clean_")) / (len(reads) - n_in)
+    assert clustered <= 1.2 * clean
+
+
+def test_error_weight_favors_clean_reads_at_the_same_depth(tmp_path, rng):
+    # where reads are thinned, those with errors are kept less and clean ones more, and about
+    # as many are kept as without it
+    genome = rand_seq(5000, rng)
+    reads = sample_reads(genome, 1000, "g", rng, error_rate=0.003)
+
+    def mismatches(name, seq):
+        s = int(name.split("_")[-1])
+        ref = genome[s:s + READ]
+        return min(sum(a != b for a, b in zip(seq, ref)), sum(a != b for a, b in zip(rc(seq), ref)))
+
+    rates, kept = {}, {}
+    for w in (1.0, 0.25):
+        counts, paths = run(tmp_path / str(w), reads, target_depth=50, error_weight=w)
+        names, seqs = read_names(paths["reads"]), read_seqs(paths["reads"])
+        rates[w] = sum(mismatches(n, s) for n, s in zip(names, seqs)) / (READ * len(names))
+        kept[w] = len(names)
+        assert (counts.clean_weight is None) == (w == 1.0)
+    assert rates[0.25] < 0.5 * rates[1.0]
+    assert abs(kept[0.25] - kept[1.0]) < 0.05 * kept[1.0]
+
+
+def test_error_share_drops_recurrent_errors_at_high_depth(tmp_path, rng):
+    # 3,000x with an error recurring at 3% of reads at some positions: at the default 1% those
+    # errors pass as sequence and keep their reads; at 5% they don't, and fewer are kept
+    genome = rand_seq(5000, rng)
+    hot = {p: rng.choice([b for b in "ACGT" if b != genome[p]]) for p in range(20, 4980, 120)}
+    reads = []
+    for i, (name, seq, qual) in enumerate(sample_reads(genome, 3000, "g", rng)):
+        s = int(name.split("_")[-1])
+        out = list(genome[s:s + READ])
+        for p, b in hot.items():
+            if s <= p < s + READ and rng.random() < 0.03:
+                out[p - s] = b
+        reads.append((name, "".join(out), qual))
+    kept = {}
+    for share in (0.01, 0.05):
+        _, paths = run(tmp_path / str(share), reads, target_depth=100, error_share=share)
+        kept[share] = len(read_names(paths["reads"]))
+    assert kept[0.05] < 0.9 * kept[0.01]
+
+
+def _deep_with_hot_sites(rng, strand_specific, depth=3000, rate=0.03):
+    """ reads at `depth` of a 5 kb genome with a recurrent substitution at every 120th position,
+    in `rate` of the reads holding it: only reads running forward along the genome when
+    strand_specific (as for Illumina context errors), reads on both strands otherwise (as
+    for a real variant) """
+    genome = rand_seq(5000, rng)
+    hot = {p: rng.choice([b for b in "ACGT" if b != genome[p]]) for p in range(20, 4980, 120)}
+    reads = []
+    for i in range(int(depth * len(genome) / READ)):
+        s = rng.randrange(len(genome) - READ)
+        fwd = rng.random() < 0.5
+        out = list(genome[s:s + READ])
+        if fwd or not strand_specific:
+            for p, b in hot.items():
+                if s <= p < s + READ and rng.random() < rate:
+                    out[p - s] = b
+        seq = "".join(out)
+        reads.append((f"g_{i}_{s}", seq if fwd else rc(seq), "I" * READ))
+    return reads
+
+
+def test_strand_aware_drops_strand_specific_recurrent_errors(tmp_path, rng):
+    reads = _deep_with_hot_sites(rng, strand_specific=True)
+    kept = {}
+    for sa in (False, True):
+        _, paths = run(tmp_path / str(sa), reads, target_depth=100, strand_aware=sa)
+        kept[sa] = len(read_names(paths["reads"]))
+    assert kept[True] < 0.9 * kept[False]
+
+
+def test_strand_aware_keeps_variants_read_off_both_strands(tmp_path, rng):
+    reads = _deep_with_hot_sites(rng, strand_specific=False)
+    kept = {}
+    for sa in (False, True):
+        _, paths = run(tmp_path / str(sa), reads, target_depth=100, strand_aware=sa)
+        kept[sa] = len(read_names(paths["reads"]))
+    assert abs(kept[True] - kept[False]) < 0.03 * kept[False]
+
+
+def test_cli_rejects_bad_error_weight(tmp_path):
+    import subprocess
+    write_fastq(tmp_path / "r.fq", [("a", "ACGT" * 40, "I" * 160)])
+    result = subprocess.run(["bit", "normalize-reads", "-i", str(tmp_path / "r.fq"), "-o",
+                             str(tmp_path / "o"), "--error-weight", "1.5"], capture_output=True, text=True)
+    assert result.returncode != 0 and "error-weight" in result.stderr
+
+
 def test_pairs_kept_together_in_order(tmp_path, rng):
     genome = rand_seq(5000, rng)
     r1s, r2s = shuffled_pairs(rng, sample_pairs(genome, 200, "g", rng))
