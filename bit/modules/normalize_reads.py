@@ -181,7 +181,7 @@ def normalize(read_1, read_2=None, output_dir="normalize-reads", output_prefix="
               target_depth=TARGET_DEPTH, k=KMER_SIZE, density=DENSITY,
               novel_fraction=NOVEL_FRACTION, minor_branches=True, min_reads=MIN_READS,
               sketch_bytes=None, depth_table=False, seed=SEED, error_weight=ERROR_WEIGHT,
-              error_share=ERROR_SHARE, strand_aware=False, show_progress=True):
+              error_share=ERROR_SHARE, show_progress=True):
     """
     Writes the normalized reads to output_dir and returns (Counts, output paths). With
     read_2, mates are judged and kept together.
@@ -202,11 +202,10 @@ def normalize(read_1, read_2=None, output_dir="normalize-reads", output_prefix="
     if sketch_bytes is None:
         sketch_bytes = default_sketch_bytes(inputs)
     try:
-        # strand-aware: a second sketch, half the first's size, of anchors by the strand reads
-        # hold them on
-        strand_bytes = int(sketch_bytes) // 2 if strand_aware else 0
+        # (the compiled core adds a sketch half this size of anchors by the strand reads hold
+        # them on, for telling systematic, one-strand errors from sequence)
         counted = _run("Counting", total, show_progress, native.count_anchors,
-                       read_1, read_2, k, density, int(sketch_bytes), strand_bytes)
+                       read_1, read_2, k, density, int(sketch_bytes))
         totals = _run("Writing ", total, show_progress, counted.normalize,
                       read_1, read_2, out_1, out_2, target_depth,
                       novel_fraction=novel_fraction, minor_anchors=minor_anchors,

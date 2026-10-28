@@ -26,7 +26,7 @@ const BATCH: usize = 8192;
 // an anchor in under this share of the reads around it (within 2k bases) is taken for a
 // recurrent sequencing error, not sequence of its own (see judge_read())
 const ERROR_SHARE: f64 = 0.01;
-// strand-aware judging (--strand-aware): an anchor in at least STRAND_MIN_READS reads, under
+// systematic errors: an anchor in at least STRAND_MIN_READS reads, under
 // STRAND_DEPTH_SHARE of the read's deepest anchor, and on one strand in under STRAND_SHARE of
 // the reads holding it is taken for a systematic (strand-specific) sequencing error. Real
 // sequence, a rare variant's included, is read off both strands about equally.
@@ -349,8 +349,8 @@ fn stranded_anchors(seq: &[u8], k: usize, t: u64, out: &mut Vec<u64>) {
 #[pyclass(frozen)]
 pub struct AnchorCounts {
     sketch: Arc<Sketch>,
-    // with strand-aware counting, how many reads hold each anchor on each strand
-    strand: Option<Arc<Sketch>>,
+    // how many reads hold each anchor on each strand
+    strand: Arc<Sketch>,
     k: usize,
     density: u64,
     reads: u64,
@@ -358,9 +358,10 @@ pub struct AnchorCounts {
 }
 
 /// the counting pass: every read's (or pair's) distinct anchors into a sketch of about
-/// `sketch_bytes` (see sketch.rs)
+/// `sketch_bytes` (see sketch.rs), and each read's by the strand it holds them on into one of
+/// half that
 #[pyfunction]
-#[pyo3(signature = (read_1, read_2, k, density, sketch_bytes, strand_bytes=0, progress=None))]
+#[pyo3(signature = (read_1, read_2, k, density, sketch_bytes, progress=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn count_anchors(
     py: Python<'_>,
@@ -369,7 +370,6 @@ pub fn count_anchors(
     k: usize,
     density: u64,
     sketch_bytes: usize,
-    strand_bytes: usize,
     progress: Option<PyRef<crate::Progress>>,
 ) -> PyResult<AnchorCounts> {
     if !(1..=32).contains(&k) {
@@ -378,7 +378,7 @@ pub fn count_anchors(
     let pr = crate::arc(&progress);
     py.detach(|| {
         let sketch = Sketch::new(sketch_bytes);
-        let strand = (strand_bytes > 0).then(|| Sketch::new(strand_bytes));
+        let strand = Sketch::new(sketch_bytes / 2);
         let t = threshold(density);
         let (rx, _) = spawn_reader(read_1, read_2, BATCH, pr)?;
         let (mut reads, mut nbases) = (0u64, 0u64);
@@ -393,12 +393,10 @@ pub fn count_anchors(
                     for &h in hs.iter() {
                         sketch.add(h);
                     }
-                    if let Some(st) = &strand {
-                        for seq in std::iter::once(&rec.seq1).chain(rec.seq2.as_ref()) {
-                            stranded_anchors(seq, k, t, hs);
-                            for &h in hs.iter() {
-                                st.add(h);
-                            }
+                    for seq in std::iter::once(&rec.seq1).chain(rec.seq2.as_ref()) {
+                        stranded_anchors(seq, k, t, hs);
+                        for &h in hs.iter() {
+                            strand.add(h);
                         }
                     }
                 },
@@ -406,7 +404,7 @@ pub fn count_anchors(
         }
         Ok(AnchorCounts {
             sketch: Arc::new(sketch),
-            strand: strand.map(Arc::new),
+            strand: Arc::new(strand),
             k,
             density,
             reads,
@@ -461,7 +459,7 @@ fn median(v: &mut [u32]) -> u32 {
 /// errors passed as solid, set the read's least-covered depth, and reads holding them were kept
 /// at 1.4 (and earlier 3-6) times the rate of clean ones (Oct 2026). Adds (hash, count, solid)
 /// for each to `out`
-fn judge_read(seq: &[u8], r: &Rules, sketch: &Sketch, strand: Option<&Sketch>,
+fn judge_read(seq: &[u8], r: &Rules, sketch: &Sketch, strand: &Sketch,
               along: &mut Vec<(u32, u64)>, out: &mut Vec<(u64, u32, bool)>) {
     anchors_into(seq, r.k, r.t, along);
     let counts: Vec<u32> = along.iter().map(|a| sketch.get(a.1)).collect();
@@ -476,13 +474,11 @@ fn judge_read(seq: &[u8], r: &Rules, sketch: &Sketch, strand: Option<&Sketch>,
             lo += 1;
         }
         let c = counts[i];
-        if let Some(st) = strand {
-            if (c as f64) < STRAND_DEPTH_SHARE * deepest {
-                let (f, rv) = (st.get(h), st.get(h ^ REV_SALT));
-                if f + rv >= STRAND_MIN_READS && (f.min(rv) as f64) < STRAND_SHARE * (f + rv) as f64 {
-                    out.push((h, c, false));
-                    continue;
-                }
+        if (c as f64) < STRAND_DEPTH_SHARE * deepest {
+            let (f, rv) = (strand.get(h), strand.get(h ^ REV_SALT));
+            if f + rv >= STRAND_MIN_READS && (f.min(rv) as f64) < STRAND_SHARE * (f + rv) as f64 {
+                out.push((h, c, false));
+                continue;
             }
         }
         if (c as f64) >= r.error_share * deepest {
@@ -511,7 +507,7 @@ fn judge_read(seq: &[u8], r: &Rules, sketch: &Sketch, strand: Option<&Sketch>,
 /// minor_ratio to half the read's typical depth), it's kept with at least probability
 /// minor_cap / the branch's depth. A read with anchors but none solid is in no more than one
 /// or two reads' worth of anything, and is kept.
-fn call(rec: &Rec, r: &Rules, sketch: &Sketch, strand: Option<&Sketch>,
+fn call(rec: &Rec, r: &Rules, sketch: &Sketch, strand: &Sketch,
         along: &mut Vec<(u32, u64)>, all: &mut Vec<(u64, u32, bool)>) -> Call {
     all.clear();
     judge_read(&rec.seq1, r, sketch, strand, along, all);
@@ -682,7 +678,7 @@ impl AnchorCounts {
                         let batch = batch?;
                         calls.par_extend(batch.par_iter().map_init(
                             || (Vec::new(), Vec::new()),
-                            |(along, all), rec| call(rec, &rules, &sketch, strand.as_deref(), along, all),
+                            |(along, all), rec| call(rec, &rules, &sketch, &strand, along, all),
                         ));
                         if calls.len() >= PRESCAN {
                             break;
@@ -702,7 +698,7 @@ impl AnchorCounts {
                         .par_iter()
                         .map_init(
                             || (Vec::new(), Vec::new()),
-                            |(along, all), rec| call(rec, &rules, &sketch, strand.as_deref(), along, all),
+                            |(along, all), rec| call(rec, &rules, &sketch, &strand, along, all),
                         )
                         .collect();
                     for (rec, c) in batch.iter().zip(&calls) {

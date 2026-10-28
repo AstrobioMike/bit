@@ -33,8 +33,10 @@ def build_parser(parent_subparsers=None, show_fine=False):
         The reads are read twice. The first pass counts how many reads hold each k-mer (in a fixed
         amount of memory, --memory). The second judges and writes: k-mers in fewer than --min-reads
         reads, or far rarer than the k-mers around them, are taken for sequencing errors and count for
-        nothing. A read's depth is that of its 10% least-covered k-mers (--novel-fraction), and it's
-        kept with probability --target-depth / that depth (always, when that's at or under the
+        nothing, as are well-covered k-mers seen almost only on one strand and well under the depth
+        around them (systematic errors; k-mers are counted by strand too, in half again the memory).
+        A read's depth is that of its 10% least-covered k-mers (--novel-fraction), and it's kept
+        with probability --target-depth / that depth (always, when that's at or under the
         target). Reads with a few k-mers on a minor branch (k-mers in 3+ reads, at 5-50% of the read's
         typical depth: a minority variant) are kept up to half the target for that branch
         (--no-minor-branches turns this off). Which reads are kept depends only on the reads
@@ -123,8 +125,9 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<FLOAT>",
         type=float,
         default=None,
-        help=("GB of memory for counting k-mers (default: about the input's size on disk, "
-              "0.25-8, at most half the computer's memory)"),
+        help=("GB of memory for counting k-mers, plus half again for counting them by strand "
+              "(default: about the input's size on disk, 0.25-8, at most half the computer's "
+              "memory)"),
     )
 
     general.add_argument(
@@ -216,14 +219,6 @@ def _add_fine_tuning_arguments(target, hidden=False):
     )
 
     target.add_argument(
-        "--strand-aware",
-        action="store_true",
-        help=h("Also count k-mers by the strand reads hold them on (50%% more memory), and take "
-               "well-covered k-mers seen almost only on one strand, well under the depth around "
-               "them, for systematic sequencing errors"),
-    )
-
-    target.add_argument(
         "--no-minor-branches",
         action="store_true",
         help=h("Don't keep reads for k-mers of a minor branch (minority variants)"),
@@ -287,7 +282,6 @@ def main():
         sketch_bytes=None if args.memory is None else int(args.memory * 2**30),
         error_weight=args.error_weight,
         error_share=args.error_share,
-        strand_aware=args.strand_aware,
         depth_table=args.depth_table,
     )
 

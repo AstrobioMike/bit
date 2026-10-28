@@ -288,18 +288,10 @@ def test_error_weight_favors_clean_reads_at_the_same_depth(tmp_path, rng):
 
 
 def test_error_share_drops_recurrent_errors_at_high_depth(tmp_path, rng):
-    # 3,000x with an error recurring at 3% of reads at some positions: at the default 1% those
-    # errors pass as sequence and keep their reads; at 5% they don't, and fewer are kept
-    genome = rand_seq(5000, rng)
-    hot = {p: rng.choice([b for b in "ACGT" if b != genome[p]]) for p in range(20, 4980, 120)}
-    reads = []
-    for i, (name, seq, qual) in enumerate(sample_reads(genome, 3000, "g", rng)):
-        s = int(name.split("_")[-1])
-        out = list(genome[s:s + READ])
-        for p, b in hot.items():
-            if s <= p < s + READ and rng.random() < 0.03:
-                out[p - s] = b
-        reads.append((name, "".join(out), qual))
+    # 3,000x with an error recurring at 3% of reads at some positions, on both strands (so not
+    # caught as strand-specific): at the default 1% those errors pass as sequence and keep their
+    # reads; at 5% they don't, and fewer are kept
+    reads = _deep_with_hot_sites(rng, strand_specific=False)
     kept = {}
     for share in (0.01, 0.05):
         _, paths = run(tmp_path / str(share), reads, target_depth=100, error_share=share)
@@ -328,22 +320,26 @@ def _deep_with_hot_sites(rng, strand_specific, depth=3000, rate=0.03):
     return reads
 
 
-def test_strand_aware_drops_strand_specific_recurrent_errors(tmp_path, rng):
-    reads = _deep_with_hot_sites(rng, strand_specific=True)
+def _kept_vs_clean(tmp_path, rng, strand_specific):
+    """ reads kept from a genome with recurrent substitutions, and from the same genome without
+    them """
+    seed = rng.randrange(2**32)
     kept = {}
-    for sa in (False, True):
-        _, paths = run(tmp_path / str(sa), reads, target_depth=100, strand_aware=sa)
-        kept[sa] = len(read_names(paths["reads"]))
-    assert kept[True] < 0.9 * kept[False]
+    for rate in (0.0, 0.03):
+        reads = _deep_with_hot_sites(random.Random(seed), strand_specific, rate=rate)
+        _, paths = run(tmp_path / str(rate), reads, target_depth=100)
+        kept[rate] = len(read_names(paths["reads"]))
+    return kept[0.03], kept[0.0]
 
 
-def test_strand_aware_keeps_variants_read_off_both_strands(tmp_path, rng):
-    reads = _deep_with_hot_sites(rng, strand_specific=False)
-    kept = {}
-    for sa in (False, True):
-        _, paths = run(tmp_path / str(sa), reads, target_depth=100, strand_aware=sa)
-        kept[sa] = len(read_names(paths["reads"]))
-    assert abs(kept[True] - kept[False]) < 0.03 * kept[False]
+def test_strand_specific_recurrent_errors_dont_keep_reads(tmp_path, rng):
+    hot, clean = _kept_vs_clean(tmp_path, rng, strand_specific=True)
+    assert hot < 1.05 * clean
+
+
+def test_variants_read_off_both_strands_keep_reads(tmp_path, rng):
+    hot, clean = _kept_vs_clean(tmp_path, rng, strand_specific=False)
+    assert hot > 1.3 * clean
 
 
 def test_cli_rejects_bad_error_weight(tmp_path):
