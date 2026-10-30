@@ -4,7 +4,6 @@ from bit.cli.common import (CustomRichHelpFormatter, add_help, wrap_help,
                             add_version_arg, add_force, reconstruct_invocation)
 from bit.modules.general import (notify_premature_exit, check_if_output_dir_exists,
                                  report_message)
-from bit.modules.gen_metagenome import gen_metagenome
 
 
 def build_parser(parent_subparsers=None, show_fine=False):
@@ -332,6 +331,7 @@ def main():
 
     args.full_cmd_executed = reconstruct_invocation(parser, args)
 
+    from bit.modules.gen_metagenome import gen_metagenome
     gen_metagenome(args)
 
 

@@ -2,7 +2,6 @@ import sys
 import argparse
 from bit.cli.common import (CustomRichHelpFormatter, add_version_arg,
                             wrap_help)
-from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
 from bit.modules.taxonomy.tax_ranks import RANKS
 from bit.modules.taxonomy.get_accs_shared import ASSEMBLY_LEVELS
 from bit.modules.taxonomy.target_taxon import SOURCE_CHOICES, SECTION_CHOICES
@@ -235,4 +234,5 @@ def main():
 
     args = parser.parse_args()
 
+    from bit.modules.ncbi.dl_ncbi_assemblies import dl_ncbi_assemblies
     dl_ncbi_assemblies(args)

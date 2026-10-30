@@ -1,7 +1,6 @@
 import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
-from bit.modules.filter_kofamscan_results import filter_kofamscan_results
 from bit.modules.general import check_files_are_found
 
 
@@ -68,4 +67,5 @@ def main():
 
     check_files_are_found([args.input_file])
 
+    from bit.modules.filter_kofamscan_results import filter_kofamscan_results
     filter_kofamscan_results(args.input_file, args.output_file)

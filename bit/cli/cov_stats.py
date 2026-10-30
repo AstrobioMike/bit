@@ -1,6 +1,5 @@
 import sys
 import argparse
-from bit.modules.cov_stats import get_cov_stats
 from bit.cli.common import CustomRichHelpFormatter, add_force, add_help, add_version_arg
 from bit.modules.general import report_message, notify_premature_exit, is_gzipped
 
@@ -108,6 +107,7 @@ def main():
 
         args = set_ref_input(args)
 
+        from bit.modules.cov_stats import get_cov_stats
         get_cov_stats(args)
 
 

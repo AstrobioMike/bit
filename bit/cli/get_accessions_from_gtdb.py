@@ -2,7 +2,6 @@ import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help, add_version_arg
 from bit.modules.general import report_message
-from bit.modules.gtdb.get_accessions_from_gtdb import get_accessions_from_gtdb
 from bit.modules.taxonomy.get_accs_shared import (add_common_get_accs_args,
                                                   apply_derep_default)
 
@@ -60,6 +59,7 @@ def main():
 
     preflight_checks(args)
 
+    from bit.modules.gtdb.get_accessions_from_gtdb import get_accessions_from_gtdb
     get_accessions_from_gtdb(args)
 
 
@@ -72,4 +72,3 @@ def preflight_checks(args):
                        "unless you're using `--get-rank-counts` or `--get-table`.",
                        trailing_newline=True)
         sys.exit()
-

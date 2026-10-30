@@ -14,6 +14,21 @@
 
 -->
 
+## v2.13.1 (30-Oct-2026)
+
+- efficiency improvements in several programs
+
+### Added
+- `bit fasta extract-by-primers` 
+  - now supports IUPAC degenerate bases in primers
+  - has a new `-L | --max-amplicon-length` parameter (default: 10000; set to 0 for no limit)
+- `bit fasta calc-var-in-msa` has a new `-j | --jobs` parameter
+
+### Fixed
+- `bit fasta extract-by-primers` with `-m 1` or `-m 2` was missing primer sites with differences whenever a better-matching site existed elsewhere in the same sequence, that's fixed now
+
+---
+
 ## v2.13.0 (27-Oct-2026)
 
 ### Added

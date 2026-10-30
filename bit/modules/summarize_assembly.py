@@ -115,6 +115,58 @@ def compute_all_assembly_stats(input_assemblies, jobs=1):
         ex.shutdown(wait=True)
 
 
+def _native_assembly_stats(assembly):
+    """
+    assembly_stats() for a clean, plain-text FASTA via the compiled core (bit._native), giving
+    exactly what pyfastx gives (its counts, its single-precision GC content, and its Nx rule:
+    the first contig, longest first, at which the running length reaches p% of the total).
+    Returns None for anything else (gzipped, unusual lines, empty records, no A/C/G/T at all,
+    where pyfastx raises), which then goes through pyfastx as always.
+    """
+    try:
+        from bit._native import fasta_assembly_summary
+        import numpy as np # type: ignore
+        n_contigs, size, comp, lengths = fasta_assembly_summary(str(assembly))
+    except (ImportError, ValueError):
+        return None
+
+    comp = dict(comp)
+    gc = sum(comp.get(c, 0) for c in "GCgc")
+    acgt = gc + sum(comp.get(c, 0) for c in "ATat")
+    if acgt == 0:
+        return None
+
+    stats = {}
+    stats["Total contigs"] = n_contigs
+    stats["Total length"] = size
+    stats["Ambiguous characters"] = sum(v for k, v in comp.items() if k not in ["A", "T", "G", "C"])
+    stats["GC content"] = round(float(np.float32(gc) / np.float32(acgt) * np.float32(100)), 2)
+    stats["Maximum contig length"] = max(lengths)
+    stats["Minimum contig length"] = min(lengths)
+
+    by_length = sorted(lengths, reverse=True)
+    def nl(p):
+        threshold = size * p / 100
+        running = 0
+        for i, length in enumerate(by_length, 1):
+            running += length
+            if running >= threshold:
+                return length, i
+
+    info_at_50, info_at_75, info_at_90 = nl(50), nl(75), nl(90)
+    stats["N50"] = info_at_50[0]
+    stats["N75"] = info_at_75[0]
+    stats["N90"] = info_at_90[0]
+    stats["L50"] = info_at_50[1]
+    stats["L75"] = info_at_75[1]
+    stats["L90"] = info_at_90[1]
+
+    for min_len in (100, 500, 1000, 5000, 10000, 50000, 100000):
+        stats[f"Num. contigs >= {min_len}"] = sum(1 for length in lengths if length >= min_len)
+
+    return stats
+
+
 def assembly_stats(assembly):
     """
     Returns a dict of summary stats for one assembly, keyed by the master df row names.
@@ -126,6 +178,10 @@ def assembly_stats(assembly):
 
     if os.stat(assembly).st_size == 0:
         return {}
+
+    native = _native_assembly_stats(assembly)
+    if native is not None:
+        return native
 
     stats = {}
 

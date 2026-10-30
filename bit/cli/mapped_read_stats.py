@@ -1,8 +1,6 @@
 import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
-from bit.modules.mapped_read_stats import (get_mapped_reads_pids,
-                                              get_summary_stats)
 
 
 def build_parser(parent_subparsers=None):
@@ -72,6 +70,7 @@ def main():
 
     store_reads = bool(args.output_tsv)
 
+    from bit.modules.mapped_read_stats import get_mapped_reads_pids
     ref_read_pids, pid_stats, pid_gc_stats, clip_agg = get_mapped_reads_pids(
         args.input_bam, include_non_primary=args.include_non_primary,
         store_read_pids=store_reads)
@@ -84,6 +83,7 @@ def main():
 
 def print_summary_stats(pid_stats, pid_gc_stats=None, clip_agg=None, include_non_primary=False):
 
+    from bit.modules.mapped_read_stats import get_summary_stats
     summary_stats = get_summary_stats(pid_stats, pid_gc_stats, clip_agg, include_non_primary)
 
     def fmt(val):

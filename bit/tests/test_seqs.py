@@ -278,3 +278,17 @@ def test_fasta_to_genbank():
     assert str(records[0].seq).startswith("ATGAAAATATCA")
     assert records[1].id == "yopK"
     assert str(records[1].seq).startswith("ATGTTTATTAAA")
+
+
+def test_revcomp_acgt():
+    assert seqs.revcomp("AACGTT") == "AACGTT"
+    assert seqs.revcomp("ATGCC") == "GGCAT"
+    assert seqs.revcomp("atgcc") == "ggcat"
+
+
+def test_revcomp_iupac_codes_complemented():
+    # each ambiguity code becomes the code for its complementary base set
+    # (R=AG <-> Y=CT, K=GT <-> M=AC, B=CGT <-> V=ACG, D=AGT <-> H=ACT; S, W, N self-complementary)
+    assert seqs.revcomp("RYKMBVDH") == "DHBVKMRY"
+    assert seqs.revcomp("SWN") == "NWS"
+    assert seqs.revcomp("ry") == "ry"

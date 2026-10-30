@@ -53,7 +53,6 @@ from collections import Counter, defaultdict
 from pathlib import Path
 
 import numpy as np # type: ignore
-from tqdm import tqdm # type: ignore
 import edlib # type: ignore
 
 from bit import _native as native
@@ -199,6 +198,7 @@ def with_progress_bar(read_paths):
             except BaseException as e:  # passed on below
                 error[0] = e
 
+        from tqdm import tqdm # type: ignore
         print(f"\n    {desc}\n")
         thread = threading.Thread(target=work, daemon=True)
         thread.start()

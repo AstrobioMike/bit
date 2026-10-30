@@ -6,7 +6,6 @@ This is bit's counterpart to GToTree's utils/taxonomy/wanted_ref_tax.py: one pla
 turns a taxon name (+ the selection knobs) into a list of assembly accessions
 """
 
-from bit.modules.taxonomy.tax_derep import select_ref_genomes
 from bit.modules.taxonomy.empty_selection import empty_selection_message
 from bit.modules.taxonomy.tax_targets import expand_all_targets, is_all_target
 from bit.modules.gtdb.get_gtdb_data import gtdb_data_table_path, get_gtdb_data
@@ -131,6 +130,7 @@ def resolve_target_taxon_accessions(source, taxon, target_rank=None,
 
     screen_against = ncbi_data_table_path() if core_source == "gtdb" else None
 
+    from bit.modules.taxonomy.tax_derep import select_ref_genomes # (pyarrow-backed; kept off the CLI-parser import path)
     selection = select_ref_genomes(
         table_path, core_source, taxon,
         target_rank=target_rank,

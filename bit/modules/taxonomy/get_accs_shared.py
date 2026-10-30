@@ -2,14 +2,9 @@
 The surface `bit get-accs-from-gtdb` and `bit get-accs-from-ncbi` share
 """
 
-from bit.modules.taxonomy.tax_counts import (count_distinct_taxa, count_genomes,
-                                               derep_size, rank_counts, read_pool,
-                                               representatives_filter)
-from bit.modules.taxonomy.tax_derep import (resolve_derep_rank, select_all_domains,
-                                              select_ref_genomes)
+# the pyarrow-backed taxonomy helpers are imported inside the functions that use
+# them, so building the CLI parsers (and showing help) doesn't load pyarrow
 from bit.modules.taxonomy.tax_ranks import RANKS
-from bit.modules.taxonomy.tax_targets import (domains_in_asset,
-                                                unassigned_domain_summary)
 
 ASSEMBLY_LEVELS = {
     "complete": "Complete Genome",
@@ -159,6 +154,7 @@ class PoolSpec:
 
     def with_reps(self, kind):
         """The same pool plus a representatives predicate ('source' | 'refseq')."""
+        from bit.modules.taxonomy.tax_counts import representatives_filter
         return PoolSpec(self.table_path, self.source,
                         rep_filter=representatives_filter(self.source, kind),
                         accession_prefixes=self.accession_prefixes,
@@ -169,22 +165,26 @@ class PoolSpec:
     # -- counting ------------------------------------------------------------------
 
     def count_genomes(self, rank=None, taxon=None, domain_assigned=None):
+        from bit.modules.taxonomy.tax_counts import count_genomes
         return count_genomes(self.table_path, self.source, rank=rank, taxon=taxon,
                              domain_assigned=domain_assigned, **self._filters())
 
     def count_distinct(self, rank_col, scope_rank=None, scope_taxon=None,
                        domain_assigned=None):
+        from bit.modules.taxonomy.tax_counts import count_distinct_taxa
         return count_distinct_taxa(self.table_path, self.source, rank_col,
                                    scope_rank=scope_rank, scope_taxon=scope_taxon,
                                    domain_assigned=domain_assigned, **self._filters())
 
     def rank_counts(self, scope_rank=None, scope_taxon=None, domain_assigned=None):
+        from bit.modules.taxonomy.tax_counts import rank_counts
         return rank_counts(self.table_path, self.source, scope_rank=scope_rank,
                            scope_taxon=scope_taxon, domain_assigned=domain_assigned,
                            **self._filters())
 
     def derep_size(self, scope_rank, scope_taxon, derep_rank):
         """How many genomes a --derep-rank pull of this taxon would return."""
+        from bit.modules.taxonomy.tax_counts import derep_size
         return derep_size(self.table_path, self.source, scope_rank, scope_taxon,
                           derep_rank, **self._filters())
 
@@ -192,14 +192,17 @@ class PoolSpec:
 
     def read(self, columns, rank=None, taxon=None, domain_assigned=None):
         """The pool as an Arrow Table, filters applied before materializing."""
+        from bit.modules.taxonomy.tax_counts import read_pool
         return read_pool(self.table_path, self.source, columns, rank=rank, taxon=taxon,
                          domain_assigned=domain_assigned, **self._filters())
 
     def domains(self):
+        from bit.modules.taxonomy.tax_targets import domains_in_asset
         return domains_in_asset(self.table_path, self.source, **self._filters())
 
     def unassigned(self, rank=None):
         """What a `<taxon_flag> all` pull leaves behind. See tax_targets."""
+        from bit.modules.taxonomy.tax_targets import unassigned_domain_summary
         return unassigned_domain_summary(self.table_path, self.source, rank=rank,
                                          **self._filters())
 
@@ -207,6 +210,7 @@ class PoolSpec:
 
     def select(self, taxon, target_rank=None, derep_rank="off", reps_only=None,
                **kwargs):
+        from bit.modules.taxonomy.tax_derep import select_ref_genomes
         return select_ref_genomes(self.table_path, self.source, taxon,
                                   target_rank=target_rank, derep_rank=derep_rank,
                                   reps_only=reps_only,
@@ -214,6 +218,7 @@ class PoolSpec:
                                   assembly_levels=self.assembly_levels, **kwargs)
 
     def select_all_domains(self, derep_rank="auto", reps_only=None, **kwargs):
+        from bit.modules.taxonomy.tax_derep import select_all_domains
         return select_all_domains(self.table_path, self.source, derep_rank=derep_rank,
                                   reps_only=reps_only,
                                   accession_prefixes=self.accession_prefixes,
@@ -227,6 +232,7 @@ def derep_note(pool, rank, taxon, derep_rank):
 
     Returns (line_or_None, warnings).
     """
+    from bit.modules.taxonomy.tax_derep import resolve_derep_rank
     if not is_derep_on(derep_rank):
         return None, []
 
@@ -299,6 +305,7 @@ def all_derep_size(pool, derep_rank):
     asset-wide rank would over- or under-count it. An explicit --derep-rank resolves
     to the same rank for every domain, so this still matches that case exactly.
     """
+    from bit.modules.taxonomy.tax_derep import resolve_derep_rank
     total = 0
     for domain in pool.domains():
         effective, _warnings = resolve_derep_rank(RANKS[0], derep_rank, domain=domain)

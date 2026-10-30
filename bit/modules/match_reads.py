@@ -33,7 +33,8 @@ import os
 import shutil
 import sys
 import tempfile
-from collections import Counter, defaultdict
+from collections import Counter, defaultdict, deque
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import nullcontext
 from itertools import chain, islice
 from operator import itemgetter
@@ -55,6 +56,7 @@ POSITION_STEP = 16
 KMER_SIZE = 31
 NUM_KMER_SAMPLES = 25   # k-mers sampled per read by the exact-match prefilter
 BATCH_SIZE = 500        # reads (or pairs) per batch sent to each worker
+NATIVE_BATCHES_PER_CALL = 20  # batches handed to the compiled matcher at a time
 SORT_BUFFER_ROWS = 500_000  # read-hits rows held in memory before a sorted chunk goes to disk
 
 FASTA_EXTENSIONS = (".fasta", ".fa", ".fna", ".fas", ".fsa", ".ffn", ".fsta")
@@ -703,6 +705,88 @@ def process_batch(batch_and_pos):
     return len(batch), pos, results
 
 
+def _result_row(rec_or_pair, paired, keep_seqs, hits, hit_seqs, best, next_best):
+    """process_batch()'s result tuple for one assigned read or pair."""
+    if paired:
+        r1, r2 = rec_or_pair
+        recs = (r1, r2) if (keep_seqs and len(hits) == 1) else None
+        return (_mate_base_name(r1[0]), f"{len(r1[1])},{len(r2[1])}",
+                hits, hit_seqs, best, next_best, recs)
+    recs = (rec_or_pair,) if (keep_seqs and len(hits) == 1) else None
+    return (rec_or_pair[0], str(len(rec_or_pair[1])), hits, hit_seqs, best, next_best, recs)
+
+
+def native_batch_results(native, batches, paired, min_frac_of_seq, keep_seqs, python_matcher):
+    """
+    As mapping process_batch over `batches`, but with the compiled matcher (bit._native.ReadMatcher,
+    which follows the Python matchers step for step and spreads its work across its threads).
+    Batches are handed over NATIVE_BATCHES_PER_CALL at a time, and the next group is read while
+    the current one is being matched; results still come back one batch at a time, in order.
+
+    Python's str.upper() can change non-ASCII characters (sometimes into ASCII, or into more
+    than one character), so a group holding any non-ASCII read goes through the Python
+    matcher instead, built on first need by `python_matcher()`, keeping results identical.
+
+    If reading the input fails partway (e.g., a malformed record), every batch read before
+    the failing one is still matched and passed on before the error is, as the one-batch-at-
+    a-time Python path does, so outputs written up to that point are the same.
+    """
+    def submit(ex, group):
+        seqs = []
+        bounds = []
+        for batch, _ in group:
+            start = len(seqs) // (2 if paired else 1)
+            seqs.extend(m[1] for pair in batch for m in pair) if paired else seqs.extend(r[1] for r in batch)
+            bounds.append((start, start + len(batch)))
+        if all(x.isascii() for x in seqs):
+            return group, bounds, ex.submit(native.assign, seqs, paired, min_frac_of_seq)
+        return group, bounds, None
+
+    def finish(group, bounds, future):
+        if future is None:
+            _W["matcher"] = python_matcher()
+            for batch_and_pos in group:
+                yield process_batch(batch_and_pos)
+            return
+        results = future.result()
+        k = 0
+        for (batch, pos), (start, end) in zip(group, bounds):
+            rows = []
+            while k < len(results) and results[k][0] < end:
+                j, hits, hit_seqs, best, next_best = results[k]
+                rows.append(_result_row(batch[j - start], paired, keep_seqs, list(hits),
+                                        list(hit_seqs), best, next_best))
+                k += 1
+            yield len(batch), pos, rows
+
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        pending = deque()
+        batches = iter(batches)
+        while True:
+            group = []
+            try:
+                for _ in range(NATIVE_BATCHES_PER_CALL):
+                    b = next(batches, None)
+                    if b is None:
+                        break
+                    group.append(b)
+            except (Exception, SystemExit):
+                # the input failed partway: everything read before it is still matched and
+                # passed on first
+                if group:
+                    pending.append(submit(ex, group))
+                while pending:
+                    yield from finish(*pending.popleft())
+                raise
+            if not group:
+                break
+            pending.append(submit(ex, group))
+            if len(pending) > 1:
+                yield from finish(*pending.popleft())
+        while pending:
+            yield from finish(*pending.popleft())
+
+
 ### outputs ###
 
 def output_paths(output_dir, output_prefix=""):
@@ -892,13 +976,25 @@ def match_reads(ref_paths, read_1, read_2=None, output_dir="match-reads", output
                        f"only be matched by reads shorter than that (e.g., '{seq_label(short_seqs[0])}').",
                        initial_indent="    ", subsequent_indent="    ")
 
+    def build_python_matcher():
+        if max_edits > 0:
+            return EditMatcher(seqs, k, circular, max_edits)
+        return ExactMatcher(seqs, k, NUM_KMER_SAMPLES, circular)
+
+    # the compiled matcher is used whenever the references are plain ASCII (as they ~always are)
+    native = None
+    use_native = all(seq.isascii() for _, _, seq in seqs)
+
     print()
     building = spinner("Building indexes...", "Built indexes ") if show_progress else nullcontext()
     with building:
-        if max_edits > 0:
-            matcher = EditMatcher(seqs, k, circular, max_edits)
+        if use_native:
+            from bit._native import ReadMatcher
+            native = ReadMatcher([seq for _, _, seq in seqs], seq_to_ref, k, circular, max_edits,
+                                 NUM_KMER_SAMPLES, POSITION_STEP, jobs)
+            matcher = None
         else:
-            matcher = ExactMatcher(seqs, k, NUM_KMER_SAMPLES, circular)
+            matcher = build_python_matcher()
 
     worker_args = (matcher, seq_to_ref, min_frac_of_seq, paired, write_reads)
 
@@ -909,7 +1005,16 @@ def match_reads(ref_paths, read_1, read_2=None, output_dir="match-reads", output
     batches = batched_with_progress(records, r1_reader, BATCH_SIZE)
 
     pool = None
-    if jobs > 1:
+    if use_native:
+        init_worker(*worker_args)
+        python_matcher = []   # built only if a batch needs it (see native_batch_results)
+        def get_python_matcher():
+            if not python_matcher:
+                python_matcher.append(build_python_matcher())
+            return python_matcher[0]
+        batch_results = native_batch_results(native, batches, paired, min_frac_of_seq,
+                                             write_reads, get_python_matcher)
+    elif jobs > 1:
         # using 'spawn' rather than 'fork' to match gen-reads and summarize-assembly (fork can
         # deadlock from multi-threaded contexts and warns on Python 3.12+). the indexes are pickled
         # once per worker at startup; identical k-mer sets are shared objects, so pickle keeps

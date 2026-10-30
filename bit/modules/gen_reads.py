@@ -25,6 +25,87 @@ def parse_fasta(fasta_file):
     finally:
         handle.close()
 
+# reads (or pairs) per call into the compiled core
+_NATIVE_CHUNK = 100_000
+_native_gen = []
+
+
+def _native_gen_reads():
+    """
+    The compiled core's per-read loop (bit._native.gen_reads_chunk; see rust/src/gen_reads.rs),
+    or None. It continues the same random.Random state (passed via getstate()/setstate()) with
+    the same derivations of random(), randint() and gauss(), so seeded output is identical. As a
+    safeguard, it's only used once a sample of its draws has matched this Python's exactly.
+    """
+    if not _native_gen:
+        fn = None
+        try:
+            from bit._native import gen_reads_chunk, rng_sample
+            check = random.Random(20240521)
+            check.random()
+            ops = []
+            for i in range(600):
+                kind = i % 3
+                if kind == 1:
+                    ops.append((1, 0.0, float((i * 7919) % 100_000 + (i % 5) * 2**33)))
+                elif kind == 2:
+                    ops.append((2, 300.0 + i, 30.0 + i / 7))
+                else:
+                    ops.append((0, 0.0, 0.0))
+            _, state, gauss_next = check.getstate()
+            got, _, _, _ = rng_sample(list(state[:624]), state[624], gauss_next, ops)
+            expected = [check.random() if k == 0 else
+                        float(check.randint(int(a), int(b))) if k == 1 else
+                        check.gauss(a, b) for k, a, b in ops]
+            if got == expected:
+                fn = gen_reads_chunk
+        except (ImportError, ValueError, TypeError):
+            fn = None
+        _native_gen.append(fn)
+    return _native_gen[0]
+
+
+def _native_contig_reads(rng, sequence, entry_reads, read_count, seq_id, fasta_file,
+                         per_read_tsv, fw, rw, tracker, contig_index, params):
+    """
+    Generates up to `entry_reads` reads (pairs) for one contig with the compiled core, writing
+    and tracking them as the Python loop does. Returns (reads/pairs done, reads written,
+    realized bases, read_count); any left undone (where the core defers, e.g. an empty contig
+    Python's loop raises on) go through the Python loop from the same generator state.
+    """
+    native = _native_gen_reads()
+    done = reads_written = realized_bases = 0
+    if native is None:
+        return done, reads_written, realized_bases, read_count
+    paired = rw is not None
+    while done < entry_reads:
+        n = min(_NATIVE_CHUNK, entry_reads - done)
+        version, state, gauss_next = rng.getstate()
+        try:
+            res = native(sequence, n, read_count, list(state[:624]), state[624], gauss_next,
+                         paired, *params, bool(per_read_tsv), seq_id, str(fasta_file))
+        except (OverflowError, TypeError, ValueError, UnicodeError):
+            # arguments the core can't take (e.g., integers beyond 64 bits, or a file name
+            # that isn't valid UTF-8): Python's loop handles these reads, as it always has
+            res = None
+        if res is None:
+            break
+        r1, r2, tsv, spans, rbases, new_state, new_index, new_gauss = res
+        rng.setstate((version, tuple(new_state) + (new_index,), new_gauss))
+        fw.write(r1)
+        if paired:
+            rw.write(r2)
+        if per_read_tsv:
+            per_read_tsv.write(tsv)
+        for start, end in spans:
+            tracker.add(contig_index, start, end)
+        realized_bases += rbases
+        reads_written += 2 * n if paired else n
+        read_count += n
+        done += n
+    return done, reads_written, realized_bases, read_count
+
+
 def _status(args, msg):
     """ print a status line unless the caller (e.g., gen-mg) set quiet """
     if not getattr(args, "quiet", False):
@@ -599,7 +680,15 @@ def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
         sequence = str(record.seq).upper()
         seq_length = len(sequence)
 
-        for _ in range(entry_reads):
+        params = (False, args.read_length, float(args.fragment_size), args.fragment_size * pct / 3,
+                  min_frag, max_frag, bool(args.circularize), bool(args.include_Ns))
+        done, n_written, n_bases, read_count = _native_contig_reads(
+            rng, sequence, entry_reads, read_count, seq_id, fasta_file, per_read_tsv,
+            fw, rw, tracker, contig_index, params)
+        reads_written += n_written
+        realized_bases += n_bases
+
+        for _ in range(entry_reads - done):
 
             frag_len = min(max(min_frag, round(rng.gauss(args.fragment_size, args.fragment_size * pct / 3))), max_frag)
             frag_len = min(frag_len, seq_length)
@@ -702,7 +791,19 @@ def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
         sequence = str(record.seq)
         seq_length = len(sequence)
 
-        for _ in range(entry_reads):
+        if args.type == "long":
+            params = (True, args.read_length, float(args.read_length), args.read_length * pct / 3,
+                      min_len, max_len, bool(args.circularize), bool(args.include_Ns))
+        else:
+            params = (False, args.read_length, 0.0, 0.0, 0, 0,
+                      bool(args.circularize), bool(args.include_Ns))
+        done, n_written, n_bases, read_count = _native_contig_reads(
+            rng, sequence, entry_reads, read_count, seq_id, fasta_file, per_read_tsv,
+            fw, None, tracker, contig_index, params)
+        reads_written += n_written
+        realized_bases += n_bases
+
+        for _ in range(entry_reads - done):
 
             if args.type == "long":
                 read_len = min(max(min_len, round(rng.gauss(args.read_length, args.read_length * pct / 3))), max_len)

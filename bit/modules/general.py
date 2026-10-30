@@ -15,8 +15,8 @@ from pathlib import Path
 from importlib.metadata import version
 import urllib.request
 import urllib.error
-from tqdm import tqdm # type: ignore
-import pyarrow as pa # type: ignore
+# tqdm and pyarrow are imported where used, keeping them off the startup path
+# of every subcommand that imports this module
 
 
 def get_package_path(rel_path = ""):
@@ -263,6 +263,8 @@ def _stream_once(url, filename, desc, leave, floor_bytes_per_s,
     # drop, Ctrl-C, _TooSlow on the final attempt, process kill) never leaves a
     # truncated file at `filename` that a later "does it exist" check would
     # mistake for a complete download.
+    from tqdm import tqdm # type: ignore
+
     tmp = f"{filename}.part"
     try:
         with urllib.request.urlopen(req, timeout=connect_timeout) as resp, open(tmp, "wb") as out, \
@@ -514,6 +516,7 @@ def write_table_tsv(table, out_path):
     Write a pyarrow Table to a TSV, atomically
 
     """
+    import pyarrow as pa # type: ignore
     import pyarrow.csv as pacsv # type: ignore
 
     table = table.combine_chunks()

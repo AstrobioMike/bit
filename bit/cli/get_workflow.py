@@ -1,7 +1,6 @@
 import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_help, add_version_arg
-from bit.modules.get_workflow import dl_wf
 
 
 WORKFLOWS = {
@@ -86,4 +85,5 @@ def main():
 
     args = parser.parse_args()
 
+    from bit.modules.get_workflow import dl_wf
     dl_wf(args)

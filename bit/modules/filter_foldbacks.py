@@ -35,7 +35,6 @@ import os
 import sys
 from itertools import islice
 
-from tqdm import tqdm # type: ignore
 
 from bit.modules.general import check_if_output_dir_exists, log_command_run
 from bit.modules.match_reads import FastxReader, iter_pairs
@@ -108,6 +107,7 @@ class _LazyGzip:
 
 def _progress_bar(total, unit, show_progress):
     """ bit's usual capped, kept bar over the bytes of the input, with a running count """
+    from tqdm import tqdm # type: ignore
     if show_progress:
         print()
     bar = tqdm(total=total, unit="B", unit_scale=True, unit_divisor=1024, ncols=80,

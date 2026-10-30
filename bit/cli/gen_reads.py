@@ -1,6 +1,5 @@
 import sys
 import argparse
-from bit.modules.gen_reads import generate_reads
 from bit.cli.common import (CustomRichHelpFormatter,
                             add_help,
                             add_seed,
@@ -182,4 +181,5 @@ def main():
     elif not args.read_length:
         args.read_length = 150
 
+    from bit.modules.gen_reads import generate_reads
     generate_reads(args)

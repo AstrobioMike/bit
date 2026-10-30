@@ -202,6 +202,45 @@ def compute_pid_stats(bam_path, refs, contigs_dict, include_non_primary=False, s
     return ref_mean_pids, ref_median_pids, ref_mapped_counts, contig_mean_pids, contig_median_pids, contig_mapped_counts
 
 
+def _native_bed_totals(bed_file, wanted):
+    """
+    The per-contig totals of the per-base bed via the compiled core (bit._native), drawing
+    the same lines-processed counter as the Python loop. Returns None if anything in the
+    file calls for the Python loop (which then reads it exactly as it always has).
+    """
+    try:
+        from bit import _native as native
+    except ImportError:
+        return None
+
+    import threading
+    prog = native.Progress()
+    result, error = [None], [None]
+
+    def work():
+        try:
+            result[0] = native.per_base_bed_stats(str(bed_file), wanted, progress=prog)
+        except BaseException as e:  # passed on below
+            error[0] = e
+
+    thread = threading.Thread(target=work, daemon=True)
+    thread.start()
+    with tqdm(ncols=74, unit=" lines", leave=True,
+              bar_format="    Processed: {n:,} lines [{elapsed}, {rate_fmt}]") as bar:
+        while thread.is_alive():
+            thread.join(0.2)
+            bar.update(prog.reads - bar.n)
+        bar.update(prog.reads - bar.n)
+        if isinstance(error[0], ValueError):
+            # the Python loop draws its own bar, so this one isn't kept
+            bar.leave = False
+    if isinstance(error[0], ValueError):
+        return None
+    if error[0] is not None:
+        raise error[0]
+    return result[0]
+
+
 def parse_bed_file(refs, bed_file, contigs, header_to_ref_dict):
 
     print(f"\n  {Fore.YELLOW}Processing coverage data...")
@@ -210,6 +249,25 @@ def parse_bed_file(refs, bed_file, contigs, header_to_ref_dict):
     for header, ref in header_to_ref_dict.items():
         contig_stats = contigs[header].stats if header in contigs else None
         lookup[header] = (contig_stats, ref.stats)
+
+    # the compiled core totals each contig's lines (integer sums, so identical to adding them
+    # line by line below), and those totals are added in
+    wanted = list(lookup)
+    totals = _native_bed_totals(bed_file, wanted)
+    if totals is not None:
+        for header, t in zip(wanted, totals):
+            if t is None:
+                continue
+            total_cov, detected, detected_10x, hist = t
+            for stats in lookup[header]:
+                if stats is None:
+                    continue
+                stats.total_coverage_count += total_cov
+                stats.total_bases_detected_at_all += detected
+                stats.total_bases_detected_at_10x += detected_10x
+                for depth, span in hist:
+                    stats.depth_hist[depth] += span
+        return refs
 
     # using pigz for parallel decompression on larger files (>200 MB)
     use_pigz = os.path.getsize(bed_file) > 200 * 1024 * 1024

@@ -2,7 +2,6 @@ import sys
 import argparse
 from bit.modules.general import report_message
 from bit.cli.common import CustomRichHelpFormatter, add_help, wrap_help, add_version_arg
-from bit.modules.ncbi.get_accessions_from_ncbi import get_accessions_from_ncbi
 from bit.modules.taxonomy.get_accs_shared import (ASSEMBLY_LEVELS,
                                                   add_common_get_accs_args,
                                                   apply_derep_default,
@@ -76,6 +75,7 @@ def main():
 
     preflight_checks(args)
 
+    from bit.modules.ncbi.get_accessions_from_ncbi import get_accessions_from_ncbi
     get_accessions_from_ncbi(args)
 
 

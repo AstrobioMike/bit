@@ -361,7 +361,7 @@ def _suppress_help_version_on_group_parsers(parser):
             break
 
 
-def build_parser():
+def build_parser(include_subcommands=True):
 
     desc = """
         Print an overview of all available bit programs.
@@ -375,6 +375,9 @@ def build_parser():
 
     add_help(parser)
     add_version_arg(parser)
+
+    if not include_subcommands:
+        return parser
 
     subparsers = parser.add_subparsers(dest='subcommand')
 
@@ -407,13 +410,18 @@ def build_parser():
 
 def main():
 
-    parser = build_parser()
+    import os
 
-    try:
-        import argcomplete # type: ignore
-        argcomplete.autocomplete(parser)
-    except ImportError:
-        pass
+    from colorama import init as colorama_init # type: ignore
+    colorama_init(autoreset=True)
+
+    if "_ARGCOMPLETE" in os.environ:
+        parser = build_parser()
+        try:
+            import argcomplete # type: ignore
+            argcomplete.autocomplete(parser)
+        except ImportError:
+            pass
 
     # print the overview when called with no arguments or with -h/--help
     if len(sys.argv) == 1 or sys.argv[1] in ("-h", "--help"):
@@ -424,7 +432,7 @@ def main():
 
     # handle -v/--version before subcommand dispatch
     if subcommand in ("-v", "--version"):
-        parser.parse_args()
+        build_parser(include_subcommands=False).parse_args()
         return
 
     if subcommand not in SUBCOMMAND_MAP:

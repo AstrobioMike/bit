@@ -189,6 +189,59 @@ def parse_cigar_breakdown(cigartuples):
     }
 
 
+def _pid_stats_from_native(acc):
+    """
+    A PidStats from the compiled core's (count, total, min, max, [(value, count), ...]),
+    identical to one built by add()ing each value in file order.
+    """
+    count, total, min_val, max_val, values = acc
+    ps = PidStats()
+    ps.count = count
+    ps.total = total
+    if min_val is not None:
+        ps.min_val = min_val
+        ps.max_val = max_val
+    for val, cnt in values:
+        ps.hist[round(val, 2)] += cnt
+    return ps
+
+
+def _check_opens_with_pysam(input_bam):
+    """
+    Opens the BAM with pysam first, so its header-level checks (and their errors, raised from
+    here as they otherwise would be from the pysam path) stay exactly its own.
+    """
+    with pysam.AlignmentFile(input_bam, "rb"):
+        pass
+
+
+def _native_mapped_reads_pids(input_bam, include_non_primary, store_read_pids):
+    """
+    get_mapped_reads_pids() via the compiled core (bit._native), which reads the BAM itself
+    and follows the loop below step for step. Returns None if anything in the BAM calls for
+    the pysam path (which then gives exactly what it always has, errors included).
+    """
+    _check_opens_with_pysam(input_bam)
+    try:
+        from bit._native import bam_mapped_reads_pids
+        rows, pid, gc, clips = bam_mapped_reads_pids(str(input_bam), include_non_primary, store_read_pids)
+    except (ImportError, ValueError):
+        return None
+
+    ref_read_pids = None
+    if store_read_pids:
+        ref_read_pids = defaultdict(list)
+        for ref_name, ref_rows in rows:
+            ref_read_pids[ref_name].extend(ref_rows)
+
+    clip_agg = ClipAggregate()
+    (clip_agg.n_reads, clip_agg.total_aligned, clip_agg.total_soft, clip_agg.total_hard,
+     clip_agg.clip_frac_sum, len_count, len_total, len_min, len_max, lens) = clips
+    clip_agg.length_stats = _pid_stats_from_native((len_count, len_total, len_min, len_max, lens))
+
+    return ref_read_pids, _pid_stats_from_native(pid), _pid_stats_from_native(gc), clip_agg
+
+
 def get_mapped_reads_pids(input_bam, include_non_primary=False, store_read_pids=True):
     """
     Computes two percent-identity flavors per alignment from the NM tag and CIGAR:
@@ -205,6 +258,10 @@ def get_mapped_reads_pids(input_bam, include_non_primary=False, store_read_pids=
     gathered on primary alignments only, so they stay meaningful even when
     include_non_primary is set.
     """
+
+    native = _native_mapped_reads_pids(input_bam, include_non_primary, store_read_pids)
+    if native is not None:
+        return native
 
     decompression_threads = min(4, os.cpu_count() or 1)
 
@@ -283,6 +340,17 @@ def get_per_contig_pid_stats(input_bam, include_non_primary=False, pid_metric="g
     pid_metric selects which percent identity is accumulated:
         "gap_compressed" (default) or "gap_aware".
     """
+    # via the compiled core when it can (it follows the loop below step for step); anything
+    # in the BAM calling for pysam's handling comes back as a ValueError, and falls through
+    _check_opens_with_pysam(input_bam)
+    try:
+        from bit._native import bam_per_contig_pid_stats
+        accs = bam_per_contig_pid_stats(str(input_bam), include_non_primary,
+                                        pid_metric == "gap_compressed")
+        return {name: _pid_stats_from_native(acc) for name, acc in accs}
+    except (ImportError, ValueError):
+        pass
+
     decompression_threads = min(4, os.cpu_count() or 1)
 
     with pysam.AlignmentFile(input_bam, "rb", threads=decompression_threads) as bam:

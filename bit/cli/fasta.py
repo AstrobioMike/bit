@@ -143,6 +143,15 @@ def build_parser(parent_subparsers=None):
         default="include"
     )
 
+    calc_var_optional.add_argument(
+        "-j",
+        "--jobs",
+        metavar="<INT>",
+        help="Number of parallel processes to use (default: 5)",
+        type=int,
+        default=5
+    )
+
     add_help(calc_var_optional)
 
     add_version_arg(calc_var_optional)
@@ -306,9 +315,11 @@ def build_parser(parent_subparsers=None):
     ###########################################################
     extract_by_primers_desc = """
         This subcommand takes a fasta file and forward and reverse primer sequences, and it returns
-        a multifasta of the sequences the primers would amplify (including the specified primers). It currently doesn't
-        allow for degenerate bases in the primers, but it does allow for up to 2 differences (mismatches
-        or indels). Primers may overlap each other on the target.
+        a multifasta of the sequences the primers would amplify (including the specified primers). Primers
+        should be given 5'->3' as they would be ordered, and IUPAC degenerate bases are supported. Up to 2
+        differences (mismatches or indels) are allowed. Each primer site is paired only with its nearest
+        correctly oriented partner, so multi-copy targets (e.g., rRNA operons) give one product per copy.
+        Primers may overlap each other on the target.
         """
 
     extract_by_primers_parser = subparsers.add_parser(
@@ -359,6 +370,15 @@ def build_parser(parent_subparsers=None):
         type=int,
         choices=[0, 1, 2],
         default=0
+    )
+
+    extract_by_primers_optional.add_argument(
+        "-L",
+        "--max-amplicon-length",
+        help="Maximum length of an amplicon to report, including primers; 0 for no limit (default: 10000)",
+        metavar="<INT>",
+        type=int,
+        default=10000
     )
 
     add_help(extract_by_primers_optional)
@@ -711,7 +731,8 @@ def run_calc_var_in_msa(args):
 
     df = calc_variation_in_msa(input_alignment=args.input_fasta,
                                type=args.type,
-                               gap_treatment=args.gap_treatment)
+                               gap_treatment=args.gap_treatment,
+                               jobs=args.jobs)
 
     df.to_csv(args.output_tsv, sep="\t", index=False)
 
@@ -777,7 +798,31 @@ def run_extract_by_headers(args):
 
 def run_extract_by_primers(args):
 
-    from bit.modules.extract_seqs import extract_seqs_by_primers
+    from bit.modules.general import report_message, notify_premature_exit
+    from bit.modules.extract_seqs import extract_seqs_by_primers, find_invalid_primer_chars
+
+    for flag, primer in (("-f/--forward-primer", args.forward_primer),
+                         ("-r/--reverse-primer", args.reverse_primer)):
+        invalid = find_invalid_primer_chars(primer.strip())
+        if invalid:
+            report_message(f"The {flag} sequence contains character(s) that aren't valid IUPAC "
+                           f"nucleotide codes: {', '.join(invalid)}",
+                           initial_indent="    ", subsequent_indent="    ")
+            notify_premature_exit()
+        if len(primer.strip()) <= args.max_mismatches:
+            report_message(f"The {flag} sequence needs to be longer than the number of allowed "
+                           f"differences (-m {args.max_mismatches}).",
+                           initial_indent="    ", subsequent_indent="    ")
+            notify_premature_exit()
+
+    if args.max_amplicon_length is not None and args.max_amplicon_length < 0:
+        report_message("The -L/--max-amplicon-length value can't be negative (0 means no limit).",
+                       initial_indent="    ", subsequent_indent="    ")
+        notify_premature_exit()
+
+    # 0 means no limit
+    if args.max_amplicon_length == 0:
+        args.max_amplicon_length = None
 
     extract_seqs_by_primers(args)
 

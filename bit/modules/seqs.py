@@ -5,7 +5,30 @@ from bit.modules.general import is_gzipped
 from statistics import mean, median
 import random
 
+
+def _native_fasta(fn_name, *args):
+    """
+    Calls a FASTA pass in the compiled core (bit._native; see rust/src/fasta.rs, which follows
+    the parser the Python version here uses, so results are identical). Returns None when the
+    input calls for the Python path (anything non-ASCII, or a lone carriage return, which
+    Python's universal newlines would treat as a line break; or the core being unavailable).
+    """
+    try:
+        from bit import _native
+        return getattr(_native, fn_name)(*args)
+    except (ImportError, ValueError, OverflowError, TypeError):
+        return None
+
+
 def calc_gc_per_seq(input_fasta):
+
+    if isinstance(input_fasta, str):
+        native = _native_fasta("fasta_records_summary", input_fasta)
+        if native is not None:
+            return [{"header": name,
+                     "length": length,
+                     "gc": round(gc / length, 2) if length else 0.0}
+                    for name, length, gc in native]
 
     gc_stats = []
     fasta_handle = input_fasta if hasattr(input_fasta, "read") else open(input_fasta, "r")
@@ -23,6 +46,23 @@ def calc_gc_per_seq(input_fasta):
 
 
 def calc_gc_sliding_window(input_fasta, window, step):
+
+    if (isinstance(input_fasta, str) and isinstance(window, int) and isinstance(step, int)
+            and window > 0 and step > 0):
+        native = _native_fasta("fasta_gc_windows", input_fasta, window, step)
+        if native is not None:
+            # the same round() of each window's count, done once per distinct count
+            rounded = {}
+            def window_gc(c):
+                v = rounded.get(c)
+                if v is None:
+                    v = rounded[c] = round(c / window, 2)
+                return v
+            return [{"header": name,
+                     "length": length,
+                     "gc": round(gc / length, 2) if length else 0.0,
+                     "gc_of_windows": [window_gc(c) for c in counts]}
+                    for name, length, gc, counts in native]
 
     window_gc_stats = []
 
@@ -50,6 +90,13 @@ def calc_gc_sliding_window(input_fasta, window, step):
 
 
 def filter_fasta_by_length(in_fasta, out_fasta, min_length, max_length):
+
+    import os
+    if (isinstance(in_fasta, str) and isinstance(out_fasta, str)
+            and not (os.path.exists(out_fasta) and os.path.samefile(in_fasta, out_fasta))):
+        native = _native_fasta("fasta_filter_by_length", in_fasta, out_fasta, min_length, max_length)
+        if native is not None:
+            return native
 
     num_initial_seqs = 0
     num_seqs_retained = 0
@@ -98,11 +145,12 @@ def modify_fasta_headers(args):
 
 
 
-def calc_variation_in_msa(input_alignment, type, gap_treatment="include"):
+def _msa_seq_types():
+    """The skbio sequence types calc-var-in-msa reads alignments as (skbio imported on use)."""
 
     from skbio.sequence import GrammaredSequence # type: ignore
     from skbio.util import classproperty # type: ignore
-    from skbio import TabularMSA, DNA, Protein # type: ignore
+    from skbio import DNA, Protein # type: ignore
 
     THREEDI_CHARS = set('ACDEFGHIKLMNPQRSTVWY')
 
@@ -124,7 +172,47 @@ def calc_variation_in_msa(input_alignment, type, gap_treatment="include"):
         def gap_chars(cls):
             return set('-.')
 
-    SEQUENCE_TYPES = {"DNA": DNA, "Protein": Protein, "3Di": ThreeDi}
+    return {"DNA": DNA, "Protein": Protein, "3Di": ThreeDi}
+
+
+def _column_msa_class():
+    """
+    A TabularMSA whose iter_positions(ignore_metadata=True) builds each column's Sequence
+    straight from the rows' strings, rather than (as skbio does) from a one-character
+    Sequence object made for every cell. Each column comes out as exactly the Sequence skbio
+    makes (Sequence of the column's characters, top to bottom), so skbio's conservation(),
+    which walks the columns this way, computes exactly what it otherwise would, just without
+    most of the per-cell overhead.
+    """
+    from skbio import TabularMSA, Sequence # type: ignore
+
+    class ColumnMSA(TabularMSA):
+
+        def iter_positions(self, reverse=False, ignore_metadata=False):
+            if not ignore_metadata:
+                return super().iter_positions(reverse=reverse, ignore_metadata=ignore_metadata)
+            rows = [str(s) for s in self._seqs]
+            columns = ("".join(chars) for chars in zip(*rows))
+            if reverse:
+                columns = reversed(list(columns))
+            return (Sequence(c) for c in columns)
+
+    return ColumnMSA
+
+
+def _conservation_of_rows(type, rows, gap_treatment):
+    """skbio's TabularMSA.conservation() of an alignment given as row strings (also run in
+    worker processes, hence plain inputs)."""
+    constructor = _msa_seq_types()[type]
+    ColumnMSA = _column_msa_class()
+    return ColumnMSA([constructor(r) for r in rows]).conservation(gap_mode=gap_treatment)
+
+
+def calc_variation_in_msa(input_alignment, type, gap_treatment="include", jobs=1):
+
+    from skbio import TabularMSA # type: ignore
+
+    SEQUENCE_TYPES = _msa_seq_types()
 
     msa = TabularMSA.read(input_alignment, constructor=SEQUENCE_TYPES[type], lowercase=True)
 
@@ -138,12 +226,56 @@ def calc_variation_in_msa(input_alignment, type, gap_treatment="include"):
 
     clean_msa = TabularMSA(list_of_cleaned_seqs)
 
-    conserved = clean_msa.conservation(gap_mode=gap_treatment)
+    conserved = _conservation_by_distinct_columns(clean_msa, type, gap_treatment, jobs)
     indexes = list(range(1,clean_msa.shape[1] + 1))
 
     df = pd.DataFrame({"position": indexes, "variation":1 - conserved, "conservation": conserved})
 
     return df
+
+
+def _conservation_by_distinct_columns(clean_msa, type, gap_treatment, jobs=1):
+    """
+    skbio's clean_msa.conservation(gap_mode=gap_treatment), computed once per distinct column.
+
+    skbio scores each column on its own, from just that column's characters (and the sequence
+    type), so identical columns get identical values; this has skbio score an alignment of
+    only the distinct columns (as they first appear), optionally split across `jobs` worker
+    processes, and spreads the values back out to every column. Most of skbio's time goes
+    to building objects for each cell as it walks the columns, so fewer columns is faster.
+    """
+    import numpy as np # type: ignore
+
+    n_seqs, n_cols = clean_msa.shape
+    if n_seqs == 0 or n_cols == 0:
+        return clean_msa.conservation(gap_mode=gap_treatment)
+
+    grid = np.vstack([np.frombuffer(str(s).encode("ascii"), dtype=np.uint8) for s in clean_msa])
+    _, first_idx, inverse = np.unique(grid.T, axis=0, return_index=True, return_inverse=True)
+    inverse = inverse.reshape(-1)
+    # distinct columns in the order they first appear
+    order = np.argsort(first_idx, kind="stable")
+    distinct = grid[:, first_idx[order]]
+    rank = np.empty_like(order)
+    rank[order] = np.arange(len(order))
+
+    n_distinct = distinct.shape[1]
+    jobs = max(1, min(jobs, n_distinct))
+    bounds = [round(i * n_distinct / jobs) for i in range(jobs + 1)]
+    blocks = [[row[a:b].tobytes().decode("ascii") for row in distinct]
+              for a, b in zip(bounds, bounds[1:])]
+
+    if jobs == 1:
+        parts = [_conservation_of_rows(type, blocks[0], gap_treatment)]
+    else:
+        import multiprocessing as mp
+        from concurrent.futures import ProcessPoolExecutor
+        with ProcessPoolExecutor(jobs, mp_context=mp.get_context("spawn")) as ex:
+            parts = list(ex.map(_conservation_of_rows, [type] * jobs, blocks,
+                                [gap_treatment] * jobs))
+
+    distinct_values = np.concatenate(parts)
+    return distinct_values[rank[inverse]]
 
 
 def get_gap_fracs_per_col(input_alignment):
@@ -189,10 +321,16 @@ def parse_fasta_lengths(input_fasta):
     lengths_list = []
     seq_lengths = {}
 
-    for seq_record in SeqIO.parse(input_fasta, "fasta"):
-        length = len(seq_record.seq)
-        seq_lengths[seq_record.id] = length
-        lengths_list.append(length)
+    native = _native_fasta("fasta_records_summary", input_fasta) if isinstance(input_fasta, str) else None
+    if native is not None:
+        for seq_id, length, _ in native:
+            seq_lengths[seq_id] = length
+            lengths_list.append(length)
+    else:
+        for seq_record in SeqIO.parse(input_fasta, "fasta"):
+            length = len(seq_record.seq)
+            seq_lengths[seq_record.id] = length
+            lengths_list.append(length)
 
     stats = {
         "n_seqs": len(lengths_list),
@@ -342,6 +480,19 @@ def fasta_to_genbank(input_fasta):
 
 def remove_wraps(input_fasta, output):
 
+    # via the compiled core when the input is a path and the output a real file (not stdout,
+    # which bit wraps with colorama; writes there go through that wrapper, as always)
+    import sys
+    if isinstance(input_fasta, str) and output not in (sys.stdout, sys.__stdout__):
+        try:
+            fd = output.fileno()
+        except (AttributeError, OSError, ValueError):
+            fd = None
+        if fd is not None:
+            output.flush()
+            if _native_fasta("fasta_remove_wraps", input_fasta, fd) is not None:
+                return
+
     fasta_handle = input_fasta if hasattr(input_fasta, "read") else open(input_fasta, "r")
 
     with fasta_handle as f:
@@ -356,9 +507,14 @@ def remove_wraps(input_fasta, output):
         output.write(n)
 
 
+# includes IUPAC ambiguity codes, each mapping to the code for its complementary base set
+# (e.g. R = A/G -> Y = T/C); S, W, and N are their own complements
+_REVCOMP_TABLE = str.maketrans("ACGTRYSWKMBDHVNacgtryswkmbdhvn",
+                               "TGCAYRSWMKVHDBNtgcayrswmkvhdbn")
+
+
 def revcomp(seq):
-    comp = str.maketrans("ACGTacgt", "TGCAtgca")
-    return seq.translate(comp)[::-1]
+    return seq.translate(_REVCOMP_TABLE)[::-1]
 
 
 def read_fasta(path):
