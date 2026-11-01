@@ -35,6 +35,27 @@ fn mix(mut x: u64) -> u64 {
     x ^ (x >> 31)
 }
 
+/// asks Linux to back the sketch with 2 MB pages instead of 4 KB ones, before it's first written
+/// (many systems hand them out only when asked: transparent_hugepage set to madvise). Nearly
+/// every count is a lookup at a random spot in gigabytes, and with 4 KB pages each one also
+/// misses the cache of address translations. A hint: ignored where unsupported.
+fn huge_pages(start: usize, len: usize) {
+    #[cfg(target_os = "linux")]
+    {
+        unsafe extern "C" {
+            fn madvise(addr: *mut std::ffi::c_void, len: usize, advice: i32) -> i32;
+        }
+        const MADV_HUGEPAGE: i32 = 14;
+        const HUGE: usize = 2 << 20;
+        let (a, b) = ((start + HUGE - 1) & !(HUGE - 1), (start + len) & !(HUGE - 1));
+        if b > a {
+            unsafe { madvise(a as *mut std::ffi::c_void, b - a, MADV_HUGEPAGE) };
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = (start, len);
+}
+
 pub struct Sketch {
     blocks: Vec<Block>,
 }
@@ -44,6 +65,7 @@ impl Sketch {
     pub fn new(bytes: usize) -> Self {
         let n = (bytes / (2 * BLOCK)).max(4096 / BLOCK);
         let mut blocks = Vec::with_capacity(n);
+        huge_pages(blocks.as_ptr() as usize, n * std::mem::size_of::<Block>());
         blocks.resize_with(n, || Block(std::array::from_fn(|_| AtomicU16::new(0))));
         Sketch { blocks }
     }

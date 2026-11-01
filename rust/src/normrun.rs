@@ -20,7 +20,7 @@ use std::hash::Hasher;
 use std::io::{self, BufWriter, Write};
 use std::sync::Arc;
 use std::sync::atomic::Ordering;
-use std::sync::mpsc::{Receiver, sync_channel};
+use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 
 // reads (or pairs) judged at a time (each is judged on its own: batches change nothing but speed)
 const BATCH: usize = 8192;
@@ -90,13 +90,17 @@ fn name_str(raw: &[u8]) -> String {
 
 /// batches of reads (or pairs, their names checked to match), read on a thread of their own,
 /// a batch ahead. With pairs, read 2s are read on another thread still, so the two files are
-/// decompressed side by side (decompressing gzip is the slowest part of reading)
+/// decompressed side by side (decompressing gzip is the slowest part of reading). Spent batches
+/// sent back on the returned sender are refilled in place, so the reads' buffers are reused
+/// instead of freed and allocated again for every read (that churn, and freeing each batch on
+/// the thread that hands out the next, held up both passes, Nov 2026)
+#[allow(clippy::type_complexity)]
 fn spawn_reader(
     path1: String,
     path2: Option<String>,
     batch_size: usize,
     progress: Option<Arc<Progress>>,
-) -> io::Result<(Receiver<io::Result<Vec<Rec>>>, bool)> {
+) -> io::Result<(Receiver<io::Result<Vec<Rec>>>, bool, Sender<Vec<Rec>>)> {
     let mut r1 = SeqReader::open(&path1, progress.clone())?;
     let mates = match &path2 {
         Some(p) => Some(spawn_mate_reader(SeqReader::open(p, progress.clone())?, batch_size)),
@@ -104,21 +108,27 @@ fn spawn_reader(
     };
     let fastq = r1.is_fastq();
     let (tx, rx) = sync_channel(2);
+    let (spent_tx, spent) = channel::<Vec<Rec>>();
     std::thread::spawn(move || {
         let result = (|| -> io::Result<()> {
             loop {
-                let mut batch = Vec::with_capacity(batch_size);
-                while batch.len() < batch_size {
-                    let mut rec = Rec::default();
+                let mut batch = spent.try_recv().unwrap_or_else(|_| Vec::with_capacity(batch_size));
+                let mut n = 0;
+                while n < batch_size {
+                    if n == batch.len() {
+                        batch.push(Rec::default());
+                    }
+                    let rec = &mut batch[n];
                     if !r1.next_record(&mut rec.seq1, &mut rec.raw1)? {
                         break;
                     }
-                    batch.push(rec);
+                    n += 1;
                 }
-                let done = batch.len() < batch_size;
-                if let Some(mates) = &mates {
+                batch.truncate(n);
+                let done = n < batch_size;
+                if let Some((mates, mates_back)) = &mates {
                     // the mate reader sends batches of batch_size until its last, shorter one
-                    let twos = mates.recv().unwrap_or_else(|_| Ok(Vec::new()))?;
+                    let mut twos = mates.recv().unwrap_or_else(|_| Ok(Vec::new()))?;
                     if twos.len() < batch.len() {
                         return Err(bad(format!(
                             "Read-2 file ran out before read-1 file (at read '{}').",
@@ -128,18 +138,20 @@ fn spawn_reader(
                     if twos.len() > batch.len() {
                         return Err(bad("Read-1 file ran out before read-2 file.".to_string()));
                     }
-                    for (rec, (s, raw)) in batch.iter_mut().zip(twos) {
-                        if base_name(&rec.raw1) != base_name(&raw) {
+                    for (rec, (s, raw)) in batch.iter_mut().zip(twos.iter_mut()) {
+                        if base_name(&rec.raw1) != base_name(raw) {
                             return Err(bad(format!(
                                 "Read names don't match between read files: '{}' vs '{}'. \
                                  The read files need to be in the same order.",
                                 name_str(&rec.raw1),
-                                name_str(&raw)
+                                name_str(raw)
                             )));
                         }
-                        rec.seq2 = Some(s);
-                        rec.raw2 = Some(raw);
+                        // the read 2 into the pair, the pair's old buffers back to the mate reader
+                        std::mem::swap(rec.seq2.get_or_insert_with(Vec::new), s);
+                        std::mem::swap(rec.raw2.get_or_insert_with(Vec::new), raw);
                     }
+                    let _ = mates_back.send(twos);
                 }
                 if let Some(p) = &progress {
                     p.reads.fetch_add(batch.len() as u64, Ordering::Relaxed);
@@ -153,28 +165,35 @@ fn spawn_reader(
             let _ = tx.send(Err(e));
         }
     });
-    Ok((rx, fastq))
+    Ok((rx, fastq, spent_tx))
 }
 
 /// read 2s, as (sequence, record) batches of batch_size, the last one shorter (empty, if the
-/// reads come out even), read on a thread of their own
+/// reads come out even), read on a thread of their own; batches sent back are refilled in place
+#[allow(clippy::type_complexity)]
 fn spawn_mate_reader(
     mut r2: SeqReader,
     batch_size: usize,
-) -> Receiver<io::Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+) -> (Receiver<io::Result<Vec<(Vec<u8>, Vec<u8>)>>>, Sender<Vec<(Vec<u8>, Vec<u8>)>>) {
     let (tx, rx) = sync_channel(2);
+    let (spent_tx, spent) = channel::<Vec<(Vec<u8>, Vec<u8>)>>();
     std::thread::spawn(move || {
         let result = (|| -> io::Result<()> {
             loop {
-                let mut batch = Vec::with_capacity(batch_size);
-                while batch.len() < batch_size {
-                    let (mut s, mut raw) = (Vec::new(), Vec::new());
-                    if !r2.next_record(&mut s, &mut raw)? {
+                let mut batch = spent.try_recv().unwrap_or_else(|_| Vec::with_capacity(batch_size));
+                let mut n = 0;
+                while n < batch_size {
+                    if n == batch.len() {
+                        batch.push((Vec::new(), Vec::new()));
+                    }
+                    let (s, raw) = &mut batch[n];
+                    if !r2.next_record(s, raw)? {
                         break;
                     }
-                    batch.push((s, raw));
+                    n += 1;
                 }
-                let done = batch.len() < batch_size;
+                batch.truncate(n);
+                let done = n < batch_size;
                 if tx.send(Ok(batch)).is_err() || done {
                     return Ok(());
                 }
@@ -184,7 +203,7 @@ fn spawn_mate_reader(
             let _ = tx.send(Err(e));
         }
     });
-    rx
+    (rx, spent_tx)
 }
 
 /// a gzipped output, compressed GZ_CHUNK at a time on several threads (see GZ_CHUNK)
@@ -290,6 +309,31 @@ impl Outputs {
         }
         Ok(())
     }
+}
+
+/// the writing pass's output side, on a thread of its own: takes each judged batch with each
+/// read's typical depth if it's kept (None if not), copies the kept ones out, compresses and
+/// writes them, then hands the batch back to the reader (`spent`), so judging the next batch
+/// goes on meanwhile (done between batches on the judging thread, copying and compressing took
+/// a third of the pass while the workers waited, Nov 2026)
+#[allow(clippy::type_complexity)]
+fn spawn_writer(
+    mut outs: Outputs,
+    spent: Sender<Vec<Rec>>,
+) -> (std::sync::mpsc::SyncSender<(Vec<Rec>, Vec<Option<u32>>)>, std::thread::JoinHandle<io::Result<()>>) {
+    let (tx, rx) = sync_channel::<(Vec<Rec>, Vec<Option<u32>>)>(2);
+    let handle = std::thread::spawn(move || {
+        for (batch, kept) in rx {
+            for (rec, depth) in batch.iter().zip(kept) {
+                if let Some(d) = depth {
+                    outs.write(rec, d)?;
+                }
+            }
+            let _ = spent.send(batch);
+        }
+        outs.finish()
+    });
+    (tx, handle)
 }
 
 /// running totals, for the summary
@@ -415,7 +459,7 @@ pub fn count_anchors(
         let sketch = Sketch::new(sketch_bytes);
         let strand = Sketch::new(sketch_bytes / 2);
         let t = threshold(density);
-        let (rx, _) = spawn_reader(read_1, read_2, BATCH, pr)?;
+        let (rx, _, spent) = spawn_reader(read_1, read_2, BATCH, pr)?;
         let (mut reads, mut nbases) = (0u64, 0u64);
         // the CALIBRATION_READS reads with the lowest hashes so far, highest on top
         let mut lowest: BinaryHeap<(u64, Vec<u8>, Option<Vec<u8>>)> = BinaryHeap::new();
@@ -443,6 +487,7 @@ pub fn count_anchors(
                     }
                 },
             );
+            let _ = spent.send(batch);
         }
         Ok(AnchorCounts {
             sketch: Arc::new(sketch),
@@ -745,39 +790,51 @@ impl AnchorCounts {
                 } else {
                     (1.0, 0.0)
                 };
-                let (rx, _) = spawn_reader(read_1, read_2, BATCH, pr)?;
-                let mut outs = Outputs::create(&out_1, out_2.as_deref(), depth_table.as_deref())?;
+                let (rx, _, spent) = spawn_reader(read_1, read_2, BATCH, pr)?;
+                let outs = Outputs::create(&out_1, out_2.as_deref(), depth_table.as_deref())?;
+                let (to_writer, writer) = spawn_writer(outs, spent);
                 let mut tot = Totals::new();
                 for batch in rx {
                     let batch = batch?;
-                    let calls: Vec<Call> = batch
+                    // judging, weighting and the coin all on the worker threads; this thread
+                    // only adds up the totals
+                    let verdicts: Vec<(Call, f64, bool)> = batch
                         .par_iter()
                         .map_init(
                             || (Vec::new(), Vec::new()),
-                            |(along, all), rec| call(rec, &rules, &sketch, &strand, along, all),
+                            |(along, all), rec| {
+                                let c = call(rec, &rules, &sketch, &strand, along, all);
+                                let p = weighted(&c, error_weight, clean_w, err_share);
+                                let keep = c.has_anchors && (p >= 1.0 || coin(rec, seed) < p);
+                                (c, p, keep)
+                            },
                         )
                         .collect();
-                    for (rec, c) in batch.iter().zip(&calls) {
+                    let mut kept = Vec::with_capacity(batch.len());
+                    for (rec, (c, p, keep)) in batch.iter().zip(&verdicts) {
                         tot.reads_in += 1;
                         tot.bases_in += bases(rec);
                         tot.anchor_occurrences += c.occurrences;
                         tot.error_occurrences += c.errors;
                         if !c.has_anchors {
                             tot.no_anchors += 1;
-                            continue;
+                        } else {
+                            tot.depth_in[bin(c.typical as f64)] += 1;
+                            if *keep {
+                                tot.reads_out += 1;
+                                tot.bases_out += bases(rec);
+                                tot.kept_no_solid += !c.has_solid as u64;
+                                tot.depth_out[bin(c.typical as f64 * p)] += 1;
+                            }
                         }
-                        tot.depth_in[bin(c.typical as f64)] += 1;
-                        let p = weighted(c, error_weight, clean_w, err_share);
-                        if p >= 1.0 || coin(rec, seed) < p {
-                            tot.reads_out += 1;
-                            tot.bases_out += bases(rec);
-                            tot.kept_no_solid += !c.has_solid as u64;
-                            tot.depth_out[bin(c.typical as f64 * p)] += 1;
-                            outs.write(rec, c.typical)?;
-                        }
+                        kept.push(keep.then_some(c.typical));
+                    }
+                    if to_writer.send((batch, kept)).is_err() {
+                        break; // the writer failed; its error comes from join below
                     }
                 }
-                outs.finish()?;
+                drop(to_writer);
+                writer.join().expect("writer thread panicked")?;
                 Ok((tot, clean_w))
             })
             .map_err(to_py_err)?;

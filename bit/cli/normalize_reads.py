@@ -91,7 +91,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<INT>",
         type=int,
         default=TARGET_DEPTH,
-        help=f"Depth to cap reads at (default: {TARGET_DEPTH})",
+        help=f"K-mer depth to cap reads at, the read depth that comes out will be "
+             f"somewhat higher (default: {TARGET_DEPTH})",
     )
 
     general.add_argument(
