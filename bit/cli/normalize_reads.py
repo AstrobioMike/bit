@@ -43,7 +43,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
         typical depth: a minority variant) are kept up to half the target for that branch
         (--no-minor-branches turns this off). 
 
-        OUTPUTS: normalized-R1/R2 (or normalized, if single-end), as the reads were in the input,
+        OUTPUTS: normalized_R1/R2 (or normalized, if single-end), as the reads were in the input,
         gzipped; summary.tsv; and with --depth-table, depths.tsv.gz, each kept read's typical
         k-mer depth in the whole input (e.g., for abundances).
         """

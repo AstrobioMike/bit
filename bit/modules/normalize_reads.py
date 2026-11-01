@@ -68,7 +68,7 @@ def output_paths(output_dir, output_prefix="", paired=True, fastq=True):
     out = {"summary": f"{p}summary.tsv", "log": f"{p}command-execution-info.txt",
            "depth_table": f"{p}depths.tsv.gz"}
     if paired:
-        out.update(r1=f"{p}normalized-R1.{ext}", r2=f"{p}normalized-R2.{ext}")
+        out.update(r1=f"{p}normalized_R1.{ext}", r2=f"{p}normalized_R2.{ext}")
     else:
         out.update(reads=f"{p}normalized.{ext}")
     return out
