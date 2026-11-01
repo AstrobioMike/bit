@@ -5,6 +5,7 @@ import statistics
 import pytest # type: ignore
 
 from bit import _native as native
+from bit.modules import normalize_reads as nr
 from bit.modules.normalize_reads import default_sketch_bytes, normalize, output_paths
 from bit.tests.utils import run_cli
 
@@ -342,6 +343,33 @@ def test_variants_read_off_both_strands_keep_reads(tmp_path, rng):
     assert hot > 1.3 * clean
 
 
+@pytest.mark.parametrize("n1, n2, message", [
+    (9000, 8999, "Read-2 file ran out"),      # read 2s run out mid-batch
+    (8192, 9000, "Read-1 file ran out"),      # read 1s run out at a batch's end
+    (100, 8192, "Read-1 file ran out"),
+])
+def test_pairs_of_unequal_files_are_refused(tmp_path, rng, capsys, n1, n2, message):
+    r1, r2 = sample_pairs(rand_seq(5000, rng), 2000, "g", rng)
+    with pytest.raises(SystemExit):
+        run(tmp_path, r1[:n1], r2[:n2])
+    assert message in capsys.readouterr().err
+
+
+def test_pairs_out_of_order_are_refused(tmp_path, rng, capsys):
+    r1, r2 = sample_pairs(rand_seq(5000, rng), 2000, "g", rng)
+    r2 = r2[:9000]
+    r2[8500], r2[8501] = r2[8501], r2[8500]
+    with pytest.raises(SystemExit):
+        run(tmp_path, r1[:9000], r2)
+    assert "Read names don't match" in capsys.readouterr().err
+
+
+def test_pairs_filling_whole_batches_are_read(tmp_path, rng):
+    r1, r2 = sample_pairs(rand_seq(5000, rng), 2000, "g", rng)
+    counts, _ = run(tmp_path, r1[:2 * 8192], r2[:2 * 8192])
+    assert counts.reads_or_pairs_in == 2 * 8192
+
+
 def test_cli_rejects_bad_error_weight(tmp_path):
     import subprocess
     write_fastq(tmp_path / "r.fq", [("a", "ACGT" * 40, "I" * 160)])
@@ -459,10 +487,38 @@ def test_native_rejects_bad_settings(tmp_path):
         counted.normalize(str(tmp_path / "r.fq"), None, str(tmp_path / "o.fq.gz"), None, 0)
 
 
-def test_default_sketch_bytes(tmp_path):
+def test_default_sketch_bytes(tmp_path, monkeypatch):
     p = tmp_path / "r.fq"
     p.write_text("@a\nACGT\n+\nIIII\n")
     assert default_sketch_bytes([str(p)]) == 256 * 2**20
+    gz = tmp_path / "r.fq.gz"
+    gz.write_bytes(b"\x1f\x8b")
+    monkeypatch.setattr(nr.os.path, "getsize", lambda path: 20 * 2**30)
+    monkeypatch.setattr(nr, "available_memory", lambda: 2**40)
+    assert default_sketch_bytes([str(gz)]) == 10 * 2**30     # no ceiling, with memory free
+    assert default_sketch_bytes([str(p)]) == 2.5 * 2**30     # plain input counts for a quarter
+    monkeypatch.setattr(nr, "available_memory", lambda: 6 * 2**30)
+    assert default_sketch_bytes([str(gz)]) == 2 * 2**30      # with the strand sketch, half of 6
+
+
+def test_suggested_memory_gb():
+    # from Zymo Log's 0.5 GB sketch, 87.6% full: 1.51 GB for half full, up to the next half GB
+    # (its 2 GB sketch came out 41% full)
+    assert nr.suggested_memory_gb(2**29, 0.876) == 2.0
+    assert nr.suggested_memory_gb(2**30, 0.5) == 1.0
+    assert nr.suggested_memory_gb(2**28, 1.0) < 10
+
+
+def test_vm_stat_bytes():
+    out = """Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                               10000.
+Pages active:                             50000.
+Pages inactive:                           20000.
+Pages speculative:                         3000.
+Pages purgeable:                           1000.
+"""
+    assert nr._vm_stat_bytes(out) == 34000 * 16384
+    assert nr._vm_stat_bytes("nothing useful") is None
 
 
 def test_output_paths_prefix():

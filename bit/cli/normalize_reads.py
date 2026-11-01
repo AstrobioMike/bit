@@ -18,7 +18,7 @@ from bit.modules.normalize_reads import (TARGET_DEPTH,
 def build_parser(parent_subparsers=None, show_fine=False):
 
     desc = """
-        This program normalizes read depth (e.g., for assembly) while keeping reads that add sequence
+        This program normalizes read depth (e.g., for assembly) while keeping reads that add partial sequences
         not yet covered, including from low-abundance members and minority variants. Run with `-H` to
         see the detailed help menu, including how the program works and fine-tuning parameters.
         """
@@ -26,23 +26,24 @@ def build_parser(parent_subparsers=None, show_fine=False):
     detailed_desc = desc + """
 
         HOW IT WORKS: Each read, or each pair (both mates together), is reduced to sampled k-mers (by
-        default 25-mers, about 1 in 2 of them). Programs like bbnorm keep or drop a read by its median
+        default 25-mers, about 1 in 2 of them). One of my favorites, bbnorm, keeps or drops a read by its median
         k-mer depth, so a read from a rare genome or a minority variant that is mostly shared, deep
-        sequence is thinned like the rest. Here a read is judged by its least-covered part instead.
+        sequence can be dropped (losing that rare sequence component). Here a read is judged by its 
+        least-covered part instead.
 
         The reads are read twice. The first pass counts how many reads hold each k-mer (in a fixed
         amount of memory, --memory). The second judges and writes: k-mers in fewer than --min-reads
         reads, or far rarer than the k-mers around them, are taken for sequencing errors and count for
         nothing, as are well-covered k-mers seen almost only on one strand and well under the depth
-        around them (systematic errors; k-mers are counted by strand too, in half again the memory).
+        around them (systematic errors; k-mers are counted by strand too).
         A read's depth is that of its 10% least-covered k-mers (--novel-fraction), and it's kept
         with probability --target-depth / that depth (always, when that's at or under the
-        target). Reads with a few k-mers on a minor branch (k-mers in 3+ reads, at 5-50% of the read's
+        target), reads holding an error are kept less often than the rest (--error-weight). Reads with 
+        a few k-mers on a minor branch (k-mers in 3+ reads, at 5-50% of the read's
         typical depth: a minority variant) are kept up to half the target for that branch
-        (--no-minor-branches turns this off). Which reads are kept depends only on the reads
-        themselves, not on their order, and is the same run to run.
+        (--no-minor-branches turns this off). 
 
-        OUTPUTS: normalized_R1/R2 (or normalized, if single-end), as the reads were in the input,
+        OUTPUTS: normalized-R1/R2 (or normalized, if single-end), as the reads were in the input,
         gzipped; summary.tsv; and with --depth-table, depths.tsv.gz, each kept read's typical
         k-mer depth in the whole input (e.g., for abundances).
         """
@@ -126,8 +127,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
         type=float,
         default=None,
         help=("GB of memory for counting k-mers, plus half again for counting them by strand "
-              "(default: about the input's size on disk, 0.25-8, at most half the computer's "
-              "memory)"),
+              "(default: 0.5 per GB of gzipped input, at least 0.25, and with the strand counts "
+              "at most half the memory free)"),
     )
 
     general.add_argument(
@@ -205,7 +206,7 @@ def _add_fine_tuning_arguments(target, hidden=False):
         default=ERROR_WEIGHT,
         help=h(f"Where reads are thinned, keep ones holding a k-mer judged an error at this "
                f"times the usual rate, and error-free ones more often to make up for it "
-               f"(0-1; default: {ERROR_WEIGHT:g}, which treats them alike)"),
+               f"(0-1, 1 treating them alike; default: {ERROR_WEIGHT:g})"),
     )
 
     target.add_argument(
@@ -312,7 +313,12 @@ def print_summary(counts, paths, paired):
     print(f"    Summary written to: '{paths['summary']}'")
     if counts.sketch_too_full:
         from bit.modules.general import report_message
+        gb = counts.suggested_memory_gb
+        at_least = "at least " if counts.sketch_fill > 0.99 else ""
         report_message(f"The k-mer counting ended up {100 * counts.sketch_fill:.0f}% full, so counts of rare "
-                       "k-mers can run high, which can drop reads that should have been kept. Giving it "
-                       "more memory (--memory) would help.", initial_indent="    ", subsequent_indent="    ")
+                       "k-mers can run high: errors can pass as sequence (keeping reads that needn't be "
+                       "kept), and rare sequence can look deeper than it is (dropping reads that should "
+                       f"have been kept). Rerunning with {at_least}--memory {gb:g} would bring it to about "
+                       f"half full (using about {1.5 * gb:g} GB, with the counts by strand).",
+                       initial_indent="    ", subsequent_indent="    ")
     print()

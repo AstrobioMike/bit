@@ -32,7 +32,10 @@ Two passes:
      in memory but the sketch.
 """
 
+import math
 import os
+import re
+import subprocess
 import sys
 import threading
 
@@ -48,14 +51,14 @@ DENSITY = 2
 NOVEL_FRACTION = 0.1
 MIN_READS = 2
 SEED = 1
-ERROR_WEIGHT = 1.0
+# where reads are thinned, reads holding suspected error are kept at this times the usual rate
+ERROR_WEIGHT = 0.1
 ERROR_SHARE = 0.01
-# the counting pass's sketch, when --memory isn't given: about as many bytes as the input on
-# disk, within these bounds and at most half the computer's memory
+SKETCH_PER_GZ_BYTE = 0.5
+PLAIN_PER_GZ = 4
 MIN_SKETCH = 256 * 2**20
-MAX_SKETCH = 8 * 2**30
-# a sketch fuller than this counts rare anchors high often enough to matter
-FULL_SKETCH = 0.5
+FULL_SKETCH = 0.85
+SUGGESTED_FILL = 0.5
 
 
 def output_paths(output_dir, output_prefix="", paired=True, fastq=True):
@@ -65,7 +68,7 @@ def output_paths(output_dir, output_prefix="", paired=True, fastq=True):
     out = {"summary": f"{p}summary.tsv", "log": f"{p}command-execution-info.txt",
            "depth_table": f"{p}depths.tsv.gz"}
     if paired:
-        out.update(r1=f"{p}normalized_R1.{ext}", r2=f"{p}normalized_R2.{ext}")
+        out.update(r1=f"{p}normalized-R1.{ext}", r2=f"{p}normalized-R2.{ext}")
     else:
         out.update(reads=f"{p}normalized.{ext}")
     return out
@@ -93,16 +96,60 @@ def _is_gzipped(path):
 
 
 def default_sketch_bytes(read_paths):
-    """ about as many bytes as the input on disk, within MIN_SKETCH-MAX_SKETCH and at most
-    half the computer's memory """
-    on_disk = sum(os.path.getsize(p) for p in read_paths)
-    size = min(max(on_disk, MIN_SKETCH), MAX_SKETCH)
+    """ SKETCH_PER_GZ_BYTE bytes per byte of gzipped input, at least MIN_SKETCH, and with the
+    strand sketch (half again) at most half the memory free """
+    gz = sum(os.path.getsize(p) / (1 if _is_gzipped(p) else PLAIN_PER_GZ) for p in read_paths)
+    size = SKETCH_PER_GZ_BYTE * gz
+    free = available_memory()
+    if free:
+        size = min(size, free / 2 / 1.5)
+    return int(max(size, MIN_SKETCH))
+
+
+def available_memory():
+    """ bytes of memory free for use (MemAvailable on Linux; free, inactive, speculative and
+    purgeable pages on macOS), or else half the computer's memory, or None """
     try:
-        ram = os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
-        size = min(size, ram // 2)
-    except (ValueError, OSError, AttributeError):  # pragma: no cover
+        with open("/proc/meminfo") as f:
+            for line in f:
+                if line.startswith("MemAvailable:"):
+                    return int(line.split()[1]) * 1024
+    except (OSError, ValueError, IndexError):
         pass
-    return int(size)
+    try:
+        out = subprocess.run(["vm_stat"], capture_output=True, text=True, timeout=10).stdout
+        free = _vm_stat_bytes(out)
+        if free:
+            return free
+    except (OSError, subprocess.SubprocessError):
+        pass
+    try:  # pragma: no cover
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES") // 2
+    except (ValueError, OSError, AttributeError):  # pragma: no cover
+        return None
+
+
+def _vm_stat_bytes(text):
+    """ the bytes free for use in macOS's vm_stat output, or None """
+    page = re.search(r"page size of (\d+) bytes", text)
+    if not page:
+        return None
+    pages = 0
+    for kind in ("free", "inactive", "speculative", "purgeable"):
+        m = re.search(rf"Pages {kind}:\s+(\d+)", text)
+        if m:
+            pages += int(m.group(1))
+    return pages * int(page.group(1)) or None
+
+
+def suggested_memory_gb(sketch_bytes, fill):
+    """ --memory (GB, up to the next half) for a sketch about SUGGESTED_FILL full, from one of
+    sketch_bytes that came out fill full. A sketch's fill is about 1 - e^(-anchors / counters
+    in a row), so the counters needed scale with -ln(1 - fill); from a sketch all but full, it
+    can't tell how many anchors there were, and what it gives is a least """
+    f = min(fill, 0.999)
+    need = sketch_bytes * math.log(1 - f) / math.log(1 - SUGGESTED_FILL)
+    return math.ceil(need / 2**30 * 2) / 2
 
 
 def _run(desc, total, show_progress, fn, *args, **kwargs):
@@ -156,6 +203,10 @@ class Counts:
     @property
     def sketch_too_full(self):
         return self.sketch_fill is not None and self.sketch_fill > FULL_SKETCH
+
+    @property
+    def suggested_memory_gb(self):
+        return suggested_memory_gb(self.sketch_bytes, self.sketch_fill)
 
     @property
     def error_share(self):

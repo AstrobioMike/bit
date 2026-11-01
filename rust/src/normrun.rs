@@ -1,7 +1,7 @@
 //! The two passes of `bit normalize-reads` over the read files (see
 //! bit/modules/normalize_reads.py for the approach): counting every read's anchors into a
 //! sketch, then judging and writing the reads with those counts known. Reads are read on a
-//! thread of their own, judged a batch at a time on the threads set with set_threads, and kept
+//! thread of their own (each mate's file on its own), judged a batch at a time on the threads set with set_threads, and kept
 //! ones written as they were in the input (names, comments, qualities and all), gzipped in
 //! parallel.
 
@@ -14,6 +14,7 @@ use pyo3::exceptions::{PyIOError, PyValueError};
 use pyo3::prelude::*;
 use pyo3::types::PyDict;
 use rayon::prelude::*;
+use std::collections::BinaryHeap;
 use std::fs::File;
 use std::hash::Hasher;
 use std::io::{self, BufWriter, Write};
@@ -87,8 +88,9 @@ fn name_str(raw: &[u8]) -> String {
     String::from_utf8_lossy(&line[..end]).into_owned()
 }
 
-/// batches of reads (or pairs, the two files read in step, their names checked to match),
-/// read on a thread of their own, a batch ahead
+/// batches of reads (or pairs, their names checked to match), read on a thread of their own,
+/// a batch ahead. With pairs, read 2s are read on another thread still, so the two files are
+/// decompressed side by side (decompressing gzip is the slowest part of reading)
 fn spawn_reader(
     path1: String,
     path2: Option<String>,
@@ -96,8 +98,8 @@ fn spawn_reader(
     progress: Option<Arc<Progress>>,
 ) -> io::Result<(Receiver<io::Result<Vec<Rec>>>, bool)> {
     let mut r1 = SeqReader::open(&path1, progress.clone())?;
-    let mut r2 = match &path2 {
-        Some(p) => Some(SeqReader::open(p, progress.clone())?),
+    let mates = match &path2 {
+        Some(p) => Some(spawn_mate_reader(SeqReader::open(p, progress.clone())?, batch_size)),
         None => None,
     };
     let fastq = r1.is_fastq();
@@ -111,14 +113,22 @@ fn spawn_reader(
                     if !r1.next_record(&mut rec.seq1, &mut rec.raw1)? {
                         break;
                     }
-                    if let Some(r2) = r2.as_mut() {
-                        let (mut s, mut raw) = (Vec::new(), Vec::new());
-                        if !r2.next_record(&mut s, &mut raw)? {
-                            return Err(bad(format!(
-                                "Read-2 file ran out before read-1 file (at read '{}').",
-                                name_str(&rec.raw1)
-                            )));
-                        }
+                    batch.push(rec);
+                }
+                let done = batch.len() < batch_size;
+                if let Some(mates) = &mates {
+                    // the mate reader sends batches of batch_size until its last, shorter one
+                    let twos = mates.recv().unwrap_or_else(|_| Ok(Vec::new()))?;
+                    if twos.len() < batch.len() {
+                        return Err(bad(format!(
+                            "Read-2 file ran out before read-1 file (at read '{}').",
+                            name_str(&batch[twos.len()].raw1)
+                        )));
+                    }
+                    if twos.len() > batch.len() {
+                        return Err(bad("Read-1 file ran out before read-2 file.".to_string()));
+                    }
+                    for (rec, (s, raw)) in batch.iter_mut().zip(twos) {
                         if base_name(&rec.raw1) != base_name(&raw) {
                             return Err(bad(format!(
                                 "Read names don't match between read files: '{}' vs '{}'. \
@@ -130,14 +140,6 @@ fn spawn_reader(
                         rec.seq2 = Some(s);
                         rec.raw2 = Some(raw);
                     }
-                    batch.push(rec);
-                }
-                let done = batch.len() < batch_size;
-                if done
-                    && let Some(r2) = r2.as_mut()
-                    && r2.next_seq(&mut Vec::new())?
-                {
-                    return Err(bad("Read-1 file ran out before read-2 file.".to_string()));
                 }
                 if let Some(p) = &progress {
                     p.reads.fetch_add(batch.len() as u64, Ordering::Relaxed);
@@ -152,6 +154,37 @@ fn spawn_reader(
         }
     });
     Ok((rx, fastq))
+}
+
+/// read 2s, as (sequence, record) batches of batch_size, the last one shorter (empty, if the
+/// reads come out even), read on a thread of their own
+fn spawn_mate_reader(
+    mut r2: SeqReader,
+    batch_size: usize,
+) -> Receiver<io::Result<Vec<(Vec<u8>, Vec<u8>)>>> {
+    let (tx, rx) = sync_channel(2);
+    std::thread::spawn(move || {
+        let result = (|| -> io::Result<()> {
+            loop {
+                let mut batch = Vec::with_capacity(batch_size);
+                while batch.len() < batch_size {
+                    let (mut s, mut raw) = (Vec::new(), Vec::new());
+                    if !r2.next_record(&mut s, &mut raw)? {
+                        break;
+                    }
+                    batch.push((s, raw));
+                }
+                let done = batch.len() < batch_size;
+                if tx.send(Ok(batch)).is_err() || done {
+                    return Ok(());
+                }
+            }
+        })();
+        if let Err(e) = result {
+            let _ = tx.send(Err(e));
+        }
+    });
+    rx
 }
 
 /// a gzipped output, compressed GZ_CHUNK at a time on several threads (see GZ_CHUNK)
@@ -355,6 +388,8 @@ pub struct AnchorCounts {
     density: u64,
     reads: u64,
     bases: u64,
+    // the reads (sequences only) whose calls set the clean reads' weight, by hash
+    calibration: Arc<Vec<Rec>>,
 }
 
 /// the counting pass: every read's (or pair's) distinct anchors into a sketch of about
@@ -382,22 +417,29 @@ pub fn count_anchors(
         let t = threshold(density);
         let (rx, _) = spawn_reader(read_1, read_2, BATCH, pr)?;
         let (mut reads, mut nbases) = (0u64, 0u64);
+        // the CALIBRATION_READS reads with the lowest hashes so far, highest on top
+        let mut lowest: BinaryHeap<(u64, Vec<u8>, Option<Vec<u8>>)> = BinaryHeap::new();
         for batch in rx {
             let batch = batch?;
             reads += batch.len() as u64;
+            let hashes: Vec<u64> = batch.par_iter().map(|r| seq_hash(r, CALIBRATION_SEED)).collect();
+            for (rec, h) in batch.iter().zip(hashes) {
+                if lowest.len() < CALIBRATION_READS || h < lowest.peek().unwrap().0 {
+                    lowest.push((h, rec.seq1.clone(), rec.seq2.clone()));
+                    if lowest.len() > CALIBRATION_READS {
+                        lowest.pop();
+                    }
+                }
+            }
             nbases += batch.iter().map(bases).sum::<u64>();
             batch.par_iter().for_each_init(
                 || (Vec::new(), Vec::new()),
                 |(along, hs), rec| {
                     distinct_anchors(rec, k, t, along, hs);
-                    for &h in hs.iter() {
-                        sketch.add(h);
-                    }
+                    sketch.add_all(hs);
                     for seq in std::iter::once(&rec.seq1).chain(rec.seq2.as_ref()) {
                         stranded_anchors(seq, k, t, hs);
-                        for &h in hs.iter() {
-                            strand.add(h);
-                        }
+                        strand.add_all(hs);
                     }
                 },
             );
@@ -409,6 +451,13 @@ pub fn count_anchors(
             density,
             reads,
             bases: nbases,
+            calibration: Arc::new(
+                lowest
+                    .into_sorted_vec()
+                    .into_iter()
+                    .map(|(_, seq1, seq2)| Rec { seq1, seq2, ..Default::default() })
+                    .collect(),
+            ),
         })
     })
     .map_err(to_py_err)
@@ -462,7 +511,8 @@ fn median(v: &mut [u32]) -> u32 {
 fn judge_read(seq: &[u8], r: &Rules, sketch: &Sketch, strand: &Sketch,
               along: &mut Vec<(u32, u64)>, out: &mut Vec<(u64, u32, bool)>) {
     anchors_into(seq, r.k, r.t, along);
-    let counts: Vec<u32> = along.iter().map(|a| sketch.get(a.1)).collect();
+    let mut counts = Vec::with_capacity(along.len());
+    sketch.get_all(along.iter().map(|a| a.1), &mut counts);
     // only an anchor under ERROR_SHARE of the read's deepest one can be under that share of
     // those around it, so most skip the closer look
     let deepest = counts.iter().copied().max().unwrap_or(0) as f64;
@@ -552,16 +602,23 @@ fn call(rec: &Rec, r: &Rules, sketch: &Sketch, strand: &Sketch,
     Call { keep_prob: p, typical, occurrences, errors, has_anchors: true, has_solid: true, minor }
 }
 
-/// reads (or pairs) at the start of the input whose calls set the clean reads' weight (see
-/// clean_weight())
-const PRESCAN: usize = 200_000;
+/// how many reads (or pairs), sampled evenly from the whole input in the counting pass, set
+/// the clean reads' weight (see clean_weight())
+const CALIBRATION_READS: usize = 200_000;
+/// seeds the hash picking them (apart from the keep coin's, so being sampled says nothing about
+/// being kept)
+const CALIBRATION_SEED: u64 = 0x5EED_CA11_B4A7_E5A1;
 
 /// Weights for reads being thinned (kept with probability under 1, not for a minor branch), with
 /// error_weight under 1: one holding no anchor judged an error is kept at the returned weight
 /// times its probability, (1 - e * error_weight) / (1 - e), with e (also returned) the share of
-/// the thinned reads' keep probability held by reads with errors, among the first PRESCAN
-/// reads (from the input's start rather than as reads come, so what's kept doesn't depend on
-/// threads or batches). See weighted() for those with errors.
+/// the thinned reads' keep probability held by reads with errors, among CALIBRATION_READS
+/// reads sampled from the whole input: those with the lowest hashes of their sequence, so the
+/// same reads whatever the order, threads or batches. (It was the input's first reads, until
+/// Oct 31, 2026: files often start with poorer reads, from the edges of tiles, and an isolate
+/// subsample's first 200,000 pairs put the clean weight at 2.59 where a sample from the whole
+/// file put it at 1.63, and its output came out at 241x instead of 157x.) See weighted() for
+/// those with errors.
 fn clean_weight(calls: &[Call], error_weight: f64) -> (f64, f64) {
     let (mut with_errors, mut all) = (0.0, 0.0);
     for c in calls.iter().filter(|c| thinned(c)) {
@@ -604,6 +661,11 @@ fn weighted(c: &Call, error_weight: f64, clean_weight: f64, e: f64) -> f64 {
 /// a number in [0, 1) from the read's own sequence and `seed`, the same whatever the order
 /// or threads
 fn coin(rec: &Rec, seed: u64) -> f64 {
+    (seq_hash(rec, seed) >> 11) as f64 / (1u64 << 53) as f64
+}
+
+/// a 64-bit hash of the read's own sequence and `seed`
+fn seq_hash(rec: &Rec, seed: u64) -> u64 {
     let mut h = rustc_hash::FxHasher::default();
     h.write_u64(seed);
     h.write(&rec.seq1);
@@ -614,8 +676,7 @@ fn coin(rec: &Rec, seed: u64) -> f64 {
     let mut x = h.finish() ^ seed.rotate_left(17);
     x = (x ^ (x >> 30)).wrapping_mul(0xBF58476D1CE4E5B9);
     x = (x ^ (x >> 27)).wrapping_mul(0x94D049BB133111EB);
-    x ^= x >> 31;
-    (x >> 11) as f64 / (1u64 << 53) as f64
+    x ^ (x >> 31)
 }
 
 #[pymethods]
@@ -669,22 +730,17 @@ impl AnchorCounts {
         let pr = crate::arc(&progress);
         let sketch = self.sketch.clone();
         let strand = self.strand.clone();
+        let calibration = self.calibration.clone();
         let (totals, clean_w) = py
             .detach(|| -> io::Result<(Totals, f64)> {
                 let (clean_w, err_share) = if error_weight < 1.0 {
-                    let (rx, _) = spawn_reader(read_1.clone(), read_2.clone(), BATCH, None)?;
-                    let mut calls = Vec::new();
-                    for batch in rx {
-                        let batch = batch?;
-                        calls.par_extend(batch.par_iter().map_init(
+                    let calls: Vec<Call> = calibration
+                        .par_iter()
+                        .map_init(
                             || (Vec::new(), Vec::new()),
                             |(along, all), rec| call(rec, &rules, &sketch, &strand, along, all),
-                        ));
-                        if calls.len() >= PRESCAN {
-                            break;
-                        }
-                    }
-                    calls.truncate(PRESCAN);
+                        )
+                        .collect();
                     clean_weight(&calls, error_weight)
                 } else {
                     (1.0, 0.0)
