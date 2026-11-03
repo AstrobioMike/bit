@@ -14,6 +14,14 @@
 
 -->
 
+## v2.14.0 (NOT YET RELEASED)
+
+### Added
+- `bit find-overrep-seqs`
+  - now will count matches running off the ends of the reads now (can be shut off with `--no-end-overlaps`)
+
+---
+
 ## v2.13.1 (30-Oct-2026)
 
 - efficiency improvements in several programs

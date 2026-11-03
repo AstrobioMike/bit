@@ -12,10 +12,11 @@ prep puts them in reads in either orientation, and counts are reported per read 
      At k=11 there are only ~4.2M possible k-mers, so counts are a plain array, no hashing.
      Adapter read-through is trimmed from reads from here on (the built-in Illumina adapters
      and any given), since otherwise every insert's end next to an adapter makes for an
-     overrepresented k-mer. With paired reads, unknown adapters are found too: an insert is
-     read forward in one read of a pair and reverse complemented in the other, so its k-mers
-     are about as common forward in R1 as reverse complemented in R2, while read-through is
-     in only one read, and only forward (see mate_asymmetry).
+     overrepresented k-mer. An adapter that's neither built in nor given isn't trimmed, and
+     its read-through shows up as a found sequence itself. (Until Nov 2026, paired reads'
+     unknown adapters were inferred from k-mers seen in only one read of a pair; that needed
+     an insert abundant enough to be extended along with the adapter, so in shotgun data, as
+     in a gut metagenome with Nextera read-through in 20% of reads, it found nothing.)
 
   2. Candidates. K-mers are counted again in the trimmed reads, along with the 2-mers and
      3-mers of an order-2 Markov model of the reads' own composition, as the background. A
@@ -35,7 +36,11 @@ prep puts them in reads in either orientation, and counts are reported per read 
   4. Counting. A read holds a found sequence if it aligns within the (trimmed) read with at
      most `max_diff` edits per base (substitutions + indels), or, if the read holds none in
      full, the read aligns within it (e.g., a primer missing a few bases, or a read from
-     something longer than reads). Start positions in reads are tallied too. Sequences too
+     something longer than reads), or, failing both, an end of the read overlaps the far end
+     of it by at least MIN_END_OVERLAP bases with at most `max_diff` substitutions per base
+     (a read running into a primer, or off a long sequence; unless end_overlaps is off).
+     Start positions in reads are tallied too, and how many of each sequence's bases each
+     read covers (all of them in full, the read's within it, the overlap's at an end). Sequences too
      rare once counted, pieces of another found from a seed that stopped short, and rare
      near-copies of a far more common one are left out of what's reported. Each is reported
      in the orientation it's most often in, in the read file it's most common in.
@@ -73,9 +78,6 @@ DOMINANT_FRAC = 0.01         # a k-mer in at least this share of reads is a cand
 ERROR_VARIANT_RATIO = 20     # a k-mer this many times rarer than one a substitution away is taken for an error
 
 # adapters
-ADAPTER_SEARCH_SEEDS = 200   # most abundant candidates extended to look for unknown adapters
-MAX_INSERT_ASYMMETRY = 0.5   # k-mers at most this asymmetric between the reads of a pair are insert
-ADAPTER_PROBE_LEN = 16       # start of a found adapter compared to others, to tell if it's the same
 TRIM_PROBE_LEN = 10          # stretches of an adapter looked for in reads to trim read-through...
 TRIM_PROBE_SPAN = 40         # ...every TRIM_PROBE_LEN bases over this much of its start (see probe_offsets)
 TRIM_MIN_END_OVERLAP = 6     # shortest adapter start trimmed when it's cut off by a read end
@@ -97,6 +99,7 @@ VARIANT_SLACK = 0.25         # see is_variant()
 CONTAINED_SHARE = 0.8        # see the end of find_overrep()
 ERROR_VARIANT_SHARE = 0.05   # see the end of find_overrep()
 MIN_PARTIAL_LEN = 15         # a (trimmed) read shorter than this isn't checked for being within a found sequence
+MIN_END_OVERLAP = 20         # shortest overlap between a read's end and a found sequence's that counts
 
 # given sequences to count
 IUPAC = {"A": "A", "C": "C", "G": "G", "T": "T", "R": "AG", "Y": "CT", "S": "CG", "W": "AT", "K": "GT",
@@ -239,7 +242,6 @@ class KmerCounts:
         # signed, as the arithmetic on them expects (e.g., negating to sort)
         by_file = [a.astype(np.int64) for a in by_file]
         self.tri, self.di, self.windows_at = (a.astype(np.int64) for a in (tri, di, windows_at))
-        self.by_mate = dict(enumerate(by_file))
         self.kmers = sum(by_file)
 
     def canonical(self):
@@ -528,99 +530,6 @@ def adapter_cuts(seq, adapters):
     return left, max(left, right), sorted(set(names))
 
 
-def mate_asymmetry(seq, by_mate, k, rc_all):
-    """
-    For each k-mer of `seq` (in order): (asymmetry, total count, share seen forward). An
-    insert is read forward in one read of a pair and reverse complemented in the other, so
-    its k-mers are about as common forward in R1 as reverse complemented in R2 (and the
-    other way around): asymmetry near 0. Adapter read-through is in only one of the reads,
-    and only forward: asymmetry near 1.
-    """
-    c1, c2 = by_mate[0], by_mate[1]
-    enc, _, _ = encode([seq])
-    codes, valid = window_codes(enc, k)
-    out = []
-    for x, v in zip(codes.tolist(), valid.tolist()):
-        if not v:
-            out.append((1.0, 0, 0.0))
-            continue
-        r = int(rc_all[x])
-        a, b, c, d = int(c1[x]), int(c2[r]), int(c1[r]), int(c2[x])
-        total = a + b + c + d
-        paired = min(a, b) + min(c, d)
-        out.append((1 - 2 * paired / total if total else 1.0, total, (a + d) / total if total else 0.0))
-    return out
-
-
-def split_by_mate_symmetry(seq, by_mate, k, rc_all, max_asym=MAX_INSERT_ASYMMETRY):
-    """
-    (start, end) of the longest stretch of `seq` whose k-mers are all symmetric between
-    the reads of a pair (see mate_asymmetry), i.e., insert, or None if there's none.
-    """
-    asym = mate_asymmetry(seq, by_mate, k, rc_all)
-    best, run_start = None, None
-    for i, (a, _, _) in enumerate(asym + [(1.0, 0, 0.0)]):
-        if a <= max_asym:
-            if run_start is None:
-                run_start = i
-        elif run_start is not None:
-            if best is None or i - run_start > best[1] - best[0]:
-                best = (run_start, i)
-            run_start = None
-    if best is None:
-        return None
-    return best[0], best[1] - 1 + k
-
-
-def _is_known(seq, known):
-    probe = seq[:ADAPTER_PROBE_LEN]
-    return any(_locate(probe, a, 1) or _locate(probe, revcomp(a), 1) for a in known.values())
-
-
-def _read_through_like(seq, by_mate, k, rc_all):
-    """whether all of `seq` is in only one read of a pair, and forward, as read-through is"""
-    asym = mate_asymmetry(seq, by_mate, k, rc_all)
-    total = sum(t for _, t, _ in asym)
-    fwd = sum(t * share for _, t, share in asym)
-    return bool(total) and fwd >= 0.9 * total and min(a for a, _, _ in asym) >= 1 - MAX_INSERT_ASYMMETRY
-
-
-def infer_adapters(found, by_mate, k, rc_all, known):
-    """
-    Adapter read-through not already in `known`, from paired reads: in a found sequence with
-    an insert (k-mers symmetric between the reads of a pair, see mate_asymmetry), stretches
-    on either side seen in only one read and only forward. Where adapters share a start (as
-    Illumina's R1 and R2 adapters do), extension stops there, so found sequences that are
-    all read-through and begin with that start are taken as the fuller adapters. Returns
-    {name: sequence oriented as read-through}.
-    """
-    starts = []
-    for f in found:
-        cons = f["consensus"]
-        span = split_by_mate_symmetry(cons, by_mate, k, rc_all)
-        if span is None:
-            continue
-        for flank in (cons[span[1]:], revcomp(cons[:span[0]])):
-            if len(flank) >= TRIM_PROBE_LEN and _read_through_like(flank, by_mate, k, rc_all) \
-                    and not _is_known(flank, known) and not _is_known(flank, dict(enumerate(starts))) \
-                    and not any(_locate(a[:ADAPTER_PROBE_LEN], flank, 1) for a in starts):
-                starts.append(flank)
-
-    adapters = []
-    for start in starts:
-        fuller = []
-        for f in found:
-            for oriented in (f["consensus"], revcomp(f["consensus"])):
-                if len(oriented) > len(start) and oriented.startswith(start[:TRIM_PROBE_LEN]) \
-                        and _read_through_like(oriented, by_mate, k, rc_all) and oriented not in fuller:
-                    fuller.append(oriented)
-        # the longest of each that isn't just a piece of another
-        fuller = [a for a in sorted(fuller, key=len, reverse=True)
-                  if not any(b != a and b.startswith(a) for b in fuller)]
-        adapters.extend(fuller or [start])
-    return {f"inferred_adapter_{i}": a for i, a in enumerate(adapters, start=1)}
-
-
 ### collapsing ###
 
 def low_complexity(seq):
@@ -696,32 +605,38 @@ def trim_read(seq, probes):
     return native.trim_read(seq, list(probes))
 
 
-def Matcher(seqs, max_diff, min_read_len=MIN_PARTIAL_LEN, groups=None):
+def Matcher(seqs, max_diff, min_read_len=MIN_PARTIAL_LEN, groups=None, min_overlap=MIN_END_OVERLAP):
     """
     Places found sequences in (trimmed) reads: `.hits(read)` gives {seq index: (start in
-    read, or None if the read is within it; is reverse complement; edits)}, the best
-    placement per found sequence. A read holds one if it aligns within the read with at
-    most `max_diff` edits per base, or, for one longer than the read, if the read (at least
-    min_read_len long) aligns within it. A read holding any in full isn't counted as within
-    others, and one only within found sequences counts for the shortest (e.g., a primer
-    missing a few bases, not the dimer that also holds it). A q-gram prefilter rules most
+    read, or None if the read is within it or overlaps an end of it; is reverse complement;
+    edits; the sequence's bases the read covers)}, the best placement per found sequence. A
+    read holds one if it aligns within the read with at most `max_diff` edits per base, or,
+    for one longer than the read, if the read (at least min_read_len long) aligns within it,
+    or, failing both (and with min_overlap above 0), if the read's end and the sequence's
+    start, or the read's start and the sequence's end, overlap by at least min_overlap bases
+    with at most `max_diff` substitutions per base (the longest such overlap). A read holding
+    any in full isn't counted as within or overlapping others, one within any isn't counted
+    as overlapping others, one only overlapping counts for its longest overlap, and one only
+    within (or overlapping) found sequences counts for the shortest (e.g., a primer missing a
+    few bases, not the dimer that also holds it). A q-gram prefilter rules most
     out first, with q chosen so a sequence within its allowed edits must share an exact
     q-mer with the read (pigeonhole), so it can't cause a miss (`.hits(read, False)` skips
     it, for checking). `.count_in_reads(...)` counts over read files (see count_in_reads).
     `groups`, if given, is which sequence each of `seqs` counts as (e.g., the variants of a
     degenerate primer as one), and results are indexed by those.
     """
-    return native.Matcher(list(seqs), max_diff, min_read_len, None if groups is None else list(groups))
+    return native.Matcher(list(seqs), max_diff, min_read_len, min_overlap, None if groups is None else list(groups))
 
 
 def count_in_reads(read_paths, seqs, adapters, max_diff, min_insert_len=MIN_INSERT_LEN, run=quietly,
-                   desc="", groups=None):
+                   desc="", groups=None, end_overlaps=True):
     """
     Counts the found sequences in reads, trimmed with `adapters`. Returns per-file tallies
     (keyed by "R1"/"R2", or "reads" for one file) and, for paired reads, pair-level ones,
     indexed by sequence (or by group, if `groups` is given; see Matcher).
     """
-    tallies, pairs = run(desc, Matcher(seqs, max_diff, groups=groups).count_in_reads, [str(p) for p in read_paths],
+    matcher = Matcher(seqs, max_diff, groups=groups, min_overlap=MIN_END_OVERLAP if end_overlaps else 0)
+    tallies, pairs = run(desc, matcher.count_in_reads, [str(p) for p in read_paths],
                          list(adapters.items()), min_insert_len)
     labels = ["R1", "R2"] if len(read_paths) == 2 else ["reads"]
     out = {}
@@ -733,6 +648,7 @@ def count_in_reads(read_paths, seqs, adapters, max_diff, min_insert_len=MIN_INSE
             rc=Counter(dict(enumerate(t["rc"]))),
             edits=defaultdict(Counter, {i: Counter(dict(e)) for i, e in enumerate(t["edits"])}),
             starts=defaultdict(Counter, {i: Counter(dict(st)) for i, st in enumerate(t["starts"])}),
+            bases=defaultdict(Counter, {i: Counter(dict(b)) for i, b in enumerate(t["bases"])}),
             adapters=Counter(dict(t["adapters"])),
             adapter_only=t["adapter_only"],
             explained=t["explained"],
@@ -805,10 +721,11 @@ def load_seqs_to_count(path):
 
 def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DEFAULT_MIN_FOLD,
                  max_diff=DEFAULT_MAX_DIFF, max_len=DEFAULT_MAX_LEN, adapters=None, jobs=None,
-                 max_reads_for_discovery=DEFAULT_MAX_READS_FOR_DISCOVERY, seqs_to_count=None, verbose=False):
+                 max_reads_for_discovery=DEFAULT_MAX_READS_FOR_DISCOVERY, seqs_to_count=None, end_overlaps=True,
+                 verbose=False):
     """
     Finds and counts overrepresented sequences in reads (see module notes). Returns a dict
-    with the found sequences, the adapters used (built-in, given and inferred), and the
+    with the found sequences, the adapters used (built-in and given), and the
     tallies. `min_perc` is the percent of reads a sequence must be in (as a fraction, `min_frac`,
     everywhere below). `jobs` sets the threads used (once per process; all cores if never set). Only the
     first `max_reads_for_discovery` reads of each file (0: all) are used to find the sequences;
@@ -827,41 +744,31 @@ def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DE
     run = with_progress_bar(read_paths) if verbose else quietly
     say = print if verbose else (lambda *a, **kw: None)
 
-    # first, any adapters not already known, from the most abundant k-mers in the raw reads
-    # (otherwise every insert's end next to an adapter makes for an overrepresented k-mer)
+    # first, the k-mers of the raw reads, which error variants are judged against
     n_disc = max_reads_for_discovery
-    raw = KmerCounts(read_paths, k, run=run, desc="Counting k-mers and identifying adapters (pass 1 of 4)...",
-                     max_reads=n_disc)
-    candidates, raw_both = find_candidates(raw, min_frac, min_fold)
-    _, rc_all, _ = raw.canonical()
-    inferred = {}
-    if len(read_paths) == 2:
-        seeds = extend_all(candidates[:ADAPTER_SEARCH_SEEDS], raw_both, rc_all, k, max_len)
-        inferred = infer_adapters(seeds, raw.by_mate, k, rc_all, adapters)
-    all_adapters = dict(adapters, **inferred)
-    if inferred:
-        say(f"      Inferred {len(inferred)} adapter(s) not among those given (see identified-adapters.tsv)\n")
+    raw = KmerCounts(read_paths, k, run=run, desc="Counting k-mers (pass 1 of 4)...", max_reads=n_disc)
+    raw_both, rc_all, _ = raw.canonical()
 
     # then counting again with adapter read-through trimmed off
-    counts = KmerCounts(read_paths, k, all_adapters, run=run,
+    counts = KmerCounts(read_paths, k, adapters, run=run,
                         desc="Counting k-mers excluding adapters (pass 2 of 4)...", max_reads=n_disc)
     candidates, both = find_candidates(counts, min_frac, min_fold, error_ref=raw_both)
     del raw, counts
     say(f"      {len(candidates):,} candidate seed k-mers identified\n")
 
-    extended = refine_ends(extend_all(candidates, both, rc_all, k, max_len), read_paths, all_adapters, k,
+    extended = refine_ends(extend_all(candidates, both, rc_all, k, max_len), read_paths, adapters, k,
                            max_len, run=run, desc="Extending candidates using the reads that hold them (pass 3 of 4)...",
                            max_reads=n_disc)
 
     inserts = []
     for f in extended:
-        left, right, _ = adapter_cuts(f["consensus"], all_adapters)
+        left, right, _ = adapter_cuts(f["consensus"], adapters)
         insert = f["consensus"][left:right]
         if len(insert) < max(MIN_INSERT_LEN, k):
             continue
         f.update(insert=insert)
         inserts.append(f)
-    kept = collapse(inserts, max_diff, all_adapters)
+    kept = collapse(inserts, max_diff, adapters)
     # one orientation for each while sorting things out (whichever strand sorts first); each is
     # turned to how it's most often seen in reads at the end (orient_as_most_seen)
     for f in kept:
@@ -893,8 +800,8 @@ def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DE
     what = f"the {n_found:,} determined overrepresented sequence(s)"
     if given:
         what += f" and {len(given):,} given sequence(s)"
-    tallies, pairs = count_in_reads(read_paths, seqs, all_adapters, max_diff, groups=groups,
-                                    run=run, desc=f"Counting {what} across all reads (pass 4 of 4)...")
+    tallies, pairs = count_in_reads(read_paths, seqs, adapters, max_diff, groups=groups,
+                                    end_overlaps=end_overlaps, run=run, desc=f"Counting {what} across all reads (pass 4 of 4)...")
 
     # ordered by how many reads hold them, leaving out any too rare once counted (a seed's
     # count can't be fully trusted to carry over to its extended sequence)
@@ -923,7 +830,7 @@ def find_overrep(read_paths, k=DEFAULT_K, min_perc=DEFAULT_MIN_PERC, min_fold=DE
     for i in order:
         orient_as_most_seen(i, kept[i], tallies)
     order = given_order + order
-    return dict(found=kept, order=order, adapters=all_adapters, inferred=inferred,
+    return dict(found=kept, order=order, adapters=adapters,
                 tallies=tallies, pairs=pairs, k=k, n_candidates=len(candidates))
 
 
@@ -966,6 +873,17 @@ def setup_output_dir(output_dir, output_prefix, force_overwrite, full_cmd_execut
     log_command_run(full_cmd_executed, output_dir, output_paths(output_dir, output_prefix)["log"])
 
 
+def _median(counts):
+    """ the median of a {value: count} tally (the lower middle one for an even total), "NA" for none """
+    total = sum(counts.values())
+    seen = 0
+    for v in sorted(counts):
+        seen += counts[v]
+        if 2 * seen >= total:
+            return str(v)
+    return "NA"
+
+
 def _pct(n, d, places=3):
     return f"{100 * n / d:.{places}f}" if d else "NA"
 
@@ -994,8 +912,6 @@ def summary_lines(result):
 
 
 def _adapter_source(name, result):
-    if name in result["inferred"]:
-        return "inferred"
     if BUILTIN_ADAPTERS.get(name) == result["adapters"].get(name):
         return "builtin"
     return "given"
@@ -1009,7 +925,8 @@ def write_outputs(result, output_dir, output_prefix=""):
     header = ["id", "sequence", "length"]
     for lab in labels:
         pre = "" if lab == "reads" else f"{lab}_"
-        header += [f"{pre}reads", f"{pre}pct_of_reads", f"{pre}pct_full_length", f"{pre}pct_revcomp",
+        header += [f"{pre}reads", f"{pre}pct_of_reads", f"{pre}pct_full_length", f"{pre}median_bases_matching",
+                   f"{pre}pct_revcomp",
                    f"{pre}mean_edits", f"{pre}top_start", f"{pre}pct_at_top_start"]
     if pairs:
         header += ["either_read", "either_read_pct", "both_reads", "both_reads_pct"]
@@ -1027,7 +944,7 @@ def write_outputs(result, output_dir, output_prefix=""):
                 mean_ed = sum(e * c for e, c in edits.items()) / n if n else 0
                 starts = t["starts"][i]
                 top, top_n = starts.most_common(1)[0] if starts else ("NA", 0)
-                row += [str(n), _pct(n, t["reads"]), _pct(t["full"][i], n), _pct(t["rc"][i], n),
+                row += [str(n), _pct(n, t["reads"]), _pct(t["full"][i], n), _median(t["bases"][i]), _pct(t["rc"][i], n),
                         f"{mean_ed:.2f}", str(top), _pct(top_n, t["full"][i])]
             if pairs:
                 row += [str(pairs["pairs_with"][i]), _pct(pairs["pairs_with"][i], pairs["pairs"]),

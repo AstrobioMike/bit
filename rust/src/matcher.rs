@@ -13,9 +13,34 @@ use std::io;
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Hit {
     pub seq: usize,
-    pub start: Option<usize>, // None: the read is within the sequence
+    pub start: Option<usize>, // None: the read is within the sequence, or overlaps an end of it
     pub is_rc: bool,
     pub edits: usize,
+    // the sequence's bases the read covers: all of them in full, the read's within it, the
+    // overlap's at an end
+    pub bases: usize,
+    pub kind: Kind,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Kind {
+    Full,
+    Within,
+    Overlap,
+}
+
+/// substitutions between `a` and `b` (as long), or None past `max`
+fn mismatches(a: &[u8], b: &[u8], max: usize) -> Option<usize> {
+    let mut d = 0;
+    for (x, y) in a.iter().zip(b) {
+        if x != y {
+            d += 1;
+            if d > max {
+                return None;
+            }
+        }
+    }
+    Some(d)
 }
 
 struct Pattern {
@@ -30,6 +55,7 @@ pub struct Matcher {
     lengths: Vec<usize>,
     max_diff: f64,
     min_read_len: usize,
+    min_overlap: usize, // 0: no end overlaps
     q: usize,
     lut: Vec<Vec<u64>>, // per 64 patterns, per q-mer code: which patterns hold it
 }
@@ -45,6 +71,7 @@ impl Matcher {
         seqs: &[Vec<u8>],
         max_diff: f64,
         min_read_len: usize,
+        min_overlap: usize,
         groups: Option<&[usize]>,
     ) -> Self {
         let group = |i: usize| groups.map_or(i, |g| g[i]);
@@ -76,6 +103,13 @@ impl Matcher {
             .min()
             .unwrap_or(11);
         q = q.min(min_read_len / (allowed_edits(min_read_len, max_diff) + 1));
+        if min_overlap > 0 {
+            // an overlap of any length, with its allowed substitutions
+            let longest = seqs.iter().map(|s| s.len()).max().unwrap_or(0);
+            for l in min_overlap..longest.max(min_overlap + 1) {
+                q = q.min(l / (allowed_edits(l, max_diff) + 1));
+            }
+        }
         let q = q.clamp(4, 11);
         let words = patterns.len().div_ceil(64).max(1);
         let mut lut = vec![vec![0u64; 1 << (2 * q)]; words];
@@ -89,6 +123,7 @@ impl Matcher {
             lengths,
             max_diff,
             min_read_len,
+            min_overlap,
             q,
             lut,
         }
@@ -113,6 +148,27 @@ impl Matcher {
         out
     }
 
+    /// (overlap length, substitutions) of the longest overlap, at least min_overlap long and
+    /// within its allowed substitutions, between an end of `read` and the far end of `pat`:
+    /// the read's end and the pattern's start, or the read's start and the pattern's end.
+    /// Shorter than both (a read holding all of the pattern, or within it, is placed so).
+    fn end_overlap(&self, read: &[u8], pat: &[u8]) -> Option<(usize, usize)> {
+        let (n, m) = (read.len(), pat.len());
+        let top = n.min(m).saturating_sub(1);
+        for l in (self.min_overlap..=top).rev() {
+            let e = allowed_edits(l, self.max_diff);
+            let a = mismatches(&read[n - l..], &pat[..l], e);
+            let b = mismatches(&read[..l], &pat[m - l..], e);
+            if let Some(d) = match (a, b) {
+                (Some(x), Some(y)) => Some(x.min(y)),
+                (x, y) => x.or(y),
+            } {
+                return Some((l, d));
+            }
+        }
+        None
+    }
+
     /// the best placement per found sequence (see Matcher.hits in find_overrep.py), from
     /// the prefilter's candidates, or from every pattern if `all`
     pub fn hits(&self, read: &[u8], all: bool) -> Vec<Hit> {
@@ -125,32 +181,46 @@ impl Matcher {
         for p in cands {
             let pat = &self.patterns[p];
             let hit = if read.len() + pat.edits >= pat.bases.len() {
-                match edlib::locate(&pat.bases, read, pat.edits) {
-                    Some((d, start)) => Hit {
-                        seq: pat.seq,
-                        start: Some(start),
-                        is_rc: pat.is_rc,
-                        edits: d,
-                    },
-                    None => continue,
-                }
+                edlib::locate(&pat.bases, read, pat.edits).map(|(d, start)| Hit {
+                    seq: pat.seq,
+                    start: Some(start),
+                    is_rc: pat.is_rc,
+                    edits: d,
+                    bases: pat.bases.len(),
+                    kind: Kind::Full,
+                })
             } else if read.len() >= self.min_read_len {
                 let er = allowed_edits(read.len(), self.max_diff);
-                match edlib::distance(read, &pat.bases, er) {
-                    Some(d) => Hit {
+                edlib::distance(read, &pat.bases, er).map(|d| Hit {
+                    seq: pat.seq,
+                    start: None,
+                    is_rc: pat.is_rc,
+                    edits: d,
+                    bases: read.len(),
+                    kind: Kind::Within,
+                })
+            } else {
+                None
+            };
+            let hit = match hit {
+                Some(h) => h,
+                None if self.min_overlap > 0 => match self.end_overlap(read, &pat.bases) {
+                    Some((l, d)) => Hit {
                         seq: pat.seq,
                         start: None,
                         is_rc: pat.is_rc,
                         edits: d,
+                        bases: l,
+                        kind: Kind::Overlap,
                     },
                     None => continue,
-                }
-            } else {
-                continue;
+                },
+                None => continue,
             };
             match found.iter_mut().find(|h| h.seq == hit.seq) {
                 Some(h) => {
-                    if hit.edits < h.edits {
+                    // a fuller kind of placement first, then fewer edits
+                    if (hit.kind as u8, hit.edits) < (h.kind as u8, h.edits) {
                         *h = hit;
                     }
                 }
@@ -158,10 +228,17 @@ impl Matcher {
             }
         }
         // a read holding one found sequence in full isn't also counted as a piece of another
-        if found.iter().any(|h| h.start.is_some()) {
-            found.retain(|h| h.start.is_some());
-        } else if found.len() > 1 {
-            // and one only within found sequences counts for the shortest
+        if found.iter().any(|h| h.kind == Kind::Full) {
+            found.retain(|h| h.kind == Kind::Full);
+        } else if found.iter().any(|h| h.kind == Kind::Within) {
+            found.retain(|h| h.kind == Kind::Within);
+        } else if !found.is_empty() {
+            // and one only overlapping ends counts for the longest overlap
+            let most = found.iter().map(|h| h.bases).max().unwrap();
+            found.retain(|h| h.bases == most);
+        }
+        if found.len() > 1 && found[0].kind != Kind::Full {
+            // and one only within (or overlapping) found sequences counts for the shortest
             let shortest = found.iter().map(|h| self.lengths[h.seq]).min().unwrap();
             found.retain(|h| self.lengths[h.seq] == shortest);
         }
@@ -177,6 +254,7 @@ pub struct Tally {
     pub rc: Vec<u64>,
     pub edits: Vec<FxHashMap<usize, u64>>,
     pub starts: Vec<FxHashMap<usize, u64>>,
+    pub bases: Vec<FxHashMap<usize, u64>>,
     pub adapters: FxHashMap<String, u64>,
     pub adapter_only: u64,
     pub explained: u64,
@@ -190,6 +268,7 @@ impl Tally {
             rc: vec![0; n],
             edits: vec![FxHashMap::default(); n],
             starts: vec![FxHashMap::default(); n],
+            bases: vec![FxHashMap::default(); n],
             ..Default::default()
         }
     }
@@ -271,6 +350,7 @@ fn tally_batches(
             for h in found {
                 t.reads_with[h.seq] += 1;
                 *t.edits[h.seq].entry(h.edits).or_insert(0) += 1;
+                *t.bases[h.seq].entry(h.bases).or_insert(0) += 1;
                 if let Some(s) = h.start {
                     t.full[h.seq] += 1;
                     *t.starts[h.seq].entry(s).or_insert(0) += 1;

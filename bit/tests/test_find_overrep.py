@@ -17,8 +17,6 @@ from bit.modules.find_overrep import (BUILTIN_ADAPTERS,
                                       extend_by_reads,
                                       is_variant,
                                       low_complexity,
-                                      mate_asymmetry,
-                                      split_by_mate_symmetry,
                                       load_adapters,
                                       load_seqs_to_count,
                                       expand_degenerate,
@@ -202,16 +200,34 @@ def test_matcher():
     m = Matcher([P1, DIMER], 0.1)
     # the primer in full, with an error, on the other strand, at an offset
     read = "AC" + P1[:5] + ("A" if P1[5] != "A" else "C") + P1[6:]
-    assert m.hits(read) == {0: (2, False, 1)}
+    assert m.hits(read) == {0: (2, False, 1, len(P1))}
     hits = m.hits(revcomp(P1))
     assert list(hits) == [0] and hits[0][1] is True
     # a dimer read holds the dimer and the primer in full
     assert set(m.hits(DIMER)) == {0, 1}
     # a primer missing a few bases is only within the shortest it's within (the primer, not
     # the dimer that also holds it)
-    assert m.hits(P1[4:]) == {0: (None, False, 0)}
+    assert m.hits(P1[4:]) == {0: (None, False, 0, len(P1) - 4)}
     # too short to be checked for being within anything
     assert m.hits(P1[:12]) == {}
+
+
+def test_matcher_end_overlaps():
+    rng = random.Random(3)
+    long = rand_seq(300, rng)
+    m = Matcher([long], 0.1)
+    # a read running off the sequence's end, and one running into its start (on the other
+    # strand), with an error in the overlap
+    off = long[-40:] + rand_seq(60, rng)
+    assert m.hits(off) == {0: (None, False, 0, 40)}
+    into = rand_seq(70, rng) + long[:30]
+    into = into[:-5] + ("A" if into[-5] != "A" else "C") + into[-4:]
+    assert m.hits(revcomp(into)) == {0: (None, True, 1, 30)}
+    # under MIN_END_OVERLAP, or with overlaps off
+    assert m.hits(long[-15:] + rand_seq(60, rng)) == {}
+    assert Matcher([long], 0.1, min_overlap=0).hits(off) == {}
+    # a read within the sequence is placed so, not as an overlap
+    assert m.hits(long[100:200]) == {0: (None, False, 0, 100)}
 
 
 def test_matcher_prefilter_keeps_what_hits_finds():
@@ -224,44 +240,22 @@ def test_matcher_prefilter_keeps_what_hits_finds():
             piece = mutate(s, rng, rate=0.05)
             reads.append(rand_seq(rng.randint(0, 10), rng) + piece[:50] + rand_seq(rng.randint(0, 10), rng))
     reads += [rand_seq(50, rng) for _ in range(50)]
-    hit = 0
+    no_overlaps = Matcher(seqs, 0.1, min_overlap=0)
+    hit = hit_no_overlaps = 0
     for read in reads:
         got = m.hits(read)
         assert got == m.hits(read, False)
         hit += bool(got)
+        got = no_overlaps.hits(read)
+        assert got == no_overlaps.hits(read, False)
+        hit_no_overlaps += bool(got)
     # and plenty were placed, so the check above checked something (62 of the 80 pieces at a
-    # 5% error rate are within 10% edits, as found with the prefilter off too)
-    assert hit == 62
+    # 5% error rate are within 10% edits, as found with the prefilter off too, and 6 more
+    # overlap a read's end by 20+ bases)
+    assert (hit_no_overlaps, hit) == (62, 68)
 
 
 ### mate asymmetry ###
-
-def test_mate_asymmetry():
-    k = 5
-    by_mate = {0: np.zeros(4 ** k, dtype=np.int64), 1: np.zeros(4 ** k, dtype=np.int64)}
-    insert, adapter = "ACGGTCATTG", "TTTGCAAC"
-    enc, _, _ = encode([insert + adapter])
-    codes, _ = window_codes(enc, k)
-    enc2, _, _ = encode([revcomp(insert)])
-    codes2, _ = window_codes(enc2, k)
-    # R1 reads the insert then the adapter, R2 only the insert's reverse complement
-    for c in codes:
-        by_mate[0][c] += 100
-    for c in codes2:
-        by_mate[1][c] += 100
-    rc_all = rc_codes(np.arange(4 ** k, dtype=np.int64), k)
-    asym = [a for a, _, _ in mate_asymmetry(insert + adapter, by_mate, k, rc_all)]
-    assert all(a == 0 for a in asym[:len(insert) - k + 1])
-    assert all(a == 1 for a in asym[len(insert) - k + 1:])
-    assert split_by_mate_symmetry(insert + adapter, by_mate, k, rc_all) == (0, len(insert))
-
-
-### the whole thing ###
-
-# Expected counts below were taken from a run after checking them against the simulation's
-# own draws: 5,994 P1 molecules, 3,053 P2 and 424 dimers. So P1 is in 6,418 pairs (P1 + dimers),
-# P2 in 3,477 (P2 + dimers, whose 16 bases of P2 are within its allowed edits; in a few single
-# reads errors push that past them), and the dimer in 424.
 
 def test_find_overrep_paired(reads):
     result = find_overrep([str(p) for p in reads])
@@ -270,22 +264,11 @@ def test_find_overrep_paired(reads):
         canon(P2): ((3457, 3459), 3477),
         canon(DIMER): ((424, 424), 424),
     }
-    assert result["inferred"] == {}
     r1 = result["tallies"]["R1"]
     assert r1["reads"] == 20_000
     # P1 and P2 sit at read starts
     p1 = next(i for i in result["order"] if canon(result["found"][i]["insert"]) == canon(P1))
     assert r1["starts"][p1].most_common(1)[0][0] == 0
-
-
-def test_find_overrep_infers_adapters_from_pairs(reads):
-    result = find_overrep([str(p) for p in reads], adapters={})
-    assert set(found_counts(result)) == {canon(P1), canon(P2), canon(DIMER)}
-    inferred = sorted(result["inferred"].values())
-    assert len(inferred) == 2
-    assert A1.startswith(inferred[0]) or inferred[0].startswith(A1[:20])
-    assert any(a.startswith("AGATCGGAAGAGCACACG") for a in inferred)
-    assert any(a.startswith("AGATCGGAAGAGCGTCGTG") for a in inferred)
 
 
 def test_find_overrep_single_end(reads):
@@ -428,14 +411,11 @@ def test_bad_inputs(reads, tmp_path):
 
 def test_adapter_sources():
     from bit.modules.find_overrep import _adapter_source
-    result = dict(adapters=dict(BUILTIN_ADAPTERS, mine="ACGTACGTACGGTT", illumina_nextera="ACGTTT",
-                                inferred_1="AGATCGGAAGAGCTTT"),
-                  inferred={"inferred_1": "AGATCGGAAGAGCTTT"})
+    result = dict(adapters=dict(BUILTIN_ADAPTERS, mine="ACGTACGTACGGTT", illumina_nextera="ACGTTT"))
     assert _adapter_source("illumina_truseq_r1", result) == "builtin"
     assert _adapter_source("mine", result) == "given"
     # one given under a built-in's name, but with its own sequence
     assert _adapter_source("illumina_nextera", result) == "given"
-    assert _adapter_source("inferred_1", result) == "inferred"
 
 
 def test_probe_offsets():
@@ -482,8 +462,8 @@ def test_expand_degenerate():
 def test_matcher_groups():
     # variants given as one group count as one sequence, with the best placement
     m = Matcher([P1, P1[:5] + "T" + P1[6:], P2], 0.1, groups=[0, 0, 1])
-    assert m.hits("CC" + P1 + "AA") == {0: (2, False, 0)}
-    assert m.hits(P2) == {1: (0, False, 0)}
+    assert m.hits("CC" + P1 + "AA") == {0: (2, False, 0, len(P1))}
+    assert m.hits(P2) == {1: (0, False, 0, len(P2))}
 
 
 def test_seqs_to_count(reads):

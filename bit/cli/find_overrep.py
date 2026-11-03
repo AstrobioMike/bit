@@ -7,6 +7,7 @@ from bit.cli.common import (CustomRichHelpFormatter,
                             add_version_arg,
                             reconstruct_invocation)
 from bit.modules.find_overrep import (DEFAULT_K,
+                                      MIN_END_OVERLAP,
                                       DEFAULT_MIN_PERC,
                                       DEFAULT_MIN_FOLD,
                                       DEFAULT_MAX_DIFF,
@@ -24,8 +25,7 @@ def build_parser(parent_subparsers=None, show_fine=False):
 
     detailed_desc = desc + """
 
-        HOW IT WORKS: Reads are read through four times. (1) All k-mers (default k=11) are counted, and
-        for paired reads, adapters not among the built-in or given ones are inferred. (2) K-mers are counted
+        HOW IT WORKS: Reads are read through four times. (1) All k-mers (default k=11) are counted. (2) K-mers are counted
         again with adapters trimmed off, and those in at least --min-perc percent of reads and at least
         --min-fold times what the reads' composition predicts, as well as any that are in at least 1% of reads,
         become seed k-mers. (3) These seed K-mers are extended into full sequences, first from
@@ -194,11 +194,19 @@ def _add_fine_tuning_arguments(target, hidden=False):
     )
 
     target.add_argument(
+        "--no-end-overlaps",
+        action="store_true",
+        help=h("Add this flag to only count reads that are holding a sequence in full or are fully lying within the searched sequence. " \
+               "Without adding this flag, a read whose end overlaps an end of a searched sequence by at least {MIN_END_OVERLAP} bases counts "
+               "too (e.g, a read holding just the start or end of a long sequence)"),
+    )
+
+    target.add_argument(
         "-n",
         "--no-builtin-adapter-trim",
         action="store_true",
         help=h("Don't trim standard Illumina adapters before searching for overrepresented sequences "
-               "(adapters are still inferred from paired reads, and any given with --adapters are used)"),
+               "(any given with --adapters are still used)"),
     )
 
     target.add_argument(
@@ -283,5 +291,6 @@ def run(args, read_paths):
         jobs=args.jobs,
         max_reads_for_discovery=args.max_reads_for_discovery,
         seqs_to_count=load_seqs_to_count(args.seqs_to_count) if args.seqs_to_count else None,
+        end_overlaps=not args.no_end_overlaps,
         verbose=True,
     )

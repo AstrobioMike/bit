@@ -175,11 +175,12 @@ struct Matcher {
 #[pymethods]
 impl Matcher {
     #[new]
-    #[pyo3(signature = (seqs, max_diff, min_read_len, groups=None))]
+    #[pyo3(signature = (seqs, max_diff, min_read_len, min_overlap=0, groups=None))]
     fn new(
         seqs: Vec<String>,
         max_diff: f64,
         min_read_len: usize,
+        min_overlap: usize,
         groups: Option<Vec<usize>>,
     ) -> PyResult<Self> {
         if let Some(g) = &groups
@@ -189,12 +190,13 @@ impl Matcher {
         }
         let seqs: Vec<Vec<u8>> = seqs.into_iter().map(|s| s.into_bytes()).collect();
         Ok(Matcher {
-            inner: matcher::Matcher::new(&seqs, max_diff, min_read_len, groups.as_deref()),
+            inner: matcher::Matcher::new(&seqs, max_diff, min_read_len, min_overlap, groups.as_deref()),
         })
     }
 
-    /// {seq index: (start in read or None if the read is within it, is reverse complement,
-    /// edits)}; `prefilter=False` tries every sequence (for checking the prefilter)
+    /// {seq index: (start in read or None if the read is within it or overlaps an end of
+    /// it, is reverse complement, edits, the sequence's bases the read covers)};
+    /// `prefilter=False` tries every sequence (for checking the prefilter)
     #[pyo3(signature = (read, prefilter=true))]
     fn hits<'py>(
         &self,
@@ -204,7 +206,7 @@ impl Matcher {
     ) -> PyResult<Bound<'py, PyDict>> {
         let d = PyDict::new(py);
         for h in self.inner.hits(read.as_bytes(), !prefilter) {
-            d.set_item(h.seq, (h.start, h.is_rc, h.edits))?;
+            d.set_item(h.seq, (h.start, h.is_rc, h.edits, h.bases))?;
         }
         Ok(d)
     }
@@ -238,6 +240,13 @@ impl Matcher {
             d.set_item(
                 "edits",
                 t.edits
+                    .into_iter()
+                    .map(|m| m.into_iter().collect::<Vec<_>>())
+                    .collect::<Vec<_>>(),
+            )?;
+            d.set_item(
+                "bases",
+                t.bases
                     .into_iter()
                     .map(|m| m.into_iter().collect::<Vec<_>>())
                     .collect::<Vec<_>>(),
