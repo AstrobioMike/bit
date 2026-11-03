@@ -18,7 +18,7 @@
 
 ### Added
 - `bit find-overrep-seqs`
-  - now will count matches running off the ends of the reads now (can be shut off with `--no-end-overlaps`)
+  - now counts matches running off the ends of the reads (can be shut off with `--no-end-overlaps`)
 
 ---
 
