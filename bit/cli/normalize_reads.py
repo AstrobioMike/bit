@@ -18,34 +18,41 @@ from bit.modules.normalize_reads import (TARGET_DEPTH,
 def build_parser(parent_subparsers=None, show_fine=False):
 
     desc = """
-        This program normalizes read depth (e.g., for assembly) while keeping reads that add partial sequences
-        not yet covered, including from low-abundance members and minority variants. Run with `-H` to
-        see the detailed help menu, including how the program works and fine-tuning parameters.
+        This program normalizes read depth (e.g., prior to assembly) and is, with default settings,
+        geared towards retaining low-abundance members and minority variants. Run with `-H` to see
+        the detailed help menu, including how the program works and fine-tuning parameters.
         """
 
     detailed_desc = desc + """
 
-        HOW IT WORKS: Each read, or each pair (both mates together), is reduced to sampled k-mers (by
-        default 25-mers, about 1 in 2 of them). One of my favorites, bbnorm, keeps or drops a read by its median
-        k-mer depth, so a read from a rare genome or a minority variant that is mostly shared, deep
-        sequence can be dropped (losing that rare sequence component). Here a read is judged by its 
-        least-covered part instead.
+        HOW IT WORKS: One of my favorites, bbnorm, keeps or drops a read roughly based on its median
+        k-mer depth. This means, by design, a read that holds some sequence from a rare genome or a
+        minority variant alongside a majority of shared sequence with a more abundantly represented member of
+        the community will likely be dropped (losing that rare sequence component). Here a read is judged
+        by its 10th percentile k-mer depth instead, in an effort to retain more low-abundance variants
+        if they are present. This helps to recover low-abundance variants that may otherwise be lost, but it
+        can also lead to slightly more fragmented assemblies in some situations if the assembler is unable to
+        disentangle the low-abundance variants from the more abundant sequence. The `--novel-fraction` parameter
+        can be raised from the default to 0.5 to behave more like bbnorm while benefiting from the speed-up
+        offered by this program.
 
-        The reads are read twice. The first pass counts how many reads hold each k-mer (in a fixed
-        amount of memory, --memory). The second judges and writes: k-mers in fewer than --min-reads
-        reads, or far rarer than the k-mers around them, are taken for sequencing errors and count for
-        nothing, as are well-covered k-mers seen almost only on one strand and well under the depth
-        around them (systematic errors; k-mers are counted by strand too).
+        The reads are read twice, with standard Illumina adapters, adapter read-through (if paired-end),
+        and poly-G tails trimmed off in both passes (--no-adapter-trimming turns this off). The first
+        pass counts how many reads hold each k-mer, counting exact duplicates only once, so the errors
+        they share don't pass for sequence seen in two reads. The second judges and writes: k-mers in
+        fewer than --min-reads reads, or far rarer than the k-mers around them, are judged as sequencing
+        errors and therefore don't contribute to the read's depth, as are well-covered k-mers seen almost
+        only on one strand and well under the depth around them (likely systematic errors).
         A read's depth is that of its 10% least-covered k-mers (--novel-fraction), and it's kept
-        with probability --target-depth / that depth (always, when that's at or under the
-        target), reads holding an error are kept less often than the rest (--error-weight). Reads with 
-        a few k-mers on a minor branch (k-mers in 3+ reads, at 5-50% of the read's
-        typical depth: a minority variant) are kept up to half the target for that branch
-        (--no-minor-branches turns this off). 
+        with probability --target-depth / that depth. Where reads are thinned, reads holding an error are
+        kept less often than the rest (--error-weight), and only one copy of an exact duplicate is written
+        (reads at or under the target keep all their duplicate copies, which can help assemblers hold on to
+        low-coverage sequence). Reads with a few k-mers on a minor branch (k-mers in 3+ reads, at 5-50% of the read's
+        trusted k-mer depth: a minority variant) are kept up to half the target for that branch
+        (--no-minor-branches turns this off).
 
-        OUTPUTS: normalized_R1/R2 (or normalized, if single-end), as the reads were in the input,
-        gzipped; summary.tsv; and with --depth-table, depths.tsv.gz, each kept read's typical
-        k-mer depth in the whole input (e.g., for abundances).
+        OUTPUTS: normalized_R1/R2 (or normalized, if single-end); summary.tsv; and with --depth-table,
+        depths.tsv.gz, each kept read's typical k-mer depth in the whole input.
         """
 
     description = detailed_desc if show_fine else desc
@@ -91,8 +98,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
         metavar="<INT>",
         type=int,
         default=TARGET_DEPTH,
-        help=f"K-mer depth to cap reads at, the read depth that comes out will be "
-             f"somewhat higher (default: {TARGET_DEPTH})",
+        help=f"K-mer depth to normalize to; the read depth that comes out is somewhat higher "
+             f"(default: {TARGET_DEPTH})",
     )
 
     general.add_argument(
@@ -171,7 +178,7 @@ def _add_fine_tuning_arguments(target, hidden=False):
         metavar="<INT>",
         type=int,
         default=KMER_SIZE,
-        help=h(f"K-mer size, 15-32 (default: {KMER_SIZE})"),
+        help=h(f"K-mer size, odd, 15-31 (default: {KMER_SIZE})"),
     )
 
     target.add_argument(
@@ -205,9 +212,9 @@ def _add_fine_tuning_arguments(target, hidden=False):
         metavar="<FLOAT>",
         type=float,
         default=ERROR_SHARE,
-        help=h(f"A k-mer seen under this proportion as often as its neighboring k-mers is judged as an error "
+        help=h(f"A k-mer seen under this proportion as often as its neighboring k-mers is judged an error "
                f"(0-1; default: {ERROR_SHARE:g}). Raising it can help drop recurrent errors at "
-               f"very high depth, at the cost of potentially losing low-abundance variants."),
+               f"very high depth, at the cost of potentially losing low-abundance variants"),
     )
 
     target.add_argument(
@@ -227,18 +234,11 @@ def _add_fine_tuning_arguments(target, hidden=False):
     )
 
     target.add_argument(
-        "--keep-duplicates",
-        action="store_true",
-        help=h("Add this flag to prevent duplicate removal. Typically, this is better to leave on. In "
-               "rare cases, keeping duplicates can help a low-abundance variant be assembled (when the assembler "
-               "may otherwise disregard it)."),
-    )
-
-    target.add_argument(
         "--no-adapter-trimming",
         action="store_true",
-        help=h("Add this flag to skip trimming adapters (based on built-in Illumina adapters and paired overlap "
-               "detection) and poly-G tails; it's fast and usually a better idea to leave on, as they can wreak havoc on assembly)."),
+        help=h("Add this flag to skip trimming adapters (built-in Illumina adapters, and past the insert where "
+               "mates overlap) and poly-G tails. Trimming is fast and best left on: untrimmed adapters can "
+               "wreak havoc on assembly"),
     )
 
 
@@ -261,8 +261,8 @@ def main():
         parser.error("--jobs must be 1 or greater")
     if args.target_depth < 1:
         parser.error("--target-depth must be 1 or greater")
-    if not 15 <= args.kmer_size <= 32:
-        parser.error("--kmer-size must be between 15 and 32")
+    if not (15 <= args.kmer_size <= 31 and args.kmer_size % 2 == 1):
+        parser.error("--kmer-size must be odd and between 15 and 31")
     if args.density < 1:
         parser.error("--density must be 1 or greater")
     if not 0 < args.novel_fraction <= 1:
@@ -299,7 +299,6 @@ def main():
         sketch_bytes=None if args.memory is None else int(args.memory * 2**30),
         error_weight=args.error_weight,
         error_share=args.error_share,
-        keep_duplicates=args.keep_duplicates,
         trim_adapters=not args.no_adapter_trimming,
         depth_table=args.depth_table,
     )

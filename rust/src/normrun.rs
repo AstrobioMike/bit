@@ -550,7 +550,6 @@ pub struct AnchorCounts {
     calibration: Arc<Vec<Rec>>,
     // exact duplicates left out of the counts
     duplicates: u64,
-    keep_duplicates: bool,
     adapters: Option<Vec<(String, String)>>,
 }
 
@@ -558,8 +557,7 @@ pub struct AnchorCounts {
 /// `sketch_bytes` (see sketch.rs), and each read's by the strand it holds them on into one of
 /// half that
 #[pyfunction]
-#[pyo3(signature = (read_1, read_2, k, density, sketch_bytes, keep_duplicates=false, adapters=None,
-                    progress=None))]
+#[pyo3(signature = (read_1, read_2, k, density, sketch_bytes, adapters=None, progress=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn count_anchors(
     py: Python<'_>,
@@ -568,7 +566,6 @@ pub fn count_anchors(
     k: usize,
     density: u64,
     sketch_bytes: usize,
-    keep_duplicates: bool,
     adapters: Option<Vec<(String, String)>>,
     progress: Option<PyRef<crate::Progress>>,
 ) -> PyResult<AnchorCounts> {
@@ -585,7 +582,7 @@ pub fn count_anchors(
         let (mut reads, mut nbases) = (0u64, 0u64);
         // exact duplicates are counted once (which copy doesn't matter: they're the same
         // sequence), so a copy's errors don't pass for sequence seen in two reads
-        let seen = (!keep_duplicates).then(Seen::new);
+        let seen = Seen::new();
         let dups = std::sync::atomic::AtomicU64::new(0);
         // the CALIBRATION_READS reads with the lowest hashes so far, highest on top
         let mut lowest: BinaryHeap<(u64, Vec<u8>, Option<Vec<u8>>)> = BinaryHeap::new();
@@ -616,11 +613,9 @@ pub fn count_anchors(
                     if rec.seq1.is_empty() {
                         return; // too short after trimming
                     }
-                    if let Some(seen) = &seen {
-                        if !seen.first(seq_hash(rec, DUP_SEED)) {
-                            dups.fetch_add(1, Ordering::Relaxed);
-                            return;
-                        }
+                    if !seen.first(seq_hash(rec, DUP_SEED)) {
+                        dups.fetch_add(1, Ordering::Relaxed);
+                        return;
                     }
                     distinct_anchors(rec, k, t, along, hs);
                     sketch.add_all(hs);
@@ -635,7 +630,6 @@ pub fn count_anchors(
         drop(seen);
         Ok(AnchorCounts {
             duplicates: dups.into_inner(),
-            keep_duplicates,
             adapters,
             sketch: Arc::new(sketch),
             strand: Arc::new(strand),
@@ -646,9 +640,7 @@ pub fn count_anchors(
             calibration: Arc::new(
                 {
                     let mut v = lowest.into_sorted_vec();
-                    if !keep_duplicates {
-                        v.dedup_by_key(|x| x.0);
-                    }
+                    v.dedup_by_key(|x| x.0);
                     v
                 }
                     .into_iter()
@@ -948,7 +940,6 @@ impl AnchorCounts {
         let sketch = self.sketch.clone();
         let strand = self.strand.clone();
         let calibration = self.calibration.clone();
-        let keep_dups = self.keep_duplicates;
         let trimmer = self.adapters.as_deref().map(Trimmer::new);
         let k = self.k;
         let (totals, clean_w) = py
@@ -976,7 +967,7 @@ impl AnchorCounts {
                 // low-coverage sequence (dropping them cost metaSPAdes 3-8% of the all-reads
                 // assembly in every depth bin on a gut sample, Nov 2026), and with copies counted
                 // once their errors still don't pass for sequence seen in two reads
-                let mut seen: Option<rustc_hash::FxHashSet<u64>> = (!keep_dups).then(Default::default);
+                let mut seen: rustc_hash::FxHashSet<u64> = Default::default();
                 for batch in rx {
                     let mut batch = batch?;
                     // trimming, judging, weighting and the coin all on the worker threads; this
@@ -994,7 +985,7 @@ impl AnchorCounts {
                                 let c = call(rec, &rules, &sketch, &strand, along, all);
                                 let p = weighted(&c, error_weight, clean_w, err_share);
                                 let keep = c.has_anchors && (p >= 1.0 || coin(rec, seed) < p);
-                                let dh = if keep && c.keep_prob < 1.0 && !keep_dups { seq_hash(rec, DUP_SEED) } else { 0 };
+                                let dh = if keep && c.keep_prob < 1.0 { seq_hash(rec, DUP_SEED) } else { 0 };
                                 (c, p, keep, dh, tr, b_in)
                             },
                         )
@@ -1002,7 +993,7 @@ impl AnchorCounts {
                     let mut kept = Vec::with_capacity(batch.len());
                     for (rec, (c, p, keep, dh, tr, b_in)) in batch.iter().zip(&verdicts) {
                         let mut keep = *keep;
-                        if keep && c.keep_prob < 1.0 && seen.as_mut().is_some_and(|s| !s.insert(*dh)) {
+                        if keep && c.keep_prob < 1.0 && !seen.insert(*dh) {
                             keep = false;
                             tot.duplicates += 1;
                         }
@@ -1037,9 +1028,7 @@ impl AnchorCounts {
             })
             .map_err(to_py_err)?;
         let d = totals.to_dict(py)?;
-        if !self.keep_duplicates {
-            d.set_item("duplicates_not_counted", self.duplicates)?;
-        }
+        d.set_item("duplicates_not_counted", self.duplicates)?;
         d.set_item("sketch_bytes", self.sketch.bytes())?;
         d.set_item("sketch_fill", self.sketch.fill())?;
         if error_weight < 1.0 {

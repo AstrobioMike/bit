@@ -234,14 +234,13 @@ def normalize(read_1, read_2=None, output_dir="normalize-reads", output_prefix="
               target_depth=TARGET_DEPTH, k=KMER_SIZE, density=DENSITY,
               novel_fraction=NOVEL_FRACTION, minor_branches=True, min_reads=MIN_READS,
               sketch_bytes=None, depth_table=False, seed=SEED, error_weight=ERROR_WEIGHT,
-              error_share=ERROR_SHARE, keep_duplicates=False, trim_adapters=True,
+              error_share=ERROR_SHARE, trim_adapters=True,
               show_progress=True):
     """
     Writes the normalized reads to output_dir and returns (Counts, output paths). With
     read_2, mates are judged and kept together. Exact duplicates (pairs whose sequences
     both match an earlier pair's) are counted once, and written once where reads are thinned
-    (all copies are written of reads kept outright, at or under the target), unless
-    keep_duplicates.
+    (all copies are written of reads kept outright, at or under the target).
     With trim_adapters, adapter read-through (the built-in Illumina adapters, as in
     find-overrep-seqs, and for pairs whose mates run past a short insert, whatever the
     adapter, everything past the insert) and poly-G tails are cut off reads in both passes, so
@@ -272,7 +271,6 @@ def normalize(read_1, read_2=None, output_dir="normalize-reads", output_prefix="
         # them on, for telling systematic, one-strand errors from sequence)
         counted = _run("Counting", total, show_progress, native.count_anchors,
                        read_1, read_2, k, density, int(sketch_bytes),
-                       keep_duplicates=keep_duplicates,
                        adapters=None if adapters is None else list(adapters.items()))
         totals = _run("Writing ", total, show_progress, counted.normalize,
                       read_1, read_2, out_1, out_2, target_depth,

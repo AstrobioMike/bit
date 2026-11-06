@@ -208,7 +208,9 @@ def test_same_reads_kept_whatever_the_order(tmp_path, rng):
     rng.shuffle(shuffled)
     _, p_sorted = run(tmp_path / "a", by_pos, target_depth=20)
     _, p_shuf = run(tmp_path / "b", shuffled, target_depth=20)
-    assert sorted(read_names(p_sorted["reads"])) == sorted(read_names(p_shuf["reads"]))
+    # sequences, not names: where reads are thinned, the first copy of an exact duplicate in
+    # input order is the one written
+    assert sorted(read_seqs(p_sorted["reads"])) == sorted(read_seqs(p_shuf["reads"]))
 
 
 def test_reads_with_errors_not_favored(tmp_path, rng):
@@ -304,20 +306,23 @@ def _deep_with_hot_sites(rng, strand_specific, depth=3000, rate=0.03):
     """ reads at `depth` of a 5 kb genome with a recurrent substitution at every 120th position,
     in `rate` of the reads holding it: only reads running forward along the genome when
     strand_specific (as for Illumina context errors), reads on both strands otherwise (as
-    for a real variant) """
+    for a real variant). Lengths vary (100-150) so few reads are exact duplicates, which are
+    counted once: at this depth, reads all 150 long would be ~10 copies of each start and
+    strand, and only the error-free copies would collapse """
     genome = rand_seq(5000, rng)
     hot = {p: rng.choice([b for b in "ACGT" if b != genome[p]]) for p in range(20, 4980, 120)}
     reads = []
     for i in range(int(depth * len(genome) / READ)):
-        s = rng.randrange(len(genome) - READ)
+        n = rng.randrange(100, READ + 1)
+        s = rng.randrange(len(genome) - n)
         fwd = rng.random() < 0.5
-        out = list(genome[s:s + READ])
+        out = list(genome[s:s + n])
         if fwd or not strand_specific:
             for p, b in hot.items():
-                if s <= p < s + READ and rng.random() < rate:
+                if s <= p < s + n and rng.random() < rate:
                     out[p - s] = b
         seq = "".join(out)
-        reads.append((f"g_{i}_{s}", seq if fwd else rc(seq), "I" * READ))
+        reads.append((f"g_{i}_{s}", seq if fwd else rc(seq), "I" * n))
     return reads
 
 
@@ -393,7 +398,7 @@ def test_records_written_as_they_were(tmp_path, rng):
     genome = rand_seq(3000, rng)
     recs = [(f"{n} some comment", s, "".join(rng.choice("#5?I") for _ in s))
             for n, s, _ in sample_reads(genome, 5, "g", rng)]
-    _, paths = run(tmp_path, recs)
+    _, paths = run(tmp_path, recs, trim_adapters=False)   # (a random read can hold an adapter probe)
     with gzip.open(paths["reads"], "rt") as f:
         out = f.read()
     with open(tmp_path / "r1.fq") as f:
@@ -404,7 +409,7 @@ def test_reads_without_anchors_dropped(tmp_path, rng):
     genome = rand_seq(3000, rng)
     reads = sample_reads(genome, 5, "g", rng) + [("short", "ACGTACGT", "IIIIIIII"),
                                                  ("ns", "N" * 150, "I" * 150)]
-    counts, paths = run(tmp_path, reads, target_depth=20)
+    counts, paths = run(tmp_path, reads, target_depth=20, trim_adapters=False)   # (trimming drops "short" first)
     names = read_names(paths["reads"])
     assert "short" not in names and "ns" not in names
     assert counts.no_anchors == 2
@@ -416,7 +421,8 @@ def test_fasta_in_fasta_out(tmp_path, rng):
         for name, seq, _ in sample_reads(genome, 5, "g", rng):
             f.write(f">{name}\n{seq[:70]}\n{seq[70:]}\n")
     (tmp_path / "out").mkdir()
-    _, paths = normalize(str(tmp_path / "r.fa"), None, str(tmp_path / "out"), show_progress=False)
+    _, paths = normalize(str(tmp_path / "r.fa"), None, str(tmp_path / "out"), show_progress=False,
+                         trim_adapters=False)
     assert paths["reads"].endswith("normalized.fasta.gz")
     with gzip.open(paths["reads"], "rt") as f, open(tmp_path / "r.fa") as g:
         assert f.read() == g.read()
@@ -552,9 +558,10 @@ def test_cli_warns_when_counting_runs_out_of_room(tmp_path, rng):
 def test_cli_rejects_bad_kmer_size(tmp_path):
     import subprocess
     write_fastq(tmp_path / "r.fq", [("a", "ACGT" * 40, "I" * 160)])
-    result = subprocess.run(["bit", "normalize-reads", "-i", str(tmp_path / "r.fq"), "-o",
-                             str(tmp_path / "o"), "-k", "40"], capture_output=True, text=True)
-    assert result.returncode != 0 and "kmer-size" in result.stderr
+    for k in ("40", "24"):   # too long; even (an even k-mer can be its own reverse complement)
+        result = subprocess.run(["bit", "normalize-reads", "-i", str(tmp_path / "r.fq"), "-o",
+                                 str(tmp_path / "o"), "-k", k], capture_output=True, text=True)
+        assert result.returncode != 0 and "kmer-size" in result.stderr
 
 
 def test_cli_detailed_help_shows_fine_tuning():
