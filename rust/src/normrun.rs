@@ -8,6 +8,7 @@
 use crate::anchors::{anchors_into, for_each_anchor, threshold};
 use crate::reads::{Progress, SeqReader};
 use crate::sketch::Sketch;
+use crate::trim::{Cut, Trimmer};
 use flate2::Compression;
 use flate2::write::GzEncoder;
 use pyo3::exceptions::{PyIOError, PyValueError};
@@ -18,7 +19,7 @@ use std::collections::BinaryHeap;
 use std::fs::File;
 use std::hash::Hasher;
 use std::io::{self, BufWriter, Write};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::sync::atomic::Ordering;
 use std::sync::mpsc::{Receiver, Sender, channel, sync_channel};
 
@@ -34,6 +35,9 @@ const ERROR_SHARE: f64 = 0.01;
 const STRAND_MIN_READS: u32 = 20;
 const STRAND_DEPTH_SHARE: f64 = 0.25;
 const STRAND_SHARE: f64 = 0.1;
+// mates' overlap past a short insert (see insert_len())
+const INSERT_SEED: usize = 16;
+const INSERT_MIN: usize = 20;
 // what an anchor's hash is xored with to count it on the reverse strand in the strand sketch
 const REV_SALT: u64 = 0x5bd1e9955bd1e995;
 // output is gzipped this many bytes at a time, each its own gzip member (a file of several
@@ -347,6 +351,11 @@ struct Totals {
     kept_no_solid: u64,
     anchor_occurrences: u64,
     error_occurrences: u64,
+    duplicates: u64,
+    adapter_trimmed: u64,
+    poly_g_trimmed: u64,
+    bases_trimmed: u64,
+    too_short: u64,
     depth_in: Vec<u64>,  // reads (or pairs) by typical depth
     depth_out: Vec<u64>, // kept ones by what their depth comes to after normalization
 }
@@ -385,6 +394,11 @@ impl Totals {
         d.set_item("kept_without_solid_kmers", self.kept_no_solid)?;
         d.set_item("kmer_occurrences", self.anchor_occurrences)?;
         d.set_item("kmer_occurrences_judged_errors", self.error_occurrences)?;
+        d.set_item("duplicates_removed", self.duplicates)?;
+        d.set_item("reads_adapter_trimmed", self.adapter_trimmed)?;
+        d.set_item("reads_poly_g_trimmed", self.poly_g_trimmed)?;
+        d.set_item("bases_trimmed", self.bases_trimmed)?;
+        d.set_item("too_short_after_trimming", self.too_short)?;
         d.set_item("median_depth_in", Self::median(&self.depth_in))?;
         d.set_item("median_depth_out", Self::median(&self.depth_out))?;
         Ok(d)
@@ -397,6 +411,106 @@ fn bin(d: f64) -> usize {
 
 fn bases(rec: &Rec) -> u64 {
     (rec.seq1.len() + rec.seq2.as_ref().map_or(0, |s| s.len())) as u64
+}
+
+/// what adapter trimming did to a read (or pair)
+#[derive(Default, Clone, Copy)]
+struct Trimmed {
+    // mates cut for adapter read-through, and for a poly-G tail
+    adapter: u8,
+    poly_g: u8,
+    bases: u32,
+    // a mate was left shorter than k, so the read (or pair) is dropped
+    short: bool,
+}
+
+/// Cuts adapter read-through (and poly-G tails) off a read (or pair), its sequences always and
+/// with `raw` its records too; a read (or pair) with a mate left under k bases has its
+/// sequences emptied, so it holds no anchors and is left out of both passes
+fn trim_rec(rec: &mut Rec, t: &Trimmer, k: usize, raw: bool, fastq: bool, scratch: &mut Vec<u8>) -> Trimmed {
+    let mut out = Trimmed::default();
+    let insert = rec.seq2.as_ref().and_then(|s2| insert_len(&rec.seq1, s2));
+    for (seq, rawrec) in [(Some(&mut rec.seq1), Some(&mut rec.raw1)), (rec.seq2.as_mut(), rec.raw2.as_mut())] {
+        let Some(seq) = seq else { continue };
+        let (by_adapter, cut) = t.trim(seq);
+        let keep = insert.map_or(by_adapter, |i| i.min(by_adapter));
+        if keep == seq.len() {
+            continue;
+        }
+        if keep == by_adapter && cut == Some(Cut::PolyG) {
+            out.poly_g += 1;
+        } else {
+            out.adapter += 1;
+        }
+        out.bases += (seq.len() - keep) as u32;
+        seq.truncate(keep);
+        if raw && let Some(r) = rawrec {
+            cut_record(r, keep, fastq, scratch);
+        }
+    }
+    if rec.seq1.len() < k || rec.seq2.as_ref().is_some_and(|s| s.len() < k) {
+        rec.seq1.clear();
+        if let Some(s) = rec.seq2.as_mut() {
+            s.clear();
+        }
+        out.short = true;
+    }
+    out
+}
+
+/// The insert's length where a pair's mates run past it into adapter, whatever the adapter:
+/// read 1 then starts with the reverse complement of read 2's start. Found from read 2's first
+/// INSERT_SEED bases in read 1, and taken if the insert, at least INSERT_MIN bases and shorter
+/// than both reads, matches between them with at most a tenth of its bases different. (Adapter
+/// matching alone misses read-through of under 6 bases: on Zymo Log, 13% of pairs whose
+/// mates overlap kept 2-5 adapter bases.)
+fn insert_len(s1: &[u8], s2: &[u8]) -> Option<usize> {
+    if s2.len() < INSERT_SEED {
+        return None;
+    }
+    let seed = crate::kmers::revcomp(&s2[..INSERT_SEED]);
+    let p = memchr::memmem::find(s1, &seed)?;
+    let insert = p + INSERT_SEED;
+    if insert < INSERT_MIN || insert >= s1.len().min(s2.len()) {
+        return None;
+    }
+    let rc = crate::kmers::revcomp(&s2[..insert]);
+    let diff = s1[..insert].iter().zip(&rc).filter(|(a, b)| a != b).count();
+    (diff * 10 <= insert).then_some(insert)
+}
+
+/// a record cut to its first `keep` bases (and quality scores), sequence on one line, keeping
+/// its header and the bases' case
+fn cut_record(raw: &mut Vec<u8>, keep: usize, fastq: bool, scratch: &mut Vec<u8>) {
+    scratch.clear();
+    let mut lines = raw.split(|&b| b == b'\n');
+    scratch.extend_from_slice(lines.next().unwrap_or(&[]));
+    scratch.push(b'\n');
+    let mut n = 0;
+    let mut qual_from = None;
+    for line in lines.by_ref() {
+        if fastq && line.first() == Some(&b'+') {
+            qual_from = Some(());
+            break;
+        }
+        let line = line.trim_ascii();
+        let take = line.len().min(keep - n);
+        scratch.extend_from_slice(&line[..take]);
+        n += take;
+    }
+    scratch.push(b'\n');
+    if qual_from.is_some() {
+        scratch.extend_from_slice(b"+\n");
+        let mut q = 0;
+        for line in lines {
+            let line = line.trim_ascii();
+            let take = line.len().min(keep - q);
+            scratch.extend_from_slice(&line[..take]);
+            q += take;
+        }
+        scratch.push(b'\n');
+    }
+    std::mem::swap(raw, scratch);
 }
 
 /// a read's (or pair's) distinct anchors, read 1's and read 2's together
@@ -434,13 +548,18 @@ pub struct AnchorCounts {
     bases: u64,
     // the reads (sequences only) whose calls set the clean reads' weight, by hash
     calibration: Arc<Vec<Rec>>,
+    // exact duplicates left out of the counts
+    duplicates: u64,
+    keep_duplicates: bool,
+    adapters: Option<Vec<(String, String)>>,
 }
 
 /// the counting pass: every read's (or pair's) distinct anchors into a sketch of about
 /// `sketch_bytes` (see sketch.rs), and each read's by the strand it holds them on into one of
 /// half that
 #[pyfunction]
-#[pyo3(signature = (read_1, read_2, k, density, sketch_bytes, progress=None))]
+#[pyo3(signature = (read_1, read_2, k, density, sketch_bytes, keep_duplicates=false, adapters=None,
+                    progress=None))]
 #[allow(clippy::too_many_arguments)]
 pub fn count_anchors(
     py: Python<'_>,
@@ -449,25 +568,41 @@ pub fn count_anchors(
     k: usize,
     density: u64,
     sketch_bytes: usize,
+    keep_duplicates: bool,
+    adapters: Option<Vec<(String, String)>>,
     progress: Option<PyRef<crate::Progress>>,
 ) -> PyResult<AnchorCounts> {
     if !(1..=32).contains(&k) {
         return Err(PyValueError::new_err("k must be between 1 and 32"));
     }
     let pr = crate::arc(&progress);
+    let trimmer = adapters.as_deref().map(Trimmer::new);
     py.detach(|| {
         let sketch = Sketch::new(sketch_bytes);
         let strand = Sketch::new(sketch_bytes / 2);
         let t = threshold(density);
         let (rx, _, spent) = spawn_reader(read_1, read_2, BATCH, pr)?;
         let (mut reads, mut nbases) = (0u64, 0u64);
+        // exact duplicates are counted once (which copy doesn't matter: they're the same
+        // sequence), so a copy's errors don't pass for sequence seen in two reads
+        let seen = (!keep_duplicates).then(Seen::new);
+        let dups = std::sync::atomic::AtomicU64::new(0);
         // the CALIBRATION_READS reads with the lowest hashes so far, highest on top
         let mut lowest: BinaryHeap<(u64, Vec<u8>, Option<Vec<u8>>)> = BinaryHeap::new();
         for batch in rx {
-            let batch = batch?;
+            let mut batch = batch?;
             reads += batch.len() as u64;
+            nbases += batch.iter().map(bases).sum::<u64>();
+            if let Some(t) = &trimmer {
+                batch.par_iter_mut().for_each(|rec| {
+                    trim_rec(rec, t, k, false, false, &mut Vec::new());
+                });
+            }
             let hashes: Vec<u64> = batch.par_iter().map(|r| seq_hash(r, CALIBRATION_SEED)).collect();
             for (rec, h) in batch.iter().zip(hashes) {
+                if rec.seq1.is_empty() {
+                    continue;
+                }
                 if lowest.len() < CALIBRATION_READS || h < lowest.peek().unwrap().0 {
                     lowest.push((h, rec.seq1.clone(), rec.seq2.clone()));
                     if lowest.len() > CALIBRATION_READS {
@@ -475,10 +610,18 @@ pub fn count_anchors(
                     }
                 }
             }
-            nbases += batch.iter().map(bases).sum::<u64>();
             batch.par_iter().for_each_init(
                 || (Vec::new(), Vec::new()),
                 |(along, hs), rec| {
+                    if rec.seq1.is_empty() {
+                        return; // too short after trimming
+                    }
+                    if let Some(seen) = &seen {
+                        if !seen.first(seq_hash(rec, DUP_SEED)) {
+                            dups.fetch_add(1, Ordering::Relaxed);
+                            return;
+                        }
+                    }
                     distinct_anchors(rec, k, t, along, hs);
                     sketch.add_all(hs);
                     for seq in std::iter::once(&rec.seq1).chain(rec.seq2.as_ref()) {
@@ -489,7 +632,11 @@ pub fn count_anchors(
             );
             let _ = spent.send(batch);
         }
+        drop(seen);
         Ok(AnchorCounts {
+            duplicates: dups.into_inner(),
+            keep_duplicates,
+            adapters,
             sketch: Arc::new(sketch),
             strand: Arc::new(strand),
             k,
@@ -497,8 +644,13 @@ pub fn count_anchors(
             reads,
             bases: nbases,
             calibration: Arc::new(
-                lowest
-                    .into_sorted_vec()
+                {
+                    let mut v = lowest.into_sorted_vec();
+                    if !keep_duplicates {
+                        v.dedup_by_key(|x| x.0);
+                    }
+                    v
+                }
                     .into_iter()
                     .map(|(_, seq1, seq2)| Rec { seq1, seq2, ..Default::default() })
                     .collect(),
@@ -506,6 +658,26 @@ pub fn count_anchors(
         })
     })
     .map_err(to_py_err)
+}
+
+/// seeds the hash that tells exact duplicates (pairs whose two sequences both match an earlier
+/// pair's), apart from the coin's and the calibration's
+const DUP_SEED: u64 = 0xD0B1_E5EE_D5A3_17C9;
+const DUP_SHARDS: usize = 1024;
+
+/// the hashes of the reads (or pairs) seen so far, for telling exact duplicates, which add no
+/// sequence: PCR and optical copies, mostly, whose errors would otherwise look like sequence
+/// seen in two reads. Sharded so the counting threads rarely wait on each other.
+struct Seen(Vec<Mutex<rustc_hash::FxHashSet<u64>>>);
+
+impl Seen {
+    fn new() -> Self {
+        Seen((0..DUP_SHARDS).map(|_| Mutex::new(Default::default())).collect())
+    }
+    /// true the first time `h` is offered
+    fn first(&self, h: u64) -> bool {
+        self.0[(h >> 54) as usize % DUP_SHARDS].lock().unwrap().insert(h)
+    }
 }
 
 /// what judging a read (or pair) with known counts comes to
@@ -776,6 +948,9 @@ impl AnchorCounts {
         let sketch = self.sketch.clone();
         let strand = self.strand.clone();
         let calibration = self.calibration.clone();
+        let keep_dups = self.keep_duplicates;
+        let trimmer = self.adapters.as_deref().map(Trimmer::new);
+        let k = self.k;
         let (totals, clean_w) = py
             .detach(|| -> io::Result<(Totals, f64)> {
                 let (clean_w, err_share) = if error_weight < 1.0 {
@@ -790,37 +965,60 @@ impl AnchorCounts {
                 } else {
                     (1.0, 0.0)
                 };
-                let (rx, _, spent) = spawn_reader(read_1, read_2, BATCH, pr)?;
+                let (rx, fastq, spent) = spawn_reader(read_1, read_2, BATCH, pr)?;
                 let outs = Outputs::create(&out_1, out_2.as_deref(), depth_table.as_deref())?;
                 let (to_writer, writer) = spawn_writer(outs, spent);
                 let mut tot = Totals::new();
+                // the hashes of the thinned reads kept so far, for writing one copy of each: all
+                // copies of a read are judged and flipped alike, so the first copy, in input order,
+                // is the one written. Copies of reads kept outright (at or under the target) are all
+                // written: where nothing's thinned, the copies' depth helps assemblers keep
+                // low-coverage sequence (dropping them cost metaSPAdes 3-8% of the all-reads
+                // assembly in every depth bin on a gut sample, Nov 2026), and with copies counted
+                // once their errors still don't pass for sequence seen in two reads
+                let mut seen: Option<rustc_hash::FxHashSet<u64>> = (!keep_dups).then(Default::default);
                 for batch in rx {
-                    let batch = batch?;
-                    // judging, weighting and the coin all on the worker threads; this thread
-                    // only adds up the totals
-                    let verdicts: Vec<(Call, f64, bool)> = batch
-                        .par_iter()
+                    let mut batch = batch?;
+                    // trimming, judging, weighting and the coin all on the worker threads; this
+                    // thread only adds up the totals
+                    let verdicts: Vec<(Call, f64, bool, u64, Trimmed, u64)> = batch
+                        .par_iter_mut()
                         .map_init(
-                            || (Vec::new(), Vec::new()),
-                            |(along, all), rec| {
+                            || (Vec::new(), Vec::new(), Vec::new()),
+                            |(along, all, scratch), rec| {
+                                let b_in = bases(rec);
+                                let tr = match &trimmer {
+                                    Some(t) => trim_rec(rec, t, k, true, fastq, scratch),
+                                    None => Trimmed::default(),
+                                };
                                 let c = call(rec, &rules, &sketch, &strand, along, all);
                                 let p = weighted(&c, error_weight, clean_w, err_share);
                                 let keep = c.has_anchors && (p >= 1.0 || coin(rec, seed) < p);
-                                (c, p, keep)
+                                let dh = if keep && c.keep_prob < 1.0 && !keep_dups { seq_hash(rec, DUP_SEED) } else { 0 };
+                                (c, p, keep, dh, tr, b_in)
                             },
                         )
                         .collect();
                     let mut kept = Vec::with_capacity(batch.len());
-                    for (rec, (c, p, keep)) in batch.iter().zip(&verdicts) {
+                    for (rec, (c, p, keep, dh, tr, b_in)) in batch.iter().zip(&verdicts) {
+                        let mut keep = *keep;
+                        if keep && c.keep_prob < 1.0 && seen.as_mut().is_some_and(|s| !s.insert(*dh)) {
+                            keep = false;
+                            tot.duplicates += 1;
+                        }
                         tot.reads_in += 1;
-                        tot.bases_in += bases(rec);
+                        tot.bases_in += b_in;
+                        tot.adapter_trimmed += tr.adapter as u64;
+                        tot.poly_g_trimmed += tr.poly_g as u64;
+                        tot.bases_trimmed += tr.bases as u64;
+                        tot.too_short += tr.short as u64;
                         tot.anchor_occurrences += c.occurrences;
                         tot.error_occurrences += c.errors;
                         if !c.has_anchors {
-                            tot.no_anchors += 1;
+                            tot.no_anchors += !tr.short as u64;
                         } else {
                             tot.depth_in[bin(c.typical as f64)] += 1;
-                            if *keep {
+                            if keep {
                                 tot.reads_out += 1;
                                 tot.bases_out += bases(rec);
                                 tot.kept_no_solid += !c.has_solid as u64;
@@ -839,6 +1037,9 @@ impl AnchorCounts {
             })
             .map_err(to_py_err)?;
         let d = totals.to_dict(py)?;
+        if !self.keep_duplicates {
+            d.set_item("duplicates_not_counted", self.duplicates)?;
+        }
         d.set_item("sketch_bytes", self.sketch.bytes())?;
         d.set_item("sketch_fill", self.sketch.fill())?;
         if error_weight < 1.0 {
@@ -869,6 +1070,57 @@ impl AnchorCounts {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn records_cut() {
+        let mut scratch = Vec::new();
+        let mut r = b"@r1 x\nACgtACGT\n+r1\nABCDEFGH\n".to_vec();
+        cut_record(&mut r, 5, true, &mut scratch);
+        assert_eq!(r, b"@r1 x\nACgtA\n+\nABCDE\n");
+        // multi-line records come out on one line each
+        let mut r = b"@r1\nACG\nTAC\n+\nABCD\nEF\n".to_vec();
+        cut_record(&mut r, 4, true, &mut scratch);
+        assert_eq!(r, b"@r1\nACGT\n+\nABCD\n");
+        let mut r = b">r1\nACGT\nACGT\n".to_vec();
+        cut_record(&mut r, 6, false, &mut scratch);
+        assert_eq!(r, b">r1\nACGTAC\n");
+    }
+
+    #[test]
+    fn pairs_trimmed() {
+        let t = Trimmer::new(&[("nextera".to_string(), "CTGTCTCTTATACACATCT".to_string())]);
+        let insert = b"ACGTTGCAAGGCTTACCGATTGCAGGCTAACGTTAGC";
+        let mut s1 = insert.to_vec();
+        s1.extend_from_slice(b"CTGTCTCTTATACACATCTCCGAG");
+        let raw1 = [b"@p\n".as_slice(), &s1, b"\n+\n", &vec![b'F'; s1.len()], b"\n"].concat();
+        let mut rec = Rec { seq1: s1.clone(), raw1, seq2: Some(insert.to_vec()), raw2: Some(b"@p\nX\n+\nF\n".to_vec()) };
+        let tr = trim_rec(&mut rec, &t, 25, true, true, &mut Vec::new());
+        assert_eq!((tr.adapter, tr.poly_g, tr.bases, tr.short), (1, 0, 24, false));
+        assert_eq!(rec.seq1, insert);
+        assert!(rec.raw1.starts_with(b"@p\nACGTTGCAAG"));
+        assert_eq!(rec.raw1.len(), 3 + insert.len() + 3 + insert.len() + 1);
+        // left shorter than k: the pair holds nothing
+        let tr = trim_rec(&mut rec, &t, 40, false, true, &mut Vec::new());
+        assert!(tr.short && rec.seq1.is_empty() && rec.seq2.as_ref().unwrap().is_empty());
+    }
+
+    #[test]
+    fn overlapping_mates_cut_to_the_insert() {
+        let t = Trimmer::new(&[("nextera".to_string(), "CTGTCTCTTATACACATCT".to_string())]);
+        let insert = b"ACGTTGCAAGGCTTACCGATTGCAGGCTAACGTTAGC".to_vec();
+        // 3 bases of adapter: too few to match it, but the mates overlap past the insert
+        let mut s1 = insert.clone();
+        s1.extend_from_slice(b"CTG");
+        let mut s2 = crate::kmers::revcomp(&insert);
+        s2.extend_from_slice(b"CTG");
+        assert_eq!(insert_len(&s1, &s2), Some(insert.len()));
+        let mut rec = Rec { seq1: s1, seq2: Some(s2), ..Default::default() };
+        let tr = trim_rec(&mut rec, &t, 25, false, true, &mut Vec::new());
+        assert_eq!((tr.adapter, tr.bases), (2, 6));
+        assert_eq!(rec.seq1, insert);
+        // mates that don't run past each other are left alone
+        assert_eq!(insert_len(&insert, &crate::kmers::revcomp(&insert)), None);
+    }
 
     #[test]
     fn base_names() {

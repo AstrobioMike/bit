@@ -196,8 +196,18 @@ def _add_fine_tuning_arguments(target, hidden=False):
         metavar="<INT>",
         type=int,
         default=MIN_READS,
-        help=h(f"Reads a k-mer needs to be in to count as sequence rather than an error "
-               f"(default: {MIN_READS})"),
+        help=h(f"Reads a k-mer needs to be in to be potentially trusted rather than assumed to be an error "
+               f"(default: {MIN_READS}; 'potentially' because --error-share is at play also)"),
+    )
+
+    target.add_argument(
+        "--error-share",
+        metavar="<FLOAT>",
+        type=float,
+        default=ERROR_SHARE,
+        help=h(f"A k-mer seen under this proportion as often as its neighboring k-mers is judged as an error "
+               f"(0-1; default: {ERROR_SHARE:g}). Raising it can help drop recurrent errors at "
+               f"very high depth, at the cost of potentially losing low-abundance variants."),
     )
 
     target.add_argument(
@@ -206,24 +216,29 @@ def _add_fine_tuning_arguments(target, hidden=False):
         type=float,
         default=ERROR_WEIGHT,
         help=h(f"Where reads are thinned, keep ones holding a k-mer judged an error at this "
-               f"times the usual rate, and error-free ones more often to make up for it "
-               f"(0-1, 1 treating them alike; default: {ERROR_WEIGHT:g})"),
-    )
-
-    target.add_argument(
-        "--error-share",
-        metavar="<FLOAT>",
-        type=float,
-        default=ERROR_SHARE,
-        help=h(f"K-mers in under this share of the reads around them are taken for sequencing "
-               f"errors (0-1; default: {ERROR_SHARE:g}). Raising it drops recurrent errors at "
-               f"very high depth, and with them variants under that share"),
+               f"times the usual rate, thereby attempting to favor error-free reads being retained "
+               f"(0-1, 1 meaning keep them at the same rate; default: {ERROR_WEIGHT:g})"),
     )
 
     target.add_argument(
         "--no-minor-branches",
         action="store_true",
         help=h("Don't keep reads for k-mers of a minor branch (minority variants)"),
+    )
+
+    target.add_argument(
+        "--keep-duplicates",
+        action="store_true",
+        help=h("Add this flag to prevent duplicate removal. Typically, this is better to leave on. In "
+               "rare cases, keeping duplicates can help a low-abundance variant be assembled (when the assembler "
+               "may otherwise disregard it)."),
+    )
+
+    target.add_argument(
+        "--no-adapter-trimming",
+        action="store_true",
+        help=h("Add this flag to skip trimming adapters (based on built-in Illumina adapters and paired overlap "
+               "detection) and poly-G tails; it's fast and usually a better idea to leave on, as they can wreak havoc on assembly)."),
     )
 
 
@@ -284,6 +299,8 @@ def main():
         sketch_bytes=None if args.memory is None else int(args.memory * 2**30),
         error_weight=args.error_weight,
         error_share=args.error_share,
+        keep_duplicates=args.keep_duplicates,
+        trim_adapters=not args.no_adapter_trimming,
         depth_table=args.depth_table,
     )
 
@@ -299,6 +316,11 @@ def print_summary(counts, paths, paired):
     print(f"        {counts.reads_or_pairs_in:,} {unit} in ({counts.bases_in:,} bases)")
     print(f"        {counts.reads_or_pairs_out:,} {unit} kept ({100 * counts.reads_or_pairs_out / n:.2f}%; "
           f"{100 * counts.bases_out / b:.2f}% of bases)")
+    if counts.reads_adapter_trimmed or counts.reads_poly_g_trimmed:
+        print(f"        {counts.reads_adapter_trimmed:,} reads trimmed of adapter read-through, "
+              f"{counts.reads_poly_g_trimmed:,} of poly-G tails ({counts.bases_trimmed:,} bases)")
+    if counts.too_short_after_trimming:
+        print(f"        {counts.too_short_after_trimming:,} {unit} too short after trimming dropped")
     if counts.no_anchors:
         print(f"        {counts.no_anchors:,} {unit} with no usable k-mers (too short, or Ns) dropped")
     print(f"        median k-mer depth {counts.median_depth_in:,} in the input, about "

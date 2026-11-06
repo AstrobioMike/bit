@@ -41,6 +41,7 @@ import threading
 
 from tqdm import tqdm # type: ignore
 
+from bit.modules.find_overrep import BUILTIN_ADAPTERS
 from bit.modules.general import (check_if_output_dir_exists,
                                  log_command_run,
                                  notify_premature_exit)
@@ -192,7 +193,8 @@ class Counts:
     """ what was done, for the summary """
 
     FIELDS = ["reads_or_pairs_in", "bases_in", "reads_or_pairs_out", "bases_out",
-              "no_anchors", "kept_without_solid_kmers", "kmer_occurrences",
+              "reads_adapter_trimmed", "reads_poly_g_trimmed", "bases_trimmed", "too_short_after_trimming",
+              "no_anchors", "duplicates_removed", "duplicates_not_counted", "kept_without_solid_kmers", "kmer_occurrences",
               "kmer_occurrences_judged_errors", "median_depth_in", "median_depth_out",
               "sketch_bytes", "sketch_fill", "clean_weight"]
 
@@ -232,14 +234,27 @@ def normalize(read_1, read_2=None, output_dir="normalize-reads", output_prefix="
               target_depth=TARGET_DEPTH, k=KMER_SIZE, density=DENSITY,
               novel_fraction=NOVEL_FRACTION, minor_branches=True, min_reads=MIN_READS,
               sketch_bytes=None, depth_table=False, seed=SEED, error_weight=ERROR_WEIGHT,
-              error_share=ERROR_SHARE, show_progress=True):
+              error_share=ERROR_SHARE, keep_duplicates=False, trim_adapters=True,
+              show_progress=True):
     """
     Writes the normalized reads to output_dir and returns (Counts, output paths). With
-    read_2, mates are judged and kept together.
+    read_2, mates are judged and kept together. Exact duplicates (pairs whose sequences
+    both match an earlier pair's) are counted once, and written once where reads are thinned
+    (all copies are written of reads kept outright, at or under the target), unless
+    keep_duplicates.
+    With trim_adapters, adapter read-through (the built-in Illumina adapters, as in
+    find-overrep-seqs, and for pairs whose mates run past a short insert, whatever the
+    adapter, everything past the insert) and poly-G tails are cut off reads in both passes, so
+    they're judged and written without them; a read (or pair) with a mate left under k bases
+    is dropped.
+    Untrimmed, every insert's junction with an adapter is a k-mer seen once, kept with its
+    read, and the adapter joins them all into one tangle in an assembly graph (Nov 2026: a gut
+    sample's metaSPAdes assembly took hours over it where minutes did once trimmed).
     """
     from bit import _native as native
 
     paired = read_2 is not None
+    adapters = dict(BUILTIN_ADAPTERS) if trim_adapters else None
     paths = output_paths(output_dir, output_prefix, paired, _is_fastq(read_1))
     inputs = [read_1] + ([read_2] if paired else [])
     total = sum(os.path.getsize(p) for p in inputs)
@@ -256,7 +271,9 @@ def normalize(read_1, read_2=None, output_dir="normalize-reads", output_prefix="
         # (the compiled core adds a sketch half this size of anchors by the strand reads hold
         # them on, for telling systematic, one-strand errors from sequence)
         counted = _run("Counting", total, show_progress, native.count_anchors,
-                       read_1, read_2, k, density, int(sketch_bytes))
+                       read_1, read_2, k, density, int(sketch_bytes),
+                       keep_duplicates=keep_duplicates,
+                       adapters=None if adapters is None else list(adapters.items()))
         totals = _run("Writing ", total, show_progress, counted.normalize,
                       read_1, read_2, out_1, out_2, target_depth,
                       novel_fraction=novel_fraction, minor_anchors=minor_anchors,
