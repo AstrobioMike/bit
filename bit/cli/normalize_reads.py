@@ -26,9 +26,9 @@ def build_parser(parent_subparsers=None, show_fine=False):
     detailed_desc = desc + """
 
         HOW IT WORKS: One of my favorites, bbnorm, keeps or drops a read roughly based on its median
-        k-mer depth. This means, by design, a read that holds some sequence from a rare genome or a
-        minority variant alongside a majority of shared sequence with a more abundantly represented member of
-        the community will likely be dropped (losing that rare sequence component). Here a read is judged
+        k-mer depth. This means, by design, a read that holds some sequence from a rare genome/minority
+        variant that sits alongside a larger stretch of sequence that is shared with a more abundant
+        genome will likely be dropped (losing that rare sequence component). Here a read is judged
         by its 10th percentile k-mer depth instead, in an effort to retain more low-abundance variants
         if they are present. This helps to recover low-abundance variants that may otherwise be lost, but it
         can also lead to slightly more fragmented assemblies in some situations if the assembler is unable to
