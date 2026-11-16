@@ -21,7 +21,11 @@ fn bad(msg: &str) -> io::Error {
 /// reads BGZF, decompressing a batch of blocks at a time in parallel
 struct Bgzf {
     raw: BufReader<File>,
-    out: VecDeque<u8>,
+    // inflated blocks not read yet, and how far into the first the reading is (blocks are
+    // handed over whole and copied out a slice at a time: going through a queue of bytes
+    // copied each one twice, one by one)
+    out: VecDeque<Vec<u8>>,
+    at: usize,
     done: bool,
 }
 
@@ -32,6 +36,7 @@ impl Bgzf {
         Ok(Bgzf {
             raw: BufReader::with_capacity(1 << 20, File::open(path)?),
             out: VecDeque::new(),
+            at: 0,
             done: false,
         })
     }
@@ -106,7 +111,10 @@ impl Bgzf {
             })
             .collect();
         for b in inflated {
-            self.out.extend(b?);
+            let b = b?;
+            if !b.is_empty() {
+                self.out.push_back(b);
+            }
         }
         Ok(())
     }
@@ -117,9 +125,13 @@ impl Read for Bgzf {
         while self.out.is_empty() && !self.done {
             self.fill()?;
         }
-        let n = buf.len().min(self.out.len());
-        for (i, b) in self.out.drain(..n).enumerate() {
-            buf[i] = b;
+        let Some(block) = self.out.front() else { return Ok(0) };
+        let n = buf.len().min(block.len() - self.at);
+        buf[..n].copy_from_slice(&block[self.at..self.at + n]);
+        self.at += n;
+        if self.at == block.len() {
+            self.out.pop_front();
+            self.at = 0;
         }
         Ok(n)
     }
@@ -627,6 +639,21 @@ pub fn per_contig_pid_stats(
     Ok(accs)
 }
 
+/// whether a gzip file starts with a BGZF block (a gzip member with a "BC" extra subfield)
+fn is_bgzf(path: &str) -> io::Result<bool> {
+    let mut head = [0u8; 18];
+    let mut f = File::open(path)?;
+    let mut got = 0;
+    while got < head.len() {
+        let n = f.read(&mut head[got..])?;
+        if n == 0 {
+            return Ok(false);
+        }
+        got += n;
+    }
+    Ok(head[..4] == [31, 139, 8, 4] && head[12..14] == *b"BC" && head[14..16] == [2, 0])
+}
+
 /// the per-base.bed.gz pass of cov-stats (parse_bed_file): per contig wanted, (total coverage
 /// count, bases detected at all, bases detected at 10x, depth -> bases). Lines for other
 /// contigs are parsed (as Python does) but not kept. Anything Python would read differently
@@ -643,9 +670,14 @@ pub fn per_base_bed(
     let idx: FxHashMap<&[u8], usize> = wanted.iter().enumerate().map(|(i, w)| (w.as_bytes(), i)).collect();
     let mut out: Vec<Option<BedStats>> = vec![None; wanted.len()];
 
-    let file = File::open(path)?;
-    let gz = flate2::read::MultiGzDecoder::new(BufReader::with_capacity(1 << 20, file));
-    let mut rdr = BufReader::with_capacity(1 << 20, gz);
+    // mosdepth writes the bed as BGZF, whose blocks are inflated in parallel; any other gzip
+    // file is read as one stream
+    let mut rdr: Box<dyn BufRead> = if is_bgzf(path)? {
+        Box::new(BufReader::with_capacity(1 << 20, Bgzf::open(path)?))
+    } else {
+        let gz = flate2::read::MultiGzDecoder::new(BufReader::with_capacity(1 << 20, File::open(path)?));
+        Box::new(BufReader::with_capacity(1 << 20, gz))
+    };
 
     // int() of a field: optional surrounding ASCII whitespace, optional sign, digits
     fn int(f: &[u8]) -> io::Result<i64> {

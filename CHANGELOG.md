@@ -14,11 +14,17 @@
 
 -->
 
-## v2.14.0 (NOT YET RELEASED)
+## v2.14.0 (16-Nov-2026)
 
 ### Added
 - `bit find-overrep-seqs`
   - now counts matches running off the ends of the reads (can be shut off with `--no-end-overlaps`)
+
+### Changed
+- `bit cov-stats`
+  - both primary output tables (per-ref and per-contig) have a new `num_bases_detected` column (how many bases of the ref or contig are covered at all)
+  - detection is now reported as a percent to 2 decimals rather than a fraction of 1, and the columns are renamed to say so: `detection (%)` and `detection_at_10x (%)` (e.g., 87.14 where it was 0.87)
+  - speed improvements (should be 2-5x faster now)
 
 ---
 
