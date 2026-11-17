@@ -1,16 +1,16 @@
 import sys
 import argparse
 from bit.cli.common import CustomRichHelpFormatter, add_force, add_help, add_version_arg
-from bit.modules.general import report_message, notify_premature_exit, is_gzipped
+from bit.modules.general import report_message, notify_premature_exit
 
 
 def build_parser(parent_subparsers=None):
 
     desc = """
         This program generates whole-reference and contig-level detection and coverage info
-        given the input reference fasta(s) and a bam file AND/OR a mosdepth-produced per-base.bed.gz file.
-        If providing a bam file, it will also report mean and median percent ID values (gap-compressed) of
-        mapped reads to each input reference and contig.
+        given the input reference fasta(s) and a bam file. It also reports mean and median percent ID
+        values (gap-compressed) of mapped reads to each input reference and contig. Coverage is counted
+        the same way as `mosdepth -x` counts it (overlapping pairs count as 2x).
         """
 
     if parent_subparsers is not None:
@@ -23,12 +23,12 @@ def build_parser(parent_subparsers=None):
     else:
         parser = argparse.ArgumentParser(
             description=desc,
-            epilog="Ex. usage: `bit cov-stats -r reference.fasta -b mapping.bam` or `bit cov-stats -r reference.fasta --bed per-base.bed.gz`",
+            epilog="Ex. usage: `bit cov-stats -r reference.fasta -b mapping.bam`",
             formatter_class=CustomRichHelpFormatter,
             add_help=False
         )
 
-    required = parser.add_argument_group("Required Parameters (choose one of `--reference-fastas` or `--reference-list` then `--bam` and/or `--bed`)")
+    required = parser.add_argument_group("Required Parameters (choose one of `--reference-fastas` or `--reference-list`, and `--bam`)")
     optional = parser.add_argument_group("Optional Parameters")
 
     required.add_argument(
@@ -51,13 +51,7 @@ def build_parser(parent_subparsers=None):
         "-b",
         "--bam",
         metavar="<PATH>",
-        help="Path to bam file (which will allow reporting of percent ID and number of mapped readsper input reference) AND/OR",
-    )
-
-    required.add_argument(
-        "--bed",
-        metavar="<PATH>",
-        help="Path to mosdepth-produced per-base.bed.gz file (if already available)",
+        help="Path to bam file",
     )
 
     optional.add_argument(
@@ -77,7 +71,8 @@ def build_parser(parent_subparsers=None):
     optional.add_argument(
         "--include-non-primary",
         action="store_true",
-        help="Include secondary and supplementary alignments in the percent ID calculations (if being done), and run mosdepth with '--flag 1540' set",
+        help="Include secondary and supplementary alignments in the percent ID calculations (if being done), and count secondary "
+             "alignments in the coverage too (supplementary ones always are; this is the same as mosdepth's '--flag 1540')",
     )
 
     optional.add_argument(
@@ -133,13 +128,7 @@ def check_required_inputs(args):
         report_message("You must provide at least one input reference fasta file via the -r/--reference-fastas or -R/--reference-list parameters.",
                        initial_indent = "    ", subsequent_indent = "    ")
         notify_premature_exit()
-    if not args.bam and not args.bed:
-        report_message("You must provide either a bam file via the -b/--bam parameter or "
-                       "a mosdepth-produced per-base.bed.gz file via the --bed parameter.",
-                       initial_indent = "    ", subsequent_indent = "    ")
-        notify_premature_exit()
-    if args.bed and not is_gzipped(args.bed):
-        report_message("The provided bed file does not appear to be gzipped. Please provide "
-                       "a mosdepth-produced per-base.bed.gz file that is gzipped.",
+    if not args.bam:
+        report_message("You must provide a bam file via the -b/--bam parameter.",
                        initial_indent = "    ", subsequent_indent = "    ")
         notify_premature_exit()

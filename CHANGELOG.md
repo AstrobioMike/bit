@@ -14,6 +14,16 @@
 
 -->
 
+## v2.14.1 (17-Nov-2026)
+
+### Changed
+- `bit cov-stats`
+  - coverage is now counted from the bam directly, in the same pass that gets the percent IDs, rather than by running mosdepth (~4x faster)
+    - the `<prefix>-mosdepth-files/` directory is no longer written
+    - the `--bed` option (for starting from a mosdepth per-base.bed.gz) is removed, let me know if that was actually helpful to anyone and i'll add it back
+
+---
+
 ## v2.14.0 (16-Nov-2026)
 
 ### Changed

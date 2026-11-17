@@ -469,26 +469,36 @@ fn bam_per_contig_pid_stats(
     Ok(accs.into_iter().map(|(n, a)| (n, acc_tuple(a))).collect())
 }
 
-/// cov-stats' pass over a mosdepth per-base.bed.gz: for each wanted contig, None (no lines)
-/// or (total coverage count, bases detected at all, at 10x, [(depth, bases), ...]). Raises
-/// ValueError for anything the Python path should handle instead.
+/// cov-stats' pass over a bam: (per wanted contig, None (not in the bam) or its coverage
+/// totals (total coverage count, bases detected at all, at 10x, [(depth, bases), ...]); the per-contig percent-ID stats as
+/// bam_per_contig_pid_stats gives them, or None if `pids` is false). `exclude` is the flag
+/// bits of alignments that add no coverage. Raises ValueError for anything the Python
+/// (pysam) path should handle instead, and for a bam whose alignments aren't grouped by
+/// reference (the message then says so).
 #[pyfunction]
-#[pyo3(signature = (path, wanted, progress=None))]
-#[allow(clippy::type_complexity)]
-fn per_base_bed_stats(
+#[pyo3(signature = (path, wanted, exclude, pids, include_non_primary, gap_compressed, progress=None))]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+fn bam_coverage_and_pid_stats(
     py: Python<'_>,
     path: String,
     wanted: Vec<String>,
+    exclude: u16,
+    pids: bool,
+    include_non_primary: bool,
+    gap_compressed: bool,
     progress: Option<PyRef<Progress>>,
-) -> PyResult<Vec<Option<(u128, u128, u128, Vec<(i64, u128)>)>>> {
+) -> PyResult<(Vec<Option<(u128, u128, u128, Vec<(i64, u128)>)>>, Option<Vec<(String, AccTuple)>>)> {
     let pr = arc(&progress);
-    let out = py
-        .detach(|| bam::per_base_bed(&path, &wanted, pr.as_ref()))
+    let pid = pids.then_some((include_non_primary, gap_compressed));
+    let (cov, accs) = py
+        .detach(|| bam::coverage_and_pids(&path, &wanted, exclude, pid, pr.as_ref()))
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
-    Ok(out
-        .into_iter()
-        .map(|o| o.map(|(a, b, c, h)| (a, b, c, h.into_iter().collect())))
-        .collect())
+    Ok((
+        cov.into_iter()
+            .map(|o| o.map(|(a, b, c, h)| (a, b, c, h.into_iter().collect())))
+            .collect(),
+        accs.map(|accs| accs.into_iter().map(|(n, a)| (n, acc_tuple(a))).collect()),
+    ))
 }
 
 fn val_err(e: io::Error) -> PyErr {
@@ -723,7 +733,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<ReadMatcher>()?;
     m.add_function(wrap_pyfunction!(bam_mapped_reads_pids, m)?)?;
     m.add_function(wrap_pyfunction!(bam_per_contig_pid_stats, m)?)?;
-    m.add_function(wrap_pyfunction!(per_base_bed_stats, m)?)?;
+    m.add_function(wrap_pyfunction!(bam_coverage_and_pid_stats, m)?)?;
     m.add_function(wrap_pyfunction!(fasta_records_summary, m)?)?;
     m.add_function(wrap_pyfunction!(fasta_gc_windows, m)?)?;
     m.add_function(wrap_pyfunction!(fasta_filter_by_length, m)?)?;

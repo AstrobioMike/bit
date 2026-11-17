@@ -22,6 +22,8 @@ def test_get_cov_stats(tmp_path):
 
     ref_summary_tsv = Path(f"{out_prefix}-per-ref.tsv")
     assert ref_summary_tsv.exists(), f"Coverage stats TSV not found at {ref_summary_tsv}"
+    # coverage comes from the bam itself: no mosdepth run, so none of its files, and no index made
+    assert not Path(f"{out_prefix}-mosdepth-files").exists()
 
     observed = ref_summary_tsv.read_text().splitlines()
     expected_header = "ref\tlength\tnum_contigs\tnum_bases_detected\tdetection (%)\tdetection_at_10x (%)\tmean_coverage\tmedian_coverage\tmean_pid\tmedian_pid\tnum_mapped_reads"
@@ -129,47 +131,93 @@ def test_compute_metrics_detection_is_a_percent_to_two_decimals():
     assert detection_at_10x == 3.37
 
 
-def test_update_from_bed_line_accumulates_hist_and_mean():
-    stats = CoverageStats(length = 10)
-
-    stats.update_from_bed_line(span = 3, num_reads = 5)
-
-    stats.update_from_bed_line(span = 2, num_reads = 0)
-
-    assert stats.depth_hist[5] == 3
-    assert stats.depth_hist[0] == 2
-    assert stats.total_coverage_count == 15
-
-    # mean = 15/10 = 1.5
-    assert round(stats.total_coverage_count / stats.length, 2) == 1.50
-
-
-def test_per_base_bed_read_the_same_as_bgzf_or_plain_gzip(tmp_path):
-    """ mosdepth's bed is BGZF (read block by block, in parallel); a plain gzip file of the
-    same lines gives the same totals """
-    import gzip
-    import random
+def _write_bam(path, alignments, refs=(("c1", 100), ("c2", 50), ("c3", 30))):
+    """ a bam of (contig index, start, cigar, flag) alignments, in the order given """
     import pysam # type: ignore
+
+    header = {"HD": {"VN": "1.6"}, "SQ": [{"SN": name, "LN": length} for name, length in refs]}
+    with pysam.AlignmentFile(str(path), "wb", header=header) as bam:
+        for i, (tid, start, cigar, flag) in enumerate(alignments):
+            a = pysam.AlignedSegment(bam.header)
+            a.query_name = f"r{i}"
+            a.flag = flag
+            a.reference_id = tid
+            a.reference_start = start
+            a.cigarstring = cigar
+            qlen = a.infer_query_length() or 0
+            a.query_sequence = "A" * qlen
+            a.mapping_quality = 60
+            a.set_tag("NM", 0)
+            bam.write(a)
+    return str(path)
+
+
+def _norm(totals):
+    return [None if t is None else (t[0], t[1], t[2], sorted(t[3])) for t in totals]
+
+
+# c1: 20M at 10, 10M5D10M at 20 (spans 20-45, the deletion included), a supplementary 10M
+# at 80, a secondary 10M at 0, a duplicate and a QC-fail 10M at 50; c2: none; c3: 10M at 25
+# (runs 5 bases off the end of its 30)
+_ALIGNMENTS = [(0, 0, "10M", 0x100), (0, 10, "20M", 0), (0, 20, "10M5D10M", 16), (0, 50, "10M", 0x400),
+               (0, 50, "10M", 0x200), (0, 80, "10M", 0x800), (2, 25, "10M", 0)]
+
+
+def test_bam_coverage_counts_alignment_spans_as_mosdepth_x_does(tmp_path):
+    from bit import _native as native
+    from bit.modules.cov_stats import _pysam_coverage
+
+    bam = _write_bam(tmp_path / "t.bam", _ALIGNMENTS)
+    wanted = ["c1", "c2", "c3", "absent"]
+
+    # primary and supplementary alignments: depth 1 at 10-20, 2 at 20-30, 1 at 30-45 and 80-90
+    # (55 in all over 45 bases)
+    expected = [(55, 45, 0, [(0, 55), (1, 35), (2, 10)]), (0, 0, 0, [(0, 50)]), (5, 5, 0, [(0, 25), (1, 5)]), None]
+    totals, pids = native.bam_coverage_and_pid_stats(bam, wanted, 1796, False, False, True)
+    assert _norm(totals) == expected and pids is None
+    assert _norm(_pysam_coverage(bam, wanted, 1796)) == expected
+
+    # with the secondary one too: depth 1 at 0-10 as well
+    expected[0] = (65, 55, 0, [(0, 45), (1, 45), (2, 10)])
+    totals, _ = native.bam_coverage_and_pid_stats(bam, wanted, 1540, False, True, True)
+    assert _norm(totals) == expected
+    assert _norm(_pysam_coverage(bam, wanted, 1540)) == expected
+
+
+def test_bam_coverage_and_pids_from_the_one_pass_match_the_pid_pass(tmp_path):
     from bit import _native as native
 
-    rng = random.Random(7)
-    lines, pos = [], 0
-    for contig in ("c1", "c2", "c3"):
-        pos = 0
-        for _ in range(40000):
-            end = pos + rng.randint(1, 30)
-            lines.append(f"{contig}\t{pos}\t{end}\t{rng.choice([0, 0, 1, 2, 9, 10, 11, 250])}\n")
-            pos = end
-    text = "".join(lines)
-    plain, bgzf = str(tmp_path / "plain.bed.gz"), str(tmp_path / "bgzf.bed.gz")
-    with gzip.open(plain, "wt") as f:
-        f.write(text)
-    with pysam.BGZFile(bgzf, "wb") as f:
-        f.write(text.encode())
-    wanted = ["c1", "c3", "absent"]
-    a = native.per_base_bed_stats(plain, wanted)
-    b = native.per_base_bed_stats(bgzf, wanted)
-    norm = lambda r: [None if t is None else (t[0], t[1], t[2], sorted(t[3])) for t in r]
-    assert norm(a) == norm(b)
-    assert a[2] is None and a[0][0] == sum(
-        (int(l.split("\t")[2]) - int(l.split("\t")[1])) * int(l.split("\t")[3]) for l in lines if l.startswith("c1\t"))
+    for include_non_primary in (False, True):
+        _, pids = native.bam_coverage_and_pid_stats(str(test_bam_path), [], 1796, True, include_non_primary, True)
+        assert pids == native.bam_per_contig_pid_stats(str(test_bam_path), include_non_primary, True)
+
+
+def test_bam_with_a_contigs_alignments_apart_is_not_read_for_coverage(tmp_path):
+    from bit import _native as native
+    from bit.modules.cov_stats import _pysam_coverage, NotGroupedByReference
+
+    bam = _write_bam(tmp_path / "apart.bam", [(0, 10, "20M", 0), (2, 5, "10M", 0), (0, 40, "20M", 0)])
+    with pytest.raises(ValueError, match="not grouped by reference"):
+        native.bam_coverage_and_pid_stats(bam, ["c1", "c3"], 1796, False, False, True)
+    with pytest.raises(NotGroupedByReference):
+        _pysam_coverage(bam, ["c1", "c3"], 1796)
+    # (alignments of one contig in any order are fine, and so are contigs that aren't wanted)
+    totals, _ = native.bam_coverage_and_pid_stats(bam, ["c3"], 1796, False, False, True)
+    assert _norm(totals) == [(10, 10, 0, [(0, 20), (1, 10)])]
+
+
+def test_get_cov_stats_without_the_compiled_core_gives_the_same_tables(tmp_path, monkeypatch):
+    """ the pysam path, taken when the compiled core isn't there or leaves a bam to it """
+    import argparse
+    import bit.modules.cov_stats as cov_stats
+
+    def tables(prefix):
+        args = argparse.Namespace(reference_fastas=[str(test_fasta_path)], bam=str(test_bam_path), bed=None,
+                                  output_prefix=str(prefix), skip_per_contig=False, include_non_primary=False,
+                                  skip_read_pids=False)
+        cov_stats.get_cov_stats(args)
+        return Path(f"{prefix}-per-ref.tsv").read_text(), Path(f"{prefix}-per-contig.tsv").read_text()
+
+    native = tables(tmp_path / "native")
+    monkeypatch.setattr(cov_stats, "_native_bam_pass", lambda *a, **k: None)
+    assert tables(tmp_path / "pysam") == native

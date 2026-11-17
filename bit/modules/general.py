@@ -444,6 +444,18 @@ def transient_spinner(in_progress_msg, indent="    "): # pragma: no cover
         t.join()
 
 
+def sort_bam_file(bam_file): # pragma: no cover
+    """ writes a coordinate-sorted copy of the bam beside it (<name>.sorted.bam) and returns its path """
+
+    stem = bam_file[:-4] if bam_file.endswith(".bam") else bam_file
+    sorted_bam = stem + ".sorted.bam"
+    report_message("Sorting BAM file...")
+    with spinner("", ""):
+        subprocess.run(["samtools", "sort", "-@", "4", "-o", sorted_bam, bam_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
+    return sorted_bam
+
+
 def check_bam_file_is_indexed(bam_file): # pragma: no cover
 
     header_result = subprocess.run(
@@ -466,12 +478,7 @@ def check_bam_file_is_indexed(bam_file): # pragma: no cover
 
         report_message(message, color="orange", initial_indent="    ", subsequent_indent="    ")
 
-        stem = bam_file[:-4] if bam_file.endswith(".bam") else bam_file
-        sorted_bam = stem + ".sorted.bam"
-        report_message("Sorting BAM file...")
-        with spinner("", ""):
-            subprocess.run(["samtools", "sort", "-@", "4", "-o", sorted_bam, bam_file], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        bam_file = sorted_bam
+        bam_file = sort_bam_file(bam_file)
         sorted_for_you = True
 
     if not Path(bam_file + ".bai").is_file():

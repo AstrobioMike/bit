@@ -1,7 +1,7 @@
 //! A small BAM reader (records in file order, as pysam's fetch(until_eof=True) gives them) and
 //! the per-read passes of `bit mapped-read-stats` and `bit cov-stats` (see get_mapped_reads_pids
 //! and get_per_contig_pid_stats in bit/modules/mapped_read_stats.py, which this follows
-//! step for step). BGZF blocks are decompressed in parallel.
+//! step for step), with cov-stats' per-base coverage counted in the same pass. BGZF blocks are decompressed in parallel.
 //!
 //! Anything unexpected (not BGZF, a malformed record, an NM tag that isn't an integer, a mapped
 //! read without a CIGAR or reference) is returned as an error, and the caller falls back to the
@@ -18,9 +18,11 @@ fn bad(msg: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, msg.to_string())
 }
 
-/// reads BGZF, decompressing a batch of blocks at a time in parallel
+/// reads BGZF: a thread of its own reads the file a batch of blocks at a time and inflates
+/// each batch in parallel, a couple of batches ahead of what's being read, so inflating
+/// and whatever is done with the data overlap rather than take turns
 struct Bgzf {
-    raw: BufReader<File>,
+    batches: std::sync::mpsc::Receiver<io::Result<Vec<Vec<u8>>>>,
     // inflated blocks not read yet, and how far into the first the reading is (blocks are
     // handed over whole and copied out a slice at a time: going through a queue of bytes
     // copied each one twice, one by one)
@@ -29,101 +31,120 @@ struct Bgzf {
     done: bool,
 }
 
+/// the next raw block's compressed deflate data, expected size and CRC, or None at the end
+fn next_block(raw: &mut impl Read) -> io::Result<Option<(Vec<u8>, usize, u32)>> {
+    let mut head = [0u8; 12];
+    let mut got = 0;
+    while got < 12 {
+        let n = raw.read(&mut head[got..])?;
+        if n == 0 {
+            return if got == 0 { Ok(None) } else { Err(bad("truncated BGZF block")) };
+        }
+        got += n;
+    }
+    if head[0] != 31 || head[1] != 139 || head[2] != 8 || head[3] & 4 == 0 {
+        return Err(bad("not BGZF"));
+    }
+    let xlen = u16::from_le_bytes([head[10], head[11]]) as usize;
+    let mut extra = vec![0u8; xlen];
+    raw.read_exact(&mut extra)?;
+    let mut bsize = None;
+    let mut i = 0;
+    while i + 4 <= xlen {
+        let slen = u16::from_le_bytes([extra[i + 2], extra[i + 3]]) as usize;
+        if extra[i] == b'B' && extra[i + 1] == b'C' && slen == 2 && i + 6 <= xlen {
+            bsize = Some(u16::from_le_bytes([extra[i + 4], extra[i + 5]]) as usize);
+        }
+        i += 4 + slen;
+    }
+    let bsize = bsize.ok_or_else(|| bad("not BGZF"))?;
+    let cdata_len = (bsize + 1)
+        .checked_sub(xlen + 20)
+        .ok_or_else(|| bad("bad BGZF block size"))?;
+    let mut cdata = vec![0u8; cdata_len];
+    raw.read_exact(&mut cdata)?;
+    let mut tail = [0u8; 8];
+    raw.read_exact(&mut tail)?;
+    let crc = u32::from_le_bytes([tail[0], tail[1], tail[2], tail[3]]);
+    let isize = u32::from_le_bytes([tail[4], tail[5], tail[6], tail[7]]) as usize;
+    Ok(Some((cdata, isize, crc)))
+}
+
+/// the next batch of blocks, inflated (the empty ones left out), and whether it's the last
+fn next_batch(raw: &mut impl Read) -> io::Result<(Vec<Vec<u8>>, bool)> {
+    let mut blocks = Vec::with_capacity(Bgzf::BATCH);
+    let mut last = false;
+    while blocks.len() < Bgzf::BATCH {
+        match next_block(raw)? {
+            Some(b) => blocks.push(b),
+            None => {
+                last = true;
+                break;
+            }
+        }
+    }
+    let inflated: Vec<io::Result<Vec<u8>>> = blocks
+        .par_iter()
+        .map(|(cdata, isize, crc)| {
+            let mut out = vec![0u8; *isize];
+            let mut d = Decompress::new(false);
+            d.decompress(cdata, &mut out, FlushDecompress::Finish)
+                .map_err(|_| bad("bad BGZF deflate data"))?;
+            if d.total_out() as usize != *isize {
+                return Err(bad("bad BGZF block"));
+            }
+            // (htslib checks each block's CRC, and pysam then errors)
+            let mut c = flate2::Crc::new();
+            c.update(&out);
+            if c.sum() != *crc {
+                return Err(bad("BGZF CRC mismatch"));
+            }
+            Ok(out)
+        })
+        .collect();
+    let mut out = Vec::with_capacity(inflated.len());
+    for b in inflated {
+        let b = b?;
+        if !b.is_empty() {
+            out.push(b);
+        }
+    }
+    Ok((out, last))
+}
+
 impl Bgzf {
     const BATCH: usize = 256;
 
     fn open(path: &str) -> io::Result<Self> {
+        let mut raw = BufReader::with_capacity(1 << 20, File::open(path)?);
+        let (tx, batches) = std::sync::mpsc::sync_channel(2);
+        std::thread::spawn(move || {
+            loop {
+                let batch = next_batch(&mut raw);
+                let stop = !matches!(batch, Ok((_, false)));
+                // (an error from send: the reader is gone, so there's no one to read for)
+                if tx.send(batch.map(|(blocks, _)| blocks)).is_err() || stop {
+                    break;
+                }
+            }
+        });
         Ok(Bgzf {
-            raw: BufReader::with_capacity(1 << 20, File::open(path)?),
+            batches,
             out: VecDeque::new(),
             at: 0,
             done: false,
         })
-    }
-
-    /// the next raw block's compressed deflate data and expected size, or None at the end
-    fn next_block(&mut self) -> io::Result<Option<(Vec<u8>, usize, u32)>> {
-        let mut head = [0u8; 12];
-        let mut got = 0;
-        while got < 12 {
-            let n = self.raw.read(&mut head[got..])?;
-            if n == 0 {
-                return if got == 0 { Ok(None) } else { Err(bad("truncated BGZF block")) };
-            }
-            got += n;
-        }
-        if head[0] != 31 || head[1] != 139 || head[2] != 8 || head[3] & 4 == 0 {
-            return Err(bad("not BGZF"));
-        }
-        let xlen = u16::from_le_bytes([head[10], head[11]]) as usize;
-        let mut extra = vec![0u8; xlen];
-        self.raw.read_exact(&mut extra)?;
-        let mut bsize = None;
-        let mut i = 0;
-        while i + 4 <= xlen {
-            let slen = u16::from_le_bytes([extra[i + 2], extra[i + 3]]) as usize;
-            if extra[i] == b'B' && extra[i + 1] == b'C' && slen == 2 && i + 6 <= xlen {
-                bsize = Some(u16::from_le_bytes([extra[i + 4], extra[i + 5]]) as usize);
-            }
-            i += 4 + slen;
-        }
-        let bsize = bsize.ok_or_else(|| bad("not BGZF"))?;
-        let cdata_len = (bsize + 1)
-            .checked_sub(xlen + 20)
-            .ok_or_else(|| bad("bad BGZF block size"))?;
-        let mut cdata = vec![0u8; cdata_len];
-        self.raw.read_exact(&mut cdata)?;
-        let mut tail = [0u8; 8];
-        self.raw.read_exact(&mut tail)?;
-        let crc = u32::from_le_bytes([tail[0], tail[1], tail[2], tail[3]]);
-        let isize = u32::from_le_bytes([tail[4], tail[5], tail[6], tail[7]]) as usize;
-        Ok(Some((cdata, isize, crc)))
-    }
-
-    fn fill(&mut self) -> io::Result<()> {
-        let mut blocks = Vec::with_capacity(Self::BATCH);
-        while blocks.len() < Self::BATCH {
-            match self.next_block()? {
-                Some(b) => blocks.push(b),
-                None => {
-                    self.done = true;
-                    break;
-                }
-            }
-        }
-        let inflated: Vec<io::Result<Vec<u8>>> = blocks
-            .par_iter()
-            .map(|(cdata, isize, crc)| {
-                let mut out = vec![0u8; *isize];
-                let mut d = Decompress::new(false);
-                d.decompress(cdata, &mut out, FlushDecompress::Finish)
-                    .map_err(|_| bad("bad BGZF deflate data"))?;
-                if d.total_out() as usize != *isize {
-                    return Err(bad("bad BGZF block"));
-                }
-                // (htslib checks each block's CRC, and pysam then errors)
-                let mut c = flate2::Crc::new();
-                c.update(&out);
-                if c.sum() != *crc {
-                    return Err(bad("BGZF CRC mismatch"));
-                }
-                Ok(out)
-            })
-            .collect();
-        for b in inflated {
-            let b = b?;
-            if !b.is_empty() {
-                self.out.push_back(b);
-            }
-        }
-        Ok(())
     }
 }
 
 impl Read for Bgzf {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         while self.out.is_empty() && !self.done {
-            self.fill()?;
+            match self.batches.recv() {
+                Ok(batch) => self.out.extend(batch?),
+                // the reading thread is done: the file's end, or an error already passed on
+                Err(_) => self.done = true,
+            }
         }
         let Some(block) = self.out.front() else { return Ok(0) };
         let n = buf.len().min(block.len() - self.at);
@@ -155,6 +176,7 @@ pub struct Record {
 pub struct Bam {
     inner: Bgzf,
     pub ref_names: Vec<String>,
+    pub ref_lens: Vec<usize>,
     buf: Vec<u8>,
 }
 
@@ -258,6 +280,7 @@ impl Bam {
         io::copy(&mut (&mut inner).take(l_text as u64), &mut io::sink())?;
         let n_ref = read_i32(&mut inner)?;
         let mut ref_names = Vec::new();
+        let mut ref_lens = Vec::new();
         for _ in 0..n_ref.max(0) {
             let l_name = read_i32(&mut inner)?;
             if l_name < 1 {
@@ -270,11 +293,16 @@ impl Bam {
                 return Err(bad("non-ASCII reference name"));
             }
             ref_names.push(String::from_utf8(name).unwrap());
-            read_i32(&mut inner)?;
+            let l_ref = read_i32(&mut inner)?;
+            if l_ref < 0 {
+                return Err(bad("bad BAM header"));
+            }
+            ref_lens.push(l_ref as usize);
         }
         Ok(Bam {
             inner,
             ref_names,
+            ref_lens,
             buf: Vec::new(),
         })
     }
@@ -513,8 +541,31 @@ pub struct ReadRow {
     pub ref_end: i64,
 }
 
-/// the reads counted (mapped, primary unless include_non_primary, with NM): (record, its
-/// breakdown, its pids, whether it's non-primary)
+/// for a read that's counted (mapped, primary unless include_non_primary, with NM): its
+/// breakdown, its pids, whether it's non-primary
+#[allow(clippy::type_complexity)]
+fn counted(bam: &Bam, r: &Record, include_non_primary: bool) -> io::Result<Option<(Breakdown, (f64, f64), bool)>> {
+    if r.flag & 0x4 != 0 {
+        return Ok(None);
+    }
+    let non_primary = r.flag & 0x100 != 0 || r.flag & 0x800 != 0;
+    if !include_non_primary && non_primary {
+        return Ok(None);
+    }
+    let nm = match r.nm {
+        Some(nm) => nm,
+        None => return Ok(None),
+    };
+    if r.cigar.is_empty() || r.ref_id < 0 || r.ref_id as usize >= bam.ref_names.len() {
+        // pysam's path errors on these
+        return Err(bad("mapped read without a CIGAR or reference"));
+    }
+    let b = breakdown(&r.cigar);
+    let p = pids(&b, nm);
+    Ok(Some((b, p, non_primary)))
+}
+
+/// the reads counted: (record, its breakdown, its pids, whether it's non-primary)
 fn each_counted(
     path: &str,
     include_non_primary: bool,
@@ -522,24 +573,9 @@ fn each_counted(
 ) -> io::Result<Bam> {
     let mut bam = Bam::open(path)?;
     while let Some(r) = bam.next()? {
-        if r.flag & 0x4 != 0 {
-            continue;
+        if let Some((b, p, non_primary)) = counted(&bam, &r, include_non_primary)? {
+            f(&bam, &r, &b, p, non_primary)?;
         }
-        let non_primary = r.flag & 0x100 != 0 || r.flag & 0x800 != 0;
-        if !include_non_primary && non_primary {
-            continue;
-        }
-        let nm = match r.nm {
-            Some(nm) => nm,
-            None => continue,
-        };
-        if r.cigar.is_empty() || r.ref_id < 0 || r.ref_id as usize >= bam.ref_names.len() {
-            // pysam's path errors on these
-            return Err(bad("mapped read without a CIGAR or reference"));
-        }
-        let b = breakdown(&r.cigar);
-        let p = pids(&b, nm);
-        f(&bam, &r, &b, p, non_primary)?;
     }
     Ok(bam)
 }
@@ -620,133 +656,195 @@ pub fn per_contig_pid_stats(
     include_non_primary: bool,
     gap_compressed: bool,
 ) -> io::Result<Vec<(String, Acc)>> {
-    // keyed by name (as Python's dict is, which matters if a header repeats one)
-    let mut accs: Vec<(String, Acc)> = Vec::new();
-    let mut idx: FxHashMap<String, usize> = FxHashMap::default();
+    let mut contig_pids = ContigPids::default();
     each_counted(path, include_non_primary, |bam, r, _, (ga, gc), _| {
-        let name = &bam.ref_names[r.ref_id as usize];
-        let i = match idx.get(name) {
-            Some(&i) => i,
-            None => {
-                accs.push((name.clone(), Acc::default()));
-                idx.insert(name.clone(), accs.len() - 1);
-                accs.len() - 1
-            }
-        };
-        accs[i].1.add(if gap_compressed { gc } else { ga });
+        contig_pids.add(&bam.ref_names[r.ref_id as usize], if gap_compressed { gc } else { ga });
         Ok(())
     })?;
-    Ok(accs)
+    Ok(contig_pids.accs)
 }
 
-/// whether a gzip file starts with a BGZF block (a gzip member with a "BC" extra subfield)
-fn is_bgzf(path: &str) -> io::Result<bool> {
-    let mut head = [0u8; 18];
-    let mut f = File::open(path)?;
-    let mut got = 0;
-    while got < head.len() {
-        let n = f.read(&mut head[got..])?;
-        if n == 0 {
-            return Ok(false);
-        }
-        got += n;
+/// the per-contig percent-ID stats of cov-stats, gathered a read at a time
+#[derive(Default)]
+struct ContigPids {
+    // keyed by name (as Python's dict is, which matters if a header repeats one)
+    accs: Vec<(String, Acc)>,
+    idx: FxHashMap<String, usize>,
+}
+
+impl ContigPids {
+    fn add(&mut self, name: &str, v: f64) {
+        let i = match self.idx.get(name) {
+            Some(&i) => i,
+            None => {
+                self.accs.push((name.to_string(), Acc::default()));
+                self.idx.insert(name.to_string(), self.accs.len() - 1);
+                self.accs.len() - 1
+            }
+        };
+        self.accs[i].1.add(v);
     }
-    Ok(head[..4] == [31, 139, 8, 4] && head[12..14] == *b"BC" && head[14..16] == [2, 0])
 }
 
-/// the per-base.bed.gz pass of cov-stats (parse_bed_file): per contig wanted, (total coverage
-/// count, bases detected at all, bases detected at 10x, depth -> bases). Lines for other
-/// contigs are parsed (as Python does) but not kept. Anything Python would read differently
-/// (non-UTF-8, a lone carriage return, a number int() takes but that isn't plain digits) is
-/// an error, so the caller falls back to Python.
-pub type BedStats = (u128, u128, u128, FxHashMap<i64, u128>);
+/// a contig's coverage: (total coverage count, bases detected at all, bases detected at 10x,
+/// depth -> bases)
+pub type CovTotals = (u128, u128, u128, FxHashMap<i64, u128>);
 
-pub fn per_base_bed(
+/// what the error says when a bam's alignments aren't grouped by reference (the caller sorts
+/// the bam and comes back)
+pub const NOT_GROUPED: &str = "alignments not grouped by reference";
+
+/// Per-base depth of each wanted reference, from the alignments as they come: one reference
+/// at a time is held as an array of depth changes (+1 where an alignment starts, -1 where it
+/// ends), then summed along into depths and totalled when the next reference starts. So the
+/// alignments of a reference have to be together (as in a sorted bam), in any order.
+struct Coverage {
+    slot: Vec<Option<usize>>, // per bam reference: its place in `wanted`
+    seen: Vec<bool>,
+    cur: usize,
+    diff: Vec<i32>,
+    small: Vec<u64>, // bases at each depth under SMALL, of the reference being totalled
+    out: Vec<Option<CovTotals>>,
+}
+
+impl Coverage {
+    const SMALL: usize = 1 << 16;
+
+    fn new(bam: &Bam, wanted: &[String]) -> Self {
+        let idx: FxHashMap<&str, usize> = wanted.iter().enumerate().map(|(i, w)| (w.as_str(), i)).collect();
+        Coverage {
+            slot: bam.ref_names.iter().map(|n| idx.get(n.as_str()).copied()).collect(),
+            seen: vec![false; bam.ref_names.len()],
+            cur: usize::MAX,
+            diff: Vec::new(),
+            small: vec![0; Self::SMALL],
+            out: vec![None; wanted.len()],
+        }
+    }
+
+    /// an alignment over [start, end) of a reference
+    fn add(&mut self, bam: &Bam, ref_id: usize, start: usize, end: usize) -> io::Result<()> {
+        if self.slot[ref_id].is_none() {
+            return Ok(());
+        }
+        let len = bam.ref_lens[ref_id];
+        if ref_id != self.cur {
+            self.close(bam);
+            if self.seen[ref_id] {
+                return Err(bad(NOT_GROUPED));
+            }
+            self.seen[ref_id] = true;
+            self.cur = ref_id;
+            self.diff.clear();
+            self.diff.resize(len + 1, 0);
+        }
+        let (start, end) = (start.min(len), end.min(len));
+        if start < end {
+            self.diff[start] += 1;
+            self.diff[end] -= 1;
+        }
+        Ok(())
+    }
+
+    /// totals the reference held, if one is
+    fn close(&mut self, bam: &Bam) {
+        if self.cur == usize::MAX {
+            return;
+        }
+        let len = bam.ref_lens[self.cur];
+        let (mut depth, mut total, mut top) = (0i64, 0u64, 0usize);
+        let mut big: FxHashMap<i64, u128> = FxHashMap::default();
+        for &d in &self.diff[..len] {
+            depth += d as i64;
+            total += depth as u64;
+            if (depth as usize) < Self::SMALL {
+                self.small[depth as usize] += 1;
+                top = top.max(depth as usize);
+            } else {
+                *big.entry(depth).or_insert(0) += 1;
+            }
+        }
+        let under_10: u64 = self.small[..10].iter().sum();
+        let (detected, detected_10x) = (len as u64 - self.small[0], len as u64 - under_10);
+        let mut hist = big;
+        for (depth, n) in self.small[..=top].iter_mut().enumerate() {
+            if *n > 0 {
+                hist.insert(depth as i64, *n as u128);
+                *n = 0;
+            }
+        }
+        self.merge(self.cur, total as u128, detected as u128, detected_10x as u128, hist);
+        self.cur = usize::MAX;
+    }
+
+    fn merge(&mut self, ref_id: usize, total: u128, detected: u128, detected_10x: u128, hist: FxHashMap<i64, u128>) {
+        let e = self.out[self.slot[ref_id].unwrap()].get_or_insert_with(|| (0, 0, 0, FxHashMap::default()));
+        e.0 += total;
+        e.1 += detected;
+        e.2 += detected_10x;
+        for (depth, n) in hist {
+            *e.3.entry(depth).or_insert(0) += n;
+        }
+    }
+
+    /// the totals, with the references that had no alignments in as all depth 0
+    fn finish(mut self, bam: &Bam) -> Vec<Option<CovTotals>> {
+        self.close(bam);
+        for ref_id in 0..self.slot.len() {
+            let len = bam.ref_lens[ref_id];
+            if self.slot[ref_id].is_some() && !self.seen[ref_id] && len > 0 {
+                self.merge(ref_id, 0, 0, 0, [(0i64, len as u128)].into_iter().collect());
+            }
+        }
+        self.out
+    }
+}
+
+/// cov-stats' one pass over a bam: per wanted contig its coverage totals (None if it isn't
+/// in the bam), and, if asked for, the per-contig percent-ID stats (as per_contig_pid_stats()
+/// gives them).
+///
+/// Coverage is counted as `mosdepth -x` does: every alignment not flagged with any of
+/// `exclude` adds 1 from its start to its end on the reference, whatever is between
+/// (deletions and skips included), and mates that overlap both count.
+#[allow(clippy::type_complexity)]
+pub fn coverage_and_pids(
     path: &str,
     wanted: &[String],
+    exclude: u16,
+    pid: Option<(bool, bool)>, // (include_non_primary, gap_compressed)
     progress: Option<&std::sync::Arc<crate::reads::Progress>>,
-) -> io::Result<Vec<Option<BedStats>>> {
-    use std::io::BufRead;
-    let idx: FxHashMap<&[u8], usize> = wanted.iter().enumerate().map(|(i, w)| (w.as_bytes(), i)).collect();
-    let mut out: Vec<Option<BedStats>> = vec![None; wanted.len()];
-
-    // mosdepth writes the bed as BGZF, whose blocks are inflated in parallel; any other gzip
-    // file is read as one stream
-    let mut rdr: Box<dyn BufRead> = if is_bgzf(path)? {
-        Box::new(BufReader::with_capacity(1 << 20, Bgzf::open(path)?))
-    } else {
-        let gz = flate2::read::MultiGzDecoder::new(BufReader::with_capacity(1 << 20, File::open(path)?));
-        Box::new(BufReader::with_capacity(1 << 20, gz))
-    };
-
-    // int() of a field: optional surrounding ASCII whitespace, optional sign, digits
-    fn int(f: &[u8]) -> io::Result<i64> {
-        let t = f.trim_ascii();
-        let (neg, d) = match t.first() {
-            Some(b'-') => (true, &t[1..]),
-            Some(b'+') => (false, &t[1..]),
-            _ => (false, t),
-        };
-        if d.is_empty() || d.len() > 18 || !d.iter().all(|c| c.is_ascii_digit()) {
-            return Err(bad("unusual number"));
-        }
-        let v: i64 = std::str::from_utf8(d).unwrap().parse().map_err(|_| bad("unusual number"))?;
-        Ok(if neg { -v } else { v })
-    }
-
-    let mut line = Vec::new();
-    let mut n_lines = 0u64;
-    loop {
-        line.clear();
-        let n = rdr.read_until(b'\n', &mut line)?;
-        if n == 0 {
-            break;
-        }
-        n_lines += 1;
-        if n_lines.is_multiple_of(65536)
+) -> io::Result<(Vec<Option<CovTotals>>, Option<Vec<(String, Acc)>>)> {
+    let mut bam = Bam::open(path)?;
+    let mut cov = Coverage::new(&bam, wanted);
+    let mut contig_pids = ContigPids::default();
+    let mut n = 0u64;
+    while let Some(r) = bam.next()? {
+        n += 1;
+        if n.is_multiple_of(65536)
             && let Some(p) = progress
         {
-            p.reads.store(n_lines, std::sync::atomic::Ordering::Relaxed);
+            p.reads.store(n, std::sync::atomic::Ordering::Relaxed);
         }
-        // Python's text mode turns "\r\n" into "\n" and splits on a lone "\r"; only the
-        // first is handled here
-        let mut l: &[u8] = &line;
-        if l.ends_with(b"\r\n") {
-            l = &l[..l.len() - 2];
-        } else if l.ends_with(b"\n") {
-            l = &l[..l.len() - 1];
+        if r.flag & exclude == 0 && r.ref_id >= 0 && r.pos >= 0 {
+            // htslib's bam_endpos: a span of 0 counts as 1
+            let rlen: usize = r
+                .cigar
+                .iter()
+                .filter(|&&c| matches!(c & 0xf, 0 | 2 | 3 | 7 | 8))
+                .map(|&c| (c >> 4) as usize)
+                .sum();
+            let start = r.pos as usize;
+            cov.add(&bam, r.ref_id as usize, start, start + rlen.max(1))?;
         }
-        if memchr::memchr(b'\r', l).is_some() || !l.is_ascii() {
-            return Err(bad("unusual line"));
-        }
-        let mut fields = l.splitn(5, |&c| c == b'\t');
-        let header = fields.next().unwrap();
-        let (a, b, c) = match (fields.next(), fields.next(), fields.next()) {
-            (Some(a), Some(b), Some(c)) => (a, b, c),
-            _ => return Err(bad("short line")),
-        };
-        // (a 5th+ field only matters to Python as part of fields[3] if there's no 5th tab;
-        // with one, fields[3] is just the 4th field, as here)
-        let span = int(b)? - int(a)?;
-        let n_reads = int(c)?;
-        if let Some(&i) = idx.get(header) {
-            if span < 0 || n_reads < 0 {
-                return Err(bad("negative span or depth"));
-            }
-            let e = out[i].get_or_insert_with(|| (0, 0, 0, FxHashMap::default()));
-            let (span_u, reads_u) = (span as u128, n_reads as u128);
-            e.0 += reads_u * span_u;
-            if n_reads > 0 {
-                e.1 += span_u;
-            }
-            if n_reads >= 10 {
-                e.2 += span_u;
-            }
-            *e.3.entry(n_reads).or_insert(0) += span_u;
+        if let Some((include_non_primary, gap_compressed)) = pid
+            && let Some((_, (ga, gc), _)) = counted(&bam, &r, include_non_primary)?
+        {
+            contig_pids.add(&bam.ref_names[r.ref_id as usize], if gap_compressed { gc } else { ga });
         }
     }
     if let Some(p) = progress {
-        p.reads.store(n_lines, std::sync::atomic::Ordering::Relaxed);
+        p.reads.store(n, std::sync::atomic::Ordering::Relaxed);
     }
-    Ok(out)
+    Ok((cov.finish(&bam), pid.map(|_| contig_pids.accs)))
 }

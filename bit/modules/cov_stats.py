@@ -1,15 +1,12 @@
 import os
-import shutil
-import subprocess
-import gzip
-from pathlib import Path
 from dataclasses import dataclass, field
 import pyfastx #type: ignore
 from collections import defaultdict
 from colorama import Fore, init #type: ignore
 from tqdm import tqdm #type: ignore
-from bit.modules.general import check_files_are_found, check_bam_file_is_indexed, spinner
-from bit.modules.mapped_read_stats import get_per_contig_pid_stats, PidStats
+from bit.modules.general import check_files_are_found, report_message, sort_bam_file, spinner
+from bit.modules.mapped_read_stats import (get_per_contig_pid_stats, PidStats,
+                                           _check_opens_with_pysam, _pid_stats_from_native)
 
 
 init(autoreset=True)
@@ -21,23 +18,13 @@ def get_cov_stats(args):
 
     refs, contigs, header_to_ref_dict = parse_refs(args.reference_fastas, args.skip_per_contig)
 
-    # mosdepth and the percent-ID scan each read the whole bam and don't depend on each other,
-    # so mosdepth is started first and runs while the scan does
-    mosdepth = None if args.bed else start_mosdepth(args.bam, args.output_prefix, args.include_non_primary)
+    # coverage and percent IDs both from one pass over the bam
+    contig_pid_stats = scan_bam(args.bam, contigs, header_to_ref_dict, args.include_non_primary,
+                                want_pids=not args.skip_read_pids)
 
-    try:
-        (ref_mean_pids, ref_median_pids, ref_mapped_counts,
-         contig_mean_pids, contig_median_pids, contig_mapped_counts) = compute_pid_stats(args.bam, refs, contigs,
-                                                                     args.include_non_primary,
-                                                                     args.skip_per_contig, args.skip_read_pids)
-    except BaseException:
-        if mosdepth is not None:
-            mosdepth[0].kill()
-        raise
-
-    bed = args.bed if args.bed else finish_mosdepth(mosdepth)
-
-    refs = parse_bed_file(refs, bed, contigs, header_to_ref_dict)
+    (ref_mean_pids, ref_median_pids, ref_mapped_counts,
+     contig_mean_pids, contig_median_pids, contig_mapped_counts) = summarize_pid_stats(contig_pid_stats, refs, contigs,
+                                                                                       args.skip_per_contig)
 
     generate_output(refs, args.output_prefix, ref_mean_pids, ref_median_pids, ref_mapped_counts,
                     contigs, contig_mean_pids, contig_median_pids, contig_mapped_counts, args.skip_per_contig)
@@ -45,12 +32,7 @@ def get_cov_stats(args):
 
 def preflight_checks(args):
 
-    paths_list = list(args.reference_fastas)
-    if args.bed:
-        paths_list.append(args.bed)
-    if args.bam:
-        paths_list.append(args.bam)
-    check_files_are_found(paths_list)
+    check_files_are_found(list(args.reference_fastas) + [args.bam])
 
 
 @dataclass
@@ -60,15 +42,6 @@ class CoverageStats:
     total_bases_detected_at_all: int = 0
     total_bases_detected_at_10x: int = 0
     depth_hist: dict = field(default_factory=lambda: defaultdict(int))
-
-    def update_from_bed_line(self, span, num_reads):
-        self.total_coverage_count += num_reads * span
-        if num_reads > 0:
-            self.total_bases_detected_at_all += span
-        if num_reads >= 10:
-            self.total_bases_detected_at_10x += span
-
-        self.depth_hist[num_reads] += span
 
     def compute_metrics(self):
         """ num_bases_detected, detection (%), detection_at_10x (%), mean_coverage, median_coverage """
@@ -165,58 +138,91 @@ def parse_refs(reference_fastas, skip_per_contig=False):
     return refs, contigs_dict, header_to_ref_dict
 
 
-def compute_pid_stats(bam_path, refs, contigs_dict, include_non_primary=False, skip_per_contig=False, skip_read_pids=False):
+def summarize_pid_stats(contig_pid_stats, refs, contigs_dict, skip_per_contig=False):
+    """ mean and median percent ID and number of mapped reads, per ref and per contig, from the
+    per-contig PidStats (all None if there are none) """
 
-    if not bam_path or skip_read_pids:
+    if contig_pid_stats is None:
         return None, None, None, None, None, None
 
-    print(f"\n  {Fore.YELLOW}Computing PID stats for mapped reads...")
+    contig_mean_pids = {}
+    contig_median_pids = {}
+    contig_mapped_counts = {}
 
-    with spinner("", ""):
-        try:
-            # single-pass BAM scan that builds per-contig PidStats directly
-            contig_pid_stats = get_per_contig_pid_stats(bam_path, include_non_primary)
-        except Exception:
-            return None, None, None, None, None, None
+    if not skip_per_contig:
+        for contig_name in contigs_dict.keys():
+            if contig_name in contig_pid_stats:
+                stats = contig_pid_stats[contig_name]
+                contig_mapped_counts[contig_name] = stats.count
+                contig_mean_pids[contig_name] = round(stats.mean, 2) if stats.count > 0 else None
+                contig_median_pids[contig_name] = round(stats.median, 2) if stats.count > 0 else None
+            else:
+                contig_mapped_counts[contig_name] = 0
+                contig_mean_pids[contig_name] = None
+                contig_median_pids[contig_name] = None
 
-        contig_mean_pids = {}
-        contig_median_pids = {}
-        contig_mapped_counts = {}
+    ref_mean_pids = {}
+    ref_median_pids = {}
+    ref_mapped_counts = {}
 
-        if not skip_per_contig:
-            for contig_name in contigs_dict.keys():
-                if contig_name in contig_pid_stats:
-                    stats = contig_pid_stats[contig_name]
-                    contig_mapped_counts[contig_name] = stats.count
-                    contig_mean_pids[contig_name] = round(stats.mean, 2) if stats.count > 0 else None
-                    contig_median_pids[contig_name] = round(stats.median, 2) if stats.count > 0 else None
-                else:
-                    contig_mapped_counts[contig_name] = 0
-                    contig_mean_pids[contig_name] = None
-                    contig_median_pids[contig_name] = None
+    for ref in refs:
+        ref_pid_stats = PidStats()
+        for contig_name in ref.headers:
+            if contig_name in contig_pid_stats:
+                ref_pid_stats.merge(contig_pid_stats[contig_name])
 
-        ref_mean_pids = {}
-        ref_median_pids = {}
-        ref_mapped_counts = {}
-
-        for ref in refs:
-            ref_pid_stats = PidStats()
-            for contig_name in ref.headers:
-                if contig_name in contig_pid_stats:
-                    ref_pid_stats.merge(contig_pid_stats[contig_name])
-
-            ref_mapped_counts[ref.path] = ref_pid_stats.count
-            ref_mean_pids[ref.path] = round(ref_pid_stats.mean, 2) if ref_pid_stats.count > 0 else None
-            ref_median_pids[ref.path] = round(ref_pid_stats.median, 2) if ref_pid_stats.count > 0 else None
+        ref_mapped_counts[ref.path] = ref_pid_stats.count
+        ref_mean_pids[ref.path] = round(ref_pid_stats.mean, 2) if ref_pid_stats.count > 0 else None
+        ref_median_pids[ref.path] = round(ref_pid_stats.median, 2) if ref_pid_stats.count > 0 else None
 
     return ref_mean_pids, ref_median_pids, ref_mapped_counts, contig_mean_pids, contig_median_pids, contig_mapped_counts
 
 
-def _native_bed_totals(bed_file, wanted):
+def stats_lookup(contigs, header_to_ref_dict):
+    """ {contig header: (its own CoverageStats or None, its ref's CoverageStats)} """
+
+    lookup = {}
+    for header, ref in header_to_ref_dict.items():
+        contig_stats = contigs[header].stats if header in contigs else None
+        lookup[header] = (contig_stats, ref.stats)
+
+    return lookup
+
+
+def add_contig_totals(lookup, wanted, totals):
+    """ adds each contig's coverage totals (total coverage count, bases detected at all, at 10x,
+    [(depth, bases), ...]; None where there are none) to its own stats and its ref's """
+
+    for header, t in zip(wanted, totals):
+        if t is None:
+            continue
+        total_cov, detected, detected_10x, hist = t
+        for stats in lookup[header]:
+            if stats is None:
+                continue
+            stats.total_coverage_count += total_cov
+            stats.total_bases_detected_at_all += detected
+            stats.total_bases_detected_at_10x += detected_10x
+            for depth, span in hist:
+                stats.depth_hist[depth] += span
+
+
+class NotGroupedByReference(Exception):
+    """ the bam's alignments to a contig aren't all together (it isn't sorted) """
+
+
+# the alignments that add no coverage, by flag: unmapped, failing QC, duplicates and
+# secondary ones (1796, what mosdepth leaves out too), or with --include-non-primary all but
+# the secondary ones (1540). Supplementary alignments count either way.
+COVERAGE_EXCLUDE_FLAGS = 1796
+COVERAGE_EXCLUDE_FLAGS_WITH_NON_PRIMARY = 1540
+
+
+def _native_bam_pass(bam_path, wanted, exclude_flags, include_non_primary, want_pids):
     """
-    The per-contig totals of the per-base bed via the compiled core (bit._native), drawing
-    the same lines-processed counter as the Python loop. Returns None if anything in the
-    file calls for the Python loop (which then reads it exactly as it always has).
+    Coverage totals per wanted contig and (if wanted) per-contig PidStats from one pass over
+    the bam by the compiled core (bit._native). Returns None if anything in the bam calls
+    for the Python (pysam) path.
     """
     try:
         from bit import _native as native
@@ -229,136 +235,138 @@ def _native_bed_totals(bed_file, wanted):
 
     def work():
         try:
-            result[0] = native.per_base_bed_stats(str(bed_file), wanted, progress=prog)
+            result[0] = native.bam_coverage_and_pid_stats(str(bam_path), wanted, exclude_flags, want_pids,
+                                                          include_non_primary, True, progress=prog)
         except BaseException as e:  # passed on below
             error[0] = e
 
     thread = threading.Thread(target=work, daemon=True)
     thread.start()
-    with tqdm(ncols=74, unit=" lines", leave=True,
-              bar_format="    Processed: {n:,} lines [{elapsed}, {rate_fmt}]") as bar:
+    with tqdm(ncols=74, unit=" alignments", leave=True,
+              bar_format="    Processed: {n:,} alignments [{elapsed}, {rate_fmt}]") as bar:
         while thread.is_alive():
             thread.join(0.2)
             bar.update(prog.reads - bar.n)
         bar.update(prog.reads - bar.n)
-        if isinstance(error[0], ValueError):
-            # the Python loop draws its own bar, so this one isn't kept
+        if error[0] is not None:
             bar.leave = False
     if isinstance(error[0], ValueError):
+        if "not grouped by reference" in str(error[0]):
+            raise NotGroupedByReference()
         return None
     if error[0] is not None:
         raise error[0]
-    return result[0]
+
+    totals, accs = result[0]
+    contig_pid_stats = None if accs is None else {name: _pid_stats_from_native(acc) for name, acc in accs}
+
+    return totals, contig_pid_stats
 
 
-def parse_bed_file(refs, bed_file, contigs, header_to_ref_dict):
+def _pysam_coverage(bam_path, wanted, exclude_flags):
+    """
+    Coverage totals per wanted contig from the bam via pysam: what the compiled core's pass
+    counts, the same way. Each alignment not flagged with any of exclude_flags adds 1 from
+    its start to its end on the contig; a contig's alignments have to be together.
+    """
+    import numpy as np # type: ignore
+    import pysam # type: ignore
 
-    print(f"\n  {Fore.YELLOW}Processing coverage data...")
+    slot = {header: i for i, header in enumerate(wanted)}
+    totals = [None] * len(wanted)
 
-    lookup = {}
-    for header, ref in header_to_ref_dict.items():
-        contig_stats = contigs[header].stats if header in contigs else None
-        lookup[header] = (contig_stats, ref.stats)
+    def add(header, total_cov, detected, detected_10x, hist):
+        i = slot[header]
+        if totals[i] is None:
+            totals[i] = (total_cov, detected, detected_10x, hist)
+        else:
+            t = totals[i]
+            totals[i] = (t[0] + total_cov, t[1] + detected, t[2] + detected_10x, t[3] + hist)
 
-    # the compiled core totals each contig's lines (integer sums, so identical to adding them
-    # line by line below), and those totals are added in
-    wanted = list(lookup)
-    totals = _native_bed_totals(bed_file, wanted)
-    if totals is not None:
-        for header, t in zip(wanted, totals):
-            if t is None:
+    def close(tid, diff):
+        depths, bases = np.unique(np.cumsum(diff[:-1], dtype=np.int64), return_counts=True)
+        hist = [(int(d), int(n)) for d, n in zip(depths, bases)]
+        add(names[tid],
+            sum(d * n for d, n in hist), sum(n for d, n in hist if d > 0), sum(n for d, n in hist if d >= 10), hist)
+
+    with pysam.AlignmentFile(bam_path, "rb", threads=min(4, os.cpu_count() or 1)) as bam:
+
+        names, lengths = bam.references, bam.lengths
+        seen = [False] * len(names)
+        current, diff = None, None
+
+        for read in tqdm(bam.fetch(until_eof=True), ncols=74, unit=" alignments", leave=True,
+                         bar_format="    Processed: {n:,} alignments [{elapsed}, {rate_fmt}]"):
+            tid = read.reference_id
+            if read.flag & exclude_flags or tid < 0 or read.reference_start < 0 or names[tid] not in slot:
                 continue
-            total_cov, detected, detected_10x, hist = t
-            for stats in lookup[header]:
-                if stats is None:
-                    continue
-                stats.total_coverage_count += total_cov
-                stats.total_bases_detected_at_all += detected
-                stats.total_bases_detected_at_10x += detected_10x
-                for depth, span in hist:
-                    stats.depth_hist[depth] += span
-        return refs
+            if tid != current:
+                if current is not None:
+                    close(current, diff)
+                if seen[tid]:
+                    raise NotGroupedByReference()
+                seen[tid] = True
+                current, diff = tid, np.zeros(lengths[tid] + 1, dtype=np.int32)
+            start = min(read.reference_start, lengths[tid])
+            # (no end without a CIGAR: such an alignment covers its one start base)
+            end = min(read.reference_end or start + 1, lengths[tid])
+            if start < end:
+                diff[start] += 1
+                diff[end] -= 1
 
-    # using pigz for parallel decompression on larger files (>200 MB)
-    use_pigz = os.path.getsize(bed_file) > 200 * 1024 * 1024
+        if current is not None:
+            close(current, diff)
 
-    if use_pigz:
-        proc = subprocess.Popen(
-            ["pigz", "-dc", bed_file],
-            stdout=subprocess.PIPE,
-            text=True,
-            bufsize=1024 * 1024,
-        )
-        line_iter = proc.stdout
-    else:
-        proc = None
-        line_iter = gzip.open(bed_file, "rt")
+        # contigs with no alignments are all depth 0
+        for tid, header in enumerate(names):
+            if header in slot and not seen[tid] and lengths[tid] > 0:
+                add(header, 0, 0, 0, [(0, lengths[tid])])
+
+    return totals
+
+
+def scan_bam(bam_path, contigs, header_to_ref_dict, include_non_primary=False, want_pids=True):
+    """
+    One pass over the bam: adds each contig's per-base coverage to its stats and its ref's,
+    and returns {contig: PidStats} of the reads mapped to each (None if not wanted, or the
+    bam can't be read for them).
+
+    Coverage is counted as `mosdepth -x` counts it: each alignment adds 1 from its start to
+    its end on the contig, deletions and skips in between included, and overlapping mates
+    both count.
+    """
+
+    print(f"\n  {Fore.YELLOW}Reading the bam for coverage{' and percent IDs' if want_pids else ''}...")
+
+    lookup = stats_lookup(contigs, header_to_ref_dict)
+    wanted = list(lookup)
+    exclude_flags = COVERAGE_EXCLUDE_FLAGS_WITH_NON_PRIMARY if include_non_primary else COVERAGE_EXCLUDE_FLAGS
+
+    def one_pass(bam_path):
+        _check_opens_with_pysam(bam_path)
+        done = _native_bam_pass(bam_path, wanted, exclude_flags, include_non_primary, want_pids)
+        if done is not None:
+            return done
+        # the compiled core isn't there, or left this bam to pysam
+        totals = _pysam_coverage(bam_path, wanted, exclude_flags)
+        contig_pid_stats = None
+        if want_pids:
+            try:
+                contig_pid_stats = get_per_contig_pid_stats(bam_path, include_non_primary)
+            except Exception:
+                pass
+        return totals, contig_pid_stats
 
     try:
+        totals, contig_pid_stats = one_pass(bam_path)
+    except NotGroupedByReference:
+        report_message("The BAM isn't sorted, so we're sorting it for you. Why? Because it's common courtesy.",
+                       color="orange", initial_indent="    ", subsequent_indent="    ")
+        totals, contig_pid_stats = one_pass(sort_bam_file(bam_path))
 
-        for line in tqdm(line_iter, ncols=74, unit=" lines", leave=True, bar_format="    Processed: {n:,} lines [{elapsed}, {rate_fmt}]"):
-            fields = line.split("\t")
-            header = fields[0]
-            span = int(fields[2]) - int(fields[1])
-            n_reads = int(fields[3])
+    add_contig_totals(lookup, wanted, totals)
 
-            entry = lookup.get(header)
-            if entry is not None:
-                contig_stats, ref_stats = entry
-                if contig_stats is not None:
-                    contig_stats.update_from_bed_line(span, n_reads)
-                ref_stats.update_from_bed_line(span, n_reads)
-
-    finally:
-        if proc is not None:
-            proc.stdout.close()
-            proc.wait()
-        else:
-            line_iter.close()
-
-    return refs
-
-
-def start_mosdepth(bam_file, output_prefix, include_non_primary):
-    """ starts mosdepth on the bam (sorted and indexed first if it isn't) and returns
-    (its process, its command, the per-base bed it's writing) for finish_mosdepth() """
-
-    bam_file = check_bam_file_is_indexed(bam_file)
-
-    mosdepth_output_dir = f"{output_prefix}-mosdepth-files"
-    if Path(mosdepth_output_dir).is_dir():
-        shutil.rmtree(mosdepth_output_dir)
-    mosdepth_prefix = str(Path(mosdepth_output_dir) / Path(bam_file).stem)
-    os.makedirs(mosdepth_output_dir, exist_ok=True)
-    # (no decompression threads for it, -t: with 4 on a 64-core machine busy with other work
-    # it took over twice as long, 202 s vs 88 s on a 2.8 GB bam, Nov 2026)
-    cmd = ["mosdepth", "-x"]
-    if include_non_primary:
-        cmd += ["--flag", "1540"]
-    cmd += [mosdepth_prefix, bam_file]
-    print(f"\n  {Fore.YELLOW}Running mosdepth to generate per-base coverage data (in the background)...")
-    proc = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-    return proc, cmd, f"{mosdepth_prefix}.per-base.bed.gz"
-
-
-def finish_mosdepth(started):
-    """ waits for the mosdepth that start_mosdepth() started, and returns its per-base bed """
-
-    proc, cmd, bed_file = started
-    if proc.poll() is None:
-        print(f"\n  {Fore.YELLOW}Waiting on mosdepth...")
-        with spinner("mosdepthinitely in progress...", "mosdepthinitely done "):
-            proc.wait()
-    if proc.returncode != 0:
-        raise subprocess.CalledProcessError(proc.returncode, cmd)
-
-    return bed_file
-
-
-def run_mosdepth(bam_file, output_prefix, include_non_primary):
-
-    return finish_mosdepth(start_mosdepth(bam_file, output_prefix, include_non_primary))
+    return contig_pid_stats
 
 
 def two_decimals(value):
