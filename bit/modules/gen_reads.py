@@ -6,10 +6,9 @@ import sys
 import shutil
 import tempfile
 import multiprocessing
-import subprocess
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from tqdm import tqdm # type: ignore
-from bit.modules.general import color_text, spinner
+from bit.modules.general import color_text
 from bit.modules.gen_reads_detection import DetectionTracker
 
 
@@ -26,13 +25,12 @@ def parse_fasta(fasta_file):
         handle.close()
 
 # reads (or pairs) per call into the compiled core
-_NATIVE_CHUNK = 100_000
 _native_gen = []
 
 
 def _native_gen_reads():
     """
-    The compiled core's per-read loop (bit._native.gen_reads_chunk; see rust/src/gen_reads.rs),
+    The compiled core's contig loop (bit._native.gen_reads_contigs; see rust/src/gen_reads.rs),
     or None. It continues the same random.Random state (passed via getstate()/setstate()) with
     the same derivations of random(), randint() and gauss(), so seeded output is identical. As a
     safeguard, it's only used once a sample of its draws has matched this Python's exactly.
@@ -40,7 +38,7 @@ def _native_gen_reads():
     if not _native_gen:
         fn = None
         try:
-            from bit._native import gen_reads_chunk, rng_sample
+            from bit._native import gen_reads_contigs, rng_sample
             check = random.Random(20240521)
             check.random()
             ops = []
@@ -58,52 +56,54 @@ def _native_gen_reads():
                         float(check.randint(int(a), int(b))) if k == 1 else
                         check.gauss(a, b) for k, a, b in ops]
             if got == expected:
-                fn = gen_reads_chunk
+                fn = gen_reads_contigs
         except (ImportError, ValueError, TypeError):
             fn = None
         _native_gen.append(fn)
     return _native_gen[0]
 
 
-def _native_contig_reads(rng, sequence, entry_reads, read_count, seq_id, fasta_file,
-                         per_read_tsv, fw, rw, tracker, contig_index, params):
+def _generate_contigs(rng, seqs, ids, budgets, read_count, params, paired, fasta_file,
+                      fw, rw, per_read_tsv, tracker, python_reads):
     """
-    Generates up to `entry_reads` reads (pairs) for one contig with the compiled core, writing
-    and tracking them as the Python loop does. Returns (reads/pairs done, reads written,
-    realized bases, read_count); any left undone (where the core defers, e.g. an empty contig
-    Python's loop raises on) go through the Python loop from the same generator state.
+    Makes each contig's `budgets` reads (pairs) with the compiled core, which writes them
+    straight to the gzipped writers and returns their spans for the detection tracker. Where
+    it can't (it stops at a contig, e.g., a non-ASCII sequence, or isn't usable at all), that
+    contig's remaining reads go through `python_reads(contig_index, n, read_count)` (the Python
+    loop, from the same generator state) and the core carries on from the next contig.
+    Returns (reads written, realized bases, read_count).
     """
     native = _native_gen_reads()
-    done = reads_written = realized_bases = 0
-    if native is None:
-        return done, reads_written, realized_bases, read_count
-    paired = rw is not None
-    while done < entry_reads:
-        n = min(_NATIVE_CHUNK, entry_reads - done)
-        version, state, gauss_next = rng.getstate()
-        try:
-            res = native(sequence, n, read_count, list(state[:624]), state[624], gauss_next,
-                         paired, *params, bool(per_read_tsv), seq_id, str(fasta_file))
-        except (OverflowError, TypeError, ValueError, UnicodeError):
-            # arguments the core can't take (e.g., integers beyond 64 bits, or a file name
-            # that isn't valid UTF-8): Python's loop handles these reads, as it always has
-            res = None
-        if res is None:
-            break
-        r1, r2, tsv, spans, rbases, new_state, new_index, new_gauss = res
-        rng.setstate((version, tuple(new_state) + (new_index,), new_gauss))
-        fw.write(r1)
-        if paired:
-            rw.write(r2)
-        if per_read_tsv:
-            per_read_tsv.write(tsv)
-        for start, end in spans:
-            tracker.add(contig_index, start, end)
-        realized_bases += rbases
-        reads_written += 2 * n if paired else n
-        read_count += n
-        done += n
-    return done, reads_written, realized_bases, read_count
+    reads_written = realized_bases = 0
+    ci = 0
+    while ci < len(seqs):
+        done = 0
+        if native is not None:
+            version, state, gauss_next = rng.getstate()
+            try:
+                (stopped, read_count, n_written, n_bases, spans,
+                 new_state, new_index, new_gauss) = native(
+                    seqs, ids, budgets, ci, read_count, list(state[:624]), state[624], gauss_next,
+                    paired, *params, str(fasta_file), fw, rw, per_read_tsv)
+            except (OverflowError, TypeError, UnicodeError):
+                # arguments the core can't take (e.g., integers beyond 64 bits, or a file name
+                # that isn't valid UTF-8): Python's loop handles the rest, as it always has
+                native = None
+            else:
+                rng.setstate((version, tuple(new_state) + (new_index,), new_gauss))
+                for contig_index, contig_spans in spans:
+                    for start, end in contig_spans:
+                        tracker.add(contig_index, start, end)
+                reads_written += n_written
+                realized_bases += n_bases
+                if stopped is None:
+                    break
+                ci, done = stopped
+        n_written, n_bases, read_count = python_reads(ci, budgets[ci] - done, read_count)
+        reads_written += n_written
+        realized_bases += n_bases
+        ci += 1
+    return reads_written, realized_bases, read_count
 
 
 def _status(args, msg):
@@ -146,15 +146,8 @@ def generate_reads(args):
 
     per_file_units, stats = gen_reads(args, proportions)
 
-    # compression of large FASTQs is the slow tail after the progress bar; when
-    # orchestrated (quiet) show a spinner so the wait isn't silent. Standalone
-    # keeps its own print messages (compress_with_pigz gates those on quiet).
-    if getattr(args, "quiet", False):
-        print()
-        with spinner("Compressing reads...", "Compressed reads", indent="      "):
-            compress_with_pigz(args.output_prefix, read_type=args.type, quiet=True)
-    else:
-        compress_with_pigz(args.output_prefix, read_type=args.type, quiet=False)
+    if not getattr(args, "quiet", False):
+        print(f"\n    Reads:                  {', '.join(read_paths(args.output_prefix, args.type))}")
 
     if args.per_read_tsv:
         if not getattr(args, "quiet", False):
@@ -539,11 +532,25 @@ def gen_reads(args, proportions):
     return per_file_units, stats
 
 
-def _open_pair_writers(prefix):
-    """ open R1/R2 fastq writers for a given output prefix """
-    fw = open(f"{prefix}_R1.fastq", "w")
-    rw = open(f"{prefix}_R2.fastq", "w")
-    return fw, rw
+# a worker process's reads writers hold this much before compressing it (see GzWriter); the
+# single-process path's hold more and compress on several threads
+WORKER_GZ_BUFFER = 4 << 20
+
+
+def read_paths(prefix, read_type):
+    """ the gzipped reads files for an output prefix: R1 and R2, or one """
+    if read_type in ("single-end", "long"):
+        return [f"{prefix}.fastq.gz"]
+    return [f"{prefix}_R1.fastq.gz", f"{prefix}_R2.fastq.gz"]
+
+
+def _open_read_writers(prefix, read_type, buffer=None):
+    """ gzipped fastq writers for an output prefix: (R1, R2), or (reads, None). Each is compressed
+    as it's written (bit._native.GzWriter), in gzip members, so worker files joined end to
+    end are one gzip file """
+    from bit._native import GzWriter
+    writers = [GzWriter(p) if buffer is None else GzWriter(p, buffer) for p in read_paths(prefix, read_type)]
+    return (writers[0], writers[1]) if len(writers) == 2 else (writers[0], None)
 
 
 _FASTA_SUFFIXES = (".fasta.gz", ".fna.gz", ".fa.gz",
@@ -627,18 +634,20 @@ def write_gta_records(gta_fh, source_fasta, records, tracker, circularize=False)
     return written
 
 
-def _open_per_read_tsv(prefix, write_header, gzipped=False):
+SOURCES_HEADER = "read_id\tsource_fasta\tcontig\tstart\tend\tstrand\twrapped\n"
+
+
+def _open_per_read_tsv(prefix, write_header, buffer=None):
     """
-    open a per-read provenance TSV, optionally gzip-compressed, optionally
-    writing the header row. The final output is gzipped (large, one row per read);
-    per-worker temp files stay plaintext since they're concatenated then removed
+    open a gzipped per-read provenance TSV writer (<prefix>-read-sources.tsv.gz), optionally
+    writing the header row. Workers' files are written without it and joined after one holding
+    it (gzip files joined end to end are one gzip file)
     """
-    if gzipped:
-        fh = gzip.open(f"{prefix}-read-sources.tsv.gz", "wt")
-    else:
-        fh = open(f"{prefix}-read-sources.tsv", "w")
+    from bit._native import GzWriter
+    path = f"{prefix}-read-sources.tsv.gz"
+    fh = GzWriter(path) if buffer is None else GzWriter(path, buffer)
     if write_header:
-        fh.write("read_id\tsource_fasta\tcontig\tstart\tend\tstrand\twrapped\n")
+        fh.write(SOURCES_HEADER)
     return fh
 
 
@@ -646,7 +655,7 @@ def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
                         fw, rw, per_read_tsv, gta_fh=None):
     """
     Generate `file_budget` fragments (2 reads each) from a single fasta, writing to
-    the already-open R1/R2 handles (and optional source TSV). Read ids start at
+    the already-open R1/R2 writers (and optional source TSV writer). Read ids start at
     id_offset+1 so concatenated output keeps global r{N} numbering. Uses a private
     RNG seeded with local_seed for order-independent reproducibility.
 
@@ -664,31 +673,20 @@ def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
     records = list(parse_fasta(fasta_file))
     contig_lengths = [len(r.seq) for r in records]
     per_contig = distribute_units_across_contigs(contig_lengths, file_budget)
+    seqs = [str(r.seq).upper() for r in records]
+    ids = [r.id for r in records]
 
     # detection is tracked over every contig (indices align with `records`), so
     # spans are keyed by the record's position even when some contigs get no reads
     tracker = DetectionTracker(contig_lengths)
 
-    read_count = id_offset
-    reads_written = 0
-    realized_bases = 0
-
-    for contig_index, (record, entry_reads) in enumerate(zip(records, per_contig)):
-        if entry_reads <= 0:
-            continue
-        seq_id = record.id
-        sequence = str(record.seq).upper()
+    def python_reads(contig_index, n, read_count):
+        """ the Python loop: n pairs from one contig; (reads written, bases, read_count) """
+        seq_id = ids[contig_index]
+        sequence = seqs[contig_index]
         seq_length = len(sequence)
-
-        params = (False, args.read_length, float(args.fragment_size), args.fragment_size * pct / 3,
-                  min_frag, max_frag, bool(args.circularize), bool(args.include_Ns))
-        done, n_written, n_bases, read_count = _native_contig_reads(
-            rng, sequence, entry_reads, read_count, seq_id, fasta_file, per_read_tsv,
-            fw, rw, tracker, contig_index, params)
-        reads_written += n_written
-        realized_bases += n_bases
-
-        for _ in range(entry_reads - done):
+        reads_written = realized_bases = 0
+        for _ in range(n):
 
             frag_len = min(max(min_frag, round(rng.gauss(args.fragment_size, args.fragment_size * pct / 3))), max_frag)
             frag_len = min(frag_len, seq_length)
@@ -723,15 +721,10 @@ def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
             read_count += 1
             read_id = f"r{read_count}"
 
-            fw.write(f"@{format_header(read_id + '/1', per_read_tsv, seq_id, r1_start, r1_end, r1_strand, wrapped)}\n")
-            fw.write(f"{forward_read}\n")
-            fw.write(f"+\n")
-            fw.write(f"{fwd_quality_scores}\n")
-
-            rw.write(f"@{format_header(read_id + '/2', per_read_tsv, seq_id, r2_start, r2_end, r2_strand, wrapped)}\n")
-            rw.write(f"{reverse_read}\n")
-            rw.write(f"+\n")
-            rw.write(f"{rev_quality_scores}\n")
+            fw.write(f"@{format_header(read_id + '/1', per_read_tsv, seq_id, r1_start, r1_end, r1_strand, wrapped)}\n"
+                     f"{forward_read}\n+\n{fwd_quality_scores}\n")
+            rw.write(f"@{format_header(read_id + '/2', per_read_tsv, seq_id, r2_start, r2_end, r2_strand, wrapped)}\n"
+                     f"{reverse_read}\n+\n{rev_quality_scores}\n")
 
             if per_read_tsv:
                 write_source_row(per_read_tsv, read_id + "/1", fasta_file, seq_id, r1_start, r1_end, r1_strand, wrapped)
@@ -746,6 +739,13 @@ def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
             realized_bases += len(forward_read) + len(reverse_read)
 
             reads_written += 2
+        return reads_written, realized_bases, read_count
+
+    params = (False, args.read_length, float(args.fragment_size), args.fragment_size * pct / 3,
+              min_frag, max_frag, bool(args.circularize), bool(args.include_Ns))
+    reads_written, realized_bases, _ = _generate_contigs(
+        rng, seqs, ids, per_contig, id_offset, params, True, fasta_file, fw, rw, per_read_tsv,
+        tracker, python_reads)
 
     if gta_fh is not None:
         write_gta_records(gta_fh, fasta_file, records, tracker, args.circularize)
@@ -757,7 +757,7 @@ def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
                         fw, per_read_tsv, gta_fh=None):
     """
     Generate `file_budget` reads (single-end or long) from a single fasta, writing to
-    the already-open handle (and optional source TSV). Read ids start at id_offset+1.
+    the already-open writer (and optional source TSV writer). Read ids start at id_offset+1.
     Uses a private RNG seeded with local_seed.
 
     Returns (reads_written, detection, genome_size, realized_bases) where
@@ -776,34 +776,19 @@ def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
     records = list(parse_fasta(fasta_file))
     contig_lengths = [len(r.seq) for r in records]
     per_contig = distribute_units_across_contigs(contig_lengths, file_budget)
+    seqs = [str(r.seq) for r in records]
+    ids = [r.id for r in records]
 
     # detection tracked over every contig; indices align with `records`
     tracker = DetectionTracker(contig_lengths)
 
-    read_count = id_offset
-    reads_written = 0
-    realized_bases = 0
-
-    for contig_index, (record, entry_reads) in enumerate(zip(records, per_contig)):
-        if entry_reads <= 0:
-            continue
-        seq_id = record.id
-        sequence = str(record.seq)
+    def python_reads(contig_index, n, read_count):
+        """ the Python loop: n reads from one contig; (reads written, bases, read_count) """
+        seq_id = ids[contig_index]
+        sequence = seqs[contig_index]
         seq_length = len(sequence)
-
-        if args.type == "long":
-            params = (True, args.read_length, float(args.read_length), args.read_length * pct / 3,
-                      min_len, max_len, bool(args.circularize), bool(args.include_Ns))
-        else:
-            params = (False, args.read_length, 0.0, 0.0, 0, 0,
-                      bool(args.circularize), bool(args.include_Ns))
-        done, n_written, n_bases, read_count = _native_contig_reads(
-            rng, sequence, entry_reads, read_count, seq_id, fasta_file, per_read_tsv,
-            fw, None, tracker, contig_index, params)
-        reads_written += n_written
-        realized_bases += n_bases
-
-        for _ in range(entry_reads - done):
+        reads_written = realized_bases = 0
+        for _ in range(n):
 
             if args.type == "long":
                 read_len = min(max(min_len, round(rng.gauss(args.read_length, args.read_length * pct / 3))), max_len)
@@ -827,10 +812,8 @@ def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
 
             read_count += 1
             read_id = f"r{read_count}"
-            fw.write(f"@{format_header(read_id, per_read_tsv, seq_id, start, read_end, strand, wrapped)}\n")
-            fw.write(f"{read}\n")
-            fw.write(f"+\n")
-            fw.write(f"{quality_scores}\n")
+            fw.write(f"@{format_header(read_id, per_read_tsv, seq_id, start, read_end, strand, wrapped)}\n"
+                     f"{read}\n+\n{quality_scores}\n")
 
             if per_read_tsv:
                 write_source_row(per_read_tsv, read_id, fasta_file, seq_id, start, read_end, strand, wrapped)
@@ -843,6 +826,17 @@ def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
             realized_bases += len(read)
 
             reads_written += 1
+        return reads_written, realized_bases, read_count
+
+    if args.type == "long":
+        params = (True, args.read_length, float(args.read_length), args.read_length * pct / 3,
+                  min_len, max_len, bool(args.circularize), bool(args.include_Ns))
+    else:
+        params = (False, args.read_length, 0.0, 0.0, 0, 0,
+                  bool(args.circularize), bool(args.include_Ns))
+    reads_written, realized_bases, _ = _generate_contigs(
+        rng, seqs, ids, per_contig, id_offset, params, False, fasta_file, fw, None, per_read_tsv,
+        tracker, python_reads)
 
     if gta_fh is not None:
         write_gta_records(gta_fh, fasta_file, records, tracker, args.circularize)
@@ -865,13 +859,10 @@ def _gen_reads_serial(args, per_file_units, id_offsets):
 
     paired = args.type not in ("single-end", "long")
 
-    if paired:
-        fw, rw = _open_pair_writers(args.output_prefix)
-    else:
-        fw = open(f"{args.output_prefix}.fastq", "w")
-        rw = None
+    # (the reads are compressed on all cores as they're written, as pigz did after)
+    fw, rw = _open_read_writers(args.output_prefix, args.type)
 
-    per_read_tsv = _open_per_read_tsv(args.output_prefix, write_header=True, gzipped=True) if args.per_read_tsv else None
+    per_read_tsv = _open_per_read_tsv(args.output_prefix, write_header=True) if args.per_read_tsv else None
     gta_fh = open(f"{args.output_prefix}-ground-truth-assembly.fasta", "w") if getattr(args, "ground_truth_assembly", False) else None
 
     print("")
@@ -926,13 +917,13 @@ def _worker_generate_file(spec):
 
     tmp_prefix = os.path.join(tmp_dir, f"part_{idx:06d}")
 
-    per_read_tsv = _open_per_read_tsv(tmp_prefix, write_header=False) if args.per_read_tsv else None
+    per_read_tsv = _open_per_read_tsv(tmp_prefix, write_header=False, buffer=WORKER_GZ_BUFFER) if args.per_read_tsv else None
     want_gta = getattr(args, "ground_truth_assembly", False)
     gta_fh = open(f"{tmp_prefix}-gta.fasta", "w") if want_gta else None
     gta_path = f"{tmp_prefix}-gta.fasta" if want_gta else None
 
     if paired:
-        fw, rw = _open_pair_writers(tmp_prefix)
+        fw, rw = _open_read_writers(tmp_prefix, args.type, WORKER_GZ_BUFFER)
         try:
             reads_n, detection, gsize, rbases = gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
                                 fw, rw, per_read_tsv, gta_fh)
@@ -945,9 +936,9 @@ def _worker_generate_file(spec):
                 gta_fh.close()
         return {
             "index": idx,
-            "r1": f"{tmp_prefix}_R1.fastq",
-            "r2": f"{tmp_prefix}_R2.fastq",
-            "source": f"{tmp_prefix}-read-sources.tsv" if args.per_read_tsv else None,
+            "r1": f"{tmp_prefix}_R1.fastq.gz",
+            "r2": f"{tmp_prefix}_R2.fastq.gz",
+            "source": f"{tmp_prefix}-read-sources.tsv.gz" if args.per_read_tsv else None,
             "gta": gta_path,
             "detection": detection,
             "genome_size": gsize,
@@ -955,7 +946,7 @@ def _worker_generate_file(spec):
             "realized_bases": rbases,
         }
     else:
-        fw = open(f"{tmp_prefix}.fastq", "w")
+        fw, _ = _open_read_writers(tmp_prefix, args.type, WORKER_GZ_BUFFER)
         try:
             reads_n, detection, gsize, rbases = gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
                                 fw, per_read_tsv, gta_fh)
@@ -967,14 +958,19 @@ def _worker_generate_file(spec):
                 gta_fh.close()
         return {
             "index": idx,
-            "reads": f"{tmp_prefix}.fastq",
-            "source": f"{tmp_prefix}-read-sources.tsv" if args.per_read_tsv else None,
+            "reads": f"{tmp_prefix}.fastq.gz",
+            "source": f"{tmp_prefix}-read-sources.tsv.gz" if args.per_read_tsv else None,
             "gta": gta_path,
             "detection": detection,
             "genome_size": gsize,
             "reads_generated": reads_n,
             "realized_bases": rbases,
         }
+
+
+def header_path(tmp_dir):
+    """ the gzipped header row of the per-read TSV, made in tmp_dir to be joined before the parts """
+    return os.path.join(tmp_dir, "header-read-sources.tsv.gz")
 
 
 def _concat_files(parts, dest):
@@ -1039,19 +1035,19 @@ def _gen_reads_parallel(args, per_file_units, id_offsets, jobs):
 
         ordered = [results[i] for i in range(len(args.input_fastas))]
 
+        # (gzip files joined end to end are one gzip file)
+        outputs = read_paths(args.output_prefix, args.type)
         if paired:
-            _concat_files([r["r1"] for r in ordered], f"{args.output_prefix}_R1.fastq")
-            _concat_files([r["r2"] for r in ordered], f"{args.output_prefix}_R2.fastq")
+            _concat_files([r["r1"] for r in ordered], outputs[0])
+            _concat_files([r["r2"] for r in ordered], outputs[1])
         else:
-            _concat_files([r["reads"] for r in ordered], f"{args.output_prefix}.fastq")
+            _concat_files([r["reads"] for r in ordered], outputs[0])
 
         if args.per_read_tsv:
-            dest = f"{args.output_prefix}-read-sources.tsv.gz"
-            with gzip.open(dest, "wt") as out:
-                out.write("read_id\tsource_fasta\tcontig\tstart\tend\tstrand\twrapped\n")
-                for r in ordered:
-                    with open(r["source"], "r") as src:
-                        shutil.copyfileobj(src, out)
+            header = _open_per_read_tsv(os.path.join(tmp_dir, "header"), write_header=True)
+            header.close()
+            _concat_files([header_path(tmp_dir)] + [r["source"] for r in ordered],
+                          f"{args.output_prefix}-read-sources.tsv.gz")
 
         if getattr(args, "ground_truth_assembly", False):
             _concat_files([r["gta"] for r in ordered],
@@ -1071,35 +1067,3 @@ def _gen_reads_parallel(args, per_file_units, id_offsets, jobs):
         shutil.rmtree(tmp_dir, ignore_errors=True)
 
     return stats
-
-
-def compress_with_pigz(output_prefix, read_type="paired-end", quiet=False):
-
-    if read_type in ("single-end", "long"):
-        reads_file = f"{output_prefix}.fastq"
-        if not quiet:
-            print("\n    Compressing output FASTQ file...")
-        try:
-            subprocess.run(["pigz", "-f", reads_file], check = True)
-            if not quiet:
-                print(f"\n    Compressed reads:       {reads_file}.gz\n")
-        except FileNotFoundError:
-            print("pigz not found. You're on your own for compression!")
-        except subprocess.CalledProcessError as e:
-            print(f"Error during compression: {e}")
-    else:
-        forward_reads_file = f"{output_prefix}_R1.fastq"
-        reverse_reads_file = f"{output_prefix}_R2.fastq"
-
-        if not quiet:
-            print("\n    Compressing output fastq files...")
-
-        try:
-            subprocess.run(["pigz", "-f", forward_reads_file], check = True)
-            subprocess.run(["pigz", "-f", reverse_reads_file], check = True)
-            if not quiet:
-                print(f"\n    Compressed reads:       {forward_reads_file}.gz, {reverse_reads_file}.gz")
-        except FileNotFoundError:
-            print("pigz not found. You're on your own for compression!")
-        except subprocess.CalledProcessError as e:
-            print(f"Error during compression: {e}")

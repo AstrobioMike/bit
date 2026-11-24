@@ -107,8 +107,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
         "--output-prefix",
         metavar="<STR>",
         default="",
-        help=("String to be prepended to output files (including separator if wanted, "
-              "e.g., 'sample-1-'; default: '')"),
+        help=("Prefix for the output file names (a '-' is automatically added unless it ends in '-' or '_'). "
+              "With a prefix specified here, the output directory may already exist, e.g., holding other samples' output (default: none)"),
     )
 
     general.add_argument(

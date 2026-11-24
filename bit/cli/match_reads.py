@@ -113,8 +113,7 @@ def build_parser(parent_subparsers=None):
     optional.add_argument(
         "--write-reads",
         action="store_true",
-        help=("Write reads uniquely matched to each reference to <prefix>-reads/ "
-              "(one file per reference, or an R1/R2 pair of files if paired-end)"),
+        help=("Write reads uniquely matched to each reference to <prefix>-reads/"),
     )
 
     optional.add_argument(

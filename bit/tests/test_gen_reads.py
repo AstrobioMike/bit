@@ -40,14 +40,19 @@ def _read_fasta_seq(path):
     return seq.upper()
 
 
+def _open_text(path):
+    """ gen-reads' reads files are gzipped """
+    return gzip.open(path, "rt") if str(path).endswith(".gz") else open(path)
+
+
 def _count_reads(path):
-    with open(path) as f:
+    with _open_text(path) as f:
         return sum(1 for _ in f) // 4
 
 
 def _fastq_map(path):
     m = {}
-    with open(path) as f:
+    with _open_text(path) as f:
         lines = [l.rstrip("\n") for l in f]
     for i in range(0, len(lines), 4):
         m[lines[i][1:]] = lines[i + 1]  # strip leading '@'
@@ -123,7 +128,7 @@ def _write_fasta(path, seq_id, seq):
 
 def _collect_forward_reads(fastq_path):
     seqs = []
-    with open(fastq_path, 'r') as f:
+    with _open_text(fastq_path) as f:
         lines = [l.rstrip('\n') for l in f]
     seqs = lines[1::4]
     return seqs
@@ -159,7 +164,7 @@ def test_wrapped_fragments_generated_with_circularize(tmp_path):
 
     gen_reads(args, get_proportions(args))
 
-    forward_fastq = str(out_prefix) + "_R1.fastq"
+    forward_fastq = str(out_prefix) + "_R1.fastq.gz"
     assert os.path.exists(forward_fastq)
     seqs = _collect_forward_reads(forward_fastq)
 
@@ -237,10 +242,10 @@ def test_simulate_single_end_reads_unit(tmp_path):
 
     gen_reads(args, get_proportions(args))
 
-    fastq_path = str(out_prefix) + ".fastq"
+    fastq_path = str(out_prefix) + ".fastq.gz"
     assert os.path.exists(fastq_path), "Single-end FASTQ not created"
 
-    with open(fastq_path, 'r') as f:
+    with _open_text(fastq_path) as f:
         lines = [l.rstrip('\n') for l in f]
 
     # 5 reads × 4 lines each = 20 lines
@@ -282,10 +287,10 @@ def test_long_reads_variable_length(tmp_path):
 
     gen_reads(args, get_proportions(args))
 
-    fastq_path = str(out_prefix) + ".fastq"
+    fastq_path = str(out_prefix) + ".fastq.gz"
     assert os.path.exists(fastq_path)
 
-    with open(fastq_path, 'r') as f:
+    with _open_text(fastq_path) as f:
         lines = [l.rstrip('\n') for l in f]
 
     read_lengths = [len(lines[i * 4 + 1]) for i in range(len(lines) // 4)]
@@ -392,8 +397,8 @@ def test_gen_paired_reads_skips_Ns(tmp_path):
 
     gen_reads(args, get_proportions(args))
 
-    for suffix in ("_R1.fastq", "_R2.fastq"):
-        with open(str(out_prefix) + suffix, 'r') as f:
+    for suffix in ("_R1.fastq.gz", "_R2.fastq.gz"):
+        with _open_text(str(out_prefix) + suffix) as f:
             lines = [l.rstrip('\n') for l in f]
         seqs = lines[1::4]
         for s in seqs:
@@ -693,13 +698,13 @@ def test_per_read_tsv_paired_end_reconstructs_reads(tmp_path):
     assert tsv.exists()
 
     # headers must be bare ids (no comment field) when per_read_tsv is on
-    with open(str(out) + "_R1.fastq") as f:
+    with _open_text(str(out) + "_R1.fastq.gz") as f:
         first_header = f.readline().rstrip("\n")
     assert " " not in first_header
     assert first_header.endswith("/1")
 
-    r1_seqs = _fastq_map(str(out) + "_R1.fastq")
-    r2_seqs = _fastq_map(str(out) + "_R2.fastq")
+    r1_seqs = _fastq_map(str(out) + "_R1.fastq.gz")
+    r2_seqs = _fastq_map(str(out) + "_R2.fastq.gz")
     refseq = _read_fasta_seq(fasta)
 
     with gzip.open(tsv, "rt") as f:
@@ -734,7 +739,7 @@ def test_per_read_tsv_single_end_reconstructs_reads(tmp_path):
     tsv = out.parent / (out.name + "-read-sources.tsv.gz")
     assert tsv.exists()
     refseq = _read_fasta_seq(fasta)
-    seqs = _fastq_map(str(out) + ".fastq")
+    seqs = _fastq_map(str(out) + ".fastq.gz")
 
     with gzip.open(tsv, "rt") as f:
         f.readline()
@@ -761,8 +766,8 @@ def test_paired_end_subunity_proportion_yields_full_count(tmp_path):
     # a single file given a sub-unity proportion is normalized to 1.0 and still
     # receives the full budget (20 reads -> 10 fragments -> 10 R1 + 10 R2)
     gen_reads(args, {str(fasta): 0.5})
-    assert _count_reads(str(out) + "_R1.fastq") == 10
-    assert _count_reads(str(out) + "_R2.fastq") == 10
+    assert _count_reads(str(out) + "_R1.fastq.gz") == 10
+    assert _count_reads(str(out) + "_R2.fastq.gz") == 10
 
 
 def test_single_end_subunity_proportion_yields_full_count(tmp_path):
@@ -773,7 +778,7 @@ def test_single_end_subunity_proportion_yields_full_count(tmp_path):
         seed=0, num_reads=20, read_length=10, output_prefix=str(out),
         circularize=False, type="single-end", include_Ns=False, per_read_tsv=False)
     gen_reads(args, {str(fasta): 0.5})
-    assert _count_reads(str(out) + ".fastq") == 20
+    assert _count_reads(str(out) + ".fastq.gz") == 20
 
 
 def test_long_read_subunity_proportion_yields_full_count(tmp_path):
@@ -786,7 +791,7 @@ def test_long_read_subunity_proportion_yields_full_count(tmp_path):
         circularize=False, type="long", long_read_length_range=50,
         include_Ns=False, per_read_tsv=False)
     gen_reads(args, {str(fasta): 0.5})
-    assert _count_reads(str(out) + ".fastq") == 20
+    assert _count_reads(str(out) + ".fastq.gz") == 20
 
 
 def test_subunity_proportion_writes_source_rows_paired_end(tmp_path):
@@ -873,9 +878,9 @@ def _read_text(path):
 
 
 @pytest.mark.parametrize("rtype,suffixes", [
-    ("paired-end", ["_R1.fastq", "_R2.fastq"]),
-    ("single-end", [".fastq"]),
-    ("long", [".fastq"]),
+    ("paired-end", ["_R1.fastq.gz", "_R2.fastq.gz"]),
+    ("single-end", [".fastq.gz"]),
+    ("long", [".fastq.gz"]),
 ])
 def test_parallel_matches_serial(tmp_path, rtype, suffixes):
     paths = _write_multi_genomes(tmp_path)
@@ -903,8 +908,8 @@ def test_parallel_reproducible_across_job_counts(tmp_path):
     b_args = _multi_args(paths, tmp_path / "j2", jobs=2, seed=77)
     gen_reads(b_args, get_proportions(b_args))
 
-    assert _read_text(str(tmp_path / "j4") + "_R1.fastq") == _read_text(str(tmp_path / "j2") + "_R1.fastq")
-    assert _read_text(str(tmp_path / "j4") + "_R2.fastq") == _read_text(str(tmp_path / "j2") + "_R2.fastq")
+    assert _read_text(str(tmp_path / "j4") + "_R1.fastq.gz") == _read_text(str(tmp_path / "j2") + "_R1.fastq.gz")
+    assert _read_text(str(tmp_path / "j4") + "_R2.fastq.gz") == _read_text(str(tmp_path / "j2") + "_R2.fastq.gz")
 
 
 def test_single_file_output_independent_of_jobs(tmp_path):
@@ -919,7 +924,7 @@ def test_single_file_output_independent_of_jobs(tmp_path):
     b = _multi_args([str(fasta)], tmp_path / "j8", jobs=8, seed=9)
     gen_reads(b, get_proportions(b))
 
-    assert _read_text(str(tmp_path / "j1") + "_R1.fastq") == _read_text(str(tmp_path / "j8") + "_R1.fastq")
+    assert _read_text(str(tmp_path / "j1") + "_R1.fastq.gz") == _read_text(str(tmp_path / "j8") + "_R1.fastq.gz")
 
 
 def test_parallel_total_read_count_and_contiguous_ids(tmp_path):
@@ -927,8 +932,8 @@ def test_parallel_total_read_count_and_contiguous_ids(tmp_path):
     p_args = _multi_args(paths, tmp_path / "cnt", jobs=4, rtype="paired-end")
     gen_reads(p_args, get_proportions(p_args))
 
-    r1 = _fastq_map(str(tmp_path / "cnt") + "_R1.fastq")
-    r2 = _fastq_map(str(tmp_path / "cnt") + "_R2.fastq")
+    r1 = _fastq_map(str(tmp_path / "cnt") + "_R1.fastq.gz")
+    r2 = _fastq_map(str(tmp_path / "cnt") + "_R2.fastq.gz")
     # num_reads=4000 -> 2000 fragments -> 2000 R1 + 2000 R2
     assert len(r1) == 2000
     assert len(r2) == 2000
@@ -1209,3 +1214,26 @@ def test_gta_cli_off_by_default(tmp_path):
         "-j", "1", "-s", "9",
     ])
     assert not (tmp_path / "noreq-ground-truth-assembly.fasta").exists()
+
+
+@pytest.mark.parametrize("rtype", ["paired-end", "single-end", "long"])
+def test_compiled_and_python_loops_make_the_same_reads(tmp_path, monkeypatch, rtype):
+    # the compiled contig loop, the Python loop alone, and the two handing over to each other
+    # (the compiled loop leaves a contig it can't do, here one it's shown as non-ASCII, to the
+    # Python loop, which carries on from the same generator state, then takes the next one)
+    import bit.modules.gen_reads as gr
+    paths = _write_multi_genomes(tmp_path)
+    real = gr._native_gen_reads()
+    assert real is not None
+
+    def handing_over(seqs, *rest):
+        return real([s if i != 1 else s[:-1] + "\u00e9" for i, s in enumerate(seqs)], *rest)
+
+    outputs = {}
+    for name, native in (("compiled", real), ("python", None), ("mixed", handing_over)):
+        monkeypatch.setattr(gr, "_native_gen", [native])
+        a = _multi_args(paths, tmp_path / name, jobs=1, rtype=rtype, seed=31)
+        gen_reads(a, get_proportions(a))
+        suffixes = [".fastq.gz"] if rtype != "paired-end" else ["_R1.fastq.gz", "_R2.fastq.gz"]
+        outputs[name] = [_read_text(str(tmp_path / name) + s) for s in suffixes + ["-read-sources.tsv.gz"]]
+    assert outputs["compiled"] == outputs["python"] == outputs["mixed"]

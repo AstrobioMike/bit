@@ -33,8 +33,7 @@ import os
 import shutil
 import sys
 import tempfile
-from collections import Counter, defaultdict, deque
-from concurrent.futures import ThreadPoolExecutor
+from collections import Counter, defaultdict
 from contextlib import nullcontext
 from itertools import chain, islice
 from operator import itemgetter
@@ -56,7 +55,6 @@ POSITION_STEP = 16
 KMER_SIZE = 31
 NUM_KMER_SAMPLES = 25   # k-mers sampled per read by the exact-match prefilter
 BATCH_SIZE = 500        # reads (or pairs) per batch sent to each worker
-NATIVE_BATCHES_PER_CALL = 20  # batches handed to the compiled matcher at a time
 SORT_BUFFER_ROWS = 500_000  # read-hits rows held in memory before a sorted chunk goes to disk
 
 FASTA_EXTENSIONS = (".fasta", ".fa", ".fna", ".fas", ".fsa", ".ffn", ".fsta")
@@ -705,88 +703,6 @@ def process_batch(batch_and_pos):
     return len(batch), pos, results
 
 
-def _result_row(rec_or_pair, paired, keep_seqs, hits, hit_seqs, best, next_best):
-    """process_batch()'s result tuple for one assigned read or pair."""
-    if paired:
-        r1, r2 = rec_or_pair
-        recs = (r1, r2) if (keep_seqs and len(hits) == 1) else None
-        return (_mate_base_name(r1[0]), f"{len(r1[1])},{len(r2[1])}",
-                hits, hit_seqs, best, next_best, recs)
-    recs = (rec_or_pair,) if (keep_seqs and len(hits) == 1) else None
-    return (rec_or_pair[0], str(len(rec_or_pair[1])), hits, hit_seqs, best, next_best, recs)
-
-
-def native_batch_results(native, batches, paired, min_frac_of_seq, keep_seqs, python_matcher):
-    """
-    As mapping process_batch over `batches`, but with the compiled matcher (bit._native.ReadMatcher,
-    which follows the Python matchers step for step and spreads its work across its threads).
-    Batches are handed over NATIVE_BATCHES_PER_CALL at a time, and the next group is read while
-    the current one is being matched; results still come back one batch at a time, in order.
-
-    Python's str.upper() can change non-ASCII characters (sometimes into ASCII, or into more
-    than one character), so a group holding any non-ASCII read goes through the Python
-    matcher instead, built on first need by `python_matcher()`, keeping results identical.
-
-    If reading the input fails partway (e.g., a malformed record), every batch read before
-    the failing one is still matched and passed on before the error is, as the one-batch-at-
-    a-time Python path does, so outputs written up to that point are the same.
-    """
-    def submit(ex, group):
-        seqs = []
-        bounds = []
-        for batch, _ in group:
-            start = len(seqs) // (2 if paired else 1)
-            seqs.extend(m[1] for pair in batch for m in pair) if paired else seqs.extend(r[1] for r in batch)
-            bounds.append((start, start + len(batch)))
-        if all(x.isascii() for x in seqs):
-            return group, bounds, ex.submit(native.assign, seqs, paired, min_frac_of_seq)
-        return group, bounds, None
-
-    def finish(group, bounds, future):
-        if future is None:
-            _W["matcher"] = python_matcher()
-            for batch_and_pos in group:
-                yield process_batch(batch_and_pos)
-            return
-        results = future.result()
-        k = 0
-        for (batch, pos), (start, end) in zip(group, bounds):
-            rows = []
-            while k < len(results) and results[k][0] < end:
-                j, hits, hit_seqs, best, next_best = results[k]
-                rows.append(_result_row(batch[j - start], paired, keep_seqs, list(hits),
-                                        list(hit_seqs), best, next_best))
-                k += 1
-            yield len(batch), pos, rows
-
-    with ThreadPoolExecutor(max_workers=1) as ex:
-        pending = deque()
-        batches = iter(batches)
-        while True:
-            group = []
-            try:
-                for _ in range(NATIVE_BATCHES_PER_CALL):
-                    b = next(batches, None)
-                    if b is None:
-                        break
-                    group.append(b)
-            except (Exception, SystemExit):
-                # the input failed partway: everything read before it is still matched and
-                # passed on first
-                if group:
-                    pending.append(submit(ex, group))
-                while pending:
-                    yield from finish(*pending.popleft())
-                raise
-            if not group:
-                break
-            pending.append(submit(ex, group))
-            if len(pending) > 1:
-                yield from finish(*pending.popleft())
-        while pending:
-            yield from finish(*pending.popleft())
-
-
 ### outputs ###
 
 def output_paths(output_dir, output_prefix=""):
@@ -896,7 +812,8 @@ class SortedRowWriter:
 
 
 class ReadWriter:
-    """Writes uniquely assigned reads to per-reference files, opened lazily."""
+    """Writes uniquely assigned reads to per-reference gzipped files, opened lazily (the Python path;
+    the compiled one writes them itself, see ReadMatcher.assign_files)."""
 
     def __init__(self, reads_dir, refs, paired):
         self.reads_dir = reads_dir
@@ -907,13 +824,11 @@ class ReadWriter:
 
     def write(self, ref_idx, recs):
         if ref_idx not in self.handles:
-            safe = self.refs[ref_idx][0].replace("/", "_")
-            ext = "fastq" if recs[0][2] is not None else "fasta"
-            if self.paired:
-                names = [f"{safe}_R1.{ext}", f"{safe}_R2.{ext}"]
-            else:
-                names = [f"{safe}.{ext}"]
-            self.handles[ref_idx] = [open(os.path.join(self.reads_dir, n), "w") for n in names]
+            ext = "fastq.gz" if recs[0][2] is not None else "fasta.gz"
+            names = [f"{read_file_base(self.refs[ref_idx][0], mate, self.paired)}.{ext}"
+                     for mate in ((1, 2) if self.paired else (None,))]
+            self.handles[ref_idx] = [gzip.open(os.path.join(self.reads_dir, n), "wt", compresslevel=4)  # as GzOut (readio.rs)
+                                     for n in names]
 
         for handle, (name, seq, qual) in zip(self.handles[ref_idx], recs):
             if qual is not None:
@@ -925,6 +840,56 @@ class ReadWriter:
         for hs in self.handles.values():
             for h in hs:
                 h.close()
+
+
+def read_file_base(ref_name, mate, paired):
+    """ a written-reads file's name, less its extension (.fastq.gz or .fasta.gz) """
+    safe = ref_name.replace("/", "_")
+    return f"{safe}_R{mate}" if paired else safe
+
+
+def run_python_matchers(matcher, seq_to_ref, min_frac_of_seq, paired, write_reads, jobs,
+                        read_1, read_2, paths, refs, take_batch):
+    """
+    The pure-Python path, for references the compiled matcher can't take (non-ASCII): reads
+    read here and matched by the Python matchers, in worker processes with jobs > 1.
+    """
+    worker_args = (matcher, seq_to_ref, min_frac_of_seq, paired, write_reads)
+    r1_reader = FastxReader(read_1)
+    r2_reader = FastxReader(read_2) if paired else None
+    records = iter_pairs(r1_reader, r2_reader) if paired else iter(r1_reader)
+    batches = batched_with_progress(records, r1_reader, BATCH_SIZE)
+    writer = ReadWriter(paths["reads_dir"], refs, paired) if write_reads else None
+    pool = None
+    if jobs > 1:
+        # using 'spawn' rather than 'fork' to match gen-reads and summarize-assembly (fork can
+        # deadlock from multi-threaded contexts and warns on Python 3.12+). the indexes are pickled
+        # once per worker at startup; identical k-mer sets are shared objects, so pickle keeps
+        # that compact even when the sequences are highly similar
+        ctx = mp.get_context("spawn")
+        pool = ctx.Pool(jobs, initializer=init_worker, initargs=worker_args)
+        # imap keeps results in input order
+        batch_results = pool.imap(process_batch, batches)
+    else:
+        init_worker(*worker_args)
+        batch_results = map(process_batch, batches)
+    try:
+        for n_in_batch, pos, results in batch_results:
+            take_batch(n_in_batch, pos, results, writer)
+    except BaseException:
+        if pool is not None:
+            pool.terminate()
+            pool = None
+        raise
+    finally:
+        if pool is not None:
+            pool.close()
+            pool.join()
+        if writer is not None:
+            writer.close()
+        r1_reader.close()
+        if r2_reader is not None:
+            r2_reader.close()
 
 
 ### driver ###
@@ -996,108 +961,98 @@ def match_reads(ref_paths, read_1, read_2=None, output_dir="match-reads", output
         else:
             matcher = build_python_matcher()
 
-    worker_args = (matcher, seq_to_ref, min_frac_of_seq, paired, write_reads)
-
-    # setting up reads input
-    r1_reader = FastxReader(read_1)
-    r2_reader = FastxReader(read_2) if paired else None
-    records = iter_pairs(r1_reader, r2_reader) if paired else iter(r1_reader)
-    batches = batched_with_progress(records, r1_reader, BATCH_SIZE)
-
-    pool = None
-    if use_native:
-        init_worker(*worker_args)
-        python_matcher = []   # built only if a batch needs it (see native_batch_results)
-        def get_python_matcher():
-            if not python_matcher:
-                python_matcher.append(build_python_matcher())
-            return python_matcher[0]
-        batch_results = native_batch_results(native, batches, paired, min_frac_of_seq,
-                                             write_reads, get_python_matcher)
-    elif jobs > 1:
-        # using 'spawn' rather than 'fork' to match gen-reads and summarize-assembly (fork can
-        # deadlock from multi-threaded contexts and warns on Python 3.12+). the indexes are pickled
-        # once per worker at startup; identical k-mer sets are shared objects, so pickle keeps
-        # that compact even when the sequences are highly similar
-        ctx = mp.get_context("spawn")
-        pool = ctx.Pool(jobs, initializer=init_worker, initargs=worker_args)
-        # imap keeps results in input order
-        batch_results = pool.imap(process_batch, batches)
-    else:
-        init_worker(*worker_args)
-        batch_results = map(process_batch, batches)
-
     unit = "pairs" if paired else "reads"
     n_total = n_unique = n_ambig = 0
     unique_counts, ambig_counts = Counter(), Counter()
     seq_unique_counts, seq_ambig_counts = Counter(), Counter()
-    writer = ReadWriter(paths["reads_dir"], refs, paired) if write_reads else None
-
-    print(f"\n    Assigning {unit} with {plural(jobs, 'job')}...\n")
-    pbar = tqdm(total=r1_reader.total_bytes, unit="B", unit_scale=True, unit_divisor=1024,
-                ncols=80, disable=not show_progress, file=sys.stdout,
-                bar_format="    {l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}{postfix}]")
-    pbar.set_postfix_str(f"0 {unit}")
 
     header = ["read_id", "read_lengths" if paired else "read_length", "status", "num_hits",
               "matching_refs", "edit_distance", "next_best_edit_distance"]
     if not per_seq:
         header.append("matching_seqs")
     # rows are sorted by read length (combined for pairs), longest first, then by edit distance
-    hits_writer = SortedRowWriter(paths["hits"], header)
+    # (the compiled path writes the table itself)
+    hits_writer = None if use_native else SortedRowWriter(paths["hits"], header)
+
+    read_paths = [read_1] + ([read_2] if paired else [])
+    total_bytes = sum(os.path.getsize(p) for p in read_paths) if use_native else os.path.getsize(read_1)
+    print(f"\n    Assigning {unit} with {plural(jobs, 'job')}...\n")
+    pbar = tqdm(total=total_bytes, unit="B", unit_scale=True, unit_divisor=1024,
+                ncols=80, disable=not show_progress, file=sys.stdout,
+                bar_format="    {l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}{postfix}]")
+    pbar.set_postfix_str(f"0 {unit}")
+    last_pos = 0
+
+    def take_batch(n_in_batch, pos, results, writer=None):
+        """ one batch's results (see process_batch) into the counts and the hits table """
+        nonlocal n_total, n_unique, n_ambig, last_pos
+        n_total += n_in_batch
+        pbar.update(min(pos, total_bytes) - last_pos)
+        last_pos = min(pos, total_bytes)
+        pbar.set_postfix_str(f"{n_total:,} {unit}", refresh=False)
+
+        for read_id, lengths, hits, hit_seqs, best, next_best, recs in results:
+            if len(hits) == 1:
+                status = "unique"
+                n_unique += 1
+                unique_counts[hits[0]] += 1
+                seq_unique_counts.update(hit_seqs)
+                if writer is not None:
+                    writer.write(hits[0], recs)
+            else:
+                status = "ambiguous"
+                n_ambig += 1
+                ambig_counts.update(hits)
+                seq_ambig_counts.update(hit_seqs)
+
+            line = (f"{read_id}\t{lengths}\t{status}\t{len(hits)}\t"
+                    f"{','.join(refs[i][0] for i in hits)}\t{best}\t"
+                    f"{'NA' if next_best is None else next_best}")
+            if not per_seq:
+                line += "\t" + ",".join(seq_label(si) for si in hit_seqs)
+            total_length = sum(int(x) for x in lengths.split(","))
+            hits_writer.add((-total_length, best), line)
 
     try:
-        last_pos = 0
-        for n_in_batch, pos, results in batch_results:
-            n_total += n_in_batch
-            pbar.update(pos - last_pos)
-            last_pos = pos
-            pbar.set_postfix_str(f"{n_total:,} {unit}", refresh=False)
+        if use_native:
+            # reading, matching and writing the reads all in the compiled core, across its threads
+            reads_out = None
+            if write_reads:
+                os.makedirs(paths["reads_dir"], exist_ok=True)
+                reads_out = [[os.path.join(paths["reads_dir"], read_file_base(name, mate, paired))
+                              for mate in ((1, 2) if paired else (None,))] for name, _ in refs]
 
-            for read_id, lengths, hits, hit_seqs, best, next_best, recs in results:
-                if len(hits) == 1:
-                    status = "unique"
-                    n_unique += 1
-                    unique_counts[hits[0]] += 1
-                    seq_unique_counts.update(hit_seqs)
-                    if writer is not None:
-                        writer.write(hits[0], recs)
-                else:
-                    status = "ambiguous"
-                    n_ambig += 1
-                    ambig_counts.update(hits)
-                    seq_ambig_counts.update(hit_seqs)
+            def on_progress(n_in_batch, pos):
+                take_batch(n_in_batch, pos, [])
 
-                line = (f"{read_id}\t{lengths}\t{status}\t{len(hits)}\t"
-                        f"{','.join(refs[i][0] for i in hits)}\t{best}\t"
-                        f"{'NA' if next_best is None else next_best}")
-                if not per_seq:
-                    line += "\t" + ",".join(seq_label(si) for si in hit_seqs)
-                total_length = sum(int(x) for x in lengths.split(","))
-                hits_writer.add((-total_length, best), line)
-
-        # finishing the bar cleanly (the buffered position can lag the file size)
-        pbar.update(r1_reader.total_bytes - last_pos)
+            try:
+                counts = native.assign_files(
+                    read_1, read_2, min_frac_of_seq, paths["hits"], "\t".join(header),
+                    [name for name, _ in refs], None if per_seq else [seq_label(si) for si in range(len(seqs))],
+                    SORT_BUFFER_ROWS, on_progress, reads_out)
+            except ValueError as e:  # a problem with the read files
+                print(f"\n\n    {e}")
+                notify_premature_exit()
+            n_total, n_unique, n_ambig = counts[:3]
+            for counter, values in zip((unique_counts, ambig_counts, seq_unique_counts, seq_ambig_counts),
+                                       counts[3:]):
+                counter.update({i: v for i, v in enumerate(values) if v})
+        else:
+            run_python_matchers(matcher, seq_to_ref, min_frac_of_seq, paired, write_reads, jobs,
+                                read_1, read_2, paths, refs, take_batch)
+        # finishing the bar cleanly
+        pbar.update(total_bytes - last_pos)
 
     except BaseException:
-        if pool is not None:
-            pool.terminate()
-            pool = None
-        hits_writer.cleanup()
+        if hits_writer is not None:
+            hits_writer.cleanup()
         raise
 
     finally:
         pbar.close()
-        if pool is not None:
-            pool.close()
-            pool.join()
-        if writer is not None:
-            writer.close()
-        r1_reader.close()
-        if r2_reader is not None:
-            r2_reader.close()
 
-    hits_writer.finish()
+    if hits_writer is not None:
+        hits_writer.finish()
 
     ref_num_seqs, ref_lengths = Counter(), Counter()
     for _, ri, seq in seqs:

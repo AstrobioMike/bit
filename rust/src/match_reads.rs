@@ -1,7 +1,8 @@
 //! The read-matching core of `bit match-reads`: a port of ExactMatcher, EditMatcher and
 //! process_batch() in bit/modules/match_reads.py, following them step for step so results
 //! are identical (the Python classes stay as the reference, and tests compare the two).
-//! Reading the input and writing outputs stay in Python.
+//! ReadMatcher.assign_files (lib.rs) also reads the input (readio.rs), keeps the counts and
+//! writes the hits table (SortedRows, as SortedRowWriter in match_reads.py) and the reads.
 
 use crate::edlib;
 use rayon::prelude::*;
@@ -96,18 +97,36 @@ fn canon_key(kmer: &[u8]) -> Key<'static> {
     Key::Owned(canon(kmer))
 }
 
+// packed k-mers are held in this many hash maps, chosen by key, so the maps can be filled on
+// several threads at once
+const SHARDS: usize = 64;
+
+fn shard(key: u64) -> usize {
+    (key.wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 58) as usize
+}
+
 /// k-mer -> V, split by key kind (see Key)
 struct KmerMap<V> {
-    packed: FxHashMap<u64, V>,
+    packed: Vec<FxHashMap<u64, V>>,
     bytes: FxHashMap<Box<[u8]>, V>,
 }
 
-impl<V> KmerMap<V> {
-    fn new() -> Self {
-        KmerMap {
-            packed: FxHashMap::default(),
-            bytes: FxHashMap::default(),
+impl<V: Send> KmerMap<V> {
+    /// from packed keys (each once) with their values, and the other keys' map
+    fn build(packed: Vec<(u64, V)>, bytes: FxHashMap<Box<[u8]>, V>) -> Self {
+        let mut buckets: Vec<Vec<(u64, V)>> = (0..SHARDS).map(|_| Vec::new()).collect();
+        for (k, v) in packed {
+            buckets[shard(k)].push((k, v));
         }
+        let packed = buckets
+            .into_par_iter()
+            .map(|b| {
+                let mut m = FxHashMap::with_capacity_and_hasher(b.len(), Default::default());
+                m.extend(b);
+                m
+            })
+            .collect();
+        KmerMap { packed, bytes }
     }
 
     fn get(&self, kmer: &[u8]) -> Option<&V> {
@@ -116,32 +135,45 @@ impl<V> KmerMap<V> {
 
     fn get_key(&self, k: Key) -> Option<&V> {
         match k {
-            Key::Packed(v) => self.packed.get(&v),
+            Key::Packed(v) => self.packed[shard(v)].get(&v),
             Key::Bytes(b) => self.bytes.get(b),
             Key::Owned(b) => self.bytes.get(b.as_slice()),
         }
     }
+}
 
-    fn entry(&mut self, kmer: &[u8]) -> &mut V
-    where
-        V: Default,
-    {
-        self.entry_key(key(kmer))
-    }
+/// k-mer -> its (sequence, position) entries, all held in one list (a list per k-mer took a
+/// third of the time to build an index, and as long again to free)
+struct PosIndex {
+    map: KmerMap<(u64, u32)>, // (start in `entries`, how many)
+    entries: Vec<(u32, u32)>,
+}
 
-    fn entry_key(&mut self, k: Key) -> &mut V
-    where
-        V: Default,
-    {
-        match k {
-            Key::Packed(v) => self.packed.entry(v).or_default(),
-            Key::Bytes(b) => self.bytes.entry(b.into()).or_default(),
-            Key::Owned(b) => self.bytes.entry(b.into_boxed_slice()).or_default(),
+impl PosIndex {
+    /// from gather_kmers()'s output
+    fn build(packed: &[(u64, u32, u32)], other: Vec<(Box<[u8]>, u32, u32)>) -> Self {
+        let mut entries = Vec::with_capacity(packed.len() + other.len());
+        let mut keys = Vec::new();
+        for (km, run) in key_runs(packed) {
+            keys.push((km, (entries.len() as u64, run.len() as u32)));
+            entries.extend(run.iter().map(|&(_, i, p)| (i, p)));
         }
+        let mut grouped: FxHashMap<Box<[u8]>, Vec<(u32, u32)>> = FxHashMap::default();
+        for (km, i, p) in other {
+            grouped.entry(km).or_default().push((i, p));
+        }
+        let mut bytes = FxHashMap::default();
+        for (km, v) in grouped {
+            bytes.insert(km, (entries.len() as u64, v.len() as u32));
+            entries.extend(v);
+        }
+        PosIndex { map: KmerMap::build(keys, bytes), entries }
     }
 
-    fn values_mut(&mut self) -> impl Iterator<Item = &mut V> {
-        self.packed.values_mut().chain(self.bytes.values_mut())
+    fn get(&self, kmer: &[u8]) -> Option<&[(u32, u32)]> {
+        self.map
+            .get(kmer)
+            .map(|&(start, n)| &self.entries[start as usize..start as usize + n as usize])
     }
 }
 
@@ -159,6 +191,8 @@ fn contains(hay: &[u8], needle: &[u8]) -> bool {
 struct SetPool {
     sets: Vec<Vec<u32>>,
     ids: FxHashMap<Vec<u32>, u32>,
+    // the ids of one-sequence sets, by the sequence (u32::MAX: none yet), the usual case
+    single: Vec<u32>,
 }
 
 impl SetPool {
@@ -166,20 +200,100 @@ impl SetPool {
         SetPool {
             sets: Vec::new(),
             ids: FxHashMap::default(),
+            single: Vec::new(),
         }
     }
 
     fn intern(&mut self, mut s: Vec<u32>) -> u32 {
         s.sort_unstable();
         s.dedup();
-        if let Some(&id) = self.ids.get(&s) {
+        self.intern_sorted(&s)
+    }
+
+    /// as intern(), for a set already sorted and without repeats (nothing is allocated if
+    /// the set is already held)
+    fn intern_sorted(&mut self, s: &[u32]) -> u32 {
+        if let [i] = s {
+            let i = *i as usize;
+            if i < self.single.len() && self.single[i] != u32::MAX {
+                return self.single[i];
+            }
+        }
+        if let Some(&id) = self.ids.get(s) {
             return id;
         }
         let id = self.sets.len() as u32;
-        self.sets.push(s.clone());
-        self.ids.insert(s, id);
+        self.sets.push(s.to_vec());
+        self.ids.insert(s.to_vec(), id);
+        if let [i] = s {
+            let i = *i as usize;
+            if self.single.len() <= i {
+                self.single.resize(i + 1, u32::MAX);
+            }
+            self.single[i] = id;
+        }
         id
     }
+}
+
+/// The k-mers of every sequence, gathered on the threads: `at(i)` gives sequence i's text and
+/// the positions of its k-mers in it. K-mers that pack (see Key) come back as (key, sequence,
+/// position) sorted by key, then sequence, then position; those that don't, as (key bytes,
+/// sequence, position) in sequence then position order. The key is the canonical k-mer's with
+/// `canonical`, else the k-mer's own. Either way, each k-mer's (sequence, position) pairs come
+/// in the order a pass over the sequences in turn would meet them, so maps built from these
+/// hold the same as ones filled k-mer by k-mer.
+#[allow(clippy::type_complexity)]
+fn gather_kmers(
+    n_seqs: usize,
+    k: usize,
+    canonical: bool,
+    at: impl Fn(usize) -> Option<(Vec<u8>, Vec<usize>)> + Sync,
+) -> (Vec<(u64, u32, u32)>, Vec<(Box<[u8]>, u32, u32)>) {
+    let per_seq: Vec<(Vec<(u64, u32, u32)>, Vec<(Box<[u8]>, u32, u32)>)> = (0..n_seqs)
+        .into_par_iter()
+        .map(|i| {
+            let (mut packed, mut other) = (Vec::new(), Vec::new());
+            if let Some((text, positions)) = at(i) {
+                packed.reserve(positions.len());
+                for p in positions {
+                    let kmer = &text[p..p + k];
+                    let key = if canonical { canon_key(kmer) } else { key(kmer) };
+                    match key {
+                        Key::Packed(v) => packed.push((v, i as u32, p as u32)),
+                        Key::Bytes(b) => other.push((b.into(), i as u32, p as u32)),
+                        Key::Owned(b) => other.push((b.into_boxed_slice(), i as u32, p as u32)),
+                    }
+                }
+            }
+            (packed, other)
+        })
+        .collect();
+    let total = per_seq.iter().map(|(p, _)| p.len()).sum();
+    let mut packed = Vec::with_capacity(total);
+    let mut other = Vec::new();
+    for (p, o) in per_seq {
+        packed.extend(p);
+        other.extend(o);
+    }
+    packed.par_sort_unstable();
+    (packed, other)
+}
+
+/// runs of equal keys in gather_kmers()'s sorted packed k-mers: (key, its entries)
+fn key_runs(sorted: &[(u64, u32, u32)]) -> impl Iterator<Item = (u64, &[(u64, u32, u32)])> {
+    sorted.chunk_by(|a, b| a.0 == b.0).map(|run| (run[0].0, run))
+}
+
+/// the sequences (sorted, each once) of a run of gather_kmers() entries, into `buf`
+fn run_seqs<'a>(run: &[(u64, u32, u32)], buf: &'a mut Vec<u32>) -> &'a [u32] {
+    buf.clear();
+    for &(_, i, _) in run {
+        if buf.last() != Some(&i) {
+            buf.push(i);
+        }
+    }
+    buf
 }
 
 pub struct Refs {
@@ -284,16 +398,16 @@ pub struct Exact {
     step: usize,
     pool: SetPool,
     index: KmerMap<u32>,                // canonical k-mer -> set id (see build_kmer_index)
-    pos_index: KmerMap<Vec<(u32, u32)>>, // forward k-mer -> (ref, position) (build_position_index)
+    pos_index: PosIndex, // forward k-mer -> (ref, position) (build_position_index)
 }
 
 impl Exact {
     pub fn new(seqs: Vec<Vec<u8>>, k: usize, n_samples: usize, circular: bool, step: usize) -> Self {
         let refs = Refs { seqs, circular };
 
-        // build_kmer_index()
-        let mut sets: KmerMap<Vec<u32>> = KmerMap::new();
-        for (i, seq) in refs.seqs.iter().enumerate() {
+        // build_kmer_index(): canonical k-mer -> the set of sequences holding it
+        let (packed, other) = gather_kmers(refs.seqs.len(), k, true, |i| {
+            let seq = &refs.seqs[i];
             let l = seq.len();
             let (circ, n_kmers): (Vec<u8>, usize) = if circular {
                 let rep = seq.repeat(k / l + 2);
@@ -301,30 +415,33 @@ impl Exact {
             } else {
                 (seq.clone(), (l + 1).saturating_sub(k))
             };
-            for j in 0..n_kmers {
-                let v = sets.entry_key(canon_key(&circ[j..j + k]));
-                if v.last() != Some(&(i as u32)) {
-                    v.push(i as u32);
-                }
+            Some((circ, (0..n_kmers).collect()))
+        });
+        let mut pool = SetPool::new();
+        let mut keys = Vec::new();
+        let mut buf = Vec::new();
+        for (km, run) in key_runs(&packed) {
+            keys.push((km, pool.intern_sorted(run_seqs(run, &mut buf))));
+        }
+        drop(packed);
+        let mut sets: FxHashMap<Box<[u8]>, Vec<u32>> = FxHashMap::default();
+        for (km, i, _) in other {
+            let v = sets.entry(km).or_default();
+            if v.last() != Some(&i) {
+                v.push(i);
             }
         }
-        let mut pool = SetPool::new();
-        let mut index = KmerMap::new();
-        for (km, s) in sets.packed.drain() {
-            index.packed.insert(km, pool.intern(s));
-        }
-        for (km, s) in sets.bytes.drain() {
-            index.bytes.insert(km, pool.intern(s));
-        }
+        let bytes = sets.into_iter().map(|(km, s)| (km, pool.intern(s))).collect();
+        let index = KmerMap::build(keys, bytes);
 
-        // build_position_index()
-        let mut pos_index: KmerMap<Vec<(u32, u32)>> = KmerMap::new();
-        for (i, seq) in refs.seqs.iter().enumerate() {
+        // build_position_index(): forward k-mer -> (sequence, position), every `step` positions
+        let (packed, other) = gather_kmers(refs.seqs.len(), k, false, |i| {
+            let seq = &refs.seqs[i];
             let l = seq.len();
             if l < k {
-                continue;
+                return None;
             }
-            let (circ, positions): (Vec<u8>, Vec<usize>) = if circular {
+            Some(if circular {
                 let mut c = seq.clone();
                 c.extend_from_slice(&seq[..k - 1]);
                 (c, (0..l).step_by(step).collect())
@@ -335,14 +452,9 @@ impl Exact {
                     p.push(last);
                 }
                 (seq.clone(), p)
-            };
-            for p in positions {
-                pos_index.entry(&circ[p..p + k]).push((i as u32, p as u32));
-            }
-        }
-        for v in pos_index.values_mut() {
-            v.shrink_to_fit();
-        }
+            })
+        });
+        let pos_index = PosIndex::build(&packed, other);
 
         Exact {
             refs,
@@ -455,7 +567,7 @@ pub struct Edit {
     k: usize,
     max_edits: usize,
     pool: SetPool,
-    dense: KmerMap<Vec<(u32, u32)>>, // forward k-mer -> (ref, position), every position
+    dense: PosIndex,                 // forward k-mer -> (ref, position), every position
     kmer_refs: KmerMap<u32>,         // forward k-mer -> set id of refs holding it
 }
 
@@ -463,34 +575,38 @@ impl Edit {
     pub fn new(seqs: Vec<Vec<u8>>, k: usize, circular: bool, max_edits: usize) -> Self {
         let refs = Refs { seqs, circular };
 
-        // build_dense_position_index()
-        let mut dense: KmerMap<Vec<(u32, u32)>> = KmerMap::new();
-        for (i, seq) in refs.seqs.iter().enumerate() {
+        // build_dense_position_index(): forward k-mer -> (sequence, position), and the set of
+        // sequences holding it
+        let (packed, other) = gather_kmers(refs.seqs.len(), k, false, |i| {
+            let seq = &refs.seqs[i];
             let l = seq.len();
             if l < k {
-                continue;
+                return None;
             }
-            let (circ, n_kmers) = if circular {
+            Some(if circular {
                 let mut c = seq.clone();
                 c.extend_from_slice(&seq[..k - 1]);
-                (c, l)
+                (c, (0..l).collect())
             } else {
-                (seq.clone(), l - k + 1)
-            };
-            for p in 0..n_kmers {
-                dense.entry(&circ[p..p + k]).push((i as u32, p as u32));
+                (seq.clone(), (0..l - k + 1).collect())
+            })
+        });
+        let mut pool = SetPool::new();
+        let mut keys = Vec::new();
+        let mut buf = Vec::new();
+        for (km, run) in key_runs(&packed) {
+            keys.push((km, pool.intern_sorted(run_seqs(run, &mut buf))));
+        }
+        let mut sets: FxHashMap<Box<[u8]>, Vec<u32>> = FxHashMap::default();
+        for (km, i, _) in &other {
+            let v = sets.entry(km.clone()).or_default();
+            if v.last() != Some(i) {
+                v.push(*i);
             }
         }
-        let mut pool = SetPool::new();
-        let mut kmer_refs = KmerMap::new();
-        for (km, e) in dense.packed.iter_mut() {
-            e.shrink_to_fit();
-            kmer_refs.packed.insert(*km, pool.intern(e.iter().map(|&(i, _)| i).collect()));
-        }
-        for (km, e) in dense.bytes.iter_mut() {
-            e.shrink_to_fit();
-            kmer_refs.bytes.insert(km.clone(), pool.intern(e.iter().map(|&(i, _)| i).collect()));
-        }
+        let bytes = sets.into_iter().map(|(km, s)| (km, pool.intern(s))).collect();
+        let kmer_refs = KmerMap::build(keys, bytes);
+        let dense = PosIndex::build(&packed, other);
 
         Edit {
             refs,
@@ -765,5 +881,124 @@ pub fn assign_batch(
         seqs.par_iter()
             .map(|s| assign_single(m, seq_to_ref, s, min_frac))
             .collect()
+    }
+}
+
+/// A read-hits table written sorted by key, ties in the order the rows came (as
+/// SortedRowWriter in match_reads.py): up to `buffer_rows` rows are held in memory, beyond that
+/// sorted chunks go to a temporary directory beside the table and are merged at the end, so
+/// memory stays bounded however many rows there are. The directory is removed when this is
+/// dropped, finished or not; the table is written only by finish().
+pub struct SortedRows {
+    path: std::path::PathBuf,
+    header: String,
+    buffer_rows: usize,
+    rows: Vec<((i64, i64), String)>,
+    chunks: Vec<std::path::PathBuf>,
+    tmp_dir: Option<std::path::PathBuf>,
+}
+
+impl SortedRows {
+    pub fn new(path: &str, header: String, buffer_rows: usize) -> Self {
+        SortedRows {
+            path: path.into(),
+            header,
+            buffer_rows: buffer_rows.max(1),
+            rows: Vec::new(),
+            chunks: Vec::new(),
+            tmp_dir: None,
+        }
+    }
+
+    pub fn add(&mut self, key: (i64, i64), line: String) -> std::io::Result<()> {
+        self.rows.push((key, line));
+        if self.rows.len() >= self.buffer_rows {
+            self.spill()?;
+        }
+        Ok(())
+    }
+
+    fn spill(&mut self) -> std::io::Result<()> {
+        use std::io::Write;
+        if self.tmp_dir.is_none() {
+            let parent = match self.path.parent() {
+                Some(p) if !p.as_os_str().is_empty() => p.to_path_buf(),
+                _ => std::path::PathBuf::from("."),
+            };
+            let mut n = 0;
+            let dir = loop {
+                let d = parent.join(format!(".sorting-{}-{n}", std::process::id()));
+                match std::fs::create_dir(&d) {
+                    Ok(()) => break d,
+                    Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => n += 1,
+                    Err(e) => return Err(e),
+                }
+            };
+            self.tmp_dir = Some(dir);
+        }
+        self.rows.sort_by_key(|r| r.0); // stable: ties stay in the order added
+        let chunk = self.tmp_dir.as_ref().unwrap().join(format!("chunk-{}.tsv", self.chunks.len()));
+        let mut f = std::io::BufWriter::new(std::fs::File::create(&chunk)?);
+        for ((a, b), line) in self.rows.drain(..) {
+            writeln!(f, "{a}\t{b}\t{line}")?;
+        }
+        f.flush()?;
+        self.chunks.push(chunk);
+        Ok(())
+    }
+
+    pub fn finish(mut self) -> std::io::Result<()> {
+        use std::io::{BufRead, Write};
+        let mut out = std::io::BufWriter::new(std::fs::File::create(&self.path)?);
+        writeln!(out, "{}", self.header)?;
+        if self.chunks.is_empty() {
+            self.rows.sort_by_key(|r| r.0);
+            for (_, line) in &self.rows {
+                writeln!(out, "{line}")?;
+            }
+        } else {
+            if !self.rows.is_empty() {
+                self.spill()?;
+            }
+            // a k-way merge; on equal keys the earlier chunk goes first, so ties stay in input order
+            let mut readers = Vec::new();
+            for c in &self.chunks {
+                readers.push(std::io::BufReader::new(std::fs::File::open(c)?).lines());
+            }
+            let parse = |l: String| -> std::io::Result<((i64, i64), String)> {
+                let mut parts = l.splitn(3, '\t');
+                let bad = || std::io::Error::new(std::io::ErrorKind::InvalidData, "bad sort chunk");
+                let a = parts.next().and_then(|x| x.parse().ok()).ok_or_else(bad)?;
+                let b = parts.next().and_then(|x| x.parse().ok()).ok_or_else(bad)?;
+                Ok(((a, b), parts.next().ok_or_else(bad)?.to_string()))
+            };
+            let mut heads: Vec<Option<((i64, i64), String)>> = Vec::new();
+            let mut heap = std::collections::BinaryHeap::new();
+            for (ci, r) in readers.iter_mut().enumerate() {
+                let head = r.next().transpose()?.map(parse).transpose()?;
+                if let Some((key, _)) = &head {
+                    heap.push(std::cmp::Reverse((*key, ci)));
+                }
+                heads.push(head);
+            }
+            while let Some(std::cmp::Reverse((_, ci))) = heap.pop() {
+                let (_, line) = heads[ci].take().unwrap();
+                writeln!(out, "{line}")?;
+                let head = readers[ci].next().transpose()?.map(parse).transpose()?;
+                if let Some((key, _)) = &head {
+                    heap.push(std::cmp::Reverse((*key, ci)));
+                }
+                heads[ci] = head;
+            }
+        }
+        out.flush()
+    }
+}
+
+impl Drop for SortedRows {
+    fn drop(&mut self) {
+        if let Some(d) = &self.tmp_dir {
+            let _ = std::fs::remove_dir_all(d);
+        }
     }
 }

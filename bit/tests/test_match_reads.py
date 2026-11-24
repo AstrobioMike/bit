@@ -543,7 +543,7 @@ def test_match_reads_single_end(tmp_path, seqs, jobs, monkeypatch):
     assert not (tmp_path / "out" / "seq-summary.tsv").exists()
     assert "matching_seqs" not in open(f"{out}/read-hits.tsv").readline()
 
-    written = (tmp_path / "out" / "reads" / "p1.fastq").read_text().split("\n")
+    written = gzip.open(tmp_path / "out" / "reads" / "p1.fastq.gz", "rt").read().split("\n")
     assert written[0] == "@full_p1"
 
 
@@ -579,8 +579,8 @@ def test_match_reads_paired_end(tmp_path, seqs):
     assert hits["pair_unique"][4] == "p1"
     assert hits["pair_ambig"][4] == "p1,p2"
 
-    assert (tmp_path / "pe" / "reads" / "p1_R1.fastq").read_text().startswith("@pair_unique/1")
-    assert (tmp_path / "pe" / "reads" / "p1_R2.fastq").read_text().startswith("@pair_unique/2")
+    assert gzip.open(tmp_path / "pe" / "reads" / "p1_R1.fastq.gz", "rt").read().startswith("@pair_unique/1")
+    assert gzip.open(tmp_path / "pe" / "reads" / "p1_R2.fastq.gz", "rt").read().startswith("@pair_unique/2")
 
 
 def test_cli_output_dir_force_and_prefix(tmp_path, seqs):
@@ -718,7 +718,7 @@ def test_per_file_pairs_span_sequences_of_one_ref(tmp_path, genomes):
                  jobs=1, show_progress=False)
     hits = read_hits_tsv(f"{out}/read-hits.tsv")
     assert hits["p"][2:] == ["unique", "1", "A", "0", "NA", "A:chrom,A:plasmid"]
-    assert (tmp_path / "pf-pe" / "reads" / "A_R1.fastq").read_text().startswith("@p/1")
+    assert gzip.open(tmp_path / "pf-pe" / "reads" / "A_R1.fastq.gz", "rt").read().startswith("@p/1")
 
 
 def test_per_file_edit_distance_is_lowest_among_a_refs_seqs(tmp_path, genomes):
@@ -886,3 +886,54 @@ def test_read_hits_sorted_by_length_then_edit_distance(tmp_path, seqs, monkeypat
     hits = read_hits_tsv(f"{out}/read-hits.tsv")
     assert list(hits) == ["long", "short"]
     assert hits["long"][1] == "150,150"
+
+
+def test_written_reads_are_as_in_the_input(tmp_path, seqs):
+    # headers keep their comments; files are gzipped
+    refs_fa = tmp_path / "refs.fa"
+    write_fasta(refs_fa, seqs.items())
+    p1 = seqs["p1"]
+    r1, r2 = tmp_path / "r1.fq", tmp_path / "r2.fq"
+    write_fastq(r1, [("pu/1 sample=x", p1[280:380])])
+    write_fastq(r2, [("pu/2 sample=x", revcomp(p1[450:550]))])
+    out = tmp_path / "w"
+    match_reads([str(refs_fa)], str(r1), read_2=str(r2), output_dir=str(out), per_seq=True,
+                write_reads=True, jobs=2, show_progress=False)
+    assert gzip.open(out / "reads" / "p1_R1.fastq.gz", "rt").read() == open(r1).read()
+    assert gzip.open(out / "reads" / "p1_R2.fastq.gz", "rt").read() == open(r2).read()
+    assert read_hits_tsv(f"{out}/read-hits.tsv")["pu"][2] == "unique"
+
+
+def test_mismatched_mates_stop_the_run(tmp_path, seqs):
+    import subprocess
+    refs_fa = tmp_path / "refs.fa"
+    write_fasta(refs_fa, seqs.items())
+    p1 = seqs["p1"]
+    r1, r2 = tmp_path / "r1.fq", tmp_path / "r2.fq"
+    write_fastq(r1, [("a/1", p1[0:100]), ("b/1", p1[100:200])])
+    write_fastq(r2, [("b/2", revcomp(p1[300:400])), ("a/2", revcomp(p1[400:500]))])
+    result = subprocess.run(["bit", "match-reads", "-r", str(refs_fa), "-i", str(r1), "-I", str(r2),
+                             "-o", str(tmp_path / "o")], capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "Read names don't match" in result.stdout
+
+
+def test_hits_table_same_whether_or_not_rows_spill_to_disk(tmp_path, seqs, monkeypatch):
+    rng = random.Random(11)
+    refs_fa = tmp_path / "refs.fa"
+    write_fasta(refs_fa, seqs.items())
+    reads = []
+    for n in range(300):
+        name = rng.choice(list(seqs))
+        start = rng.randrange(0, len(seqs[name]) - 150)
+        reads.append((f"r{n}", seqs[name][start:start + rng.choice([90, 120, 150])]))
+    write_fastq(tmp_path / "reads.fq", reads)
+    tables = []
+    for buffer_rows in (1_000_000, 7):
+        monkeypatch.setattr(match_reads_module, "SORT_BUFFER_ROWS", buffer_rows)
+        out = tmp_path / f"b{buffer_rows}"
+        match_reads([str(refs_fa)], str(tmp_path / "reads.fq"), output_dir=str(out), jobs=2,
+                    show_progress=False)
+        tables.append((out / "read-hits.tsv").read_text())
+        assert not any(p.name.startswith(".sorting-") for p in out.iterdir())
+    assert tables[0] == tables[1] and len(tables[0].splitlines()) > 100

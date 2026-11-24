@@ -16,6 +16,7 @@ mod gen_reads;
 mod kmers;
 mod match_reads;
 mod matcher;
+mod readio;
 mod reads;
 mod trim;
 
@@ -286,7 +287,7 @@ impl Matcher {
 struct ReadMatcher {
     inner: match_reads::Matcher,
     seq_to_ref: Vec<u32>,
-    pool: rayon::ThreadPool,
+    pool: Arc<rayon::ThreadPool>,
 }
 
 #[pymethods]
@@ -328,7 +329,7 @@ impl ReadMatcher {
         Ok(ReadMatcher {
             inner,
             seq_to_ref,
-            pool,
+            pool: Arc::new(pool),
         })
     }
 
@@ -376,6 +377,304 @@ impl ReadMatcher {
             .filter_map(|(j, r)| r.map(|a| (j, a.hits, a.hit_seqs, a.best, a.next_best)))
             .collect())
     }
+
+    /// Assigns every read (or pair) of a read file (or pair of them) and writes the read-hits
+    /// table, as match_reads() in match_reads.py does with the Python matchers: records are read
+    /// on threads of their own (readio.rs) and matched a batch at a time across the matcher's
+    /// threads; rows go to `hits_path` after `header`, sorted by read length (combined for
+    /// pairs), longest first, then edit distance, ties in input order (match_reads::SortedRows,
+    /// holding up to `buffer_rows` in memory). `ref_names` name the refs in the table, and
+    /// `seq_labels`, if given, the seqs (the matching_seqs column). After each batch,
+    /// `on_progress(reads in the batch, bytes of the input files read so far)` is called. With
+    /// `reads_out` (for each ref, its output path(s) less the extension: one, or two for
+    /// pairs), uniquely assigned reads are written there as they were in the input, gzipped
+    /// (".fastq.gz" or ".fasta.gz" added); a ref's files are made only once a read goes to them.
+    /// Returns (reads, unique, ambiguous, unique by ref, ambiguous by ref, unique by seq,
+    /// ambiguous by seq).
+    #[pyo3(signature = (read_1, read_2, min_frac_of_seq, hits_path, header, ref_names, seq_labels,
+                        buffer_rows, on_progress, reads_out=None))]
+    #[allow(clippy::too_many_arguments, clippy::type_complexity)]
+    fn assign_files(
+        &self,
+        py: Python<'_>,
+        read_1: String,
+        read_2: Option<String>,
+        min_frac_of_seq: f64,
+        hits_path: String,
+        header: String,
+        ref_names: Vec<String>,
+        seq_labels: Option<Vec<String>>,
+        buffer_rows: usize,
+        on_progress: Bound<'_, PyAny>,
+        reads_out: Option<Vec<Vec<String>>>,
+    ) -> PyResult<(u64, u64, u64, Vec<u64>, Vec<u64>, Vec<u64>, Vec<u64>)> {
+        let paired = read_2.is_some();
+        let prog = Arc::new(reads::Progress::default());
+        let (batches, fastq, spent) =
+            readio::spawn_reader(read_1, read_2, MATCH_BATCH, Some(prog.clone())).map_err(to_py_err)?;
+        // (a Mutex only so the receiver can be waited on with the GIL let go)
+        let batches = std::sync::Mutex::new(batches);
+        let writer = reads_out.map(|outs| spawn_ref_writer(outs, fastq, self.pool.clone()));
+        let mut table = match_reads::SortedRows::new(&hits_path, header, buffer_rows);
+        let mut t = MatchTally {
+            unique_ref: vec![0; ref_names.len()],
+            ambig_ref: vec![0; ref_names.len()],
+            unique_seq: vec![0; self.seq_to_ref.len()],
+            ambig_seq: vec![0; self.seq_to_ref.len()],
+            ..Default::default()
+        };
+        let result = (|| -> PyResult<()> {
+            loop {
+                let batch = match py.detach(|| batches.lock().expect("reader").recv()) {
+                    Err(_) => return Ok(()), // all read
+                    Ok(Err(e)) => return Err(to_py_err(e)),
+                    Ok(Ok(b)) => b,
+                };
+                let n = batch.len();
+                let writes = py.detach(|| -> io::Result<RefWrites> {
+                    let (rows, writes) = self.assign_records(&batch, paired, min_frac_of_seq, writer.is_some());
+                    for row in rows {
+                        let (key, line) = t.take(row, &ref_names, seq_labels.as_deref());
+                        table.add(key, line)?;
+                    }
+                    Ok(writes)
+                }).map_err(to_py_err)?;
+                t.reads += n as u64;
+                let _ = spent.send(batch);
+                if let Some((tx, _)) = &writer
+                    && !writes.is_empty()
+                    && tx.send(writes).is_err()
+                {
+                    break; // the writer failed: its error is below
+                }
+                on_progress.call1((n, prog.bytes.load(Ordering::Relaxed)))?;
+                if n < MATCH_BATCH {
+                    return Ok(());
+                }
+            }
+            Ok(())
+        })();
+        drop(batches);
+        let wrote = match writer {
+            Some((tx, handle)) => {
+                drop(tx);
+                py.detach(|| handle.join().expect("reads writer thread"))
+            }
+            None => Ok(()),
+        };
+        result?;
+        wrote.map_err(to_py_err)?;
+        py.detach(|| table.finish()).map_err(to_py_err)?;
+        Ok((t.reads, t.unique, t.ambig, t.unique_ref, t.ambig_ref, t.unique_seq, t.ambig_seq))
+    }
+}
+
+/// assign_files()'s counts
+#[derive(Default)]
+struct MatchTally {
+    reads: u64,
+    unique: u64,
+    ambig: u64,
+    unique_ref: Vec<u64>,
+    ambig_ref: Vec<u64>,
+    unique_seq: Vec<u64>,
+    ambig_seq: Vec<u64>,
+}
+
+impl MatchTally {
+    /// one assigned read (or pair) into the counts; its hits-table row as (sort key, line)
+    fn take(&mut self, row: MatchRow, ref_names: &[String], seq_labels: Option<&[String]>) -> ((i64, i64), String) {
+        use std::fmt::Write;
+        let (id, lengths, total_len, hits, hit_seqs, best, next_best) = row;
+        let status = if hits.len() == 1 {
+            self.unique += 1;
+            self.unique_ref[hits[0] as usize] += 1;
+            for &si in &hit_seqs {
+                self.unique_seq[si as usize] += 1;
+            }
+            "unique"
+        } else {
+            self.ambig += 1;
+            for &ri in &hits {
+                self.ambig_ref[ri as usize] += 1;
+            }
+            for &si in &hit_seqs {
+                self.ambig_seq[si as usize] += 1;
+            }
+            "ambiguous"
+        };
+        let mut line = format!("{id}\t{lengths}\t{status}\t{}\t", hits.len());
+        for (j, &ri) in hits.iter().enumerate() {
+            if j > 0 {
+                line.push(',');
+            }
+            line.push_str(&ref_names[ri as usize]);
+        }
+        let _ = write!(line, "\t{best}\t");
+        match next_best {
+            Some(nb) => {
+                let _ = write!(line, "{nb}");
+            }
+            None => line.push_str("NA"),
+        }
+        if let Some(labels) = seq_labels {
+            line.push('\t');
+            for (j, &si) in hit_seqs.iter().enumerate() {
+                if j > 0 {
+                    line.push(',');
+                }
+                line.push_str(&labels[si as usize]);
+            }
+        }
+        ((-(total_len as i64), best as i64), line)
+    }
+}
+
+/// A gzipped text file written from Python (readio::GzOut: compressed in chunks, each its own
+/// gzip member, on several threads; gzip files written this way can be joined end to end into
+/// one). `buffer`: bytes held before compressing (default 32 MB; smaller when many are open at
+/// once, e.g., one per worker process).
+#[pyclass]
+struct GzWriter {
+    out: Option<readio::GzOut>,
+}
+
+#[pymethods]
+impl GzWriter {
+    #[new]
+    #[pyo3(signature = (path, buffer=32 << 20))]
+    fn new(path: String, buffer: usize) -> PyResult<Self> {
+        let out = readio::GzOut::with_buffer(&path, buffer).map_err(to_py_err)?;
+        Ok(GzWriter { out: Some(out) })
+    }
+
+    /// appends text (str or bytes)
+    fn write(&mut self, py: Python<'_>, text: &Bound<'_, PyAny>) -> PyResult<()> {
+        let out = self.out.as_mut().ok_or_else(|| PyValueError::new_err("write to a closed GzWriter"))?;
+        if let Ok(s) = text.extract::<pyo3::pybacked::PyBackedStr>() {
+            py.detach(|| out.push(s.as_bytes())).map_err(to_py_err)
+        } else {
+            let b: pyo3::pybacked::PyBackedBytes = text.extract()?;
+            py.detach(|| out.push(&b)).map_err(to_py_err)
+        }
+    }
+
+    /// compresses what's left and closes the file (again: nothing)
+    fn close(&mut self, py: Python<'_>) -> PyResult<()> {
+        match self.out.take() {
+            Some(out) => py.detach(|| out.finish()).map_err(to_py_err),
+            None => Ok(()),
+        }
+    }
+
+    fn __enter__(slf: PyRef<'_, Self>) -> PyRef<'_, Self> {
+        slf
+    }
+
+    fn __exit__(
+        &mut self,
+        py: Python<'_>,
+        _exc_type: &Bound<'_, PyAny>,
+        _exc: &Bound<'_, PyAny>,
+        _tb: &Bound<'_, PyAny>,
+    ) -> PyResult<bool> {
+        self.close(py)?;
+        Ok(false)
+    }
+}
+
+// reads (or pairs) read and matched at a time by ReadMatcher.assign_files
+const MATCH_BATCH: usize = 16_384;
+
+type MatchRow = (String, String, usize, Vec<u32>, Vec<u32>, usize, Option<usize>);
+// a batch's uniquely assigned reads by ref: (ref, read 1's records, read 2's)
+type RefWrites = Vec<(u32, Vec<u8>, Vec<u8>)>;
+
+impl ReadMatcher {
+    /// one batch's assigned reads (or pairs), in input order: (id, lengths, total length, hit
+    /// refs, hit seqs, best distance, next-best or None); and with `keep`, its uniquely assigned
+    /// records by ref
+    fn assign_records(&self, batch: &[readio::Rec], paired: bool, min_frac: f64, keep: bool) -> (Vec<MatchRow>, RefWrites) {
+        let mut seqs: Vec<&[u8]> = Vec::with_capacity(batch.len() * if paired { 2 } else { 1 });
+        for r in batch {
+            seqs.push(&r.seq1);
+            if let Some(s2) = &r.seq2 {
+                seqs.push(s2);
+            }
+        }
+        let results = self
+            .pool
+            .install(|| match_reads::assign_batch(&self.inner, &self.seq_to_ref, &seqs, paired, min_frac));
+        let mut rows = Vec::new();
+        let mut by_ref: std::collections::BTreeMap<u32, (Vec<u8>, Vec<u8>)> = Default::default();
+        for (rec, a) in batch.iter().zip(results) {
+            let Some(a) = a else { continue };
+            let (id, lengths, total_len) = match &rec.seq2 {
+                Some(s2) => (
+                    String::from_utf8_lossy(readio::base_name(&rec.raw1)).into_owned(),
+                    format!("{},{}", rec.seq1.len(), s2.len()),
+                    rec.seq1.len() + s2.len(),
+                ),
+                None => (readio::name_str(&rec.raw1), rec.seq1.len().to_string(), rec.seq1.len()),
+            };
+            if keep && a.hits.len() == 1 {
+                let (one, two) = by_ref.entry(a.hits[0]).or_default();
+                one.extend_from_slice(&rec.raw1);
+                if let Some(raw2) = &rec.raw2 {
+                    two.extend_from_slice(raw2);
+                }
+            }
+            rows.push((id, lengths, total_len, a.hits, a.hit_seqs, a.best, a.next_best));
+        }
+        (rows, by_ref.into_iter().map(|(r, (a, b))| (r, a, b)).collect())
+    }
+}
+
+/// writes uniquely assigned reads to their ref's gzipped file(s), on a thread of its own,
+/// compressing each batch's on the matcher's threads (in pieces, as most of a batch's reads can
+/// go to one ref) while the next batch is matched; a ref's files are made when its first read
+/// comes
+#[allow(clippy::type_complexity)]
+fn spawn_ref_writer(
+    outs: Vec<Vec<String>>,
+    fastq: bool,
+    pool: Arc<rayon::ThreadPool>,
+) -> (std::sync::mpsc::SyncSender<RefWrites>, std::thread::JoinHandle<io::Result<()>>) {
+    let (tx, rx) = std::sync::mpsc::sync_channel::<RefWrites>(2);
+    let ext = if fastq { "fastq.gz" } else { "fasta.gz" };
+    let handle = std::thread::spawn(move || -> io::Result<()> {
+        let mut files: Vec<Option<Vec<readio::GzOut>>> = (0..outs.len()).map(|_| None).collect();
+        for writes in rx {
+            let writes: Vec<(u32, Vec<u8>, Vec<u8>)> = pool.install(|| {
+                writes
+                    .into_iter()
+                    .map(|(r, a, b)| (r, readio::gz_members(&a), readio::gz_members(&b)))
+                    .collect()
+            });
+            for (r, one, two) in writes {
+                let r = r as usize;
+                if files[r].is_none() {
+                    let made: io::Result<Vec<_>> = outs[r]
+                        .iter()
+                        .map(|p| readio::GzOut::with_buffer(&format!("{p}.{ext}"), 1 << 20))
+                        .collect();
+                    files[r] = Some(made?);
+                }
+                let f = files[r].as_mut().unwrap();
+                f[0].push_member(&one)?;
+                if let Some(f2) = f.get_mut(1) {
+                    f2.push_member(&two)?;
+                }
+            }
+        }
+        for f in files.into_iter().flatten() {
+            for o in f {
+                o.finish()?;
+            }
+        }
+        Ok(())
+    });
+    (tx, handle)
 }
 
 type AccTuple = (u64, f64, Option<f64>, Option<f64>, Vec<(f64, u64)>);
@@ -650,15 +949,30 @@ fn rng_sample(
 /// and returning a random.Random state: (R1 fastq text, R2 fastq text, per-read tsv text,
 /// merged covered spans, realized bases, state words, index, gauss_next). None where the
 /// Python loop should run instead.
+// reads (or pairs) generated at a time by gen_reads_contigs before they're written out
+const GEN_CHUNK: u64 = 100_000;
+
+/// The contig loop of gen_one_file_paired / gen_one_file_single in gen_reads.py (see
+/// gen_reads.rs), from contig `first` on: each contig's `budgets` reads (or pairs) are made
+/// from the random.Random state given (624 words, index, gauss_next) and written straight to
+/// the gzipped writers (`r2` for pairs; `tsv` for the per-read sources, whose presence also
+/// keeps the coordinates out of the read headers). `seqs` are the contigs' sequences as the
+/// Python loop uses them, `ids` their names. Stops at a contig this can't do as Python would
+/// (a non-ASCII sequence, or arguments Python's loop raises on), after the reads it did make
+/// there. Returns (where it stopped: (contig, reads done in it) or None, the read count after,
+/// reads written, bases in them, each contig's covered spans (merged, sorted), and the
+/// generator state after).
 #[pyfunction]
-#[pyo3(signature = (seq, n, read_count, state, index, gauss_next, paired, long, read_length,
-                    mu, sigma, min_len, max_len, circular, include_ns, per_read_tsv,
-                    seq_id, source_fasta))]
+#[pyo3(signature = (seqs, ids, budgets, first, read_count, state, index, gauss_next, paired, long,
+                    read_length, mu, sigma, min_len, max_len, circular, include_ns, source_fasta,
+                    r1, r2=None, tsv=None))]
 #[allow(clippy::too_many_arguments, clippy::type_complexity)]
-fn gen_reads_chunk(
+fn gen_reads_contigs(
     py: Python<'_>,
-    seq: &str,
-    n: u64,
+    seqs: Vec<pyo3::pybacked::PyBackedStr>,
+    ids: Vec<String>,
+    budgets: Vec<u64>,
+    first: usize,
     read_count: u64,
     state: Vec<u32>,
     index: usize,
@@ -672,53 +986,95 @@ fn gen_reads_chunk(
     max_len: i64,
     circular: bool,
     include_ns: bool,
-    per_read_tsv: bool,
-    seq_id: &str,
-    source_fasta: &str,
-) -> PyResult<
-    Option<(
-        String,
-        String,
-        String,
-        Vec<(i64, i64)>,
-        u64,
-        Vec<u32>,
-        usize,
-        Option<f64>,
-    )>,
-> {
-    if !seq.is_ascii() {
-        return Ok(None);
+    source_fasta: String,
+    r1: Bound<'_, GzWriter>,
+    r2: Option<Bound<'_, GzWriter>>,
+    tsv: Option<Bound<'_, GzWriter>>,
+) -> PyResult<(
+    Option<(usize, u64)>,
+    u64,
+    u64,
+    u64,
+    Vec<(usize, Vec<(i64, i64)>)>,
+    Vec<u32>,
+    usize,
+    Option<f64>,
+)> {
+    if ids.len() != seqs.len() || budgets.len() != seqs.len() || paired != r2.is_some() {
+        return Err(PyValueError::new_err("seqs, ids and budgets must match, and r2 is for pairs only"));
     }
     let mut mt = mt_from(state, index, gauss_next)?;
-    let p = gen_reads::Params {
-        paired,
-        long,
-        read_length,
-        mu,
-        sigma,
-        min_len,
-        max_len,
-        circular,
-        include_ns,
-        per_read_tsv,
-        seq_id,
-        source_fasta,
+    // the writers' outputs, taken for the run and put back after
+    let take = |w: &Bound<'_, GzWriter>| -> PyResult<readio::GzOut> {
+        w.borrow_mut().out.take().ok_or_else(|| PyValueError::new_err("write to a closed GzWriter"))
     };
-    let seq = seq.as_bytes();
-    let chunk = py.detach(|| gen_reads::gen_chunk(&mut mt, seq, n, read_count, &p));
-    Ok(chunk.map(|c| {
-        (
-            c.r1,
-            c.r2,
-            c.tsv,
-            c.spans,
-            c.realized_bases,
-            mt.state.to_vec(),
-            mt.index,
-            mt.gauss_next,
-        )
-    }))
+    let mut out1 = take(&r1)?;
+    let mut out2 = match &r2 { Some(w) => Some(take(w)?), None => None };
+    let mut out_tsv = match &tsv { Some(w) => Some(take(w)?), None => None };
+    let per_read_tsv = out_tsv.is_some();
+    let result = py.detach(|| -> io::Result<_> {
+        let (mut count, mut written, mut bases) = (read_count, 0u64, 0u64);
+        let mut spans_by_contig = Vec::new();
+        for ci in first..seqs.len() {
+            let budget = budgets[ci];
+            if budget == 0 {
+                continue;
+            }
+            let seq: &str = &seqs[ci];
+            if !seq.is_ascii() {
+                return Ok((Some((ci, 0)), count, written, bases, spans_by_contig, mt));
+            }
+            let p = gen_reads::Params {
+                paired,
+                long,
+                read_length,
+                mu,
+                sigma,
+                min_len,
+                max_len,
+                circular,
+                include_ns,
+                per_read_tsv,
+                seq_id: &ids[ci],
+                source_fasta: &source_fasta,
+            };
+            let mut spans = Vec::new();
+            let mut done = 0;
+            while done < budget {
+                let n = GEN_CHUNK.min(budget - done);
+                // a chunk this can't do leaves the generator as it was before it
+                let before = gen_reads::Mt { state: mt.state, index: mt.index, gauss_next: mt.gauss_next };
+                let Some(c) = gen_reads::gen_chunk(&mut mt, seq.as_bytes(), n, count, &p) else {
+                    mt = before;
+                    spans_by_contig.push((ci, gen_reads::merge(spans)));
+                    return Ok((Some((ci, done)), count, written, bases, spans_by_contig, mt));
+                };
+                out1.push(c.r1.as_bytes())?;
+                if let Some(o) = out2.as_mut() {
+                    o.push(c.r2.as_bytes())?;
+                }
+                if let Some(o) = out_tsv.as_mut() {
+                    o.push(c.tsv.as_bytes())?;
+                }
+                spans.extend(c.spans);
+                bases += c.realized_bases;
+                written += if paired { 2 * n } else { n };
+                count += n;
+                done += n;
+            }
+            spans_by_contig.push((ci, gen_reads::merge(spans)));
+        }
+        Ok((None, count, written, bases, spans_by_contig, mt))
+    });
+    r1.borrow_mut().out = Some(out1);
+    if let (Some(w), Some(o)) = (&r2, out2) {
+        w.borrow_mut().out = Some(o);
+    }
+    if let (Some(w), Some(o)) = (&tsv, out_tsv) {
+        w.borrow_mut().out = Some(o);
+    }
+    let (stopped, count, written, bases, spans, mt) = result.map_err(to_py_err)?;
+    Ok((stopped, count, written, bases, spans, mt.state.to_vec(), mt.index, mt.gauss_next))
 }
 
 #[pymodule]
@@ -729,8 +1085,10 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(collect_contexts, m)?)?;
     m.add_function(wrap_pyfunction!(foldback::scan_foldbacks, m)?)?;
     m.add_function(wrap_pyfunction!(foldback::trim_long_folds, m)?)?;
+    m.add_function(wrap_pyfunction!(foldback::filter_foldback_files, m)?)?;
     m.add_class::<Matcher>()?;
     m.add_class::<ReadMatcher>()?;
+    m.add_class::<GzWriter>()?;
     m.add_function(wrap_pyfunction!(bam_mapped_reads_pids, m)?)?;
     m.add_function(wrap_pyfunction!(bam_per_contig_pid_stats, m)?)?;
     m.add_function(wrap_pyfunction!(bam_coverage_and_pid_stats, m)?)?;
@@ -741,7 +1099,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fasta_primer_sites, m)?)?;
     m.add_function(wrap_pyfunction!(fasta_assembly_summary, m)?)?;
     m.add_function(wrap_pyfunction!(rng_sample, m)?)?;
-    m.add_function(wrap_pyfunction!(gen_reads_chunk, m)?)?;
+    m.add_function(wrap_pyfunction!(gen_reads_contigs, m)?)?;
     m.add_class::<Progress>()?;
     Ok(())
 }

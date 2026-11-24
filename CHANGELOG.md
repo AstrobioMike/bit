@@ -14,6 +14,13 @@
 
 -->
 
+## v2.14.2 (24-Nov-2026)
+
+### Changed
+- efficiency improvements to `bit filter-foldbacks`, `bit match-reads`, and `bit gen-reads`
+
+---
+
 ## v2.14.1 (17-Nov-2026)
 
 ### Changed

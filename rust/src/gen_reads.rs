@@ -235,7 +235,7 @@ fn add_span(spans: &mut Vec<(i64, i64)>, start: i64, end: i64, l: i64) {
     }
 }
 
-fn merge(mut spans: Vec<(i64, i64)>) -> Vec<(i64, i64)> {
+pub fn merge(mut spans: Vec<(i64, i64)>) -> Vec<(i64, i64)> {
     spans.retain(|&(s, e)| s < e);
     spans.sort_unstable();
     let mut out: Vec<(i64, i64)> = Vec::with_capacity(spans.len());

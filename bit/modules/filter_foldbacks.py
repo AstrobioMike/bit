@@ -30,14 +30,13 @@ which leaves genomic inverted repeats inside long flanks alone. Keep this in ste
 shifia/modules/pta.py and rust/src/pta.rs.
 """
 
-import gzip
 import os
 import sys
-from itertools import islice
+import threading
 
-
-from bit.modules.general import check_if_output_dir_exists, log_command_run
-from bit.modules.match_reads import FastxReader, iter_pairs
+from bit.modules.general import (check_if_output_dir_exists, color_text, log_command_run,
+                                 notify_premature_exit)
+from bit.modules.match_reads import FastxReader
 
 # short reads: 13-mers, 16 shared (at least 28 bp shared as one stretch). Tested on pairs cut
 # from real PTA molecules and from reference genomes (Oct 2026): against 17-mers with 20 shared
@@ -47,7 +46,6 @@ from bit.modules.match_reads import FastxReader, iter_pairs
 # most others under 0.1%). Shorter still (24 bp) gained little more for twice the false calls
 KMER_SIZE = 13
 MIN_SHARED = 16
-BATCH_SIZE = 20_000
 MIN_LENGTH = 50
 
 # long reads (hifi=True): shifia's --pta settings (shifia/modules/pta.py): 21-mers, about 1 in 4
@@ -55,13 +53,19 @@ MIN_LENGTH = 50
 LONG_K = 21
 LONG_DENSITY = 4
 LONG_MIN_LENGTH = 100
-LONG_BATCH_SIZE = 2_000
+
+
+def full_prefix(output_prefix):
+    """ the prefix as it goes on the file names: a '-' is added unless it already ends in '-' or '_' """
+    if output_prefix and not output_prefix.endswith(("-", "_")):
+        return output_prefix + "-"
+    return output_prefix
 
 
 def output_paths(output_dir, output_prefix="", paired=True, fastq=True):
-    """Output locations within `output_dir`, with `output_prefix` prepended to each name."""
+    """Output locations within `output_dir`, with `output_prefix` (see full_prefix) prepended to each name."""
     ext = "fastq.gz" if fastq else "fasta.gz"
-    p = os.path.join(output_dir, output_prefix)
+    p = os.path.join(output_dir, full_prefix(output_prefix))
     out = {"summary": f"{p}summary.tsv", "log": f"{p}command-execution-info.txt"}
     if paired:
         out.update(r1=f"{p}filtered_R1.{ext}", r2=f"{p}filtered_R2.{ext}",
@@ -71,55 +75,37 @@ def output_paths(output_dir, output_prefix="", paired=True, fastq=True):
     return out
 
 
+def _all_output_paths(output_dir, output_prefix):
+    """ every file a run with this prefix can write, whatever its input """
+    paths = set()
+    for paired in (True, False):
+        for fastq in (True, False):
+            paths.update(output_paths(output_dir, output_prefix, paired, fastq).values())
+    return sorted(paths)
+
+
 def setup_output_dir(output_dir, output_prefix, force_overwrite, full_cmd_executed):
-    check_if_output_dir_exists(output_dir, force_overwrite)
-    os.makedirs(output_dir)
-    log_command_run(full_cmd_executed, output_dir, output_paths(output_dir, output_prefix)["log"])
-
-
-def _write(handle, name, seq, qual):
-    if qual is not None:
-        handle.write(f"@{name}\n{seq}\n+\n{qual}\n")
+    """
+    Without a prefix, the output directory must be new (or, with force_overwrite, it is replaced),
+    as with bit's other programs. With a prefix, the directory can already exist (e.g., holding
+    other samples' output); only this prefix's own files must not, or with force_overwrite they
+    are replaced (nothing else in the directory is touched).
+    """
+    if output_prefix and os.path.isdir(output_dir):
+        existing = [p for p in _all_output_paths(output_dir, output_prefix) if os.path.exists(p)]
+        if existing and not force_overwrite:
+            print(f"\n    {color_text('Output files with this prefix already exist:', 'yellow')}")
+            for p in existing:
+                print(f"      {p}")
+            print("\n    Please specify a different output prefix or directory, or add the `-F/--force-overwrite` flag"
+                  "\n    (which replaces only these files).")
+            notify_premature_exit()
+        for p in existing:
+            os.remove(p)
     else:
-        handle.write(f">{name}\n{seq}\n")
-
-
-class _LazyGzip:
-    """ a gzipped text output that is only created once something is written to it """
-
-    def __init__(self, path):
-        self.path = path
-        self.handle = None
-
-    def write(self, text):
-        if self.handle is None:
-            self.handle = gzip.open(self.path, "wt", compresslevel=1)
-        self.handle.write(text)
-
-    @property
-    def written(self):
-        return self.handle is not None
-
-    def close(self):
-        if self.handle is not None:
-            self.handle.close()
-
-
-def _progress_bar(total, unit, show_progress):
-    """ bit's usual capped, kept bar over the bytes of the input, with a running count """
-    from tqdm import tqdm # type: ignore
-    if show_progress:
-        print()
-    bar = tqdm(total=total, unit="B", unit_scale=True, unit_divisor=1024, ncols=80,
-               disable=not show_progress, file=sys.stdout,
-               bar_format="    {l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}{postfix}]")
-    bar.set_postfix_str(f"0 {unit}")
-    return bar
-
-
-def _cut(rec, start, end):
-    name, seq, qual = rec
-    return name, seq[start:end], (qual[start:end] if qual is not None else None)
+        check_if_output_dir_exists(output_dir, force_overwrite)
+        os.makedirs(output_dir)
+    log_command_run(full_cmd_executed, output_dir, output_paths(output_dir, output_prefix)["log"])
 
 
 class Counts:
@@ -130,10 +116,10 @@ class Counts:
               "mates_written_as_singles", "reads_dropped_short", "pairs_out", "reads_out",
               "bases_in", "bases_out"]
 
-    def __init__(self):
-        for f in self.FIELDS:
-            setattr(self, f, 0)
-        self.middles = []    # unpaired middle of each cut read's first fold (long reads)
+    def __init__(self, values=None, middles=None):
+        for f, v in zip(self.FIELDS, values or [0] * len(self.FIELDS)):
+            setattr(self, f, v)
+        self.middles = list(middles or [])    # unpaired middle of each cut read's first fold (long reads)
 
     def middle_quartiles(self):
         """ (25th, 50th, 75th percentile) of the unpaired middles, or None """
@@ -146,117 +132,82 @@ class Counts:
         return [(f, getattr(self, f)) for f in self.FIELDS]
 
 
-def classify_pair(scan, min_shared=MIN_SHARED):
+def _run(fn, total, unit, show_progress):
     """
-    (fold in read 1 or 2, fold between the mates) from one scan_foldbacks row. Sequence shared in
-    the same orientation calls a fold whatever else the mates share: in a fold-back fragment,
-    a read crossing the fold also shares the other arm with its mate the normal way.
+    Runs one pass of the compiled core with bit's usual capped, kept bar over the bytes of the
+    input and a running count. The pass runs in a thread of its own (it lets go of the GIL)
+    while this one draws the bar.
     """
-    _, _, f1, _, _, f2, same, _ = scan
-    return f1 > 0 or f2 > 0, same >= min_shared
+    from bit._native import Progress
+    prog = Progress()
+    if not show_progress:
+        return fn(prog)
+    result, error = [None], [None]
+
+    def work():
+        try:
+            result[0] = fn(prog)
+        except BaseException as e:  # passed on below
+            error[0] = e
+
+    from tqdm import tqdm # type: ignore
+    print()
+    thread = threading.Thread(target=work, daemon=True)
+    thread.start()
+    with tqdm(total=total, unit="B", unit_scale=True, unit_divisor=1024, ncols=80, file=sys.stdout,
+              bar_format="    {l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}{postfix}]") as bar:
+        bar.set_postfix_str(f"0 {unit}")
+        while thread.is_alive():
+            thread.join(0.2)
+            bar.update(min(prog.bytes, total) - bar.n)
+            bar.set_postfix_str(f"{prog.reads:,} {unit}", refresh=False)
+        if error[0] is None:
+            bar.set_postfix_str(f"{prog.reads:,} {unit}", refresh=False)
+            bar.update(total - bar.n)
+            bar.refresh()
+    if error[0] is not None:
+        raise error[0]
+    return result[0]
 
 
 def filter_foldbacks(read_1, read_2=None, output_dir="filter-foldbacks", output_prefix="",
-                     min_length=None, k=KMER_SIZE, min_shared=MIN_SHARED, batch_size=None,
-                     show_progress=True, hifi=False):
+                     min_length=None, k=KMER_SIZE, min_shared=MIN_SHARED, show_progress=True,
+                     hifi=False):
     """
     Writes the filtered reads to output_dir and returns (Counts, output paths). With hifi, the
     reads are long single reads (read_2 must be None) and k and min_shared aren't used (see
     the module's notes); min_length defaults to 50 for short reads and 100 for long ones.
+    Reading, fold finding and writing are in the compiled core (filter_foldback_files), spread
+    over the threads set with bit._native.set_threads.
     """
-    if hifi:
-        if read_2 is not None:
-            raise ValueError("long reads (hifi) are single reads: no read 2")
-        return _filter_long(read_1, output_dir, output_prefix,
-                            LONG_MIN_LENGTH if min_length is None else min_length,
-                            batch_size or LONG_BATCH_SIZE, show_progress)
-    from bit._native import scan_foldbacks
+    from bit._native import filter_foldback_files
 
+    if hifi and read_2 is not None:
+        raise ValueError("long reads (hifi) are single reads: no read 2")
     if min_length is None:
-        min_length = MIN_LENGTH
-    if batch_size is None:
-        batch_size = BATCH_SIZE
+        min_length = LONG_MIN_LENGTH if hifi else MIN_LENGTH
     paired = read_2 is not None
-    r1_reader = FastxReader(read_1)
-    r2_reader = FastxReader(read_2) if paired else None
     peek = FastxReader(read_1)
     first = next(iter(peek), None)
     peek.close()
     fastq = first is not None and first[2] is not None
     paths = output_paths(output_dir, output_prefix, paired, fastq)
-    counts = Counts()
+    outputs = [paths["r1"], paths["r2"], paths["singles"]] if paired else [paths["reads"]]
 
-    def opener(path):
-        return gzip.open(path, "wt", compresslevel=1)
+    def work(prog):
+        return filter_foldback_files(read_1, read_2, outputs, LONG_K if hifi else k, min_shared,
+                                     min_length, hifi=hifi, density=LONG_DENSITY, progress=prog)
 
-    records = iter_pairs(r1_reader, r2_reader) if paired else ((r, None) for r in r1_reader)
-    unit = "pairs" if paired else "reads"
-    bar = _progress_bar(r1_reader.total_bytes, unit, show_progress)
-
-    handles = {key: opener(paths[key]) for key in (("r1", "r2") if paired else ("reads",))}
-    if paired:
-        # only made if a fold-back pair leaves a mate long enough to keep
-        handles["singles"] = _LazyGzip(paths["singles"])
     try:
-        while True:
-            batch = list(islice(records, batch_size))
-            if not batch:
-                break
-            seqs1 = [r1[1] for r1, _ in batch]
-            seqs2 = [r2[1] for _, r2 in batch] if paired else None
-            scans = scan_foldbacks(seqs1, seqs2, k, min_shared)
-            for (r1, r2), scan in zip(batch, scans):
-                counts.reads_or_pairs_in += 1
-                counts.bases_in += len(r1[1]) + (len(r2[1]) if paired else 0)
-                s1, e1, f1, s2, e2, f2, _, _ = scan
-                counts.reads_cut_at_a_fold += (f1 > 0) + (f2 > 0)
-                counts.folds_cut += f1 + f2
-                if not paired:
-                    if f1 == 0:
-                        _write(handles["reads"], *r1)
-                        counts.reads_out += 1
-                        counts.bases_out += len(r1[1])
-                    elif e1 - s1 >= min_length:
-                        rec = _cut(r1, s1, e1)
-                        _write(handles["reads"], *rec)
-                        counts.reads_out += 1
-                        counts.bases_out += len(rec[1])
-                    else:
-                        counts.reads_dropped_short += 1
-                    continue
-                in_read, between = classify_pair(scan, min_shared)
-                if not in_read and not between:
-                    _write(handles["r1"], *r1)
-                    _write(handles["r2"], *r2)
-                    counts.pairs_out += 1
-                    counts.bases_out += len(r1[1]) + len(r2[1])
-                    continue
-                counts.foldback_pairs += 1
-                counts.pairs_with_fold_in_a_read += in_read
-                counts.pairs_with_fold_between_mates += between and not in_read
-                for rec, (s, e) in ((r1, (s1, e1)), (r2, (s2, e2))):
-                    rec = _cut(rec, s, e)
-                    if len(rec[1]) >= min_length:
-                        _write(handles["singles"], *rec)
-                        counts.mates_written_as_singles += 1
-                        counts.bases_out += len(rec[1])
-                    else:
-                        counts.reads_dropped_short += 1
-            bar.update(r1_reader.bytes_read() - bar.n)
-            bar.set_postfix_str(f"{counts.reads_or_pairs_in:,} {unit}", refresh=False)
-        # finishing the bar cleanly (the buffered position can lag the file size)
-        bar.update(r1_reader.total_bytes - bar.n)
-    finally:
-        bar.close()
-        for h in handles.values():
-            h.close()
-        r1_reader.close()
-        if r2_reader is not None:
-            r2_reader.close()
-
-    if paired and not handles["singles"].written:
+        total = sum(os.path.getsize(p) for p in ([read_1, read_2] if paired else [read_1]))
+        values, written, middles = _run(work, total, "pairs" if paired else "reads", show_progress)
+    except ValueError as e:  # a problem with the input files
+        print(f"\n    {e}")
+        notify_premature_exit()
+    counts = Counts(values, middles)
+    if paired and not written[2]:
         paths["singles"] = None
-    _write_summary(paths, counts, paired)
+    _write_summary(paths, counts, paired, long=hifi)
     return counts, paths
 
 
@@ -276,49 +227,3 @@ def _write_summary(paths, counts, paired, long=False):
         if q:
             for label, v in zip(("p25", "median", "p75"), q):
                 out.write(f"unpaired_middle_{label}\t{v}\n")
-
-
-def _filter_long(read_1, output_dir, output_prefix, min_length, batch_size, show_progress):
-    """ long reads (hifi): each read cut at its folds as shifia --pta does (see the notes above) """
-    from bit._native import trim_long_folds
-
-    reader = FastxReader(read_1)
-    peek = FastxReader(read_1)
-    first = next(iter(peek), None)
-    peek.close()
-    fastq = first is not None and first[2] is not None
-    paths = output_paths(output_dir, output_prefix, paired=False, fastq=fastq)
-    counts = Counts()
-    bar = _progress_bar(reader.total_bytes, "reads", show_progress)
-    handle = gzip.open(paths["reads"], "wt", compresslevel=1)
-    records = iter(reader)
-    try:
-        while True:
-            batch = list(islice(records, batch_size))
-            if not batch:
-                break
-            cuts = trim_long_folds([r[1] for r in batch], k=LONG_K, density=LONG_DENSITY)
-            for rec, (start, end, folds, _, middle) in zip(batch, cuts):
-                counts.reads_or_pairs_in += 1
-                counts.bases_in += len(rec[1])
-                if folds:
-                    counts.reads_cut_at_a_fold += 1
-                    counts.folds_cut += folds
-                    if len(counts.middles) < 1_000_000:
-                        counts.middles.append(middle)
-                    rec = _cut(rec, start, end)
-                    if len(rec[1]) < min_length:
-                        counts.reads_dropped_short += 1
-                        continue
-                _write(handle, *rec)
-                counts.reads_out += 1
-                counts.bases_out += len(rec[1])
-            bar.update(reader.bytes_read() - bar.n)
-            bar.set_postfix_str(f"{counts.reads_or_pairs_in:,} reads", refresh=False)
-        bar.update(reader.total_bytes - bar.n)
-    finally:
-        bar.close()
-        handle.close()
-        reader.close()
-    _write_summary(paths, counts, paired=False, long=True)
-    return counts, paths

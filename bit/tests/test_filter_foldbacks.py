@@ -1,10 +1,11 @@
 import gzip
 import random
+import subprocess
 
 import pytest # type: ignore
 
 from bit._native import scan_foldbacks
-from bit.modules.filter_foldbacks import classify_pair, filter_foldbacks, output_paths
+from bit.modules.filter_foldbacks import filter_foldbacks, output_paths
 from bit.tests.utils import run_cli
 
 
@@ -40,6 +41,11 @@ def read_names(path):
         return [l[1:].strip() for i, l in enumerate(f) if i % 4 == 0]
 
 
+def calls(scan, min_shared=16):
+    """ (fold in a read, fold between the mates), as filter-foldbacks decides them """
+    return scan[2] > 0 or scan[5] > 0, scan[6] >= min_shared
+
+
 def read_seqs(path):
     with gzip.open(path, "rt") as f:
         return [l.strip() for i, l in enumerate(f) if i % 4 == 1]
@@ -48,7 +54,7 @@ def read_seqs(path):
 def test_normal_pair_has_no_fold(template):
     r1, r2 = pair_from(template[100:500], "n")
     scan = scan_foldbacks([r1[1]], [r2[1]], 17, 20)[0]
-    assert classify_pair(scan) == (False, False)
+    assert calls(scan) == (False, False)
 
 
 def test_short_insert_overlap_is_not_a_fold(template):
@@ -56,7 +62,7 @@ def test_short_insert_overlap_is_not_a_fold(template):
     r1, r2 = pair_from(template[100:300], "s")
     scan = scan_foldbacks([r1[1]], [r2[1]], 17, 20)[0]
     assert scan[6] == 0 and scan[7] > 20
-    assert classify_pair(scan) == (False, False)
+    assert calls(scan) == (False, False)
 
 
 def test_fold_between_mates(template):
@@ -64,7 +70,7 @@ def test_fold_between_mates(template):
     frag = template[1000:1300] + rc(template[1050:1300])
     r1, r2 = pair_from(frag, "b")
     scan = scan_foldbacks([r1[1]], [r2[1]], 17, 20)[0]
-    in_read, between = classify_pair(scan)
+    in_read, between = calls(scan)
     assert between and not in_read
 
 
@@ -118,6 +124,60 @@ def test_filter_foldbacks_single_end_cuts_reads(tmp_path, template):
 def test_output_paths_prefix():
     p = output_paths("d", "s1-", paired=True, fastq=False)
     assert p["r1"].endswith("d/s1-filtered_R1.fasta.gz") and p["singles"].endswith("s1-foldback-mates.fasta.gz")
+
+
+def test_output_prefix_gets_a_dash_unless_it_ends_in_one():
+    assert output_paths("d", "s1")["summary"].endswith("d/s1-summary.tsv")
+    assert output_paths("d", "s1_")["summary"].endswith("d/s1_summary.tsv")
+    assert output_paths("d", "")["summary"].endswith("d/summary.tsv")
+
+
+def test_cli_prefixes_share_an_output_dir(tmp_path, template):
+    pairs = [pair_from(template[i:i + 400], f"n{i}") for i in range(0, 2400, 300)]
+    write_fastq(tmp_path / "r1.fq", [p[0] for p in pairs])
+    write_fastq(tmp_path / "r2.fq", [p[1] for p in pairs])
+    out = tmp_path / "out"
+    cmd = ["bit", "filter-foldbacks", "-i", str(tmp_path / "r1.fq"), "-I", str(tmp_path / "r2.fq"),
+           "-o", str(out), "-j", "1"]
+    run_cli(cmd + ["-O", "s1"])
+    run_cli(cmd + ["-O", "s2"])
+    names = sorted(p.name for p in out.iterdir())
+    assert "s1-filtered_R1.fastq.gz" in names and "s2-filtered_R1.fastq.gz" in names
+    # the same prefix again is refused; with -F only its own files are replaced
+    again = subprocess.run(cmd + ["-O", "s1"], capture_output=True, text=True)
+    assert again.returncode != 0
+    assert "already exist" in again.stdout
+    (out / "s1-summary.tsv").write_text("old")
+    run_cli(cmd + ["-O", "s1", "-F"])
+    assert (out / "s1-summary.tsv").read_text() != "old"
+    assert sorted(p.name for p in out.iterdir()) == names
+
+
+def test_output_spans_many_chunks_in_input_order(tmp_path, template):
+    # more pairs than one chunk of the compiled core: the gzip members join up in input order
+    rng = random.Random(3)
+    pairs = []
+    for i in range(1700):
+        start = rng.randrange(0, 2500)
+        pairs.append(pair_from(template[start:start + 400], f"p{i}"))
+    write_fastq(tmp_path / "r1.fq", [p[0] for p in pairs])
+    write_fastq(tmp_path / "r2.fq", [p[1] for p in pairs])
+    (tmp_path / "o").mkdir()
+    counts, paths = filter_foldbacks(str(tmp_path / "r1.fq"), str(tmp_path / "r2.fq"),
+                                     str(tmp_path / "o"), show_progress=False)
+    assert counts.pairs_out == 1700
+    assert read_names(paths["r1"]) == [p[0][0] for p in pairs]
+    assert read_names(paths["r2"]) == [p[1][0] for p in pairs]
+
+
+def test_mismatched_mates_stop_the_run(tmp_path, template):
+    pairs = [pair_from(template[i:i + 400], f"n{i}") for i in range(0, 2400, 300)]
+    write_fastq(tmp_path / "r1.fq", [p[0] for p in pairs])
+    write_fastq(tmp_path / "r2.fq", [p[1] for p in pairs[::-1]])
+    result = subprocess.run(["bit", "filter-foldbacks", "-i", str(tmp_path / "r1.fq"), "-I", str(tmp_path / "r2.fq"),
+                             "-o", str(tmp_path / "o"), "-j", "1"], capture_output=True, text=True)
+    assert result.returncode != 0
+    assert "Read names don't match" in result.stdout
 
 
 def test_cli(tmp_path, template):

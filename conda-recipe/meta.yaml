@@ -39,7 +39,6 @@ requirements:
     - numpy=1.26.4
     - pandas
     - parallel
-    - pigz
     - pip
     - pulp=2.7.0
     - pyarrow=24
