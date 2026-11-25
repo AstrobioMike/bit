@@ -464,8 +464,9 @@ def test_without_a_reference_directory_the_run_stops_except_amplicons(set_up, mo
 @pytest.mark.skipif(shutil.which("snakemake") is None, reason="snakemake not available")
 @patch("bit.modules.ref_dbs.set_up_missing")
 def test_a_dry_run_says_what_would_be_set_up_and_plans_the_rest(set_up, monkeypatch, tmp_path, genomes_dir, capsys):
+    # --memory well above the steps' settings, so the memory check passes on any machine (CI runners have ~16 GB)
     run_cli(monkeypatch, "classify-seqs", "-f", str(genomes_dir), "-d", str(tmp_path / "nothing-here"),
-            "-o", str(tmp_path / "out"), "--dry-run")
+            "-o", str(tmp_path / "out"), "--memory", "1000", "--dry-run")
     set_up.assert_not_called()
     assert "would be set up first" in capsys.readouterr().out
 

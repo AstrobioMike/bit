@@ -336,7 +336,7 @@ def check_steps_can_run(report, memory_mb, memory_given):
             listed = ", ".join(f"'{r}' ({mb / 1000:g} GB)" for r, mb in sorted(too_big.items()))
             _fail(f"Some steps of this run need more memory than {where}: {listed}. Please run it on a machine with more "
                   "memory. If you know a step needs less than its setting says, lower that step's memory setting "
-                  "(listed under 'Memory' in the detailed help, -H).")
+                  "(listed under 'Run Parameters' in the detailed help, -H).")
 
 
 def run_workflow(workflow, settings, args, command):
