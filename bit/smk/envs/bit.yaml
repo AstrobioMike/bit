@@ -1,0 +1,7 @@
+name: bit
+channels:
+    - conda-forge
+    - bioconda
+    - astrobiomike
+dependencies:
+    - bit=2.14.1

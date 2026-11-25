@@ -1,6 +1,5 @@
 import os
-import re
-import edlib # type: ignore
+import sys
 from pybedtools import BedTool # type: ignore
 from bit.modules.general import report_message, notify_premature_exit
 from bit.modules.seqs import revcomp, read_fasta
@@ -200,30 +199,22 @@ def _primers(fwd, rev):
 
 def _primer_hits_per_record(in_fasta, fwd, rev, max_mismatches):
     """
-    (header, uppercased seq, primer hits) for each record of `in_fasta` (as read_fasta() reads
-    it). The primer search runs in the compiled core when it can (the same masking, IUPAC-aware
-    edlib search, and repeated rounds as _find_primer_sites(), across threads); records it
-    reports without two or more sites can't hold an amplicon in any orientation, so it skips
-    them. Otherwise (e.g., non-ASCII input), it's done here.
+    (header, uppercased seq, primer hits) for each record of `in_fasta` (as read_fasta() reads it) that has at least two
+    primer sites in all (fewer can't hold an amplicon in any orientation). The search runs in the compiled core
+    (rust/src/fasta.rs: non-ACGT target positions masked, an IUPAC-aware edlib search, repeated until no site is left within
+    the allowed differences), across threads.
     """
+    from bit._native import fasta_primer_sites
     primers = _primers(fwd, rev)
     _check_primer_lengths(primers, max_mismatches)
+    threads = min(8, os.cpu_count() or 1)
     try:
-        from bit._native import fasta_primer_sites
-        threads = min(8, os.cpu_count() or 1)
-        native = fasta_primer_sites(str(in_fasta), [p for _, p in primers], max_mismatches,
-                                    IUPAC_EQUALITIES, threads)
-    except (ImportError, ValueError, OverflowError, TypeError):
-        native = None
-
-    if native is not None:
-        for header, seq, sites in native:
-            yield header, seq, _hits_from_sites(seq, primers, sites)
-        return
-
-    for header, seq in read_fasta(in_fasta):
-        seq = seq.upper()
-        yield header, seq, find_all_primer_hits(seq, fwd, rev, max_mismatches)
+        found = fasta_primer_sites(str(in_fasta), [p for _, p in primers], max_mismatches, IUPAC_EQUALITIES, threads)
+    except ValueError as e:
+        print(f"\n    {e}\n")
+        sys.exit(1)
+    for header, seq, sites in found:
+        yield header, seq, _hits_from_sites(seq, primers, sites)
 
 
 def _check_primer_lengths(primers, max_mismatches):
@@ -234,60 +225,12 @@ def _check_primer_lengths(primers, max_mismatches):
             raise ValueError(f"primers need to be longer than the allowed differences ({max_mismatches})")
 
 
-def _mask_target(seq):
-    # IUPAC equalities in edlib are symmetric, so any ambiguity code in the target (e.g. N-gaps
-    # in scaffolds) would match primer bases; masking non-ACGT positions with a character that
-    # matches nothing keeps primer-side degeneracy from bleeding into target-side ambiguity
-    return re.sub(r"[^ACGT]", "X", seq.upper())
-
-
-def _find_primer_sites(primer, masked_seq, max_mismatches):
-    # edlib's "locations" task only returns locations at the *best* edit distance it finds, so
-    # an exact site would hide every 1- or 2-difference site elsewhere in the target. To get all
-    # sites within max_mismatches, sites found in each round are masked and the search is
-    # repeated until none are left within the limit
-    locations = []
-    target = masked_seq
-
-    if not target:
-        return locations
-
-    while True:
-        result = edlib.align(
-            primer,
-            target,
-            mode = "HW",            # search within sequence
-            task = "locations",     # return match positions
-            k = max_mismatches,
-            additionalEqualities = IUPAC_EQUALITIES,
-        )
-
-        if result["editDistance"] == -1:
-            break
-
-        round_locations = [(start, end_inclusive + 1) for start, end_inclusive in result["locations"]]
-        locations.extend(round_locations)
-
-        pieces = []
-        prev_end = 0
-        for start, end in sorted(round_locations):
-            start = max(start, prev_end)
-            pieces.append(target[prev_end:start])
-            pieces.append("X" * max(0, end - start))
-            prev_end = max(prev_end, end)
-        pieces.append(target[prev_end:])
-        target = "".join(pieces)
-
-    return locations
-
-
 def find_all_primer_hits(seq, fwd, rev, max_mismatches = 0):
-
+    """ every primer site in one sequence (see _primer_hits_per_record), as hits """
+    from bit._native import primer_sites_in_seq
     primers = _primers(fwd, rev)
     _check_primer_lengths(primers, max_mismatches)
-    masked_seq = _mask_target(seq)
-    sites = [_find_primer_sites(primer, masked_seq, max_mismatches) for _, primer in primers]
-
+    sites = primer_sites_in_seq(seq, [p for _, p in primers], max_mismatches, IUPAC_EQUALITIES)
     return _hits_from_sites(seq, primers, sites)
 
 

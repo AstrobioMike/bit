@@ -773,9 +773,10 @@ fn bam_per_contig_pid_stats(
 /// bam_per_contig_pid_stats gives them, or None if `pids` is false). `exclude` is the flag
 /// bits of alignments that add no coverage. Raises ValueError for anything the Python
 /// (pysam) path should handle instead, and for a bam whose alignments aren't grouped by
-/// reference (the message then says so).
+/// reference (the message then says so). Alignments under `min_pid` percent identity
+/// (gap-compressed; 0: none left out) add to neither the coverage nor the percent IDs.
 #[pyfunction]
-#[pyo3(signature = (path, wanted, exclude, pids, include_non_primary, gap_compressed, progress=None))]
+#[pyo3(signature = (path, wanted, exclude, pids, include_non_primary, gap_compressed, min_pid=0.0, progress=None))]
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn bam_coverage_and_pid_stats(
     py: Python<'_>,
@@ -785,12 +786,13 @@ fn bam_coverage_and_pid_stats(
     pids: bool,
     include_non_primary: bool,
     gap_compressed: bool,
+    min_pid: f64,
     progress: Option<PyRef<Progress>>,
 ) -> PyResult<(Vec<Option<(u128, u128, u128, Vec<(i64, u128)>)>>, Option<Vec<(String, AccTuple)>>)> {
     let pr = arc(&progress);
     let pid = pids.then_some((include_non_primary, gap_compressed));
     let (cov, accs) = py
-        .detach(|| bam::coverage_and_pids(&path, &wanted, exclude, pid, pr.as_ref()))
+        .detach(|| bam::coverage_and_pids(&path, &wanted, exclude, pid, min_pid, pr.as_ref()))
         .map_err(|e| PyValueError::new_err(e.to_string()))?;
     Ok((
         cov.into_iter()
@@ -920,9 +922,27 @@ fn mt_from(state: Vec<u32>, index: usize, gauss_next: Option<f64>) -> PyResult<g
 }
 
 /// Draws from a random.Random state (as getstate() gives it: 624 words, index, gauss_next)
-/// for checking this generator against Python's: each op is (0, _, _) for random(), (1, a, b)
+/// for checking this generator against Python's (the tests do, so a seed keeps giving the reads it did): each op is (0, _, _) for random(), (1, a, b)
 /// for randint(a, b), (2, mu, sigma) for gauss(mu, sigma). Returns the values (randint's as
 /// floats) and the state after.
+/// each primer's sites in one sequence: [[(start, end exclusive), ...] per primer] (see fasta::seq_primer_sites)
+#[pyfunction]
+fn primer_sites_in_seq(seq: String, primers: Vec<String>, k: usize, equalities: Vec<(String, String)>)
+                       -> PyResult<Vec<Vec<(usize, usize)>>> {
+    if !seq.is_ascii() || primers.iter().any(|p| !p.is_ascii()) {
+        return Err(PyValueError::new_err("the sequence and primers must be ASCII"));
+    }
+    let mut eq = Vec::with_capacity(equalities.len());
+    for (a, b) in &equalities {
+        match (a.as_bytes(), b.as_bytes()) {
+            ([a], [b]) => eq.push((*a, *b)),
+            _ => return Err(PyValueError::new_err("equalities must be single ASCII characters")),
+        }
+    }
+    let primers: Vec<Vec<u8>> = primers.into_iter().map(|p| p.into_bytes()).collect();
+    fasta::seq_primer_sites(seq.as_bytes(), &primers, k, &eq).map_err(val_err)
+}
+
 #[pyfunction]
 #[allow(clippy::type_complexity)]
 fn rng_sample(
@@ -945,10 +965,6 @@ fn rng_sample(
     Ok((out, mt.state.to_vec(), mt.index, mt.gauss_next))
 }
 
-/// gen-reads' per-read loop for `n` reads (pairs) of one contig (see gen_reads.rs), from
-/// and returning a random.Random state: (R1 fastq text, R2 fastq text, per-read tsv text,
-/// merged covered spans, realized bases, state words, index, gauss_next). None where the
-/// Python loop should run instead.
 // reads (or pairs) generated at a time by gen_reads_contigs before they're written out
 const GEN_CHUNK: u64 = 100_000;
 
@@ -956,12 +972,10 @@ const GEN_CHUNK: u64 = 100_000;
 /// gen_reads.rs), from contig `first` on: each contig's `budgets` reads (or pairs) are made
 /// from the random.Random state given (624 words, index, gauss_next) and written straight to
 /// the gzipped writers (`r2` for pairs; `tsv` for the per-read sources, whose presence also
-/// keeps the coordinates out of the read headers). `seqs` are the contigs' sequences as the
-/// Python loop uses them, `ids` their names. Stops at a contig this can't do as Python would
-/// (a non-ASCII sequence, or arguments Python's loop raises on), after the reads it did make
-/// there. Returns (where it stopped: (contig, reads done in it) or None, the read count after,
-/// reads written, bases in them, each contig's covered spans (merged, sorted), and the
-/// generator state after).
+/// keeps the coordinates out of the read headers). `seqs` are the contigs' sequences, `ids`
+/// their names. A contig that isn't a nucleotide sequence (non-ASCII), or settings that can't
+/// make reads from it, raise ValueError. Returns (the read count after, reads written, bases in
+/// them, each contig's covered spans (merged, sorted), and the generator state after).
 #[pyfunction]
 #[pyo3(signature = (seqs, ids, budgets, first, read_count, state, index, gauss_next, paired, long,
                     read_length, mu, sigma, min_len, max_len, circular, include_ns, source_fasta,
@@ -991,7 +1005,6 @@ fn gen_reads_contigs(
     r2: Option<Bound<'_, GzWriter>>,
     tsv: Option<Bound<'_, GzWriter>>,
 ) -> PyResult<(
-    Option<(usize, u64)>,
     u64,
     u64,
     u64,
@@ -1022,7 +1035,8 @@ fn gen_reads_contigs(
             }
             let seq: &str = &seqs[ci];
             if !seq.is_ascii() {
-                return Ok((Some((ci, 0)), count, written, bases, spans_by_contig, mt));
+                return Err(io::Error::new(io::ErrorKind::InvalidData,
+                    format!("contig '{}' holds characters that aren't a nucleotide sequence's", ids[ci])));
             }
             let p = gen_reads::Params {
                 paired,
@@ -1042,12 +1056,9 @@ fn gen_reads_contigs(
             let mut done = 0;
             while done < budget {
                 let n = GEN_CHUNK.min(budget - done);
-                // a chunk this can't do leaves the generator as it was before it
-                let before = gen_reads::Mt { state: mt.state, index: mt.index, gauss_next: mt.gauss_next };
                 let Some(c) = gen_reads::gen_chunk(&mut mt, seq.as_bytes(), n, count, &p) else {
-                    mt = before;
-                    spans_by_contig.push((ci, gen_reads::merge(spans)));
-                    return Ok((Some((ci, done)), count, written, bases, spans_by_contig, mt));
+                    return Err(io::Error::new(io::ErrorKind::InvalidData,
+                        format!("couldn't make reads from contig '{}' with these settings", ids[ci])));
                 };
                 out1.push(c.r1.as_bytes())?;
                 if let Some(o) = out2.as_mut() {
@@ -1064,7 +1075,7 @@ fn gen_reads_contigs(
             }
             spans_by_contig.push((ci, gen_reads::merge(spans)));
         }
-        Ok((None, count, written, bases, spans_by_contig, mt))
+        Ok((count, written, bases, spans_by_contig, mt))
     });
     r1.borrow_mut().out = Some(out1);
     if let (Some(w), Some(o)) = (&r2, out2) {
@@ -1073,8 +1084,8 @@ fn gen_reads_contigs(
     if let (Some(w), Some(o)) = (&tsv, out_tsv) {
         w.borrow_mut().out = Some(o);
     }
-    let (stopped, count, written, bases, spans, mt) = result.map_err(to_py_err)?;
-    Ok((stopped, count, written, bases, spans, mt.state.to_vec(), mt.index, mt.gauss_next))
+    let (count, written, bases, spans, mt) = result.map_err(to_py_err)?;
+    Ok((count, written, bases, spans, mt.state.to_vec(), mt.index, mt.gauss_next))
 }
 
 #[pymodule]
@@ -1099,6 +1110,7 @@ fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(fasta_primer_sites, m)?)?;
     m.add_function(wrap_pyfunction!(fasta_assembly_summary, m)?)?;
     m.add_function(wrap_pyfunction!(rng_sample, m)?)?;
+    m.add_function(wrap_pyfunction!(primer_sites_in_seq, m)?)?;
     m.add_function(wrap_pyfunction!(gen_reads_contigs, m)?)?;
     m.add_class::<Progress>()?;
     Ok(())

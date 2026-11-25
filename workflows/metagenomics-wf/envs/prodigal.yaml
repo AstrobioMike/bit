@@ -1,9 +1,0 @@
-name: prodigal
-channels:
-    - conda-forge
-    - bioconda
-    - defaults
-    - astrobiomike
-dependencies:
-    - prodigal=2.6.3
-    - bit=1.8.65

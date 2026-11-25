@@ -28,6 +28,10 @@ def check_and_report_env_variables():
     # NCBI assembly summary table
     ncbi_assembly_summary_dir_path, ncbi_assembly_summary_dir_path_writable = check_location_var_is_set_and_writable("NCBI_assembly_data_dir")
 
+    # the large reference databases of the workflows (no default: it's only set if the user sets it)
+    ref_dbs_path = os.environ.get("BIT_REF_DBS_DIR", "")
+    ref_dbs_path_writable = os.access(ref_dbs_path, os.W_OK) if ref_dbs_path else True
+
 
     print(color_text("\n    bit environment variables are set as follows:\n", "yellow"))
 
@@ -36,6 +40,7 @@ def check_and_report_env_variables():
     print("\t  {:<30} {:>10}".format("GTDB_DIR", GTDB_DIR_path))
     print("\t  {:<30} {:>10}".format("GO_DB_DIR", go_dir_path))
     print("\t  {:<30} {:>10}".format("NCBI_assembly_data_dir", ncbi_assembly_summary_dir_path))
+    print("\t  {:<30} {:>10}".format("BIT_REF_DBS_DIR", ref_dbs_path or "(not set)"))
     print()
 
 
@@ -43,7 +48,8 @@ def check_and_report_env_variables():
     writable_dict = {"TAXONKIT_DB" : taxonkit_dir_path_writable,
                      "GTDB_DIR" : GTDB_DIR_path_writable,
                      "GO_DB_DIR" : go_dir_path_writable,
-                     "NCBI_assembly_data_dir" : ncbi_assembly_summary_dir_path_writable}
+                     "NCBI_assembly_data_dir" : ncbi_assembly_summary_dir_path_writable,
+                     "BIT_REF_DBS_DIR" : ref_dbs_path_writable}
 
     for entry in writable_dict.keys():
 
@@ -87,7 +93,8 @@ def get_variable_path(variable):
     return(path)
 
 
-def set_variable_path(variable, curr_path):
+def set_variable_path(variable, curr_path, optional_note=None):
+    """ optional_note: for a variable that may be left unset, said when asking (then an empty answer leaves it so) """
 
     # if current path exists, making sure user wants to change it
     if curr_path:
@@ -125,7 +132,13 @@ def set_variable_path(variable, curr_path):
     while True:
         try:
 
-            new_path = input(color_text("\n  Enter the wanted full path for the '" + str(variable) + "' variable: ", "yellow"))
+            if optional_note:
+                print("\n  " + optional_note)
+            new_path = input(color_text("\n  Enter the wanted full path for the '" + str(variable) + "' variable"
+                                        + (" (or press enter to leave it unset)" if optional_note else "") + ": ", "yellow"))
+            if optional_note and not new_path.strip():
+                print("\n  --------------------------------------------------------------------------------\n")
+                return ""
             new_path = os.path.join(new_path, "")
 
             # creating if it doesn't exist yet
@@ -162,14 +175,18 @@ def set_env_variables():
     paths_dict = {"TAXONKIT_DB" : "",
                   "GTDB_DIR" : "",
                   "GO_DB_DIR" : "",
-                  "NCBI_assembly_data_dir" : ""}
+                  "NCBI_assembly_data_dir" : "",
+                  "BIT_REF_DBS_DIR" : ""}
+
+    optional_notes = {"BIT_REF_DBS_DIR": "BIT_REF_DBS_DIR is where the workflows' large reference databases go (`bit data get "
+                                         "tax-db` etc.; they can take a few hundred GB together, so somewhere with room)."}
 
     for entry in paths_dict.keys():
 
         # getting all current paths (if any)
         paths_dict[entry] = get_variable_path(entry)
 
-        paths_dict[entry] = set_variable_path(entry, paths_dict[entry])
+        paths_dict[entry] = set_variable_path(entry, paths_dict[entry], optional_notes.get(entry))
 
     return(paths_dict)
 
@@ -244,6 +261,10 @@ def modify_conda_activate_startup_script(paths_dict):
 
     # adding new export lines for set variables
     for entry in paths_dict.keys():
+
+        # a variable left unset (BIT_REF_DBS_DIR can be) gets no line
+        if not paths_dict[entry]:
+            continue
 
         string_to_add = "export " + str(entry) + "=" + str(os.path.join(paths_dict[entry]))
 

@@ -1,11 +1,12 @@
 import os
+import sys
 from dataclasses import dataclass, field
-import pyfastx #type: ignore
 from collections import defaultdict
 from colorama import Fore, init #type: ignore
 from tqdm import tqdm #type: ignore
-from bit.modules.general import check_files_are_found, report_message, sort_bam_file, spinner
-from bit.modules.mapped_read_stats import (get_per_contig_pid_stats, PidStats,
+from bit.modules.general import (check_files_are_found, color_text, notify_premature_exit, remove_previous_outputs, report_message,
+                                 sort_bam_file, spinner)
+from bit.modules.mapped_read_stats import (get_per_contig_pid_stats, PidStats, compute_pids, parse_cigar_breakdown,
                                            _check_opens_with_pysam, _pid_stats_from_native)
 
 
@@ -20,7 +21,7 @@ def get_cov_stats(args):
 
     # coverage and percent IDs both from one pass over the bam
     contig_pid_stats = scan_bam(args.bam, contigs, header_to_ref_dict, args.include_non_primary,
-                                want_pids=not args.skip_read_pids)
+                                want_pids=not args.skip_read_pids, min_pid=args.min_read_pid)
 
     (ref_mean_pids, ref_median_pids, ref_mapped_counts,
      contig_mean_pids, contig_median_pids, contig_mapped_counts) = summarize_pid_stats(contig_pid_stats, refs, contigs,
@@ -30,9 +31,29 @@ def get_cov_stats(args):
                     contigs, contig_mean_pids, contig_median_pids, contig_mapped_counts, args.skip_per_contig)
 
 
+def output_paths(output_prefix, skip_per_contig=False):
+    """ the files a run writes """
+    return [f"{output_prefix}-per-ref.tsv"] + ([] if skip_per_contig else [f"{output_prefix}-per-contig.tsv"])
+
+
 def preflight_checks(args):
 
-    check_files_are_found(list(args.reference_fastas) + [args.bam])
+    inputs = list(args.reference_fastas) + [args.bam]
+    check_files_are_found(inputs)
+
+    # earlier outputs with this prefix: stop, or with -F replace just those files (both, so a run with
+    # --skip-per-contig doesn't leave an older per-contig table beside the new per-ref one)
+    existing = [p for p in output_paths(args.output_prefix) if os.path.lexists(p)]
+    if existing:
+        if not getattr(args, "force_overwrite", False):
+            print(f"\n    {color_text('Output files with this prefix already exist:', 'yellow')}")
+            for p in existing:
+                print(f"      {p}")
+            print("\n    Please specify a different output prefix, or add the `-F/--force-overwrite` flag"
+                  "\n    (which replaces only these files).")
+            notify_premature_exit()
+        out_dir = os.path.dirname(args.output_prefix) or "."
+        remove_previous_outputs(out_dir, [os.path.basename(p) for p in existing], "", inputs, files_only=True)
 
 
 @dataclass
@@ -107,6 +128,16 @@ class RefData:
     stats: CoverageStats = field(default_factory=CoverageStats)
 
 
+def fasta_records(fasta):
+    """ (name, length, G+C count) of each record of a reference fasta (bit._native.fasta_records_summary) """
+    from bit._native import fasta_records_summary
+    try:
+        return fasta_records_summary(str(fasta))
+    except ValueError as e:
+        print(f"\n    '{fasta}' {e}\n")
+        sys.exit(1)
+
+
 def parse_refs(reference_fastas, skip_per_contig=False):
 
     print(f"\n  {Fore.YELLOW}Parsing input reference(s)...")
@@ -118,12 +149,8 @@ def parse_refs(reference_fastas, skip_per_contig=False):
     with spinner("", ""):
         for fasta in reference_fastas:
             ref = RefData(fasta)
-            fxi_path = fasta + ".fxi"
-            fxi_existed = os.path.exists(fxi_path)
-            fa = pyfastx.Fasta(fasta)
-            for seq in fa:
-                name = seq.name
-                seq_len = len(seq)
+            # each record's name and length, from the compiled core (plain or gzipped fasta, any line endings)
+            for name, seq_len, _ in fasta_records(fasta):
                 ref.headers.add(name)
                 ref.contig_order.append(name)
                 ref.stats.length += seq_len
@@ -131,9 +158,6 @@ def parse_refs(reference_fastas, skip_per_contig=False):
                     contigs_dict[name] = ContigData(path=fasta, header=name, stats=CoverageStats(length=seq_len))
                 header_to_ref_dict[name] = ref
             refs.append(ref)
-            # clean up pyfastx index file if we created it
-            if not fxi_existed and os.path.exists(fxi_path):
-                os.remove(fxi_path)
 
     return refs, contigs_dict, header_to_ref_dict
 
@@ -218,7 +242,7 @@ COVERAGE_EXCLUDE_FLAGS = 1796
 COVERAGE_EXCLUDE_FLAGS_WITH_NON_PRIMARY = 1540
 
 
-def _native_bam_pass(bam_path, wanted, exclude_flags, include_non_primary, want_pids):
+def _native_bam_pass(bam_path, wanted, exclude_flags, include_non_primary, want_pids, min_pid=0):
     """
     Coverage totals per wanted contig and (if wanted) per-contig PidStats from one pass over
     the bam by the compiled core (bit._native). Returns None if anything in the bam calls
@@ -236,7 +260,8 @@ def _native_bam_pass(bam_path, wanted, exclude_flags, include_non_primary, want_
     def work():
         try:
             result[0] = native.bam_coverage_and_pid_stats(str(bam_path), wanted, exclude_flags, want_pids,
-                                                          include_non_primary, True, progress=prog)
+                                                          include_non_primary, True, min_pid=min_pid,
+                                                          progress=prog)
         except BaseException as e:  # passed on below
             error[0] = e
 
@@ -263,11 +288,20 @@ def _native_bam_pass(bam_path, wanted, exclude_flags, include_non_primary, want_
     return totals, contig_pid_stats
 
 
-def _pysam_coverage(bam_path, wanted, exclude_flags):
+def passes_min_pid(read, min_pid):
+    """ whether a mapped pysam alignment's gap-compressed percent identity is at least min_pid (False without an
+    NM tag or CIGAR, as it can't be judged) """
+    if not read.has_tag("NM") or not read.cigartuples:
+        return False
+    return compute_pids(parse_cigar_breakdown(read.cigartuples), read.get_tag("NM"))[1] >= min_pid
+
+
+def _pysam_coverage(bam_path, wanted, exclude_flags, min_pid=0):
     """
     Coverage totals per wanted contig from the bam via pysam: what the compiled core's pass
-    counts, the same way. Each alignment not flagged with any of exclude_flags adds 1 from
-    its start to its end on the contig; a contig's alignments have to be together.
+    counts, the same way. Each alignment not flagged with any of exclude_flags (nor under
+    min_pid percent identity) adds 1 from its start to its end on the contig; a contig's
+    alignments have to be together.
     """
     import numpy as np # type: ignore
     import pysam # type: ignore
@@ -300,6 +334,8 @@ def _pysam_coverage(bam_path, wanted, exclude_flags):
             tid = read.reference_id
             if read.flag & exclude_flags or tid < 0 or read.reference_start < 0 or names[tid] not in slot:
                 continue
+            if min_pid and not passes_min_pid(read, min_pid):
+                continue
             if tid != current:
                 if current is not None:
                     close(current, diff)
@@ -325,7 +361,7 @@ def _pysam_coverage(bam_path, wanted, exclude_flags):
     return totals
 
 
-def scan_bam(bam_path, contigs, header_to_ref_dict, include_non_primary=False, want_pids=True):
+def scan_bam(bam_path, contigs, header_to_ref_dict, include_non_primary=False, want_pids=True, min_pid=0):
     """
     One pass over the bam: adds each contig's per-base coverage to its stats and its ref's,
     and returns {contig: PidStats} of the reads mapped to each (None if not wanted, or the
@@ -333,7 +369,7 @@ def scan_bam(bam_path, contigs, header_to_ref_dict, include_non_primary=False, w
 
     Coverage is counted as `mosdepth -x` counts it: each alignment adds 1 from its start to
     its end on the contig, deletions and skips in between included, and overlapping mates
-    both count.
+    both count. Alignments under min_pid percent identity (gap-compressed) count for nothing.
     """
 
     print(f"\n  {Fore.YELLOW}Reading the bam for coverage{' and percent IDs' if want_pids else ''}...")
@@ -344,15 +380,15 @@ def scan_bam(bam_path, contigs, header_to_ref_dict, include_non_primary=False, w
 
     def one_pass(bam_path):
         _check_opens_with_pysam(bam_path)
-        done = _native_bam_pass(bam_path, wanted, exclude_flags, include_non_primary, want_pids)
+        done = _native_bam_pass(bam_path, wanted, exclude_flags, include_non_primary, want_pids, min_pid)
         if done is not None:
             return done
         # the compiled core isn't there, or left this bam to pysam
-        totals = _pysam_coverage(bam_path, wanted, exclude_flags)
+        totals = _pysam_coverage(bam_path, wanted, exclude_flags, min_pid)
         contig_pid_stats = None
         if want_pids:
             try:
-                contig_pid_stats = get_per_contig_pid_stats(bam_path, include_non_primary)
+                contig_pid_stats = get_per_contig_pid_stats(bam_path, include_non_primary, min_pid=min_pid)
             except Exception:
                 pass
         return totals, contig_pid_stats

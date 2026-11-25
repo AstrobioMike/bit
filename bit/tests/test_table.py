@@ -5,7 +5,7 @@ import pytest # type: ignore
 import pandas as pd # type: ignore
 import numpy as np # type: ignore
 from unittest.mock import patch
-from bit.tests.utils import run_cli
+from bit.tests.utils import run_cli, run_cli_here
 from bit.modules.table import (
     filter_table,
     normalize_cpm,
@@ -132,7 +132,7 @@ def test_cli_filter_basic(filter_table_tsv, wanted_col1, tmp_path):
 
 def test_cli_filter_column_flag(filter_table_tsv, wanted_col3, tmp_path):
     out = tmp_path / "out.tsv"
-    run_cli(["bit", "table", "filter", "-i", str(filter_table_tsv), "-w", str(wanted_col3), "-o", str(out), "-c", "3"])
+    run_cli_here(["bit", "table", "filter", "-i", str(filter_table_tsv), "-w", str(wanted_col3), "-o", str(out), "-c", "3"])
     lines = out.read_text().splitlines()
     assert len(lines) == 3
     assert all(l.split("\t")[2] == "alpha" for l in lines[1:])
@@ -214,7 +214,7 @@ def test_cli_cpm(norm_table, tmp_path):
 
 def test_cli_mr(norm_table, tmp_path):
     out = tmp_path / "out_mr.tsv"
-    run_cli(["bit", "table", "normalize", "-i", str(norm_table), "-n", "MR", "-o", str(out)])
+    run_cli_here(["bit", "table", "normalize", "-i", str(norm_table), "-n", "MR", "-o", str(out)])
     result = pd.read_csv(out, sep="\t", index_col=0)
     expected = {"g1": 13.572088082974535, "g2": 27.14417616594907, "g3": 40.71626424892361}
     for gene, val in expected.items():
@@ -275,7 +275,7 @@ def test_summarize_first_column_from_stdin(summarize_table):
 
 
 def test_summarize_second_column_by_name(summarize_table):
-    result = run_cli(["bit", "table", "summarize-column", str(summarize_table), "-c", "lee"])
+    result = run_cli_here(["bit", "table", "summarize-column", str(summarize_table), "-c", "lee"])
     lines = parse_summary_lines(result.stdout)
     assert lines[0] == "  Column 'lee' summary"
     stats = {"N:": "3", "Min:": "20", "Max:": "40", "Sum:": "90", "Mean:": "30", "Median:": "30", "StDev:": "8.16"}

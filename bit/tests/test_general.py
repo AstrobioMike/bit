@@ -117,13 +117,101 @@ def test_check_if_output_dir_exists_no_force_exits(tmp_path, capsys):
     assert "already exists" in capsys.readouterr().out
 
 
-def test_check_if_output_dir_exists_force_removes(tmp_path):
+OUTPUTS = ["summary.txt", "reads", "command-execution-info.txt"]
+
+
+def _earlier_run(d, record=True):
+    """ an output dir as an earlier run left it, plus a file and a directory of the user's own """
+    (d / "reads").mkdir(parents=True)
+    (d / "reads" / "a.fastq.gz").write_text("old")
+    (d / "summary.txt").write_text("old")
+    if record:
+        (d / "command-execution-info.txt").write_text("bit version: v0\n\nRendered command:\nbit x\n")
+    (d / "my-notes.txt").write_text("mine")
+    (d / "my-dir").mkdir()
+    (d / "my-dir" / "keep.txt").write_text("mine")
+
+
+def test_check_if_output_dir_exists_force_removes_only_the_programs_outputs(tmp_path):
 
     d = tmp_path / "outdir"
-    d.mkdir()
-    (d / "sentinel.txt").write_text("x")
+    _earlier_run(d)
+    check_if_output_dir_exists(str(d), force_overwrite=True, outputs=OUTPUTS)
+    # the directory and everything the program doesn't write are still there
+    assert sorted(p.name for p in d.iterdir()) == ["my-dir", "my-notes.txt"]
+    assert (d / "my-notes.txt").read_text() == "mine"
+    assert (d / "my-dir" / "keep.txt").read_text() == "mine"
+
+
+def test_check_if_output_dir_exists_force_with_no_known_outputs_removes_nothing(tmp_path):
+
+    d = tmp_path / "outdir"
+    _earlier_run(d)
+    before = sorted(str(p) for p in d.rglob("*"))
     check_if_output_dir_exists(str(d), force_overwrite=True)
-    assert not d.exists()
+    assert sorted(str(p) for p in d.rglob("*")) == before
+
+
+def test_force_overwrite_keeps_a_subdirectory_that_may_not_be_bits(tmp_path, capsys):
+
+    # a directory named like an output, but no record of a bit run beside it: refused, nothing removed
+    d = tmp_path / "outdir"
+    _earlier_run(d, record=False)
+    with pytest.raises(SystemExit) as e:
+        check_if_output_dir_exists(str(d), force_overwrite=True, outputs=OUTPUTS)
+    assert e.value.code == 1
+    out = " ".join(capsys.readouterr().out.split())
+    assert "Not overwriting" in out and "reads/" in out
+    assert (d / "reads" / "a.fastq.gz").read_text() == "old"
+    assert (d / "summary.txt").read_text() == "old"
+
+    # a file that only has the record's name doesn't count
+    (d / "command-execution-info.txt").write_text("my own notes\n")
+    with pytest.raises(SystemExit):
+        check_if_output_dir_exists(str(d), force_overwrite=True, outputs=OUTPUTS)
+    assert (d / "reads" / "a.fastq.gz").exists()
+
+    # without subdirectories with anything in them, the same-named files are simply replaced
+    (d / "reads" / "a.fastq.gz").unlink()
+    check_if_output_dir_exists(str(d), force_overwrite=True, outputs=OUTPUTS)
+    assert sorted(p.name for p in d.iterdir()) == ["my-dir", "my-notes.txt"]
+
+
+def test_force_overwrite_unlinks_symlinks_rather_than_following_them(tmp_path):
+
+    mine = tmp_path / "my-reads"
+    mine.mkdir()
+    (mine / "keep.fastq.gz").write_text("mine")
+    d = tmp_path / "outdir"
+    d.mkdir()
+    (d / "reads").symlink_to(mine)
+    check_if_output_dir_exists(str(d), force_overwrite=True, outputs=OUTPUTS)
+    assert not (d / "reads").exists()
+    assert (mine / "keep.fastq.gz").read_text() == "mine"
+
+
+def test_force_overwrite_refuses_to_remove_an_input(tmp_path, capsys):
+
+    d = tmp_path / "outdir"
+    _earlier_run(d)
+    elsewhere = tmp_path / "refs.fa"
+    elsewhere.write_text(">a\nA\n")
+    before = sorted(str(p) for p in d.rglob("*"))
+
+    # an input that is one of the outputs, inside an output subdirectory, or a directory holding outputs
+    for inputs in ([str(elsewhere), str(d / "summary.txt")], [str(d / "reads" / "a.fastq.gz")], [str(d)],
+                   [str(tmp_path)]):
+        with pytest.raises(SystemExit) as e:
+            check_if_output_dir_exists(str(d), force_overwrite=True, outputs=OUTPUTS, inputs=inputs)
+        assert e.value.code == 1
+        assert "would remove input given to this run" in " ".join(capsys.readouterr().out.split())
+        assert sorted(str(p) for p in d.rglob("*")) == before
+
+    # inputs elsewhere, or beside the outputs in the output dir, are no problem
+    (d / "my-reads.fq").write_text("@r\nA\n+\nI\n")
+    check_if_output_dir_exists(str(d), force_overwrite=True, outputs=OUTPUTS,
+                               inputs=[str(elsewhere), str(d / "my-reads.fq"), str(d / "my-dir")])
+    assert not (d / "summary.txt").exists() and (d / "my-reads.fq").exists()
 
 
 def test_check_if_output_dir_exists_force_refuses_protected_dirs(tmp_path, monkeypatch, capsys):
@@ -131,30 +219,45 @@ def test_check_if_output_dir_exists_force_refuses_protected_dirs(tmp_path, monke
     home = tmp_path / "home"
     work = home / "project" / "run"
     work.mkdir(parents=True)
+    (work / "summary.txt").write_text("mine")
+    (home / "summary.txt").write_text("mine")
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.chdir(work)
 
-    # the current dir, directories containing it, and home are never removed
-    for protected in (".", "..", str(work), str(home / "project"), str(home), "~"):
+    # nothing is removed from the current dir, directories containing it, home, or the root
+    for protected in (".", "..", str(work), str(home / "project"), str(home), "~", "/"):
         with pytest.raises(SystemExit) as e:
-            check_if_output_dir_exists(os.path.expanduser(protected), force_overwrite=True)
+            check_if_output_dir_exists(os.path.expanduser(protected), force_overwrite=True, outputs=OUTPUTS)
         assert e.value.code == 1
-        assert "Not removing" in capsys.readouterr().out
-    assert work.is_dir()
+        assert "Not overwriting" in capsys.readouterr().out
+    assert (work / "summary.txt").read_text() == "mine"
+    assert (home / "summary.txt").read_text() == "mine"
 
     # a symlink pointing at a protected dir is resolved and refused too
     link = tmp_path / "link-to-project"
     link.symlink_to(home / "project")
     with pytest.raises(SystemExit):
-        check_if_output_dir_exists(str(link), force_overwrite=True)
+        check_if_output_dir_exists(str(link), force_overwrite=True, outputs=OUTPUTS)
     assert (home / "project").is_dir()
 
-    # ordinary output dirs, inside or beside the current one, are still replaced
+    # ordinary output dirs, inside or beside the current one, have their earlier outputs replaced
     for out in (work / "outputs", home / "project" / "other-outputs"):
         out.mkdir()
+        (out / "summary.txt").write_text("old")
         (out / "sentinel.txt").write_text("x")
-        check_if_output_dir_exists(str(out), force_overwrite=True)
-        assert not out.exists()
+        check_if_output_dir_exists(str(out), force_overwrite=True, outputs=OUTPUTS)
+        assert [p.name for p in out.iterdir()] == ["sentinel.txt"]
+
+
+def test_check_if_output_dir_exists_refuses_an_existing_file(tmp_path, capsys):
+
+    f = tmp_path / "out"
+    f.write_text("mine")
+    for force in (False, True):
+        with pytest.raises(SystemExit):
+            check_if_output_dir_exists(str(f), force_overwrite=force, outputs=OUTPUTS)
+        assert "existing file" in capsys.readouterr().out
+    assert f.read_text() == "mine"
 
 
 def test_is_protected_dir_root(tmp_path, monkeypatch):
@@ -667,3 +770,13 @@ def test_download_with_tqdm_all_attempts_fail_leaves_no_file_or_part(tmp_path):
 
     assert not Path(dest).exists()
     assert not Path(dest + ".part").exists()
+
+
+def test_files_only_outputs_may_be_replaced_in_the_current_directory(tmp_path, monkeypatch):
+    from bit.modules.general import remove_previous_outputs
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "s1-summary.tsv").write_text("old")
+    (tmp_path / "keep.txt").write_text("mine")
+    remove_previous_outputs(".", ["s1-summary.tsv", "s1-filtered.fastq.gz"], "s1-command-execution-info.txt",
+                            files_only=True)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["keep.txt"]

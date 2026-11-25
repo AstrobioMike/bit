@@ -76,6 +76,16 @@ def build_parser(parent_subparsers=None):
     )
 
     optional.add_argument(
+        "--min-read-pid",
+        metavar="<FLOAT>",
+        type=float,
+        default=0,
+        help="Leave out alignments under this percent identity (gap-compressed, e.g. 95) from everything reported, "
+             "coverage included. Useful when mapping to a set of genomes that doesn't hold everything in the sample, "
+             "where reads of organisms not in it otherwise land on their closest relative (default: 0, none left out)",
+    )
+
+    optional.add_argument(
         "--skip-read-pids",
         action="store_true",
         help="Skip calculating mean and median percent ID values of mapped reads to each input reference and contig (can save spacetime)",

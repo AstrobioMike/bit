@@ -156,9 +156,10 @@ def main():
     from bit.modules.general import check_files_are_found
     from bit.modules.match_reads import match_reads, setup_output_dir
 
-    check_files_are_found(args.refs + [args.input_reads] + ([args.input_reads_2] if args.input_reads_2 else []))
+    input_paths = args.refs + [args.input_reads] + ([args.input_reads_2] if args.input_reads_2 else [])
+    check_files_are_found(input_paths)
     setup_output_dir(args.output_dir, args.output_prefix, args.force_overwrite,
-                     reconstruct_invocation(parser, args))
+                     reconstruct_invocation(parser, args), inputs=input_paths)
 
     summary = match_reads(
         ref_paths=args.refs,

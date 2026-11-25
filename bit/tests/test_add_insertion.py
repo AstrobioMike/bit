@@ -2,7 +2,7 @@ import pytest
 from argparse import Namespace
 from bit.modules.add_insertion import (add_insertion, parse_fasta, parse_insertion_fasta,
                                        parse_position_string, validate_position)
-from bit.tests.utils import run_cli
+from bit.tests.utils import run_cli, run_cli_here
 
 
 def _write_fasta(path, records):
@@ -362,11 +362,7 @@ class TestCLI:
         assert contigs["contig_1"] == "AAAATTTTCCCC"
 
     def test_cli_help_exits_zero(self):
-        import subprocess
-        result = subprocess.run(
-            ["bit", "add-insertion", "-h"],
-            capture_output=True, text=True,
-        )
+        result = run_cli_here(["bit", "add-insertion", "-h"], check=False)
         assert result.returncode == 0
         assert "insertion" in result.stdout.lower()
 
@@ -391,7 +387,7 @@ class TestCLI:
             "-l", str(log),
         ]
 
-        run_cli(cmd)
+        run_cli_here(cmd)
 
         assert log.exists()
         contents = log.read_text()

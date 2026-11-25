@@ -6,6 +6,8 @@ from bit.cli.common import add_help, add_version_arg, CustomRichHelpFormatter
 
 SUBCOMMAND_MAP = {
     "dl-ncbi-assemblies":  "bit.cli.dl_ncbi_assemblies",
+    "dl-sra-reads":        "bit.cli.dl_sra_reads",
+    "classify-seqs":       "bit.cli.classify_seqs",
     "get-accs-from-gtdb":  "bit.cli.get_accessions_from_gtdb",
     "get-accs-from-ncbi":  "bit.cli.get_accessions_from_ncbi",
     "gen-mg":              "bit.cli.gen_metagenome",
@@ -30,7 +32,8 @@ SUBCOMMAND_MAP = {
     "filter-ko-results":   "bit.cli.filter_kofamscan_results",
     "go":                  "bit.cli.go",
     "itol":                "bit.cli.itol",
-    "get-workflow":        "bit.cli.get_workflow",
+    "run-wf":              "bit.cli.run_wf",
+    "characterize-genomes": "bit.cli.characterize_genomes",
     "data":                "bit.cli.data",
 }
 
@@ -42,6 +45,10 @@ PROGRAM_GROUPS = [
             {
                 "name": "dl-ncbi-assemblies",
                 "desc": "download NCBI assemblies in different formats given input accessions",
+            },
+            {
+                "name": "dl-sra-reads",
+                "desc": "download reads from NCBI's SRA given run accessions",
             },
             {
                 "name": "get-accs-from-gtdb",
@@ -158,6 +165,14 @@ PROGRAM_GROUPS = [
                 "name": "summarize-assembly",
                 "desc": "quickly summarize nucleotide assemblies",
             },
+            {
+                "name": "characterize-genomes",
+                "desc": "get summary stats, quality estimates, and taxonomy of genomes",
+            },
+            {
+                "name": "classify-seqs",
+                "desc": "assign taxonomy to contigs (or high-quality long reads)",
+            },
         ],
     },
     {
@@ -249,8 +264,13 @@ PROGRAM_GROUPS = [
         "title": "Workflows",
         "programs": [
             {
-                "name": "get-workflow",
-                "desc": "download a bit-packaged workflow",
+                "name": "run-wf",
+                "desc": "",
+                "subcommands": [
+                    ("metagenomics", "assembly-based processing of short-read metagenomes"),
+                    ("magrec", "MAG recovery from reads and already-made assemblies"),
+                    ("amplicon", "amplicon processing of Illumina 16S, 18S or ITS data"),
+                ],
             },
         ],
     },

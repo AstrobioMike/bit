@@ -35,6 +35,7 @@ import sys
 import threading
 
 from bit.modules.general import (check_if_output_dir_exists, color_text, log_command_run,
+                                 remove_previous_outputs,
                                  notify_premature_exit)
 from bit.modules.match_reads import FastxReader
 
@@ -84,13 +85,15 @@ def _all_output_paths(output_dir, output_prefix):
     return sorted(paths)
 
 
-def setup_output_dir(output_dir, output_prefix, force_overwrite, full_cmd_executed):
+def setup_output_dir(output_dir, output_prefix, force_overwrite, full_cmd_executed, inputs=()):
     """
-    Without a prefix, the output directory must be new (or, with force_overwrite, it is replaced),
-    as with bit's other programs. With a prefix, the directory can already exist (e.g., holding
-    other samples' output); only this prefix's own files must not, or with force_overwrite they
-    are replaced (nothing else in the directory is touched).
+    Without a prefix, the output directory must be new; with a prefix, it can already exist (e.g.,
+    holding other samples' output) and only this prefix's own files must not. Either way, with
+    force_overwrite this program's own earlier files are replaced and nothing else in the
+    directory is touched.
     """
+    names = [os.path.basename(p) for p in _all_output_paths(output_dir, output_prefix)]
+    log = output_paths(output_dir, output_prefix)["log"]
     if output_prefix and os.path.isdir(output_dir):
         existing = [p for p in _all_output_paths(output_dir, output_prefix) if os.path.exists(p)]
         if existing and not force_overwrite:
@@ -100,12 +103,12 @@ def setup_output_dir(output_dir, output_prefix, force_overwrite, full_cmd_execut
             print("\n    Please specify a different output prefix or directory, or add the `-F/--force-overwrite` flag"
                   "\n    (which replaces only these files).")
             notify_premature_exit()
-        for p in existing:
-            os.remove(p)
+        if existing:
+            remove_previous_outputs(output_dir, names, os.path.basename(log), inputs, files_only=True)
     else:
-        check_if_output_dir_exists(output_dir, force_overwrite)
-        os.makedirs(output_dir)
-    log_command_run(full_cmd_executed, output_dir, output_paths(output_dir, output_prefix)["log"])
+        check_if_output_dir_exists(output_dir, force_overwrite, names, os.path.basename(log), inputs)
+        os.makedirs(output_dir, exist_ok=True)
+    log_command_run(full_cmd_executed, output_dir, log)
 
 
 class Counts:

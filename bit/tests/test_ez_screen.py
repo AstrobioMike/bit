@@ -1,5 +1,5 @@
 from bit.modules.general import get_package_path
-from bit.tests.utils import run_cli
+from bit.tests.utils import run_cli, run_cli_here
 from pathlib import Path
 import shutil
 import pandas as pd # type: ignore
@@ -62,6 +62,7 @@ def test_ez_screen_assembly_assemblies_as_rows(tmp_path):
     assert observed == expected, f"Summary TSV content does not match expected:\n{observed}\nExpected:\n{expected}"
 
 
+@pytest.mark.full
 def test_ez_screen_reads(tmp_path):
     out_prefix = tmp_path / "ez-screen"
     reads_dir = tmp_path / "reads"
@@ -1041,3 +1042,26 @@ def test_edge_rescue_within_tolerance():
     loci = ez.resolve_assembly_loci(df, {"geneA": 1000}, min_perc_cov=80,
                                     min_edge_perc_cov=50, edge_tolerance=100)
     assert len(loci) == 1
+
+
+def test_ez_screen_assembly_reruns_need_force_which_keeps_other_files(tmp_path):
+    out_prefix = tmp_path / "ez-screen"
+    cmd = ["bit", "ez-screen", "assembly", "-a", str(test_assembly_fasta), "-t", str(test_targets_fasta),
+           "-o", str(out_prefix)]
+    run_cli_here(cmd)
+    (tmp_path / "keep.txt").write_text("mine")
+    summary = Path(f"{out_prefix}-summary.tsv").read_text()
+
+    again = run_cli_here(cmd, check=False)
+    assert again.returncode != 0 and "already exist" in again.stdout
+    run_cli_here(cmd + ["-F"])
+    assert Path(f"{out_prefix}-summary.tsv").read_text() == summary
+    assert (tmp_path / "keep.txt").read_text() == "mine"
+
+    # an outputs directory that isn't an earlier run's is left alone
+    other = tmp_path / "other"
+    (tmp_path / "other-outputs").mkdir()
+    (tmp_path / "other-outputs" / "mine.txt").write_text("mine")
+    refused = run_cli_here(cmd[:-1] + [str(other), "-F"], check=False)
+    assert refused.returncode != 0 and "may not be bit's" in " ".join(refused.stdout.split())
+    assert (tmp_path / "other-outputs" / "mine.txt").read_text() == "mine"

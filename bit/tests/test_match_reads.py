@@ -4,22 +4,13 @@ import edlib # type: ignore
 import pytest # type: ignore
 import bit.modules.match_reads as match_reads_module
 from bit.modules.match_reads import (revcomp,
-                                      build_kmer_index,
-                                      build_position_index,
-                                      get_candidates,
-                                      ExactMatcher,
-                                      EditMatcher,
-                                      summarize_distances,
                                       find_identical_seqs,
                                       ref_name_from_path,
-                                      collapse_to_refs,
                                       load_refs,
-                                      iter_pairs,
                                       FastxReader,
-                                      SortedRowWriter,
                                       plural,
                                       match_reads)
-from bit.tests.utils import run_cli
+from bit.tests.utils import run_cli, run_cli_here
 
 
 K = 15
@@ -49,9 +40,34 @@ def refs_list(seqs):
     return [(name, "refs.fa", s) for name, s in seqs.items()]
 
 
+class Matcher:
+    """ the compiled matcher (bit._native.ReadMatcher) over refs of one sequence each, one read at a time """
+
+    def __init__(self, refs, k=K, n_samples=25, circular=False, max_edits=0):
+        from bit._native import ReadMatcher
+        self.native = ReadMatcher([s for _, _, s in refs], list(range(len(refs))), k, circular, max_edits, n_samples, 16)
+
+    def assigned(self, read, min_frac=0.0):
+        """ (hit refs, best edit distance, next-best or None), or None for no hit """
+        found = self.native.assign([read], False, min_frac)
+        return (list(found[0][1]), found[0][3], found[0][4]) if found else None
+
+    def hits(self, read, min_frac=0.0):
+        found = self.assigned(read, min_frac)
+        return found[0] if found else []
+
+
+def summarize(dists):
+    """ (refs at the lowest distance, that distance, the next-best ref's or None) from {ref: distance}, or None """
+    if not dists:
+        return None
+    best = min(dists.values())
+    others = sorted(d for d in dists.values() if d != best)
+    return sorted(i for i, d in dists.items() if d == best), best, (others[0] if others else None)
+
+
 def hits_for(read, refs, circular, k=K, n_samples=10, min_frac=0.0):
-    matcher = ExactMatcher(refs, k, n_samples, circular)
-    return [refs[i][0] for i in matcher.hits(read, min_frac)]
+    return [refs[i][0] for i in Matcher(refs, k, n_samples, circular).hits(read, min_frac)]
 
 
 def brute_force_hits(read, refs, circular):
@@ -144,22 +160,6 @@ def test_read_shorter_than_k_still_checked(seqs):
     assert "p3" in hits_for(read, refs, circular=False)
 
 
-def test_prefilter_never_excludes_true_matches(seqs):
-    """Every substring of a ref (any strand, any rotation) keeps that ref as a candidate."""
-    refs = refs_list(seqs)
-    index = build_kmer_index(refs, K, circular=True)
-    rng = random.Random(1)
-    for i, (_, _, s) in enumerate(refs):
-        circ = s * 2
-        for _ in range(200):
-            start = rng.randrange(len(s))
-            length = rng.randrange(K, len(s) + 1)
-            read = circ[start:start + length]
-            if rng.random() < 0.5:
-                read = revcomp(read)
-            assert i in get_candidates(read, index, K, 25)
-
-
 @pytest.mark.parametrize("circular", [False, True])
 def test_matcher_agrees_with_brute_force(seqs, circular):
     """
@@ -167,7 +167,7 @@ def test_matcher_agrees_with_brute_force(seqs, circular):
     same hits from the prefilter + anchored comparisons as from brute-force searching.
     """
     refs = refs_list(seqs)
-    matcher = ExactMatcher(refs, K, 25, circular)
+    matcher = Matcher(refs, K, 25, circular)
     rng = random.Random(3)
     n_with_hits = 0
     for _ in range(600):
@@ -195,42 +195,20 @@ def test_wraparound_matching_at_every_rotation(seqs):
     p3 = seqs["p3"]
     L = len(p3)
     refs = [("p3", "f", p3)]
-    matcher = ExactMatcher(refs, K, 25, circular=True)
+    matcher = Matcher(refs, K, 25, circular=True)
     source = p3 * 4
     for start in range(L):
         for length in (L, L + 1, 2 * L + 5, 20):
             read = source[start:start + length]
-            assert matcher._matches_at(p3, read, start)
-            assert matcher._contains(p3, read)
             assert matcher.hits(read) == [0] == brute_force_hits(read, refs, True)
-
-
-def test_wraparound_rejects_mismatch_in_each_segment(seqs):
-    p3 = seqs["p3"]
-    L = len(p3)
-    matcher = ExactMatcher([("p3", "f", p3)], K, 25, circular=True)
+    # a mismatch before the origin, in a full pass, or in the final partial pass of a multi-pass read
     start = L - 100
     read = (p3 * 3)[start:start + 2 * L + 50]
-    # a mismatch before the origin, in the full pass, and in the final partial pass
     for pos in (50, 100 + L // 2, 2 * L + 25):
-        assert not matcher._matches_at(p3, snp(read, pos), start)
-
-
-def test_contains_short_read_at_junction_only_when_circular(seqs):
-    p3 = seqs["p3"]
-    read = p3[-10:] + p3[:10]
-    linear = ExactMatcher([("p3", "f", p3)], K, 25, circular=False)
-    circular = ExactMatcher([("p3", "f", p3)], K, 25, circular=True)
-    assert not linear._contains(p3, read)
-    assert circular._contains(p3, read)
-    assert circular._contains(p3, p3[5])  # single base, no junction needed
-
-
-def test_matcher_stores_refs_once(seqs):
-    refs = refs_list(seqs)
-    matcher = ExactMatcher(refs, K, 25, circular=True)
-    assert all(m is s for m, (_, _, s) in zip(matcher.ref_seqs, refs))
-    assert not hasattr(matcher, "searches")
+        assert matcher.hits(snp(read, pos)) == []
+    # a short read across the origin only matches when circular
+    junction = p3[-10:] + p3[:10]
+    assert matcher.hits(junction) == [0] and Matcher(refs, K, 25, circular=False).hits(junction) == []
 
 
 ### edit-tolerant matching ###
@@ -272,7 +250,7 @@ def test_edit_matcher_agrees_with_brute_force(seqs, circular, max_edits):
     fallback) and long (prefilter + anchored), get the same distances as brute-force alignment.
     """
     refs = refs_list(seqs)
-    matcher = EditMatcher(refs, K, circular, max_edits)
+    matcher = Matcher(refs, K, circular=circular, max_edits=max_edits)
     rng = random.Random(11 + max_edits)
     n_within = 0
     for _ in range(300):
@@ -285,37 +263,34 @@ def test_edit_matcher_agrees_with_brute_force(seqs, circular, max_edits):
             read = revcomp(read)
         expected = brute_force_distances(read, refs, circular, max_edits)
         n_within += bool(expected)
-        assert matcher.distances(read) == expected, (circular, start, length)
+        assert matcher.assigned(read) == summarize(expected), (circular, start, length)
     assert n_within > 150
 
 
 def test_edit_matcher_respects_min_frac(seqs):
     refs = refs_list(seqs)
-    matcher = EditMatcher(refs, K, False, 2)
+    matcher = Matcher(refs, K, max_edits=2)
     read = snp(seqs["p3"][:400], 100)
-    assert matcher.distances(read, 0.4) == {2: 1}
-    assert matcher.distances(read, 0.9) == {}
+    assert matcher.assigned(read, 0.4) == ([2], 1, None)
+    assert matcher.assigned(read, 0.9) is None
 
 
 def test_closest_ref_wins_and_ties_are_ambiguous(seqs):
     refs = refs_list(seqs)
-    matcher = EditMatcher(refs, K, False, 2)
+    matcher = Matcher(refs, K, max_edits=2)
 
     # covers p1/p2's distinguishing SNP, plus one error elsewhere: p1 at 1, p2 at 2
     read = snp(seqs["p1"][250:550], 200)
-    assert summarize_distances(matcher.distances(read)) == ([0], 1, 2)
+    assert matcher.assigned(read) == ([0], 1, 2)
 
     # doesn't cover the SNP: tied
     read = snp(seqs["p1"][0:250], 100)
-    assert summarize_distances(matcher.distances(read)) == ([0, 1], 1, None)
-
-    assert summarize_distances({}) is None
+    assert matcher.assigned(read) == ([0, 1], 1, None)
 
 
 def test_exact_matcher_distances_are_zero(seqs):
     refs = refs_list(seqs)
-    matcher = ExactMatcher(refs, K, 25, False)
-    assert matcher.distances(seqs["p1"][0:250]) == {0: 0, 1: 0}
+    assert Matcher(refs, K).assigned(seqs["p1"][0:250]) == ([0, 1], 0, None)
 
 
 def test_match_reads_with_edits_end_to_end(tmp_path, seqs):
@@ -359,29 +334,6 @@ def test_match_reads_pairs_ranked_by_combined_edits(tmp_path, seqs):
     hits = read_hits_tsv(f"{out}/read-hits.tsv")
     # p1: 1 + 0 = 1, p2: 1 + 1 = 2
     assert hits["pair"][2:] == ["unique", "1", "p1", "1", "2"]
-
-
-@pytest.mark.parametrize("circular", [False, True])
-def test_position_index_gaps_never_exceed_step(seqs, circular):
-    refs = refs_list(seqs)
-    step = 16
-    pos_index = build_position_index(refs, K, circular, step)
-    for i, (_, _, s) in enumerate(refs):
-        positions = sorted(p for entries in pos_index.values() for j, p in entries if j == i)
-        if circular:
-            gaps = [b - a for a, b in zip(positions, positions[1:] + [positions[0] + len(s)])]
-        else:
-            assert positions[0] == 0 and positions[-1] == len(s) - K
-            gaps = [b - a for a, b in zip(positions, positions[1:])]
-        assert max(gaps) <= step
-
-
-def test_index_shares_identical_sets(seqs):
-    refs = refs_list(seqs)
-    index = build_kmer_index(refs, K, circular=False)
-    shared = [v for v in index.values() if v == frozenset({0, 1})]
-    assert len(shared) > 1
-    assert all(v is shared[0] for v in shared)
 
 
 def test_find_identical_seqs(seqs):
@@ -451,29 +403,6 @@ def test_load_refs_rejects_bad_inputs(tmp_path):
         load_refs([str(empty)])
 
 
-def test_collapse_to_refs():
-    # seqs 0 and 1 belong to ref 0, seq 2 to ref 1
-    seq_to_ref = [0, 0, 1]
-    assert collapse_to_refs({0: 2, 1: 1, 2: 1}, seq_to_ref) == {0: (1, [1]), 1: (1, [2])}
-    assert collapse_to_refs({0: 0, 1: 0}, seq_to_ref) == {0: (0, [0, 1])}
-    assert collapse_to_refs({}, seq_to_ref) == {}
-
-
-def test_iter_pairs_checks_names_and_counts(tmp_path):
-    r1, r2 = tmp_path / "r1.fq", tmp_path / "r2.fq"
-    write_fastq(r1, [("a/1", "ACGT"), ("b/1", "ACGT")])
-    write_fastq(r2, [("a/2", "TTTT"), ("b/2", "TTTT")])
-    assert len(list(iter_pairs(FastxReader(r1), FastxReader(r2)))) == 2
-
-    write_fastq(r2, [("a/2", "TTTT"), ("c/2", "TTTT")])
-    with pytest.raises(SystemExit):
-        list(iter_pairs(FastxReader(r1), FastxReader(r2)))
-
-    write_fastq(r2, [("a/2", "TTTT")])
-    with pytest.raises(SystemExit):
-        list(iter_pairs(FastxReader(r1), FastxReader(r2)))
-
-
 ### end-to-end ###
 
 def make_reads(seqs, rng):
@@ -500,8 +429,7 @@ def read_hits_tsv(path):
 
 
 @pytest.mark.parametrize("jobs", [1, 3])
-def test_match_reads_single_end(tmp_path, seqs, jobs, monkeypatch):
-    monkeypatch.setattr(match_reads_module, "BATCH_SIZE", 2)
+def test_match_reads_single_end(tmp_path, seqs, jobs):
     rng = random.Random(7)
     refs_fa = tmp_path / "refs.fa"
     write_fasta(refs_fa, seqs.items())
@@ -584,7 +512,6 @@ def test_match_reads_paired_end(tmp_path, seqs):
 
 
 def test_cli_output_dir_force_and_prefix(tmp_path, seqs):
-    import subprocess
     refs_fa = tmp_path / "refs.fa"
     write_fasta(refs_fa, seqs.items())
     reads_fq = tmp_path / "reads.fq"
@@ -601,22 +528,47 @@ def test_cli_output_dir_force_and_prefix(tmp_path, seqs):
     assert "--write-reads" in log and "--max-edits 0" in log
 
     # an existing output dir stops the run without -F
-    rerun = subprocess.run(base, capture_output=True, text=True)
+    rerun = run_cli_here(base, check=False)
     assert rerun.returncode != 0
     assert (out / "reads").is_dir()
 
-    # -F replaces the whole dir, so the earlier run's reads don't linger
-    run_cli(base + ["-F"])
-    assert not (out / "reads").exists()
+    # -F replaces this program's earlier outputs (so the earlier run's reads don't linger), and
+    # leaves what it doesn't write: a file and a directory of the user's own
+    (out / "my-notes.txt").write_text("mine")
+    (out / "my-dir").mkdir()
+    (out / "my-dir" / "keep.txt").write_text("mine")
+    (out / "summary.txt").write_text("stale")
+    run_cli_here(base + ["-F"])
+    assert sorted(p.name for p in out.iterdir()) == ["command-execution-info.txt", "my-dir", "my-notes.txt",
+                                                     "read-hits.tsv", "ref-summary.tsv", "summary.txt"]
+    assert (out / "my-notes.txt").read_text() == "mine"
+    assert (out / "my-dir" / "keep.txt").read_text() == "mine"
+    assert "Uniquely assigned" in (out / "summary.txt").read_text()
 
-    # -O prepends to every output name
-    run_cli(base + ["-F", "-O", "s1-", "--write-reads"])
-    assert sorted(p.name for p in out.iterdir()) == ["s1-command-execution-info.txt", "s1-read-hits.tsv",
-                                                     "s1-reads", "s1-ref-summary.tsv", "s1-summary.txt"]
+    # -O prepends to every output name; another prefix's outputs aren't this run's, so they stay too
+    run_cli_here(base + ["-F", "-O", "s1-", "--write-reads"])
+    assert sorted(p.name for p in out.iterdir()) == [
+        "command-execution-info.txt", "my-dir", "my-notes.txt", "read-hits.tsv", "ref-summary.tsv",
+        "s1-command-execution-info.txt", "s1-read-hits.tsv", "s1-reads", "s1-ref-summary.tsv", "s1-summary.txt",
+        "summary.txt"]
+
+
+def test_cli_force_keeps_inputs_in_the_output_dir(tmp_path, seqs):
+    out = tmp_path / "out"
+    out.mkdir()
+    refs_fa = out / "refs.fa"
+    write_fasta(refs_fa, seqs.items())
+    reads_fq = out / "reads.fq"
+    write_fastq(reads_fq, [("r", seqs["p3"][:300])])
+
+    result = run_cli_here(["bit", "match-reads", "-r", str(refs_fa), "-i", str(reads_fq),
+                           "-o", str(out), "-F", "-j", "1"], check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert {"reads.fq", "refs.fa"} <= {p.name for p in out.iterdir()}
+    assert refs_fa.read_text().startswith(">")
 
 
 def test_cli_refuses_to_force_overwrite_current_dir(tmp_path, seqs):
-    import subprocess
     refs_fa = tmp_path / "refs.fa"
     write_fasta(refs_fa, seqs.items())
     reads_fq = tmp_path / "reads.fq"
@@ -625,22 +577,20 @@ def test_cli_refuses_to_force_overwrite_current_dir(tmp_path, seqs):
     work.mkdir()
     (work / "keep.txt").write_text("x")
 
-    result = subprocess.run(["bit", "match-reads", "-r", str(refs_fa), "-i", str(reads_fq),
-                             "-o", ".", "-F", "-j", "1"], cwd=work, capture_output=True, text=True)
+    result = run_cli_here(["bit", "match-reads", "-r", str(refs_fa), "-i", str(reads_fq),
+                           "-o", ".", "-F", "-j", "1"], cwd=work, check=False)
     assert result.returncode != 0
-    assert "Not removing" in result.stdout
+    assert "Not overwriting" in result.stdout
     assert (work / "keep.txt").exists()
 
 
 def test_cli_rejects_min_frac_with_pairs(tmp_path, seqs):
-    import subprocess
     refs_fa = tmp_path / "refs.fa"
     write_fasta(refs_fa, seqs.items())
     reads_fq = tmp_path / "reads.fq"
     write_fastq(reads_fq, [("r", seqs["p3"][:300])])
-    result = subprocess.run(["bit", "match-reads", "-r", str(refs_fa), "-i", str(reads_fq),
-                             "-I", str(reads_fq), "--min-frac-of-seq", "0.5"],
-                            capture_output=True, text=True)
+    result = run_cli_here(["bit", "match-reads", "-r", str(refs_fa), "-i", str(reads_fq),
+                           "-I", str(reads_fq), "--min-frac-of-seq", "0.5"], check=False)
     assert result.returncode != 0
     assert "single-end" in result.stderr
 
@@ -824,37 +774,6 @@ def sorted_rows_input(rng, n):
     return [((-rng.choice([100, 200, 300]), rng.randrange(3)), f"row{i}\tx\ty") for i in range(n)]
 
 
-@pytest.mark.parametrize("buffer_rows", [1000, 7, 1])
-def test_sorted_row_writer_matches_stable_sort(tmp_path, buffer_rows):
-    """In memory (1000) or spilled to many chunks (7, 1), output matches a stable sort."""
-    rows = sorted_rows_input(random.Random(2), 100)
-    path = tmp_path / "out.tsv"
-    writer = SortedRowWriter(str(path), ["a", "b", "c"], buffer_rows=buffer_rows)
-    for key, line in rows:
-        writer.add(key, line)
-    writer.finish()
-
-    expected = ["a\tb\tc"] + [line for _, line in sorted(rows, key=lambda r: r[0])]
-    assert path.read_text().splitlines() == expected
-    assert [p.name for p in tmp_path.iterdir()] == ["out.tsv"]   # temp chunks removed
-
-
-def test_sorted_row_writer_empty_and_cleanup(tmp_path):
-    path = tmp_path / "empty.tsv"
-    writer = SortedRowWriter(str(path), ["a"], buffer_rows=2)
-    writer.finish()
-    assert path.read_text() == "a\n"
-
-    # if a run fails partway, cleanup() removes spilled chunks and writes nothing
-    path = tmp_path / "failed.tsv"
-    writer = SortedRowWriter(str(path), ["a"], buffer_rows=2)
-    for key, line in sorted_rows_input(random.Random(3), 5):
-        writer.add(key, line)
-    assert any(p.name.startswith(".sorting-") for p in tmp_path.iterdir())
-    writer.cleanup()
-    assert sorted(p.name for p in tmp_path.iterdir()) == ["empty.tsv"]
-
-
 def test_read_hits_sorted_by_length_then_edit_distance(tmp_path, seqs, monkeypatch):
     """End to end, with spilling forced, pairs sorted by combined length."""
     monkeypatch.setattr(match_reads_module, "SORT_BUFFER_ROWS", 2)
@@ -904,16 +823,24 @@ def test_written_reads_are_as_in_the_input(tmp_path, seqs):
     assert read_hits_tsv(f"{out}/read-hits.tsv")["pu"][2] == "unique"
 
 
+def test_a_reference_that_isnt_a_nucleotide_sequence_stops_the_run(tmp_path, seqs):
+    refs_fa = tmp_path / "refs.fa"
+    refs_fa.write_text(">ok\n" + seqs["p1"] + "\n>odd\n" + seqs["p3"][:-1] + "\u00e9\n", encoding="utf-8")
+    reads = tmp_path / "r.fq"
+    write_fastq(reads, [("r1", seqs["p1"][:100])])
+    with pytest.raises(SystemExit):
+        match_reads([str(refs_fa)], str(reads), output_dir=str(tmp_path / "out"))
+
+
 def test_mismatched_mates_stop_the_run(tmp_path, seqs):
-    import subprocess
     refs_fa = tmp_path / "refs.fa"
     write_fasta(refs_fa, seqs.items())
     p1 = seqs["p1"]
     r1, r2 = tmp_path / "r1.fq", tmp_path / "r2.fq"
     write_fastq(r1, [("a/1", p1[0:100]), ("b/1", p1[100:200])])
     write_fastq(r2, [("b/2", revcomp(p1[300:400])), ("a/2", revcomp(p1[400:500]))])
-    result = subprocess.run(["bit", "match-reads", "-r", str(refs_fa), "-i", str(r1), "-I", str(r2),
-                             "-o", str(tmp_path / "o")], capture_output=True, text=True)
+    result = run_cli_here(["bit", "match-reads", "-r", str(refs_fa), "-i", str(r1), "-I", str(r2),
+                           "-o", str(tmp_path / "o")], check=False)
     assert result.returncode != 0
     assert "Read names don't match" in result.stdout
 

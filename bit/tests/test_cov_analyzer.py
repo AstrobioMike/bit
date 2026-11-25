@@ -157,6 +157,8 @@ def test_run_cov_analyzer_end_to_end(tmp_path, monkeypatch, per_contig):
     ]
     for p in expected_files:
         assert p.is_file(), f"Missing expected output: {p}"
+    # everything written is in the list of what -F/--force-overwrite replaces
+    assert {p.name for p in outdir.iterdir()} <= set(ca.OUTPUT_NAMES)
 
     # validating merged high region (should have merge 100-150 and 150-200)
     high_df = pd.read_csv(outdir / "high-coverage-regions-of-interest.tsv", sep="\t")
@@ -183,3 +185,29 @@ def test_run_cov_analyzer_end_to_end(tmp_path, monkeypatch, per_contig):
     assert (outdir / "window-coverage-histogram.png").stat().st_size > 0
     overview = pd.read_csv(outdir / "window-coverage-overview.tsv", sep="\t")
     assert {"name", "mean", "median", "std", "num_windows"}.issubset(overview.columns)
+
+
+def test_force_overwrite_replaces_earlier_outputs_and_keeps_other_files(tmp_path, capsys):
+    from bit.modules.general import check_if_output_dir_exists
+
+    def earlier_run(outdir, record):
+        (outdir / "mosdepth-files").mkdir(parents=True)
+        (outdir / "mosdepth-files" / "windows.bed").write_text("old")
+        (outdir / "window-coverage-overview.tsv").write_text("old")
+        if record:
+            (outdir / "runlog.txt").write_text("bit version: v0\n\nRendered command:\nbit cov-analyzer\n")
+        (outdir / "my-notes.txt").write_text("mine")
+
+    outdir = tmp_path / "out"
+    earlier_run(outdir, record=True)
+    check_if_output_dir_exists(str(outdir), True, ca.OUTPUT_NAMES, "runlog.txt")
+    assert [p.name for p in outdir.iterdir()] == ["my-notes.txt"]
+
+    # a mosdepth-files/ with no run record beside it may be the user's own: nothing is removed
+    other = tmp_path / "other"
+    earlier_run(other, record=False)
+    with pytest.raises(SystemExit):
+        check_if_output_dir_exists(str(other), True, ca.OUTPUT_NAMES, "runlog.txt")
+    assert "mosdepth-files/" in capsys.readouterr().out
+    assert (other / "mosdepth-files" / "windows.bed").read_text() == "old"
+    assert (other / "window-coverage-overview.tsv").read_text() == "old"

@@ -1,5 +1,4 @@
 import random
-import subprocess
 import numpy as np
 import pytest # type: ignore
 from bit.modules.find_overrep import (BUILTIN_ADAPTERS,
@@ -23,7 +22,7 @@ from bit.modules.find_overrep import (BUILTIN_ADAPTERS,
                                       find_overrep,
                                       write_outputs,
                                       summary_lines)
-from bit.tests.utils import run_cli
+from bit.tests.utils import run_cli, run_cli_here
 
 
 A1 = BUILTIN_ADAPTERS["illumina_truseq_r1"]
@@ -76,6 +75,18 @@ def reads(tmp_path_factory):
     r1, r2 = d / "r1.fq", d / "r2.fq"
     simulate(r1, r2, 20_000)
     return r1, r2
+
+
+# each find_overrep call takes a couple of seconds whatever the number of reads (its tables hold every possible k-mer),
+# so what it gives for these reads with the default settings is worked out once, for the tests that only read it
+@pytest.fixture(scope="module")
+def paired_result(reads):
+    return find_overrep([str(p) for p in reads])
+
+
+@pytest.fixture(scope="module")
+def r1_result(reads):
+    return find_overrep([str(reads[0])])
 
 
 def found_counts(result):
@@ -257,8 +268,8 @@ def test_matcher_prefilter_keeps_what_hits_finds():
 
 ### mate asymmetry ###
 
-def test_find_overrep_paired(reads):
-    result = find_overrep([str(p) for p in reads])
+def test_find_overrep_paired(paired_result):
+    result = paired_result
     assert found_counts(result) == {
         canon(P1): ((6418, 6418), 6418),
         canon(P2): ((3457, 3459), 3477),
@@ -271,8 +282,8 @@ def test_find_overrep_paired(reads):
     assert r1["starts"][p1].most_common(1)[0][0] == 0
 
 
-def test_find_overrep_single_end(reads):
-    result = find_overrep([str(reads[0])])
+def test_find_overrep_single_end(r1_result):
+    result = r1_result
     assert found_counts(result) == {
         canon(P1): ((6418,), None),
         canon(P2): ((3457,), None),
@@ -280,8 +291,8 @@ def test_find_overrep_single_end(reads):
     }
 
 
-def test_write_outputs(reads, tmp_path):
-    result = find_overrep([str(p) for p in reads])
+def test_write_outputs(paired_result, tmp_path):
+    result = paired_result
     paths = write_outputs(result, tmp_path, "s1-")
     rows = [line.split("\t") for line in open(paths["seqs"]).read().splitlines()]
     header, rows = rows[0], rows[1:]
@@ -313,8 +324,16 @@ def test_cli(reads, tmp_path):
                                                      "overrep-seqs.fasta", "overrep-seqs.tsv",
                                                      "start-positions.tsv", "summary.txt"]
     # an existing output dir stops the run without -F
-    assert subprocess.run(base, capture_output=True, text=True).returncode != 0
-    run_cli(base + ["-F", "-O", "s1-"])
+    assert run_cli_here(base, check=False).returncode != 0
+    run_cli_here(base + ["-F", "-O", "s1-"])
+    assert (out / "s1-overrep-seqs.tsv").exists()
+
+    # -F replaces this program's earlier outputs and leaves anything else in the directory
+    (out / "my-notes.txt").write_text("mine")
+    (out / "summary.txt").write_text("old")
+    run_cli_here(base + ["-F"])
+    assert (out / "my-notes.txt").read_text() == "mine"
+    assert (out / "summary.txt").read_text() != "old"
     assert (out / "s1-overrep-seqs.tsv").exists()
 
 
@@ -326,8 +345,8 @@ def test_cli(reads, tmp_path):
     (["--min-fold", "0.5"], "--min-fold"),
 ])
 def test_cli_rejects_bad_values(reads, tmp_path, bad, message):
-    result = subprocess.run(["bit", "find-overrep-seqs", "-i", str(reads[0]), "-o", str(tmp_path / "x")] + bad,
-                            capture_output=True, text=True)
+    result = run_cli_here(["bit", "find-overrep-seqs", "-i", str(reads[0]), "-o", str(tmp_path / "x")] + bad,
+                          check=False)
     assert result.returncode != 0
     assert message in result.stderr
 
@@ -383,13 +402,13 @@ def test_find_overrep_fasta_input(reads, tmp_path):
 
 ### read input ###
 
-def test_gzipped_input(reads, tmp_path):
+def test_gzipped_input(reads, r1_result, tmp_path):
     import gzip
     import shutil
     gz = tmp_path / "r1.fq.gz"
     with open(reads[0], "rb") as f, gzip.open(gz, "wb") as out:
         shutil.copyfileobj(f, out)
-    assert found_counts(find_overrep([str(gz)])) == found_counts(find_overrep([str(reads[0])]))
+    assert found_counts(find_overrep([str(gz)])) == found_counts(r1_result)
 
 
 def test_bad_inputs(reads, tmp_path):
@@ -495,7 +514,7 @@ def test_seqs_to_count_outputs_and_cli(reads, tmp_path):
     fa = tmp_path / "seqs.fa"
     fa.write_text(f">p2\n{P2}\n>absent\nACGTTGCAACGTTGCAACGT\n")
     out = tmp_path / "cli"
-    run_cli(["bit", "find-overrep-seqs", "-i", str(reads[0]), "-I", str(reads[1]), "-s", str(fa), "-o", str(out)])
+    run_cli_here(["bit", "find-overrep-seqs", "-i", str(reads[0]), "-I", str(reads[1]), "-s", str(fa), "-o", str(out)])
     rows = [line.split("\t") for line in open(out / "overrep-seqs.tsv").read().splitlines()]
     header, rows = rows[0], rows[1:]
     assert header[-1] == "source"
@@ -508,8 +527,8 @@ def test_seqs_to_count_outputs_and_cli(reads, tmp_path):
     assert fasta[:4] == [">p2", P2, ">absent", "ACGTTGCAACGTTGCAACGT"]
     # a bad file stops the run
     fa.write_text(">x\nACGTJ\n")
-    result = subprocess.run(["bit", "find-overrep-seqs", "-i", str(reads[0]), "-s", str(fa),
-                             "-o", str(tmp_path / "bad")], capture_output=True, text=True)
+    result = run_cli_here(["bit", "find-overrep-seqs", "-i", str(reads[0]), "-s", str(fa),
+                           "-o", str(tmp_path / "bad")], check=False)
     assert "aren't bases or IUPAC codes" in result.stdout + result.stderr
 
 
@@ -521,25 +540,25 @@ def test_low_complexity():
     assert not low_complexity(P2)
 
 
-def test_dominant_kmers_are_candidates_whatever_their_fold(reads):
+def test_dominant_kmers_are_candidates_whatever_their_fold(reads, paired_result):
     # with a fold no k-mer could reach, only those in at least 1% of reads are picked: the two
     # primers and the dimer (~2% of reads), with the same counts as usual
     result = find_overrep([str(p) for p in reads], min_fold=1e12)
-    assert found_counts(result) == found_counts(find_overrep([str(p) for p in reads]))
+    assert found_counts(result) == found_counts(paired_result)
 
 
-def test_progress_shown_when_verbose(reads, capsys):
+def test_progress_shown_when_verbose(reads, paired_result, capsys):
     result = find_overrep([str(p) for p in reads], verbose=True)
     out = capsys.readouterr().out
     for n in range(1, 5):
         assert f"pass {n} of 4" in out
     assert "100%" in out
     # and the same results as without
-    assert found_counts(result) == found_counts(find_overrep([str(p) for p in reads]))
+    assert found_counts(result) == found_counts(paired_result)
 
 
-def test_pair_counts(reads):
-    result = find_overrep([str(p) for p in reads])
+def test_pair_counts(paired_result):
+    result = paired_result
     pairs, r1, r2 = result["pairs"], result["tallies"]["R1"], result["tallies"]["R2"]
     for i in result["order"]:
         # a pair counts for either_read if either read holds it, for both_reads if both do
@@ -548,28 +567,27 @@ def test_pair_counts(reads):
     assert pairs["explained_both"] <= pairs["explained"]
 
 
-def test_max_reads_for_discovery(reads):
-    # finding from the first 2,000 reads of each file gives the same sequences, counted
-    # across all reads, as finding from all of them
-    full = find_overrep([str(p) for p in reads])
-    capped = find_overrep([str(p) for p in reads], max_reads_for_discovery=2_000)
-    assert found_counts(capped) == found_counts(full)
-    # the cap holds the discovery passes to that many reads per file
+def test_max_reads_for_discovery(reads, paired_result):
+    # (the discovery passes' read cap is noted as the run is made)
     import bit.modules.find_overrep as fo
     seen = []
     orig = fo.native.count_kmers
     fo.native.count_kmers = lambda *a, **k: (seen.append(k.get("max_reads")), orig(*a, **k))[1]
     try:
-        r = find_overrep([str(p) for p in reads], max_reads_for_discovery=2_000)
+        capped = find_overrep([str(p) for p in reads], max_reads_for_discovery=2_000)
     finally:
         fo.native.count_kmers = orig
+    # finding from the first 2,000 reads of each file gives the same sequences, counted
+    # across all reads, as finding from all of them
+    assert found_counts(capped) == found_counts(paired_result)
+    # the cap holds the discovery passes to that many reads per file
     assert seen == [2_000, 2_000]
-    assert r["tallies"]["R1"]["reads"] == 20_000   # counting still used all reads
+    assert capped["tallies"]["R1"]["reads"] == 20_000   # counting still used all reads
 
 
 def test_cli_help_menus():
-    basic = run_cli(["bit", "find-overrep-seqs", "-h"]).stdout
-    detailed = subprocess.run(["bit", "find-overrep-seqs", "-H"], capture_output=True, text=True)
+    basic = run_cli_here(["bit", "find-overrep-seqs", "-h"]).stdout
+    detailed = run_cli_here(["bit", "find-overrep-seqs", "-H"], check=False)
     assert detailed.returncode == 0
     detailed = detailed.stderr
     fine = ["--min-perc", "--min-fold", "--max-diff", "--kmer-size", "--max-len", "--adapters",
@@ -586,5 +604,5 @@ def test_cli_hidden_parameters_still_parse(reads, tmp_path):
     assert (args.min_perc, args.kmer_size, args.no_builtin_adapter_trim, args.max_reads_for_discovery) == (5, 9, True, 0)
     # and logged with the rest of the command
     out = tmp_path / "cli-hidden"
-    run_cli(["bit", "find-overrep-seqs", "-i", str(reads[0]), "-o", str(out), "-m", "5"])
+    run_cli_here(["bit", "find-overrep-seqs", "-i", str(reads[0]), "-o", str(out), "-m", "5"])
     assert "--min-perc 5.0" in (out / "command-execution-info.txt").read_text()

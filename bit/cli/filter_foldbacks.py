@@ -212,9 +212,10 @@ def main():
     from bit.modules.filter_foldbacks import filter_foldbacks, setup_output_dir
     from bit._native import set_threads
 
-    check_files_are_found([args.input_reads] + ([args.input_reads_2] if args.input_reads_2 else []))
+    read_paths = [args.input_reads] + ([args.input_reads_2] if args.input_reads_2 else [])
+    check_files_are_found(read_paths)
     setup_output_dir(args.output_dir, args.output_prefix, args.force_overwrite,
-                     reconstruct_invocation(parser, args))
+                     reconstruct_invocation(parser, args), inputs=read_paths)
     set_threads(args.jobs)
 
     counts, paths = filter_foldbacks(

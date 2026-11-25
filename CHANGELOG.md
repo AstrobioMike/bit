@@ -14,6 +14,46 @@
 
 -->
 
+## v2.15.0 (NOT YET RELEASED)
+
+### Added
+- `bit run-wf`
+  - the workflows are now run directly, e.g., `bit run-wf metagenomics -r reads-dir/`, with their settings given on the command line rather than by retrieving a workflow and editing its config.yaml
+    - subcommands: `metagenomics`, `magrec` (new), `amplicon`
+    - `-h` shows the settings most runs need, `-H` shows all of them in a detailed help menu
+    - `--get-workflow` writes a complete, standalone copy of a workflow that can be modified and run with `--workflow-dir` or with snakemake directly
+    - anything after `--` is passed to snakemake
+  - see the new [workflows page](workflows) for details
+- the workflows' reference databases are kept in one directory, set once with `bit data locations set` (the new `BIT_REF_DBS_DIR` variable) 
+  - this has no default set during install, since I don't want to be putting hundreds of GB of ref dbs into users' conda areas, so it needs to be set as noted just above, or given for a run with `-d/--ref-dbs-dir`
+  - `bit data get tax-db`, `checkm2-db`, `gtdbtk-db`, `kofamscan-db`, `eukcc-db` and `amplicon-refs` set each up
+  - the workflows set up any they need that are missing before starting
+    - `--setup-dbs-only` (for `bit run-wf metagenomics`, `magrec` and `amplicon`, `bit characterize-genomes` and `bit classify-seqs`) will just pull the dbs (an alterative way to getting them with `bit data get`
+- on macOS, where newer GTDB-Tk versions can't be installed (due to a pplacer dependency), MAGs (metagenomics, magrec) and genomes (characterize-genomes) get their taxonomy from `bit classify-seqs` run in --genome mode
+- metagenomics: the MAGs of all samples are dereplicated (dRep, at 95% ANI by default with checkm2 estimates passed), every sample's reads are mapped to the dereplicated MAGs together, and tables of each MAG's detection, percent of reads recruited, and mean coverage per sample are written (reads under 95% identity left out, `--MAG-min-read-pid`)
+- `bit cov-stats`
+  - new `--min-read-pid` that leaves out alignments under the specified percent identity (gap-compressed) from everything reported, coverage included (off by default)
+- workflows run on one machine are told its memory: jobs only start while their memory settings fit together, `--memory <GB>` sets a smaller total
+- `bit classify-seqs`
+  - assigns taxonomy to contigs, high-quality long reads (e.g., HiFi), or genomes (based on GTDB + NCBI protists, fungi, and viruses)
+  - species are assigned from k-mers shared with reference genomes when enough are shared, otherwise taxonomy is assigned based on the lowest taxon most of the genes' protein hits agree on (see https://github.com/AstrobioMike/bit-tax-db#how-classify-seqs-uses-it for the database building and how it works)
+- `bit characterize-genomes` and `bit dl-sra-reads`
+  - the genome-summarize and sra-download workflows are now commands of their own (renamed to characterize-genomes and dl-sra-reads)
+- `bit gen-reads`
+  - can now mutate genomes itself rather than making the user going through `bit mutate-seqs` first
+  - default output is now 'generated-reads' instead of 'perfect-reads'
+
+### Changed
+- more guardrails to `-F/--force-overwrite` where it's an option
+- metagenomics workflow
+  - `processing-overview.tsv` gives the percent of each sample's reads that mapped to its assembly, and with binning to its bins and to its MAGs
+  - genes and contigs are classified with `bit classify-seqs` now (see https://github.com/AstrobioMike/bit-tax-db#how-classify-seqs-uses-it for the database building and how it works)
+- the workflows are now part of the package and share its version, they are no longer versioned on their own
+- `bit get-workflow` is removed (use `--get-workflow` to get a copy of the large workflows if wanted)
+- dl-sra-reads: runs that belong to the same sample are combined by the workflow when the input accessions file has two columns (sample name, run accession), replacing the separate `combine-sra-accessions.sh` helper script that used to be manually run
+
+---
+
 ## v2.14.2 (24-Nov-2026)
 
 ### Changed

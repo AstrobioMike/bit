@@ -1,0 +1,234 @@
+###################################################################################################
+## Snakefile for the "bit" characterize-genomes workflow                                         ##
+## bit: https://github.com/AstrobioMike/bit                                                      ##
+##                                                                                               ##
+## If you use this workflow in a publication, please consider citing :)                          ##
+##   Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122.  ##
+##   https://doi.org/10.12688/f1000research.79530.1                                              ##
+###################################################################################################
+
+# Run with `bit characterize-genomes` (see its -h, or -H for every setting).
+
+import os
+
+configfile: "config.yaml"
+
+# where the shared rules/, envs/ and scripts/ are: next to this file in a saved copy of the
+# workflow, or two levels up when run from within the bit package
+SMK = workflow.basedir if os.path.isdir(os.path.join(workflow.basedir, "envs")) else os.path.normpath(os.path.join(workflow.basedir, "..", ".."))
+
+include: os.path.join(SMK, "rules", "common.smk")
+
+genomes_dir = (config["genomes_dir"] or "").rstrip("/") + "/"
+extension = config["assembly_extension"]
+# a "-" joins the prefix to the output names unless it already ends in "-" or "_"
+prefix = config["output_prefix"]
+if prefix and not prefix.endswith(("-", "_")):
+    prefix += "-"
+
+genome_IDs = sorted(glob_wildcards(genomes_dir + "{id,[^/]+}" + extension).id)
+
+if not genome_IDs:
+    exit_with_message(f"No files ending with '{extension}' were found in '{genomes_dir}' :(")
+
+logs_dir = "logs/"
+benchmarks_dir = "benchmarks/"
+for dir in (logs_dir, benchmarks_dir):
+    os.makedirs(dir, exist_ok = True)
+
+# the reference databases (set up by bit before the run starts; see rules/ref-dbs.smk)
+include: os.path.join(SMK, "rules", "ref-dbs.smk")
+from bit.smk.workflows.characterize_genomes.params import ref_dbs_needed
+require_ref_dbs(ref_dbs_needed(config))
+
+eukcc_db_dir = ref_db_dir("eukcc-db")
+
+def intermediate(path):
+    """ the programs' full outputs are removed once the summary table exists, unless they were asked to be kept """
+    return path if config["keep_all_files"] else temp(path)
+
+# these don't do any real work, so they are run where snakemake itself is running rather than being submitted
+# anywhere if a job scheduler is being used
+localrules: all
+
+summary_table = prefix + "genome-summaries.tsv"
+
+rule all:
+    input:
+        summary_table
+
+
+onsuccess:
+    combine_benchmarks()
+
+
+rule gen_summary_stats:
+    conda:
+        env("bit.yaml")
+    input:
+        expand(genomes_dir + "{genome_ID}" + extension, genome_ID = genome_IDs)
+    output:
+        intermediate("summary-stats.tsv")
+    benchmark:
+        benchmarks_dir + "gen_summary_stats-benchmarks.tsv"
+    shell:
+        """
+        bit summarize-assembly {input:q} -o {output} -t
+        """
+
+
+########################################
+########## Bacteria and archaea ########
+########################################
+
+if not config["euk"]:
+
+    note_gtdbtk_skipped()
+
+    genome_fastas = expand(genomes_dir + "{genome_ID}" + extension, genome_ID = genome_IDs)
+
+    # checkm2 and GTDB-Tk (rules shared with the metagenomics workflow)
+    checkm2_runs = [dict(
+        name = "run_checkm2", genomes_dir = genomes_dir, extension = extension, what = "genomes", needs = genome_fastas,
+        results_tab = "checkm2-results.tsv", out_dir = "checkm2-output" if config["keep_all_files"] else None,
+        temp_outputs = not config["keep_all_files"], threads = config["threads"], mem_mb = config["checkm2_mem"],
+        log = logs_dir + "checkm2.log", benchmark = benchmarks_dir + "run_checkm2-benchmarks.tsv")]
+
+    gtdbtk_runs = [dict(
+        name = "gtdbtk_classify", genomes_dir = genomes_dir, extension = extension, what = "genomes", needs = genome_fastas,
+        out_dir = "gtdb-tk-output", taxonomy_tab = "gtdb-taxonomy.tsv", empty_note = None, temp_outputs = not config["keep_all_files"],
+        threads = config["threads"], scratch_dir = config["gtdbtk_scratch_dir"],
+        mem_mb = config["gtdbtk_mem"],
+        log = logs_dir + "gtdbtk.log", benchmark = benchmarks_dir + "gtdbtk_classify-benchmarks.tsv")]
+
+    include: os.path.join(SMK, "rules", "genome-quality.smk")
+
+    # where GTDB-Tk doesn't run (macOS), taxonomy from bit-tax-db, each genome labelled as a whole (rules/genome-tax.smk)
+    tax_db_genome_runs = [] if GTDBTK_RUNS_HERE else [dict(
+        name = "tax_db_on_genomes", genomes_dir = genomes_dir, extension = extension, needs = genome_fastas,
+        taxonomy_tab = intermediate("genome-taxonomies.tsv"), work_dir = "taxonomy-working-files/",
+        threads = config["threads"], search_mem = config["search_mem"], classify_seqs_mem = config["classify_seqs_mem"],
+        log = logs_dir + "tax-db.log", benchmark = benchmarks_dir + "tax_db_on_genomes-benchmarks")]
+
+    include: os.path.join(SMK, "rules", "genome-tax.smk")
+
+
+    rule combine_outputs:
+        input:
+            assembly_stats_tab = "summary-stats.tsv",
+            checkm2_results_tab = "checkm2-results.tsv",
+            taxonomy = "gtdb-taxonomy.tsv" if GTDBTK_RUNS_HERE else "genome-taxonomies.tsv"
+        output:
+            summary_table
+        run:
+            from bit.modules.genome_overview import write_overview
+            if GTDBTK_RUNS_HERE:
+                write_overview(input.assembly_stats_tab, output[0], checkm2_path = input.checkm2_results_tab,
+                               gtdbtk_paths = [input.taxonomy])
+            else:
+                write_overview(input.assembly_stats_tab, output[0], checkm2_path = input.checkm2_results_tab,
+                               rank_table_path = input.taxonomy)
+
+
+########################################
+################ Eukarya ###############
+########################################
+
+if config["euk"]:
+
+    rule run_eukcc:
+        conda:
+            env("eukcc.yaml")
+        input:
+            genome = genomes_dir + "{genome_ID}" + extension
+        params:
+            output_dir = "{genome_ID}-eukcc-out",
+            eukcc_db_dir = eukcc_db_dir,
+            keep = "true" if config["keep_all_files"] else "false"
+        threads:
+            config["threads"]
+        resources:
+            cpus = config["threads"],
+            mem_mb = config["eukcc_mem"]
+        log:
+            logs_dir + "{genome_ID}-eukcc.log"
+        benchmark:
+            benchmarks_dir + "run_eukcc-{genome_ID}-benchmarks.tsv"
+        output:
+            est_tab = temp("{genome_ID}-eukcc-estimates.tsv"),
+            AA_seqs = temp("{genome_ID}-prots.faa")
+        shell:
+            """
+            eukcc single --db "{params.eukcc_db_dir}" --threads {threads} --out {params.output_dir} --keep "{input.genome}" > {log} 2>&1
+
+            # getting comp./redund. estimates
+            paste <( echo "{wildcards.genome_ID}" ) <( tail -n +2 {params.output_dir}/eukcc.csv | head -n 1 | cut -f 2,3 ) > {output.est_tab}
+
+            # its proteins (from metaeuk), for the taxonomy
+            sed 's/metaeuk_//' {params.output_dir}/workdir/metaeuk/*_metaeuk_cleaned.faa > {output.AA_seqs}
+
+            if [ {params.keep} != "true" ]; then
+                rm -rf {params.output_dir}
+            fi
+            """
+
+
+    rule combine_eukcc_estimates:
+        input:
+            expand("{genome_ID}-eukcc-estimates.tsv", genome_ID = genome_IDs)
+        output:
+            intermediate("combined-eukcc-estimates.tsv")
+        shell:
+            r"""
+            printf "Assembly\tEst. Comp.\tEst. Redund.\n" > {output}
+            cat {input} >> {output}
+
+            # EukCC's ete3 downloads NCBI's taxonomy into the run directory as it starts; every EukCC job of the run is
+            # done by now, so it can go
+            rm -f taxdump.tar.gz
+            """
+
+
+    # taxonomy as by `bit classify-seqs` (rules/classify-seqs.smk), each genome labelled as a whole: the k-mers of all
+    # its contigs together, and all its proteins (as called by EukCC's metaeuk)
+    tax_IDs = genome_IDs
+    tax_seqs_path = lambda ID: genomes_dir + ID + extension
+    tax_genes_path = lambda ID: ID + "-prots.faa"
+    genome_tax_tables = {ID: ID + "-tax.tsv" for ID in genome_IDs}
+    tax_tables = {ID: temp(path) for ID, path in genome_tax_tables.items()}
+    tax_gene_tables = None
+    tax_whole_inputs = True
+    tax_genes_after_kmers = False     # (EukCC's genes, called anyway)
+    tax_work_dir = "taxonomy-working-files/"
+    tax_intermediate = temp
+
+    include: os.path.join(SMK, "rules", "classify-seqs.smk")
+
+    localrules: tax_name_genes, combine_euk_tax_outputs
+
+
+    rule combine_euk_tax_outputs:
+        input:
+            [genome_tax_tables[ID] for ID in genome_IDs]
+        output:
+            intermediate("genome-taxonomies.tsv")
+        run:
+            with open(output[0], "w") as out:
+                out.write("Assembly\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n")
+                for path in input:
+                    with open(path) as table:
+                        next(table)
+                        for line in table:
+                            out.write("\t".join(line.rstrip("\n").split("\t")[:8]) + "\n")
+
+
+    rule combine_euk_outputs:
+        input:
+            assembly_stats_tab = "summary-stats.tsv",
+            eukcc_tab = "combined-eukcc-estimates.tsv",
+            tax_tab = "genome-taxonomies.tsv"
+        output:
+            summary_table
+        run:
+            from bit.modules.genome_overview import write_overview
+            write_overview(input.assembly_stats_tab, output[0], eukcc_path = input.eukcc_tab, rank_table_path = input.tax_tab)

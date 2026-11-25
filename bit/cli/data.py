@@ -46,7 +46,9 @@ def build_parser(parent_subparsers=None):
 
     get_desc = """
         This subcommand downloads or updates bit's required databases. All sub-subcommands (except test-data) accept
-        optional `-q/--quiet` and `-f/--force-update` flags.
+        optional `-q/--quiet` and `-f/--force-update` flags. The large reference databases the workflows use (tax-db
+        through amplicon-refs) go in the reference-database directory (`-d/--ref-dbs-dir`, or the BIT_REF_DBS_DIR
+        variable).
         """
 
     get_parser = subparsers.add_parser(
@@ -175,6 +177,40 @@ def build_parser(parent_subparsers=None):
     get_ncbi_tax_parser.set_defaults(func="get_ncbi_tax_data")
 
 
+    ### get <reference database> ###
+    # the large reference databases the workflows use, all kept under one directory (see bit.modules.ref_dbs)
+
+    from bit.modules.ref_dbs import REF_DBS, REF_DBS_VAR
+
+    for db in REF_DBS.values():
+
+        db_parser = get_subparsers.add_parser(
+            db.name,
+            help=f"Download the {db.title}",
+            description=f"""
+                This subcommand downloads and sets up the {db.title} ({db.size}), used by {db.used_by}. It goes in its
+                own subdirectory of the reference-database directory: -d/--ref-dbs-dir if given, otherwise the one set
+                in the {REF_DBS_VAR} variable (with `bit data locations set`). An interrupted download carries on from
+                where it stopped when run again.
+                """,
+            epilog=f"Ex. usage: `bit data get {db.name}`",
+            formatter_class=CustomRichHelpFormatter,
+            add_help=False
+        )
+
+        db_optional = db_parser.add_argument_group("Optional Parameters")
+        db_optional.add_argument(
+            "-d", "--ref-dbs-dir",
+            metavar="<DIR>",
+            help=f"Reference-database directory to set it up in (default: the {REF_DBS_VAR} variable's)"
+        )
+        add_get_common_args(db_optional)
+        add_help(db_optional)
+        add_version_arg(db_optional)
+
+        db_parser.set_defaults(func="get_ref_db", ref_db=db.name)
+
+
     ### get test-data ###
 
     get_test_data_desc = """
@@ -294,6 +330,22 @@ def build_parser(parent_subparsers=None):
 ################################################################################
 
 
+def get_ref_db(args):
+
+    from bit.modules.general import color_text, wprint
+    from bit.modules.ref_dbs import RefDbsDirNotSet, ref_dbs_root, setup
+
+    try:
+        root = ref_dbs_root(args.ref_dbs_dir)
+    except RefDbsDirNotSet as e:
+        print()
+        wprint(color_text(str(e), "yellow"))
+        print()
+        sys.exit(1)
+
+    setup(args.ref_db, root, force=args.force_update, quiet=args.quiet)
+
+
 def main():
 
     parser = build_parser()
@@ -383,6 +435,7 @@ def main():
         "get_go_dbs"             : lambda a: get_go_data(force_update=a.force_update, quiet=a.quiet),
         "get_gtdb_data"          : lambda a: get_gtdb_data(force_update=a.force_update, quiet=a.quiet),
         "get_test_data"          : lambda a: dl_test_data(a),
+        "get_ref_db"             : get_ref_db,
     }
 
     func_map[args.func](args)

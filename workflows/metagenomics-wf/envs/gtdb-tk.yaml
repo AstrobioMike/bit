@@ -1,8 +1,0 @@
-name: gtdb-tk
-channels:
-    - conda-forge
-    - bioconda
-    - defaults
-dependencies:
-    - gtdbtk=2.4.0
-    - numpy=1.23.1

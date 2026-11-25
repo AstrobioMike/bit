@@ -1,0 +1,8 @@
+name: mapping
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - bowtie2=2.5.5
+    - bbmap=40.05
+    - samtools=1.25

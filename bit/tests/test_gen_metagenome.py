@@ -696,6 +696,62 @@ def test_preflight_output_dir_filesystem_check(tmp_path):
                                          force_overwrite=True))
 
 
+def _earlier_gen_mg_run(out, record=True):
+    (out / "genomes").mkdir(parents=True)
+    (out / "genomes" / "GCF_1.fasta.gz").write_text("old")
+    (out / "ground-truth").mkdir()
+    (out / "ground-truth" / "mg-ground-truth-assembly.fasta").write_text("old")
+    for name in ("mg_R1.fastq.gz", "mg_R2.fastq.gz", "per-genome-coverage.tsv", "reproducibility.tsv"):
+        (out / name).write_text("old")
+    if record:
+        (out / "runlog.txt").write_text("bit version: v0\n\nRendered command:\nbit gen-metagenome\n")
+    (out / "my-notes.txt").write_text("mine")
+    (out / "other_R1.fastq.gz").write_text("mine")
+
+
+def test_preflight_force_overwrite_replaces_only_its_own_outputs(tmp_path):
+    out = tmp_path / "gen-mg-outputs"
+    _earlier_gen_mg_run(out)
+
+    # an existing output dir stops the run without -F
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(_preflight_args(output_dir=str(out), output_prefix="mg"))
+    assert (out / "mg_R1.fastq.gz").exists()
+
+    CLI.preflight_checks(_preflight_args(output_dir=str(out), output_prefix="mg", force_overwrite=True))
+    assert sorted(p.name for p in out.iterdir()) == ["my-notes.txt", "other_R1.fastq.gz"]
+    assert (out / "my-notes.txt").read_text() == "mine"
+
+
+def test_preflight_force_overwrite_refusals(tmp_path, monkeypatch, capsys):
+    # a genomes/ with no runlog.txt beside it may be the user's own genomes: nothing is removed
+    out = tmp_path / "mine"
+    _earlier_gen_mg_run(out, record=False)
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(_preflight_args(output_dir=str(out), output_prefix="mg", force_overwrite=True))
+    assert "genomes/" in capsys.readouterr().out
+    assert (out / "genomes" / "GCF_1.fasta.gz").read_text() == "old"
+    assert (out / "mg_R1.fastq.gz").read_text() == "old"
+
+    # an input that would be removed: refused (here the accessions file is kept in genomes/)
+    out = tmp_path / "with-input"
+    _earlier_gen_mg_run(out)
+    accs = out / "genomes" / "accessions.txt"
+    accs.write_text("GCF_000005845.2\n")
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(_preflight_args(output_dir=str(out), output_prefix="mg", force_overwrite=True,
+                                             accessions=str(accs)))
+    assert "would remove input given to this run" in " ".join(capsys.readouterr().out.split())
+    assert (out / "genomes" / "GCF_1.fasta.gz").exists() and accs.exists()
+
+    # the current directory
+    monkeypatch.chdir(out)
+    with pytest.raises(SystemExit):
+        CLI.preflight_checks(_preflight_args(output_dir=".", output_prefix="mg", force_overwrite=True))
+    assert "Not overwriting" in capsys.readouterr().out
+    assert (out / "genomes" / "GCF_1.fasta.gz").exists()
+
+
 # ─── _resolve_seed ─────────────────────────────────────────────────────────
 
 def test_resolve_seed_passthrough():

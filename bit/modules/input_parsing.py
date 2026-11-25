@@ -11,7 +11,8 @@ accepted_read_extensions  = [".fq.gz", ".fastq.gz"]
 def get_input_reads_dict_from_dir(reads_dir, SE = False):
     """
     This scans the input directory for read files and returns a dictionary of prefix (hopefully sample names), and read paths
-    Place-holder for if i want to implement single-end in the future
+    Paired-end (default): {sample: {"R1": path, "R2": path}}, the sample being what precedes the R1/R2 designation
+    Single-end (SE = True): {sample: {"SE": path}}, the sample being the filename without its extension
     """
 
     p = Path(reads_dir)
@@ -20,6 +21,12 @@ def get_input_reads_dict_from_dir(reads_dir, SE = False):
         key=lambda x: x.name
     )
     reads_dict = {}
+
+    if SE:
+        for fq in fastqs:
+            ext = next(ext for ext in accepted_read_extensions if fq.name.endswith(ext))
+            reads_dict[fq.name[:-len(ext)]] = {"SE": str(fq.resolve())}
+        return reads_dict
 
     for fq in fastqs:
         name = fq.name

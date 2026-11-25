@@ -1,0 +1,24 @@
+name: drep
+channels:
+    - conda-forge
+    - bioconda
+# dRep is installed from PyPI: its bioconda package depends on CheckM (v1), whose install downloads a 1.4 GB
+# database; dRep only runs CheckM when it isn't given genome quality, and the workflows give it checkm2's
+dependencies:
+    - python=3.12
+    - skani=0.4.0
+    - mash=2.3
+    - mummer4
+    - fastani=1.34
+    - prodigal=2.6.3
+    - numpy
+    - pandas
+    - seaborn-base
+    - matplotlib-base
+    - biopython
+    - scikit-learn
+    - tqdm
+    - setuptools
+    - pip
+    - pip:
+        - drep==4.0.3

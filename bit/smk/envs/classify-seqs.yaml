@@ -1,0 +1,8 @@
+name: classify-seqs
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - prodigal=2.6.3
+    - diamond=2.2.9
+    - sourmash=4.9.4

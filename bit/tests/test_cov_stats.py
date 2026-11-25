@@ -3,7 +3,7 @@ import pytest # type: ignore
 from collections import defaultdict
 from bit.modules.cov_stats import CoverageStats
 from bit.modules.general import get_package_path
-from bit.tests.utils import run_cli
+from bit.tests.utils import run_cli, run_cli_here
 
 test_fasta_path = get_package_path("tests/data/ez-screen-assembly.fasta")
 test_bam_path = get_package_path("tests/data/ez-screen.bam")
@@ -132,12 +132,12 @@ def test_compute_metrics_detection_is_a_percent_to_two_decimals():
 
 
 def _write_bam(path, alignments, refs=(("c1", 100), ("c2", 50), ("c3", 30))):
-    """ a bam of (contig index, start, cigar, flag) alignments, in the order given """
+    """ a bam of (contig index, start, cigar, flag[, NM]) alignments, in the order given (NM 0 if not given; None: no NM tag) """
     import pysam # type: ignore
 
     header = {"HD": {"VN": "1.6"}, "SQ": [{"SN": name, "LN": length} for name, length in refs]}
     with pysam.AlignmentFile(str(path), "wb", header=header) as bam:
-        for i, (tid, start, cigar, flag) in enumerate(alignments):
+        for i, (tid, start, cigar, flag, *nm) in enumerate(alignments):
             a = pysam.AlignedSegment(bam.header)
             a.query_name = f"r{i}"
             a.flag = flag
@@ -147,7 +147,8 @@ def _write_bam(path, alignments, refs=(("c1", 100), ("c2", 50), ("c3", 30))):
             qlen = a.infer_query_length() or 0
             a.query_sequence = "A" * qlen
             a.mapping_quality = 60
-            a.set_tag("NM", 0)
+            if (nm or [0])[0] is not None:
+                a.set_tag("NM", (nm or [0])[0])
             bam.write(a)
     return str(path)
 
@@ -214,10 +215,47 @@ def test_get_cov_stats_without_the_compiled_core_gives_the_same_tables(tmp_path,
     def tables(prefix):
         args = argparse.Namespace(reference_fastas=[str(test_fasta_path)], bam=str(test_bam_path), bed=None,
                                   output_prefix=str(prefix), skip_per_contig=False, include_non_primary=False,
-                                  skip_read_pids=False)
+                                  skip_read_pids=False, min_read_pid=0)
         cov_stats.get_cov_stats(args)
         return Path(f"{prefix}-per-ref.tsv").read_text(), Path(f"{prefix}-per-contig.tsv").read_text()
 
     native = tables(tmp_path / "native")
     monkeypatch.setattr(cov_stats, "_native_bam_pass", lambda *a, **k: None)
     assert tables(tmp_path / "pysam") == native
+
+
+def test_alignments_under_the_minimum_percent_id_count_for_nothing(tmp_path):
+    """ --min-read-pid: in the compiled pass and the pysam one alike, alignments under it (or without NM) add to
+    neither the coverage nor the percent IDs """
+    from bit import _native as native
+    from bit.modules.cov_stats import _pysam_coverage
+    from bit.modules.mapped_read_stats import get_per_contig_pid_stats
+
+    # on c1, 20M at 10 with 0 mismatches (100%), 20M at 40 with 2 (90%), 20M at 70 with no NM tag
+    bam = _write_bam(tmp_path / "pid.bam", [(0, 10, "20M", 0, 0), (0, 40, "20M", 0, 2), (0, 70, "20M", 0, None)])
+
+    everything = (60, 60, 0, [(0, 40), (1, 60)])
+    kept = (20, 20, 0, [(0, 80), (1, 20)])
+    for min_pid, expected, pids in ((0, everything, [100.0, 90.0]), (95, kept, [100.0]), (90, None, [100.0, 90.0])):
+        totals, accs = native.bam_coverage_and_pid_stats(bam, ["c1"], 1796, True, False, True, min_pid=min_pid)
+        python = _pysam_coverage(bam, ["c1"], 1796, min_pid)
+        if expected:
+            assert _norm(totals) == [expected] == _norm(python)
+        else:
+            assert _norm(totals) == _norm(python)
+        assert get_per_contig_pid_stats(bam, min_pid=min_pid)["c1"].count == len(pids)
+        assert dict(accs)["c1"][0] == len(pids)
+
+
+def test_existing_outputs_need_force_which_replaces_only_them(tmp_path):
+    cmd = ["bit", "cov-stats", "-r", str(test_fasta_path), "-b", str(test_bam_path)]
+    (tmp_path / "keep.txt").write_text("mine")
+    # the default prefix, in the current directory
+    run_cli_here(cmd + ["--skip-per-contig"], cwd=tmp_path)
+    (tmp_path / "cov-stats-per-contig.tsv").write_text("from an older run")
+    again = run_cli_here(cmd, cwd=tmp_path, check=False)
+    assert again.returncode != 0 and "already exist" in again.stdout
+    assert (tmp_path / "cov-stats-per-contig.tsv").read_text() == "from an older run"
+    run_cli_here(cmd + ["--skip-per-contig", "-F"], cwd=tmp_path)
+    assert sorted(p.name for p in tmp_path.iterdir()) == ["cov-stats-per-ref.tsv", "keep.txt"]
+    assert (tmp_path / "keep.txt").read_text() == "mine"

@@ -124,14 +124,28 @@ def test_set_env_variables_iterates_all_keys():
     # patch the two helpers so we test the orchestration, not the prompts
     with mock.patch.object(mod, "get_variable_path", return_value=False) as g, \
          mock.patch.object(mod, "set_variable_path",
-                           side_effect=lambda var, cur: f"/{var}/") as s:
+                           side_effect=lambda var, cur, note=None: f"/{var}/") as s:
         result = set_env_variables()
 
     assert set(result.keys()) == {"TAXONKIT_DB", "GTDB_DIR",
-                                  "GO_DB_DIR", "NCBI_assembly_data_dir"}
+                                  "GO_DB_DIR", "NCBI_assembly_data_dir", "BIT_REF_DBS_DIR"}
     assert result["GTDB_DIR"] == "/GTDB_DIR/"
-    assert g.call_count == 4
-    assert s.call_count == 4
+    assert g.call_count == 5
+    assert s.call_count == 5
+    # only the reference-database directory may be left unset
+    assert [c.args[0] for c in s.call_args_list if c.args[2]] == ["BIT_REF_DBS_DIR"]
+
+
+def test_ref_dbs_dir_can_be_left_unset_and_gets_no_export_line(tmp_path, monkeypatch):
+    with mock.patch("builtins.input", return_value=""):
+        assert set_variable_path("BIT_REF_DBS_DIR", False, "a note") == ""
+
+    script = tmp_path / "etc" / "conda" / "activate.d" / "bit.sh"
+    script.parent.mkdir(parents=True)
+    script.write_text("export GTDB_DIR=/old/\n")
+    monkeypatch.setenv("CONDA_PREFIX", str(tmp_path))
+    mod.modify_conda_activate_startup_script({"GTDB_DIR": "/g/", "BIT_REF_DBS_DIR": ""})
+    assert script.read_text() == "export GTDB_DIR=/g/\n"
 
 
 # ─────────────────── check_and_report_env_variables ───────────────────

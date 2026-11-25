@@ -1,0 +1,104 @@
+###################################################################################################
+## Snakefile for "bit classify-seqs"                                                             ##
+## bit: https://github.com/AstrobioMike/bit                                                      ##
+##                                                                                               ##
+## If you use this in a publication, please consider citing :)                                   ##
+##   Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122.  ##
+##   https://doi.org/10.12688/f1000research.79530.1                                              ##
+###################################################################################################
+
+# Run with `bit classify-seqs` (see its -h, or -H for every setting).
+
+import os
+
+configfile: "config.yaml"
+
+SMK = workflow.basedir if os.path.isdir(os.path.join(workflow.basedir, "envs")) else os.path.normpath(os.path.join(workflow.basedir, "..", ".."))
+
+include: os.path.join(SMK, "rules", "common.smk")
+include: os.path.join(SMK, "rules", "ref-dbs.smk")
+require_ref_dbs(["tax-db"])
+
+# the input fasta files by name (file name without its extension), from the files and/or directories given
+from bit.modules.classify_seqs import find_fasta_inputs
+
+try:
+    fastas = find_fasta_inputs(config["fasta_files"])
+except ValueError as problem:
+    exit_with_message(str(problem))
+
+IDs = sorted(fastas)
+
+logs_dir = "logs/"
+benchmarks_dir = "benchmarks/"
+work_dir = "working-files/"
+for dir in (logs_dir, benchmarks_dir, work_dir):
+    os.makedirs(dir, exist_ok = True)
+
+def intermediate(path):
+    return path if config["keep_all_files"] else temp(path)
+
+# what the shared classification rules need (see rules/classify-seqs.smk)
+tax_IDs = IDs
+tax_seqs_path = lambda ID: fastas[ID]
+tax_genes_path = lambda ID: work_dir + ID + "-genes.faa"
+# with --genomes, each input is labelled as a whole, and the one-row tables are combined into one
+genomes_mode = config["genomes"]
+genomes_table = "genome-taxonomies.tsv"
+input_tables = {ID: ID + "-tax.tsv" for ID in IDs}
+tax_tables = {ID: temp(path) for ID, path in input_tables.items()} if genomes_mode else input_tables
+tax_gene_tables = None
+tax_whole_inputs = genomes_mode
+# (with --genomes, genes are only called for the genomes their k-mers didn't label)
+tax_genes_after_kmers = genomes_mode
+tax_work_dir = work_dir
+tax_intermediate = intermediate
+
+include: os.path.join(SMK, "rules", "classify-seqs.smk")
+
+localrules: all, tax_name_genes, combine_genome_tables
+
+rule all:
+    input:
+        [genomes_table] if genomes_mode else list(input_tables.values())
+
+
+rule combine_genome_tables:
+    input:
+        [input_tables[ID] for ID in IDs]
+    output:
+        genomes_table
+    run:
+        with open(output[0], "w") as out:
+            for i, path in enumerate(input):
+                with open(path) as table:
+                    header = next(table)
+                    if i == 0:
+                        out.write("genome" + header[len("seq_id"):])
+                    out.writelines(table)
+
+
+onsuccess:
+    combine_benchmarks()
+
+
+# genes are called as for a metagenome (an empty file for an input without sequences)
+rule call_genes:
+    conda:
+        env("classify-seqs.yaml")
+    input:
+        lambda wildcards: fastas[wildcards.ID]
+    output:
+        intermediate(work_dir + "{ID}-genes.faa")
+    log:
+        logs_dir + "{ID}-call-genes.log"
+    benchmark:
+        benchmarks_dir + "call_genes-{ID}-benchmarks.tsv"
+    shell:
+        """
+        if [ -s {input} ]; then
+            prodigal -p meta -q -i {input} -a {output} -o /dev/null > {log} 2>&1
+        else
+            touch {output}
+        fi
+        """

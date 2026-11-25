@@ -108,20 +108,101 @@ def is_protected_dir(path):
             or target == Path(target.anchor))
 
 
-def check_if_output_dir_exists(output_dir, force_overwrite=False):
+def _refuse_force_overwrite(headline, explanation):
+    print(f"\n    {color_text(headline, 'yellow')}")
+    print("\n" + textwrap.fill(" ".join(explanation.split()), width=90, initial_indent="    ",
+                               subsequent_indent="    ", break_on_hyphens=False, break_long_words=False))
+    notify_premature_exit()
+
+
+def _is_bit_run_record(path):
+    """ whether `path` is the record of the command run that bit writes into an output directory """
+    try:
+        with open(path) as f:
+            return f.readline().startswith("bit version:")
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
+def remove_previous_outputs(output_dir, outputs, run_record, inputs=(), files_only=False):
+    """
+    What `-F/--force-overwrite` does to an output directory that already exists: removes the
+    files and subdirectories the program itself writes there (`outputs`, names within
+    `output_dir`, covering everything it can write whatever its settings), and nothing else.
+    The directory itself and anything else in it are left as they are.
+
+    Stops without removing anything if:
+      - `output_dir` is the current directory, a directory containing it, the home directory or the filesystem root
+        (is_protected_dir), unless `files_only`: the program only writes files named by its prefix (e.g.,
+        `-o . -O sample1`), so removing them there is fine;
+      - one of the `inputs` is among what would be removed, inside it, or a directory holding it;
+      - one of `outputs` is there as a subdirectory with something in it, but the directory doesn't hold the record
+        of an earlier run of the program (`run_record`, the file log_command_run writes): the
+        subdirectory would be removed with everything in it, so it has to be bit's own.
+    """
+    out = Path(output_dir)
+    if not out.is_dir():
+        return
+
+    present = [out / name for name in sorted(set(outputs)) if os.path.lexists(out / name)]
+    dirs = [p for p in present if p.is_dir() and not p.is_symlink()]
+
+    if is_protected_dir(out) and not files_only:
+        _refuse_force_overwrite(
+            f"Not overwriting in the output directory: {output_dir}",
+            "This is the current directory, a directory containing it, or your home directory, and "
+            "`-F/--force-overwrite` removes earlier outputs from the output directory. "
+            "Please specify a dedicated output directory.")
+
+    def among_removed(path):
+        given = Path(path).resolve()
+        for p in present:
+            # (a symlink is removed itself, so only what it is matters, not where it points)
+            removed = p.parent.resolve() / p.name
+            if given == removed or given in removed.parents or (p in dirs and removed in given.parents):
+                return True
+        return False
+
+    hit = [str(p) for p in inputs if p and among_removed(p)]
+    if hit:
+        _refuse_force_overwrite(
+            f"Not overwriting in the output directory: {output_dir}",
+            f"`-F/--force-overwrite` would remove input given to this run ({', '.join(hit)}). "
+            "Please specify a different output directory or prefix.")
+
+    subdirs = [p for p in dirs if any(p.iterdir())]
+    if subdirs and not _is_bit_run_record(out / run_record):
+        names = ", ".join(f"{p.name}/" for p in subdirs)
+        _refuse_force_overwrite(
+            f"Not overwriting in the output directory: {output_dir}",
+            f"It holds {names}, which `-F/--force-overwrite` would remove with everything inside, but "
+            f"not the record of an earlier run ({run_record}), so that may not be bit's output. "
+            "Please remove it yourself or specify a different output directory.")
+
+    for p in present:
+        if p.is_dir() and not p.is_symlink():
+            shutil.rmtree(p)
+        else:
+            p.unlink()
+
+
+def check_if_output_dir_exists(output_dir, force_overwrite=False, outputs=(), run_record="command-execution-info.txt",
+                               inputs=()):
+    """
+    Stops if `output_dir` exists, unless `force_overwrite`: then the program's own earlier
+    outputs are removed from it (see remove_previous_outputs), and anything else there is kept.
+    """
+    if os.path.lexists(output_dir) and not Path(output_dir).is_dir():
+        print(f"\n    {color_text(f'The output directory given is an existing file: {output_dir}', 'yellow')}")
+        print("\n    Please specify a different output directory.")
+        notify_premature_exit()
     if Path(output_dir).is_dir():
         if not force_overwrite:
             print(f"\n    {color_text(f'Output directory already exists: {output_dir}', 'yellow')}")
-            print("\n    Please specify a different output directory or add the `-F/--force-overwrite` flag.")
+            print("\n    Please specify a different output directory or add the `-F/--force-overwrite` flag"
+                  "\n    (which replaces this program's own earlier outputs there, and leaves anything else).")
             notify_premature_exit()
-        else:
-            if is_protected_dir(output_dir):
-                print(f"\n    {color_text(f'Not removing the output directory: {output_dir}', 'yellow')}")
-                print("\n    With `-F/--force-overwrite`, the output directory is deleted and replaced, and this "
-                      "\n    one is the current directory, a directory containing it, or your home directory."
-                      "\n    Please specify a dedicated output directory.")
-                notify_premature_exit()
-            shutil.rmtree(output_dir)
+        remove_previous_outputs(output_dir, outputs, run_record, inputs)
 
 
 def notify_premature_exit(exit_code=1):

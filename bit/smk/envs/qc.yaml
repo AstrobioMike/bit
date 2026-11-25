@@ -1,0 +1,9 @@
+name: qc
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - fastqc=0.13.0
+    - multiqc=1.35
+    - bbmap=40.05
+    - zip=3.0

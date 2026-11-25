@@ -24,85 +24,24 @@ def parse_fasta(fasta_file):
     finally:
         handle.close()
 
-# reads (or pairs) per call into the compiled core
-_native_gen = []
-
-
-def _native_gen_reads():
+def _generate_contigs(rng, seqs, ids, budgets, read_count, params, paired, fasta_file, fw, rw, per_read_tsv, tracker):
     """
-    The compiled core's contig loop (bit._native.gen_reads_contigs; see rust/src/gen_reads.rs),
-    or None. It continues the same random.Random state (passed via getstate()/setstate()) with
-    the same derivations of random(), randint() and gauss(), so seeded output is identical. As a
-    safeguard, it's only used once a sample of its draws has matched this Python's exactly.
-    """
-    if not _native_gen:
-        fn = None
-        try:
-            from bit._native import gen_reads_contigs, rng_sample
-            check = random.Random(20240521)
-            check.random()
-            ops = []
-            for i in range(600):
-                kind = i % 3
-                if kind == 1:
-                    ops.append((1, 0.0, float((i * 7919) % 100_000 + (i % 5) * 2**33)))
-                elif kind == 2:
-                    ops.append((2, 300.0 + i, 30.0 + i / 7))
-                else:
-                    ops.append((0, 0.0, 0.0))
-            _, state, gauss_next = check.getstate()
-            got, _, _, _ = rng_sample(list(state[:624]), state[624], gauss_next, ops)
-            expected = [check.random() if k == 0 else
-                        float(check.randint(int(a), int(b))) if k == 1 else
-                        check.gauss(a, b) for k, a, b in ops]
-            if got == expected:
-                fn = gen_reads_contigs
-        except (ImportError, ValueError, TypeError):
-            fn = None
-        _native_gen.append(fn)
-    return _native_gen[0]
-
-
-def _generate_contigs(rng, seqs, ids, budgets, read_count, params, paired, fasta_file,
-                      fw, rw, per_read_tsv, tracker, python_reads):
-    """
-    Makes each contig's `budgets` reads (pairs) with the compiled core, which writes them
-    straight to the gzipped writers and returns their spans for the detection tracker. Where
-    it can't (it stops at a contig, e.g., a non-ASCII sequence, or isn't usable at all), that
-    contig's remaining reads go through `python_reads(contig_index, n, read_count)` (the Python
-    loop, from the same generator state) and the core carries on from the next contig.
+    Makes each contig's `budgets` reads (pairs) with the compiled core (bit._native.gen_reads_contigs; see
+    rust/src/gen_reads.rs), which writes them straight to the gzipped writers and returns their spans for the detection
+    tracker. It carries on the same random.Random state (passed via getstate()/setstate()) with Python's derivations of
+    random(), randint() and gauss(), so a seed gives the same reads it always has.
     Returns (reads written, realized bases, read_count).
     """
-    native = _native_gen_reads()
-    reads_written = realized_bases = 0
-    ci = 0
-    while ci < len(seqs):
-        done = 0
-        if native is not None:
-            version, state, gauss_next = rng.getstate()
-            try:
-                (stopped, read_count, n_written, n_bases, spans,
-                 new_state, new_index, new_gauss) = native(
-                    seqs, ids, budgets, ci, read_count, list(state[:624]), state[624], gauss_next,
-                    paired, *params, str(fasta_file), fw, rw, per_read_tsv)
-            except (OverflowError, TypeError, UnicodeError):
-                # arguments the core can't take (e.g., integers beyond 64 bits, or a file name
-                # that isn't valid UTF-8): Python's loop handles the rest, as it always has
-                native = None
-            else:
-                rng.setstate((version, tuple(new_state) + (new_index,), new_gauss))
-                for contig_index, contig_spans in spans:
-                    for start, end in contig_spans:
-                        tracker.add(contig_index, start, end)
-                reads_written += n_written
-                realized_bases += n_bases
-                if stopped is None:
-                    break
-                ci, done = stopped
-        n_written, n_bases, read_count = python_reads(ci, budgets[ci] - done, read_count)
-        reads_written += n_written
-        realized_bases += n_bases
-        ci += 1
+    from bit._native import gen_reads_contigs
+
+    version, state, gauss_next = rng.getstate()
+    (read_count, reads_written, realized_bases, spans, new_state, new_index, new_gauss) = gen_reads_contigs(
+        seqs, ids, budgets, 0, read_count, list(state[:624]), state[624], gauss_next,
+        paired, *params, str(fasta_file), fw, rw, per_read_tsv)
+    rng.setstate((version, tuple(new_state) + (new_index,), new_gauss))
+    for contig_index, contig_spans in spans:
+        for start, end in contig_spans:
+            tracker.add(contig_index, start, end)
     return reads_written, realized_bases, read_count
 
 
@@ -112,11 +51,13 @@ def _status(args, msg):
         print(msg)
 
 
-def write_per_genome_summary(args, stats):
+def write_per_genome_summary(args, stats, mutated=None):
     """
     Write the standalone gen-reads per-genome summary TSV, one row per input fasta
     (keyed by input path), to <output_prefix>-per-genome-summary.tsv. Columns:
-    input_fasta, genome_size, reads_generated, mean_coverage, detection.
+    input_fasta, genome_size, reads_generated, mean_coverage, detection; and with mutation
+    (mutated: {mutated path: (input path, counts)}), mutated_fasta, num_substitutions and
+    num_indels (genome_size is then the mutated genome's).
 
     mean_coverage is realized: total sequenced bases (summed actual read lengths)
     divided by genome size, so it is exact even for long reads whose lengths vary.
@@ -126,7 +67,8 @@ def write_per_genome_summary(args, stats):
     """
     out_path = f"{args.output_prefix}-per-genome-summary.tsv"
     with open(out_path, "w") as out:
-        out.write("input_fasta\tgenome_size\treads_generated\tmean_coverage\tdetection\n")
+        out.write("input_fasta\tgenome_size\treads_generated\tmean_coverage\tdetection" +
+                  ("\tmutated_fasta\tnum_substitutions\tnum_indels" if mutated else "") + "\n")
         for fasta_file in args.input_fastas:
             s = stats.get(fasta_file, {})
             size = s.get("genome_size", 0)
@@ -134,8 +76,42 @@ def write_per_genome_summary(args, stats):
             realized_bases = s.get("realized_bases", 0)
             detection = s.get("detection", 0.0)
             mean_cov = (realized_bases / size) if size else 0.0
-            out.write(f"{fasta_file}\t{size}\t{n_reads}\t{mean_cov:.2f}\t{detection:.2f}\n")
+            if mutated:
+                source, counts = mutated[fasta_file]
+                out.write(f"{source}\t{size}\t{n_reads}\t{mean_cov:.2f}\t{detection:.2f}\t{fasta_file}\t"
+                          f"{counts['num_substitutions']}\t{counts['num_indels']}\n")
+            else:
+                out.write(f"{fasta_file}\t{size}\t{n_reads}\t{mean_cov:.2f}\t{detection:.2f}\n")
     return out_path
+
+
+def mutate_inputs(args, proportions):
+    """
+    With --mutation-rate, each input genome is mutated (as `bit mutate-seqs` does, with gen-mg's mutate_genome) into
+    <output prefix>-mutated-genomes/, each with its own seed derived from --seed. args.input_fastas then names the mutated
+    genomes and the proportions (or reads per genome) are keyed by them. Returns {mutated path: (input path, counts)}.
+    """
+    import random as global_random
+    from bit.modules.gen_mg.mutation import mutate_genome
+    out_dir = f"{args.output_prefix}-mutated-genomes"
+    os.makedirs(out_dir, exist_ok=True)
+    mutated = {}
+    for i, path in enumerate(args.input_fastas):
+        name = os.path.basename(path)
+        name = name[:-3] if name.endswith(".gz") else name
+        out = os.path.join(out_dir, name)
+        # inputs with the same file name from different directories (d1/g.fasta, d2/g.fasta) get g.fasta, g-2.fasta, ...
+        stem, ext = os.path.splitext(name)
+        n = 1
+        while out in mutated:
+            n += 1
+            out = os.path.join(out_dir, f"{stem}-{n}{ext}")
+        global_random.seed(_local_seed(args.seed, i))
+        counts = mutate_genome(path, out, args.mutation_rate, args.ti_tv_ratio, args.indel_rate)
+        mutated[out] = (path, counts)
+    by_input = {path: out for out, (path, _) in mutated.items()}
+    args.input_fastas = [by_input[p] for p in args.input_fastas]
+    return mutated, {by_input[p]: v for p, v in proportions.items()}
 
 
 def generate_reads(args):
@@ -143,6 +119,13 @@ def generate_reads(args):
     preflight_checks(args)
 
     proportions = get_proportions(args)
+
+    mutated = {}
+    if getattr(args, "mutation_rate", 0) > 0:
+        _status(args, f"\n    Mutating the input genomes (rate {args.mutation_rate})...")
+        mutated, proportions = mutate_inputs(args, proportions)
+        if not getattr(args, "quiet", False):
+            print(f"    Mutated genomes:        {args.output_prefix}-mutated-genomes/")
 
     per_file_units, stats = gen_reads(args, proportions)
 
@@ -157,7 +140,7 @@ def generate_reads(args):
     # (quiet, e.g., gen-mg) the caller consumes per-genome stats in-memory
     # from the returned mapping and folds them into its own truth table instead.
     if not getattr(args, "quiet", False):
-        summary_path = write_per_genome_summary(args, stats)
+        summary_path = write_per_genome_summary(args, stats, mutated)
         print(f"    Per-genome summary:     {summary_path}")
         if args.ground_truth_assembly:
             print(f"    Ground-truth assembly:  {args.output_prefix}-ground-truth-assembly.fasta\n")
@@ -298,111 +281,6 @@ def parse_proportions_file(proportions_file, input_fastas):
         # assigning equal proportions if no proportions file is provided
         num_fastas = len(input_fastas)
         return {fasta_file: 1 / num_fastas for fasta_file in input_fastas}
-
-
-def extract_subsequence(sequence, seq_length, subseq_len, circularize, include_Ns=False, max_attempts=100, rng=None):
-
-    # rng is a random.Random instance for per-file reproducibility; falls back to
-    # the module-global random for any legacy callers
-    if rng is None:
-        rng = random
-
-    for _ in range(max_attempts):
-
-        if circularize:
-            start = rng.randint(0, seq_length - 1)
-            end = start + subseq_len
-            if end <= seq_length:
-                subseq = sequence[start:end]
-            else:
-                subseq = sequence[start:] + sequence[: end - seq_length]
-        elif subseq_len >= seq_length:
-            # when the requested length meets or exceeds the contig length,
-            # pick any start position and truncate at the contig end
-            start = rng.randint(0, seq_length - 1)
-            subseq = sequence[start:]
-        else:
-            start = rng.randint(0, seq_length - subseq_len)
-            subseq = sequence[start:start + subseq_len]
-
-        if include_Ns or 'N' not in subseq.upper():
-            return subseq, start
-
-    # fallback: return last attempt if all had Ns
-    return subseq, start
-
-
-def compute_mate_coords(frag_start, fragment, fwd_len, rev_len, seq_length):
-    """
-    given the fragment's reference start, the realized fragment string, and the
-    realized forward/reverse read lengths, return each mate's own 0-based,
-    end-exclusive reference span plus a wrap flag.
-
-    these spans are computed in the reference's forward orientation: r1 covers the
-    low-coordinate end of the fragment footprint, r2 the high-coordinate end. when the
-    sampled fragment comes from the minus strand, the caller is responsible for swapping
-    the pairs so each reported span matches the mate that actually covers it (see gen_paired_reads)
-    """
-    frag_len_actual = len(fragment)
-
-    r1_start = frag_start
-    r1_end = frag_start + fwd_len
-
-    r2_end = frag_start + frag_len_actual
-    r2_start = r2_end - rev_len
-
-    wrapped = (frag_start + frag_len_actual) > seq_length
-
-    return r1_start, r1_end, r2_start, r2_end, wrapped
-
-
-def format_header(read_id, per_read_tsv, contig=None, start=None, end=None,
-                  strand=None, wrapped=False):
-    """
-    when a source TSV is being written, the header is just the unique read id so
-    read names stay clean for downstream tools. otherwise we're writing the full provenance
-    in the comment field (after a space) as key=value pairs
-    """
-    if per_read_tsv:
-        return read_id
-
-    comment = f"contig={contig};start={start};end={end};strand={strand}"
-    if wrapped:
-        comment += ";wrapped=true"
-
-    return f"{read_id} {comment}"
-
-
-def write_source_row(per_read_tsv, read_id, source_fasta, contig, start, end,
-                     strand, wrapped):
-    """ writes one per-read provenance row to the source TSV """
-
-    per_read_tsv.write(f"{read_id}\t{source_fasta}\t{contig}\t{start}\t{end}\t"
-                     f"{strand}\t{str(wrapped).lower()}\n")
-
-
-def reverse_complement(seq):
-
-    return seq[::-1].translate(str.maketrans("ACGTacgt", "TGCAtgca"))
-
-
-def _record_span(tracker, contig_index, start, end, seq_length):
-    """
-    Feed one read's reference span to the detection tracker, splitting spans that
-    wrap the origin (possible only under --circularize) into their two in-bounds
-    pieces so each covered base is counted against its true position.
-
-    A non-wrapping span is added as-is. A wrapping span has end > seq_length (the
-    read runs off the contig end and continues from 0); it is recorded as
-    [start, seq_length) plus [0, end - seq_length).
-    """
-    if tracker is None:
-        return
-    if end <= seq_length:
-        tracker.add(contig_index, start, end)
-    else:
-        tracker.add(contig_index, start, seq_length)
-        tracker.add(contig_index, 0, end - seq_length)
 
 
 def apportion_units(input_fastas, total_units, proportions):
@@ -680,72 +558,10 @@ def gen_one_file_paired(args, fasta_file, file_budget, id_offset, local_seed,
     # spans are keyed by the record's position even when some contigs get no reads
     tracker = DetectionTracker(contig_lengths)
 
-    def python_reads(contig_index, n, read_count):
-        """ the Python loop: n pairs from one contig; (reads written, bases, read_count) """
-        seq_id = ids[contig_index]
-        sequence = seqs[contig_index]
-        seq_length = len(sequence)
-        reads_written = realized_bases = 0
-        for _ in range(n):
-
-            frag_len = min(max(min_frag, round(rng.gauss(args.fragment_size, args.fragment_size * pct / 3))), max_frag)
-            frag_len = min(frag_len, seq_length)
-
-            fragment, start = extract_subsequence(sequence, seq_length, frag_len, args.circularize, args.include_Ns, rng=rng)
-
-            # real libraries draw the fragment from either strand ~50/50;
-            # R2 is always the opposite orientation of its R1 mate. strands are
-            # reported relative to the input reference, so a minus-strand fragment
-            # also swaps which reference span each mate covers
-            if rng.random() < 0.5:
-                fragment_strand = "+"
-            else:
-                fragment_strand = "-"
-                fragment = reverse_complement(fragment)
-
-            forward_read = fragment[:args.read_length]
-            reverse_read = fragment[-args.read_length:][::-1].translate(str.maketrans("ACGT", "TGCA"))
-
-            fwd_quality_scores = "I" * len(forward_read)
-            rev_quality_scores = "I" * len(reverse_read)
-
-            r1_start, r1_end, r2_start, r2_end, wrapped = compute_mate_coords(
-                start, fragment, len(forward_read), len(reverse_read), seq_length)
-
-            if fragment_strand == "-":
-                r1_start, r1_end, r2_start, r2_end = r2_start, r2_end, r1_start, r1_end
-
-            r1_strand = fragment_strand
-            r2_strand = "-" if fragment_strand == "+" else "+"
-
-            read_count += 1
-            read_id = f"r{read_count}"
-
-            fw.write(f"@{format_header(read_id + '/1', per_read_tsv, seq_id, r1_start, r1_end, r1_strand, wrapped)}\n"
-                     f"{forward_read}\n+\n{fwd_quality_scores}\n")
-            rw.write(f"@{format_header(read_id + '/2', per_read_tsv, seq_id, r2_start, r2_end, r2_strand, wrapped)}\n"
-                     f"{reverse_read}\n+\n{rev_quality_scores}\n")
-
-            if per_read_tsv:
-                write_source_row(per_read_tsv, read_id + "/1", fasta_file, seq_id, r1_start, r1_end, r1_strand, wrapped)
-                write_source_row(per_read_tsv, read_id + "/2", fasta_file, seq_id, r2_start, r2_end, r2_strand, wrapped)
-
-            # each mate covers its own reference span; record both for detection
-            _record_span(tracker, contig_index, r1_start, r1_end, seq_length)
-            _record_span(tracker, contig_index, r2_start, r2_end, seq_length)
-
-            # realized sequenced bases = actual lengths of both mates (mates can be
-            # shorter than read_length on short contigs), summed for realized coverage
-            realized_bases += len(forward_read) + len(reverse_read)
-
-            reads_written += 2
-        return reads_written, realized_bases, read_count
-
     params = (False, args.read_length, float(args.fragment_size), args.fragment_size * pct / 3,
               min_frag, max_frag, bool(args.circularize), bool(args.include_Ns))
     reads_written, realized_bases, _ = _generate_contigs(
-        rng, seqs, ids, per_contig, id_offset, params, True, fasta_file, fw, rw, per_read_tsv,
-        tracker, python_reads)
+        rng, seqs, ids, per_contig, id_offset, params, True, fasta_file, fw, rw, per_read_tsv, tracker)
 
     if gta_fh is not None:
         write_gta_records(gta_fh, fasta_file, records, tracker, args.circularize)
@@ -782,52 +598,6 @@ def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
     # detection tracked over every contig; indices align with `records`
     tracker = DetectionTracker(contig_lengths)
 
-    def python_reads(contig_index, n, read_count):
-        """ the Python loop: n reads from one contig; (reads written, bases, read_count) """
-        seq_id = ids[contig_index]
-        sequence = seqs[contig_index]
-        seq_length = len(sequence)
-        reads_written = realized_bases = 0
-        for _ in range(n):
-
-            if args.type == "long":
-                read_len = min(max(min_len, round(rng.gauss(args.read_length, args.read_length * pct / 3))), max_len)
-                read_len = min(read_len, seq_length)
-            else:
-                read_len = min(args.read_length, seq_length)
-
-            read, start = extract_subsequence(sequence, seq_length, read_len, args.circularize, args.include_Ns, rng=rng)
-
-            read_end = start + len(read)
-            wrapped = read_end > seq_length
-
-            # real single-end / long-read libraries sequence both strands ~50/50
-            if rng.random() < 0.5:
-                strand = "+"
-            else:
-                strand = "-"
-                read = reverse_complement(read)
-
-            quality_scores = "I" * len(read)
-
-            read_count += 1
-            read_id = f"r{read_count}"
-            fw.write(f"@{format_header(read_id, per_read_tsv, seq_id, start, read_end, strand, wrapped)}\n"
-                     f"{read}\n+\n{quality_scores}\n")
-
-            if per_read_tsv:
-                write_source_row(per_read_tsv, read_id, fasta_file, seq_id, start, read_end, strand, wrapped)
-
-            # the read covers [start, read_end); _record_span splits a wrap
-            _record_span(tracker, contig_index, start, read_end, seq_length)
-
-            # realized sequenced bases = actual read length (varies for long reads
-            # and is truncated on short contigs), summed for realized coverage
-            realized_bases += len(read)
-
-            reads_written += 1
-        return reads_written, realized_bases, read_count
-
     if args.type == "long":
         params = (True, args.read_length, float(args.read_length), args.read_length * pct / 3,
                   min_len, max_len, bool(args.circularize), bool(args.include_Ns))
@@ -835,8 +605,7 @@ def gen_one_file_single(args, fasta_file, file_budget, id_offset, local_seed,
         params = (False, args.read_length, 0.0, 0.0, 0, 0,
                   bool(args.circularize), bool(args.include_Ns))
     reads_written, realized_bases, _ = _generate_contigs(
-        rng, seqs, ids, per_contig, id_offset, params, False, fasta_file, fw, None, per_read_tsv,
-        tracker, python_reads)
+        rng, seqs, ids, per_contig, id_offset, params, False, fasta_file, fw, None, per_read_tsv, tracker)
 
     if gta_fh is not None:
         write_gta_records(gta_fh, fasta_file, records, tracker, args.circularize)

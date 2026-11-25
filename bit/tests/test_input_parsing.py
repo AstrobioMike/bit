@@ -134,3 +134,14 @@ def test_parse_read_filename_uses_basename_not_path(tmp_path):
     # give full path; function uses Path(...).name internally
     samp, which = m.parse_read_filename(str(f))
     assert samp == "sample" and which == "R1"
+
+
+def test_get_input_reads_dict_from_dir_single_end(tmp_path):
+    from bit.modules.input_parsing import get_input_reads_dict_from_dir
+    for name in ("sampleA.fastq.gz", "sampleB.fq.gz", "notes.txt"):
+        (tmp_path / name).touch()
+
+    reads_dict = get_input_reads_dict_from_dir(tmp_path, SE = True)
+
+    assert sorted(reads_dict) == ["sampleA", "sampleB"]
+    assert reads_dict["sampleA"] == {"SE": str((tmp_path / "sampleA.fastq.gz").resolve())}

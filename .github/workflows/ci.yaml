@@ -55,4 +55,5 @@ jobs:
         conda run -n bit conda list --explicit
 
     - name: Run pytest
-      run: conda run -n bit pytest
+      # (--all: the tests marked full too, e.g. the real assembly, skipped in a plain local run)
+      run: conda run -n bit pytest --all

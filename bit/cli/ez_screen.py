@@ -2,6 +2,7 @@ import sys
 import argparse
 import argcomplete # type: ignore
 from bit.cli.common import (CustomRichHelpFormatter,
+                            add_force,
                             add_help,
                             wrap_help,
                             add_common_snakemake_arguments,
@@ -137,6 +138,8 @@ def build_parser(parent_subparsers=None, show_fine=False):
                 "speed, but at the cost of a lot of sensitivity; not really recommended)"),
         action = "store_true"
     )
+
+    add_force(assembly_general)
 
     assembly_general.add_argument(
         "-h",

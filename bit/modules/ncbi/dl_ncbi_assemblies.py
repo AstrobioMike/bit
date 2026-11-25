@@ -3,6 +3,7 @@ import sys
 import time
 import gzip
 import random
+import threading
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests # type: ignore
@@ -52,6 +53,17 @@ MAX_RETRY_PASSES = 2
 
 # Seconds to wait before each retry pass
 RETRY_PASS_WAITS = (3, 7)
+
+# files at least this large are downloaded as several parts at once (when the server allows byte ranges)
+LARGE_FILE_BYTES = 500 * 1024 ** 2
+PARTS_PER_LARGE_FILE = 4
+
+# how much is read from a connection at a time
+CHUNK_BYTES = 1024 * 64
+
+# connections that large files may open beyond the one each download already has, across all
+# downloads running at once (so many large files together don't multiply the load on the server)
+_extra_connections = threading.BoundedSemaphore(8)
 
 def dl_ncbi_assemblies(args):
 
@@ -455,7 +467,126 @@ def sleep_backoff(attempt, resp=None, throttled=False):
     time.sleep((2 ** step) + random.uniform(0, 1))
 
 
+class _DownloadProblem(Exception):
+    """ a failed attempt: `transient` ones are retried, the others end the download """
+
+    def __init__(self, message, transient, resp=None, throttled=False):
+        super().__init__(message)
+        self.transient, self.resp, self.throttled = transient, resp, throttled
+
+
+def _request(target_link, start=0, end=None):
+    """
+    Opens a streamed response for the file, or for the bytes from `start` (through `end` when given).
+    Raises _DownloadProblem for anything that isn't the file's data.
+    """
+
+    headers = {"User-Agent": "curl/8.0"}
+    if start or end is not None:
+        headers["Range"] = f"bytes={start}-{'' if end is None else end}"
+
+    resp = requests.get(target_link, stream=True, timeout=DOWNLOAD_TIMEOUT, headers=headers)
+
+    if resp.status_code == 404:
+        raise _DownloadProblem("Not available in requested format (404)", transient=False)
+
+    if resp.status_code in TRANSIENT_STATUS:
+        # a 429, or any response that bothered to tell us when to come back,
+        # is a throttle -- back off properly. A bare 5xx is just a hiccup.
+        throttled = (resp.status_code in THROTTLE_STATUS
+                     or resp.headers.get("Retry-After") is not None)
+        raise _DownloadProblem(f"HTTP {resp.status_code}", transient=True, resp=resp, throttled=throttled)
+
+    if not resp.ok:
+        raise _DownloadProblem(f"HTTP {resp.status_code}", transient=False)
+
+    content_type = resp.headers.get("Content-Type", "")
+    if "xml" in content_type.lower() or "html" in content_type.lower():
+        raise _DownloadProblem("NCBI returned an error page", transient=True)
+
+    return resp
+
+
+def _full_size(resp):
+    """ the size of the whole file as the server states it, or None when it doesn't """
+
+    try:
+        if resp.status_code == 206:
+            return int(resp.headers["Content-Range"].rsplit("/", 1)[1])
+        return int(resp.headers["Content-Length"])
+    except (KeyError, IndexError, ValueError, TypeError):
+        return None
+
+
+def _failure_message(problem, attempts):
+    """ how a download that ran out of attempts is reported """
+
+    message = str(problem)
+    if isinstance(problem, _DownloadProblem) and (message.startswith("HTTP ") or "error page" in message):
+        return f"{message} after {attempts} attempts"
+    return message
+
+
+def _write_stream(resp, path, position):
+    """ writes the response into the file starting at `position`; yields the position after each piece """
+
+    with open(path, "r+b") as fh:
+        fh.seek(position)
+        for chunk in resp.iter_content(chunk_size=CHUNK_BYTES):
+            fh.write(chunk)
+            position += len(chunk)
+            yield position
+
+
+def _download_part(target_link, tmp_path, start, end, retries):
+    """
+    Downloads bytes `start` through `end` of the file into their place in tmp_path, continuing from
+    where it got to when an attempt fails. Returns None when done, or (message, status).
+    """
+
+    position = start
+    for attempt in range(1, retries + 1):
+        try:
+            resp = _request(target_link, position, end)
+            if resp.status_code != 206:
+                raise _DownloadProblem("The server did not return the requested part of the file", transient=True)
+            for position in _write_stream(resp, tmp_path, position):
+                pass
+            if position == end + 1:
+                return None
+            raise _DownloadProblem("The connection closed before the file was complete", transient=True)
+
+        except (_DownloadProblem, requests.RequestException, OSError) as e:
+            if isinstance(e, _DownloadProblem) and not e.transient:
+                return (str(e), "failed")
+            if attempt == retries:
+                return (_failure_message(e, retries), "failed_transient")
+            sleep_backoff(attempt, getattr(e, "resp", None), throttled=getattr(e, "throttled", False))
+
+
+def _download_in_parts(target_link, tmp_path, size, num_parts, retries):
+    """ a large file as several byte ranges at once, each on its own connection; returns as _download_part """
+
+    with open(tmp_path, "wb") as fh:
+        fh.truncate(size)
+
+    part_size = -(-size // num_parts)
+    bounds = [(start, min(start + part_size, size) - 1) for start in range(0, size, part_size)]
+
+    with ThreadPoolExecutor(max_workers=len(bounds)) as pool:
+        results = list(pool.map(lambda b: _download_part(target_link, tmp_path, b[0], b[1], retries), bounds))
+
+    failures = [r for r in results if r is not None]
+    # one that can't succeed on a retry decides the outcome over ones that might
+    return next((f for f in failures if f[1] == "failed"), failures[0] if failures else None)
+
+
 def download_one(target_link, local_dest, retries=max_retries):
+    """
+    Downloads one file, written under a temporary name and renamed once complete (so a file under its
+    final name is always whole). A failed attempt is continued from where it stopped when the server
+    allows that, and large files are fetched as several parts at once.
+    """
 
     local_path = Path(local_dest)
     tmp_path = local_path.with_name(local_path.name + ".tmp")
@@ -473,54 +604,57 @@ def download_one(target_link, local_dest, retries=max_retries):
     # clear any stale tmp left behind by a prior interrupted run
     tmp_path.unlink(missing_ok=True)
 
+    have = 0   # bytes of the file written so far
     for attempt in range(1, retries + 1):
         try:
-            resp = requests.get(target_link, stream=True,
-                                timeout=DOWNLOAD_TIMEOUT,
-                                headers={"User-Agent": "curl/8.0"})
+            resp = _request(target_link, start=have)
+            if have and resp.status_code != 206:
+                have = 0   # the server sent the whole file again rather than the rest of it
+            size = _full_size(resp)
 
-            if resp.status_code == 404:
-                return (local_dest, "Not available in requested format (404)", "failed")
+            if (have == 0 and size is not None and size >= LARGE_FILE_BYTES
+                    and resp.headers.get("Accept-Ranges") == "bytes"):
+                extra = 0
+                while extra < PARTS_PER_LARGE_FILE - 1 and _extra_connections.acquire(blocking=False):
+                    extra += 1
+                if extra:
+                    resp.close()
+                    try:
+                        failure = _download_in_parts(target_link, tmp_path, size, extra + 1, retries)
+                    finally:
+                        for _ in range(extra):
+                            _extra_connections.release()
+                    if failure:
+                        tmp_path.unlink(missing_ok=True)
+                        return (local_dest, *failure)
+                    os.replace(tmp_path, local_path)
+                    return (local_dest, None, "downloaded")
 
-            if resp.status_code in TRANSIENT_STATUS:
-                if attempt == retries:
-                    return (local_dest, f"HTTP {resp.status_code} after {retries} attempts", "failed_transient")
-                # a 429, or any response that bothered to tell us when to come back,
-                # is a throttle -- back off properly. A bare 5xx is just a hiccup.
-                throttled = (resp.status_code in THROTTLE_STATUS
-                             or resp.headers.get("Retry-After") is not None)
-                sleep_backoff(attempt, resp, throttled=throttled)
-                continue
+            if have == 0:
+                open(tmp_path, "wb").close()
+            for have in _write_stream(resp, tmp_path, have):
+                pass
 
-            if not resp.ok:
-                return (local_dest, f"HTTP {resp.status_code}", "failed")
-
-            content_type = resp.headers.get("Content-Type", "")
-            if "xml" in content_type.lower() or "html" in content_type.lower():
-                if attempt == retries:
-                    return (local_dest, f"NCBI returned an error page after {retries} attempts", "failed_transient")
-                sleep_backoff(attempt)
-                continue
-
-            with open(tmp_path, "wb") as fh:
-                for chunk in resp.iter_content(chunk_size=1024 * 64):
-                    fh.write(chunk)
-
-            if tmp_path.stat().st_size == 0:
-                tmp_path.unlink(missing_ok=True)
-                if attempt == retries:
-                    return (local_dest, "Downloaded file was empty", "failed_transient")
-                sleep_backoff(attempt)
-                continue
+            if have == 0:
+                raise _DownloadProblem("Downloaded file was empty", transient=True)
+            if size is not None and have < size:
+                raise _DownloadProblem("The connection closed before the file was complete", transient=True)
 
             os.replace(tmp_path, local_path)
             return (local_dest, None, "downloaded")
 
-        except (requests.RequestException, OSError) as e:
-            tmp_path.unlink(missing_ok=True)
-            if attempt == retries:
-                return (local_dest, str(e), "failed_transient")
-            sleep_backoff(attempt)
+        except (_DownloadProblem, requests.RequestException, OSError) as e:
+            # what was written so far is kept for the next attempt to continue from
+            if tmp_path.exists():
+                have = min(have, tmp_path.stat().st_size)
+            else:
+                have = 0
+            permanent = isinstance(e, _DownloadProblem) and not e.transient
+            if permanent or attempt == retries:
+                tmp_path.unlink(missing_ok=True)
+                return (local_dest, str(e) if permanent else _failure_message(e, retries),
+                        "failed" if permanent else "failed_transient")
+            sleep_backoff(attempt, getattr(e, "resp", None), throttled=getattr(e, "throttled", False))
 
 
 def run_download_pass(targets, run_data, desc="Progress"):
@@ -580,6 +714,13 @@ def download_assemblies(run_data):
         for line in f:
             fields = line.strip().split("\t")
             targets.append((fields[link_idx], fields[dest_idx]))
+
+    # checked before the downloads start (unless every file is already here): stops, saying why, when NCBI can't
+    # be reached
+    to_fetch = [link for link, dest in targets if link != "NA" and not os.path.exists(dest)]
+    if to_fetch:
+        from bit.modules.connectivity import require_internet
+        require_internet(to_fetch, what="the data")
 
     permanent, transient, num_skipped = run_download_pass(targets, run_data)
 

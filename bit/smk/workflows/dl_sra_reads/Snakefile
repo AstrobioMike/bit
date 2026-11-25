@@ -1,0 +1,227 @@
+###################################################################################################
+## Snakefile for the "bit" SRA download workflow                                                 ##
+## bit: https://github.com/AstrobioMike/bit                                                      ##
+##                                                                                               ##
+## If you use this workflow in a publication, please consider citing :)                          ##
+##   Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122.  ##
+##   https://doi.org/10.12688/f1000research.79530.1                                              ##
+###################################################################################################
+
+# Run with `bit dl-sra-reads` (see its -h, or -H for every setting).
+
+import os
+
+configfile: "config.yaml"
+
+# where the shared rules/, envs/ and scripts/ are: next to this file in a saved copy of the
+# workflow, or two levels up when run from within the bit package
+SMK = workflow.basedir if os.path.isdir(os.path.join(workflow.basedir, "envs")) else os.path.normpath(os.path.join(workflow.basedir, "..", ".."))
+
+include: os.path.join(SMK, "rules", "common.smk")
+
+sra_env = os.path.join(SMK, "envs", "sra-dl.yaml")
+
+## when i want to try integrating combining runs that belong to the same sample given an input table, revisit what i did here:
+    # https://github.com/AstrobioMike/NASA-Exo-N-project/blob/main/metagenomics/workflow/Snakefile
+
+################################################
+############## Pre-flight checks ###############
+################################################
+
+# the accessions file is either a single column of run accessions, or two columns (sample name, then run
+# accession) when the runs are to be combined (or just renamed) into one set of fastq files per sample
+acc_file = config["accessions_file"]
+if not os.path.isfile(acc_file):
+    exit_with_message(f"The file '{acc_file}' was not found :(")
+
+with open(acc_file) as f:
+    rows = [line.split() for line in f if line.strip()]
+
+if not rows:
+    exit_with_message(f"The file '{acc_file}' holds no accessions :(")
+
+n_columns = set(len(row) for row in rows)
+if n_columns not in ({1}, {2}):
+    exit_with_message(f"The file '{acc_file}' needs to have either one column (run accessions) or two columns "
+                      f"(sample name and run accession) on every line :(")
+
+accessions = [row[-1] for row in rows]
+if len(set(accessions)) != len(accessions):
+    exit_with_message(f"Not all run accessions in the '{acc_file}' file are unique :(")
+
+expected_prefixes = ("SRR", "ERR", "DRR")
+for acc in accessions:
+    if not acc.startswith(expected_prefixes):
+        exit_with_message(f"At least one of the accessions in '{acc_file}' (e.g., '{acc}') does not start "
+                          f"with an expected prefix ({', '.join(expected_prefixes)}) :(")
+
+# sample name -> its run accessions (empty when the runs aren't being combined)
+sample_runs = {}
+if n_columns == {2}:
+    for sample, acc in rows:
+        sample_runs.setdefault(sample, []).append(acc)
+    for sample in sample_runs:
+        if sample.startswith(expected_prefixes):
+            exit_with_message(f"The sample names in '{acc_file}' can't start with {', '.join(expected_prefixes)} "
+                              f"('{sample}' does), as their files would be confused with those of the runs :(")
+
+keep_sra_files = bool(config["keep_sra_files"])
+
+wildcard_constraints:
+    acc = r"[SED]RR\d+",
+    sample = r"[^/]+"
+
+
+########################################
+############# Rules start ##############
+########################################
+
+rule all:
+    input:
+        expand("logs/triggers/sample-{sample}.done", sample = sample_runs) if sample_runs else expand("logs/triggers/{acc}.done", acc = accessions)
+
+
+onsuccess:
+    combine_benchmarks()
+
+
+rule prefetch:
+    """
+    This rule runs prefetch on a target SRA accession.
+    """
+    conda:
+        sra_env
+    params:
+        max_size = config["prefetch_max_size"]
+    output:
+        temp("{acc}-tmp/{acc}/{acc}.sra")
+    benchmark:
+        "benchmarks/{acc}-prefetch-benchmarks.tsv"
+    log:
+        "logs/prefetch-{acc}.log"
+    shell:
+        """
+        prefetch --max-size {params.max_size} --progress -O {wildcards.acc}-tmp {wildcards.acc} > {log} 2>&1
+        """
+
+
+rule fasterq_dump_and_gzip:
+    """
+    This rule runs fasterq-dump on a downloaded SRA object, gzips the fastq files,
+    and moves them into fastq-files/ (paired-end files are named with R1/R2).
+    """
+    conda:
+        sra_env
+    input:
+        "{acc}-tmp/{acc}/{acc}.sra"
+    output:
+        touch("logs/triggers/{acc}.done")
+    params:
+        keep_sra_files = keep_sra_files
+    threads:
+        config["threads"]
+    benchmark:
+        "benchmarks/{acc}-fasterq-dump-benchmarks.tsv"
+    log:
+        "logs/fasterq-dump-{acc}.log"
+    shell:
+        """
+        fasterq-dump --progress -O {wildcards.acc}-tmp/ --seq-defline '@$ac.$si/$ri $sn' --qual-defline '+' --threads {threads} {input} > {log} 2>&1
+
+        # naming the files with R1/R2 if they are paired end
+        if [ -f {wildcards.acc}-tmp/{wildcards.acc}_1.fastq ]; then
+            mv {wildcards.acc}-tmp/{wildcards.acc}_1.fastq {wildcards.acc}-tmp/{wildcards.acc}_R1.fastq
+            mv {wildcards.acc}-tmp/{wildcards.acc}_2.fastq {wildcards.acc}-tmp/{wildcards.acc}_R2.fastq
+        fi
+
+        pigz -p {threads} {wildcards.acc}-tmp/{wildcards.acc}*.fastq
+
+        mkdir -p fastq-files
+        mv {wildcards.acc}-tmp/{wildcards.acc}*.fastq.gz fastq-files/
+
+        if [ "{params.keep_sra_files}" == "True" ]; then
+            mkdir -p sra-files
+            cp {input} sra-files/
+        fi
+
+        rm -rf {wildcards.acc}-tmp
+        """
+
+
+rule combine_runs:
+    """
+    This rule combines the fastq files of the runs that belong to a sample (or just renames them if there is
+    only one run), when sample names were given in the accessions file. The runs' own files are removed once the
+    sample's files are written. The runs a sample's files hold are kept in logs/combined-runs/, so a rerun (after a
+    failure, or with runs added to a sample) only adds the ones that are missing.
+    """
+    input:
+        lambda wildcards: expand("logs/triggers/{acc}.done", acc = sample_runs[wildcards.sample])
+    output:
+        touch("logs/triggers/sample-{sample}.done")
+    params:
+        accs = lambda wildcards: sample_runs[wildcards.sample]
+    log:
+        "logs/combine-runs-{sample}.log"
+    shell:
+        r"""
+        cd fastq-files
+        # the runs already combined into this sample's files (by an earlier run of the workflow), so a rerun, or one
+        # with runs added to the sample, only adds what's missing
+        held=../logs/combined-runs/{wildcards.sample}.txt
+        mkdir -p ../logs/combined-runs
+        [ -s ${{held}} ] || : > ${{held}}
+        : > ../{log}
+
+        for acc in $(cat ${{held}}); do
+            case " {params.accs} " in
+                *" ${{acc}} "*) ;;
+                *) printf "The files of sample {wildcards.sample} already hold run ${{acc}}, which isn't listed for it anymore. To combine its runs anew, remove fastq-files/{wildcards.sample}*.fastq.gz, ${{held#../}} and the trigger files of the runs it held ($(for a in $(cat ${{held}}); do printf "logs/triggers/${{a}}.done "; done)), and run again.\n" > ../{log}
+                   exit 1 ;;
+            esac
+        done
+        new_accs=$(for acc in {params.accs}; do grep -qxF ${{acc}} ${{held}} || printf "${{acc}} "; done)
+        if [ -z "${{new_accs}}" ]; then
+            printf "Sample {wildcards.sample}'s files already hold all of its runs.\n" >> ../{log}
+            exit 0
+        fi
+
+        # paired-end runs have _R1/_R2 files, single-end runs have one file; a sample's runs need to all be the same
+        n_paired=0; n_single=0
+        for acc in ${{new_accs}}; do
+            if [ -f ${{acc}}_R1.fastq.gz ] && [ -f ${{acc}}_R2.fastq.gz ]; then
+                n_paired=$((n_paired + 1))
+            elif [ -f ${{acc}}.fastq.gz ]; then
+                n_single=$((n_single + 1))
+            else
+                printf "No fastq files were found for run ${{acc}}. To download it again, remove logs/triggers/${{acc}}.done and run again.\n" > ../{log}
+                exit 1
+            fi
+        done
+        if [ -s ${{held}} ]; then
+            if [ -f {wildcards.sample}_R1.fastq.gz ]; then n_paired=$((n_paired + 1)); else n_single=$((n_single + 1)); fi
+        fi
+
+        if [ ${{n_paired}} -gt 0 ] && [ ${{n_single}} -gt 0 ]; then
+            printf "Sample {wildcards.sample} has both paired-end and single-end runs, so they were not combined.\n" > ../{log}
+            exit 1
+        fi
+
+        if [ ${{n_paired}} -gt 0 ]; then suffixes="_R1.fastq.gz _R2.fastq.gz"; else suffixes=".fastq.gz"; fi
+
+        # every combined file is written in full before any run's own files are removed (gzipped files can be combined
+        # by concatenating them)
+        for suffix in ${{suffixes}}; do
+            existing=""; [ -s ${{held}} ] && existing={wildcards.sample}${{suffix}}
+            files=$(for acc in ${{new_accs}}; do printf "${{acc}}${{suffix}} "; done)
+            cat ${{existing}} ${{files}} > {wildcards.sample}${{suffix}}.tmp
+        done
+        for suffix in ${{suffixes}}; do
+            mv {wildcards.sample}${{suffix}}.tmp {wildcards.sample}${{suffix}}
+        done
+        for acc in ${{new_accs}}; do printf "${{acc}}\n" >> ${{held}}; done
+        for suffix in ${{suffixes}}; do
+            printf "{wildcards.sample}${{suffix}} holds: $(tr '\n' ' ' < ${{held}})\n" >> ../{log}
+        done
+        for acc in ${{new_accs}}; do rm -f ${{acc}}${{suffixes%% *}} ${{acc}}${{suffixes#* }}; done
+        """

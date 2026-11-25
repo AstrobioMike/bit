@@ -78,7 +78,7 @@ def add_force(group):
     group.add_argument(
         "-F",
         "--force-overwrite",
-        help = wrap_help("Force overwrite of output files if they already exist"),
+        help = wrap_help("Replace this program's earlier outputs if they already exist (nothing else in the output directory is removed)"),
         action = "store_true",
     )
 

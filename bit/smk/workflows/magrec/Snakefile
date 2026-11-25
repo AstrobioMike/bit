@@ -1,0 +1,148 @@
+###################################################################################################
+## Snakefile for the "bit" MAG-recovery workflow (from reads and assemblies made already)        ##
+## bit: https://github.com/AstrobioMike/bit                                                      ##
+##                                                                                               ##
+## If you use this workflow in a publication, please consider citing :)                          ##
+##   Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122.  ##
+##   https://doi.org/10.12688/f1000research.79530.1                                              ##
+###################################################################################################
+
+# Run with `bit run-wf magrec` (see its -h, or -H for every setting).
+# If this is a copy made with --get-workflow, it can also be run directly with snakemake from
+# this directory after editing config.yaml, e.g.:
+#   snakemake --software-deployment-method conda --conda-prefix ${CONDA_PREFIX}/envs --cores 16 -p
+
+import os
+import re
+
+configfile: "config.yaml"
+
+# where the shared rules/, envs/ and scripts/ are: next to this file in a saved copy of the
+# workflow, or two levels up when run from within the bit package
+SMK = workflow.basedir if os.path.isdir(os.path.join(workflow.basedir, "envs")) else os.path.normpath(os.path.join(workflow.basedir, "..", ".."))
+
+include: os.path.join(SMK, "rules", "common.smk")
+
+# finding the input reads and samples (shared with the other read-based workflows); they're used as given (already
+# quality-filtered, as for the assemblies)
+include: os.path.join(SMK, "rules", "reads.smk")
+
+wildcard_constraints:
+    ID = "|".join(re.escape(ID) for ID in sample_ID_list) or "[^/]+"
+
+# a "-" joins the prefix to the output names unless it already ends in "-" or "_"
+prefix = config["output_prefix"]
+if prefix and not prefix.endswith(("-", "_")):
+    prefix += "-"
+
+assemblies_dir = "assemblies/"
+mapping_dir = "read-mapping/"
+bins_dir = "bins/"
+MAGs_dir = "MAGs/"
+logs_dir = "logs/"
+benchmarks_dir = "benchmarks/"
+for dir in (assemblies_dir, mapping_dir, logs_dir, benchmarks_dir):
+    os.makedirs(dir, exist_ok = True)
+
+########################################
+############## Assemblies ##############
+########################################
+
+# a single fasta file is a co-assembly, binned with the reads of all the samples; a directory holds one assembly per
+# sample, <sample ID><extension>, each binned with its own sample's reads
+given = config["assemblies"].rstrip("/")
+if os.path.isfile(given):
+    if given.endswith(".gz"):
+        exit_with_message(f"The co-assembly '{given}' is gzipped; it needs to be uncompressed :(")
+    co_assembly = re.sub(r"\.(fasta|fa|fna|fas|fsa)$", "", os.path.basename(given))
+    original_assemblies = {co_assembly: given}
+    asm_of = lambda ID: co_assembly
+elif os.path.isdir(given):
+    original_assemblies = {ID: os.path.join(given, ID + config["assembly_extension"]) for ID in sample_ID_list}
+    not_found = [ID for ID, path in original_assemblies.items() if not os.path.isfile(path)]
+    if not_found:
+        exit_with_message(f"No assembly ending with '{config['assembly_extension']}' was found in '{given}' for these samples: "
+                          f"{', '.join(not_found)} (each sample's assembly is <sample ID><extension>, see -x)")
+    asm_of = lambda ID: ID
+else:
+    exit_with_message(f"The assemblies given, '{given}', aren't a file or a directory :(")
+
+# the run's copy of each assembly has its name in front of every contig's (so contigs of different assemblies can't
+# share a name when the MAGs are pooled), e.g. "sample-1_k141_77"
+asm_path = lambda name: assemblies_dir + name + ".fasta"
+reads_of = lambda ID: [raw_reads_dir + ID + suffix for suffix in input_suffixes]
+
+########################################
+######### Reference databases ##########
+########################################
+
+# set up by bit before the run starts (see rules/ref-dbs.smk)
+include: os.path.join(SMK, "rules", "ref-dbs.smk")
+from bit.smk.workflows.magrec.params import ref_dbs_needed
+require_ref_dbs(ref_dbs_needed(config))
+note_gtdbtk_skipped()
+
+########################################
+############# Rules start ##############
+########################################
+
+include: os.path.join(SMK, "rules", "mapping.smk")
+include: os.path.join(SMK, "rules", "magrec.smk")
+
+localrules: all, copy_assembly
+
+rule all:
+    input:
+        magrec_outputs,
+        assemblies_dir + prefix + "assembly-summaries.tsv",
+        prefix + "processing-overview.tsv"
+
+
+onsuccess:
+    combine_benchmarks()
+
+
+rule copy_assembly:
+    input:
+        lambda wildcards: original_assemblies[wildcards.asm]
+    output:
+        assemblies_dir + "{asm}.fasta"
+    shell:
+        r"""
+        # (CRLF line endings dropped, so no contig name keeps a "\r")
+        tr -d '\r' < "{input}" | sed 's/^>\([^ ]*\).*/>{wildcards.asm}_\1/' > {output}
+        """
+
+
+rule summarize_assemblies:
+    conda:
+        env("bit.yaml")
+    input:
+        expand(assemblies_dir + "{asm}.fasta", asm = asm_names)
+    output:
+        assemblies_dir + prefix + "assembly-summaries.tsv"
+    benchmark:
+        benchmarks_dir + "summarize_assemblies-benchmarks.tsv"
+    shell:
+        """
+        bit summarize-assembly -o {output} {input}
+        """
+
+
+rule generate_processing_overview_table:
+    input:
+        bams = expand(mapping_dir + "{ID}.bam", ID = sample_ID_list),
+        mapping_info = expand(mapping_dir + "{ID}-mapping-info.txt", ID = sample_ID_list),
+        contig_reads = expand(mapping_dir + "{ID}-mapped-reads-per-contig.tsv", ID = sample_ID_list),
+        # the bins and MAGs are final at this point; the intermediate tables are held until here
+        binning = [MAGs_dir + prefix + "MAGs-overview.tsv", bins_dir + prefix + "bin-assembly-summaries.tsv",
+                   bins_dir + prefix + "bins-checkm-out.tsv", bins_dir + prefix + "bins-overview.tsv"]
+    output:
+        prefix + "processing-overview.tsv"
+    benchmark:
+        benchmarks_dir + "generate_processing_overview_table-benchmarks.tsv"
+    run:
+        # per sample: the share of its reads that mapped to the assembly (its own or the co-assembly), its bins and its MAGs
+        from bit.modules.processing_overview import write_processing_overview
+        write_processing_overview(sample_ID_list, output[0], {ID: (asm_of(ID), asm_path(asm_of(ID))) for ID in sample_ID_list},
+                                  mapping_dir, paired_end, bins_dir = bins_dir, MAGs_dir = MAGs_dir)

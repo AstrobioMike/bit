@@ -8,6 +8,7 @@ from bit.tests.utils import run_cli
 test_R1 = get_package_path("tests/data/mock-R1.fastq.gz")
 test_R2 = get_package_path("tests/data/mock-R2.fastq.gz")
 
+@pytest.mark.full
 def test_assemble(tmp_path):
     reads_dir = tmp_path / "reads"
     reads_dir.mkdir()
@@ -67,12 +68,14 @@ def test_check_conda_env_creation_logic(mock_pkg_path, mock_run, mock_exists):
     assert "--file" in args_passed
     assert "/fake/path/assemble.yaml" in args_passed
 
-    assert updated_config.conda_env == "bit-assemble"
+    # the environment is handed to snakemake by its path (activation by name fails outside conda's envs dirs)
+    assert updated_config.conda_env == called_path
 
 
 @patch("bit.modules.assemble.os.path.exists")
 @patch("bit.modules.assemble.run")
 @patch("bit.modules.assemble.sys.platform", "linux")
+@patch("bit.modules.snakemake._conda_channel_settings", lambda: ("https://conda.anaconda.org", {}))   # (not asked of conda)
 def test_check_conda_env_creation_failure(mock_run, mock_exists):
 
     config = RunConfig()

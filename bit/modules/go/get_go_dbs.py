@@ -45,6 +45,9 @@ def download_go_data(location):
     go_basic_path = os.path.join(str(location), "go-basic.obo")
     goslim_metagenomics_path = os.path.join(str(location), "goslim_metagenomics.obo")
 
+    from bit.modules.connectivity import require_internet
+    require_internet([go_basic_link, goslim_metagenomics_link], what="the data")
+
     print(color_text("\n    Downloading GO databases...\n", "yellow"))
 
     try:

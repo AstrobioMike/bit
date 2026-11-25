@@ -44,6 +44,9 @@ def download_ncbi_tax_data(location):
     taxdump_path = os.path.join(location, "taxdump.tar.gz")
     taxdump_link = "https://ftp.ncbi.nih.gov/pub/taxonomy/taxdump.tar.gz"
 
+    from bit.modules.connectivity import require_internet
+    require_internet([taxdump_link], what="the data")
+
     print(color_text("\n    Downloading required NCBI taxonomy data (only needs to be done once)...\n", "yellow"))
 
     try:

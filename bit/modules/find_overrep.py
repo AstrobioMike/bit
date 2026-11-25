@@ -867,10 +867,14 @@ def output_paths(output_dir, output_prefix=""):
     }
 
 
-def setup_output_dir(output_dir, output_prefix, force_overwrite, full_cmd_executed):
-    check_if_output_dir_exists(output_dir, force_overwrite)
-    os.makedirs(output_dir)
-    log_command_run(full_cmd_executed, output_dir, output_paths(output_dir, output_prefix)["log"])
+def setup_output_dir(output_dir, output_prefix, force_overwrite, full_cmd_executed, inputs=()):
+    """ stops if `output_dir` exists, unless forced: then this program's own earlier outputs there
+    are removed and anything else in the directory is kept """
+    paths = output_paths(output_dir, output_prefix)
+    check_if_output_dir_exists(output_dir, force_overwrite, [os.path.basename(p) for p in paths.values()],
+                               os.path.basename(paths["log"]), inputs)
+    os.makedirs(output_dir, exist_ok=True)
+    log_command_run(full_cmd_executed, output_dir, paths["log"])
 
 
 def _median(counts):

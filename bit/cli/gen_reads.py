@@ -9,9 +9,9 @@ from bit.cli.common import (CustomRichHelpFormatter,
 def build_parser(parent_subparsers=None):
 
     desc = """
-        This program generates perfect (no error model) reads in FASTQ format from one or
-        multiple input FASTA files. See `bit mutate-seqs` if wanting to introduce variation
-        to a fasta prior to read-generation.
+        This program generates reads in FASTQ format from one or multiple input FASTA files,
+        without simulating sequencing errors. The genomes can first be mutated (see --mutation-rate and others),
+        to introduce some variation.
         """
 
     if parent_subparsers is not None:
@@ -46,8 +46,8 @@ def build_parser(parent_subparsers=None):
         "-o",
         "--output-prefix",
         metavar="<STR>",
-        help="Prefix for output FASTQ files (default: perfect-reads)",
-        default="perfect-reads",
+        help="Prefix for output FASTQ files (default: generated-reads)",
+        default="generated-reads",
     )
     general.add_argument(
         "-j",
@@ -134,6 +134,32 @@ def build_parser(parent_subparsers=None):
     add_help(general)
     add_version_arg(general)
 
+    mutation = parser.add_argument_group("Mutation Parameters")
+    mutation.add_argument(
+        "--mutation-rate",
+        metavar="<FLOAT>",
+        help="Mutate each input genome at this rate (0-1, e.g. 0.01 for about 99%% identity) before generating reads "
+             "from it; the mutated genomes are written to '<output prefix>-mutated-genomes/', "
+             "and the per-read sources and ground-truth assembly refer to them (default: 0, no mutation)",
+        type=float,
+        default=0.0,
+    )
+    mutation.add_argument(
+        "--ti-tv-ratio",
+        metavar="<FLOAT>",
+        help="Transition/transversion ratio of the substitutions (default: 1.0)",
+        type=float,
+        default=1.0,
+    )
+    mutation.add_argument(
+        "--indel-rate",
+        metavar="<FLOAT>",
+        help="Share of the mutations that are indels (0-1; e.g. 0.2 is 1 in 5; insertions and deletions equally "
+             "likely), which shift positions relative to the input genome (default: 0.0)",
+        type=float,
+        default=0.0,
+    )
+
     paired.add_argument(
         "-f",
         "--fragment-size",
@@ -175,6 +201,10 @@ def main():
         sys.exit(0)
 
     args = parser.parse_args()
+
+    for name in ("mutation_rate", "indel_rate"):
+        if not 0 <= getattr(args, name) <= 1:
+            parser.error(f"--{name.replace('_', '-')} must be between 0 and 1")
 
     if args.type == "long" and not args.read_length:
         args.read_length = 5000

@@ -1,6 +1,9 @@
-# wherever i have a -F option to force-overwrite the output dir, i should put in a guard
-    # that checks it is a typical output dir for that command (otherwise folks might point
-    # to a directory of anything, and the program would clear it IF they passed the -F | --force-overwrite
-    # by accident)
-        # i could make the shared helper for this take a required marker-file, like each programs log
-
+# need to update metagenomics workflow figure
+    # tax classification is no longer CAT, it uses bit's classify-seqs now (kmers, then diamond, custom GTDB + NCBI euks and viruses)
+    # MAG classification is classify-seqs --genome if GTDB-tk can't run on the system (macs)
+    # new steps drep MAGs and mapping all samples to all of them for distribution across samples
+    # new outputs:
+        # bins/MAGS overview tables
+        # MAG-by-sample tables
+        # dereplicated MAGs table
+        # processing overview (including % of reads mapped to its assembly, bins, and MAGs)

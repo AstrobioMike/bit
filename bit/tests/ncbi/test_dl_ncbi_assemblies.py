@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 
+from bit.tests.utils import require_local_connections
 from bit.modules.ncbi.dl_ncbi_assemblies import (
     RunData,
     setup,
@@ -200,8 +201,11 @@ def test_download_one_empty_file(tmp_path):
 def test_download_one_request_exception(tmp_path):
     dest = str(tmp_path / "file.gz")
     with patch("bit.modules.ncbi.dl_ncbi_assemblies.requests.get",
-               side_effect=requests.RequestException("timeout")):
+               side_effect=requests.RequestException("timeout")) as mock_get, \
+         patch("bit.modules.ncbi.dl_ncbi_assemblies.sleep_backoff") as mock_backoff:
         path, err, status = download_one("http://fake/file.gz", dest, retries=2)
+    assert mock_get.call_count == 2             # tried again after the wait (not made for real here)
+    mock_backoff.assert_called_once()
     assert status == "failed_transient"
     assert "timeout" in err
     assert not Path(dest).exists()
@@ -914,3 +918,172 @@ def test_retry_pass_waits_grow(tmp_path):
          patch(f"{_RETRY_MOD}.time.sleep") as slept:
         download_assemblies(rd)
     assert [c.args[0] for c in slept.call_args_list] == list(RETRY_PASS_WAITS)
+
+
+# ─── continuing interrupted downloads, and large files in parts (against a local server) ───
+
+import http.server
+import socket
+import threading
+
+
+class _RangeServer:
+    """
+    Serves one payload with byte-range support. `cut_after` lists, per request in order, how many
+    bytes to send before closing the connection early (None: send everything asked for).
+    """
+
+    def __init__(self, payload, cut_after=(), honor_ranges=True):
+        require_local_connections()
+        self.payload, self.cuts, self.honor_ranges = payload, list(cut_after), honor_ranges
+        self.requests, self.lock = [], threading.Lock()
+        outer = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+
+            def do_GET(self):
+                rng = self.headers.get("Range")
+                with outer.lock:
+                    outer.requests.append(rng)
+                    cut = outer.cuts.pop(0) if outer.cuts else None
+                start, end = 0, len(outer.payload) - 1
+                if rng and outer.honor_ranges:
+                    first, last = rng.split("=")[1].split("-")
+                    start, end = int(first), int(last) if last else end
+                    self.send_response(206)
+                    self.send_header("Content-Range", f"bytes {start}-{end}/{len(outer.payload)}")
+                else:
+                    self.send_response(200)
+                body = outer.payload[start:end + 1]
+                self.send_header("Content-Type", "application/octet-stream")
+                self.send_header("Content-Length", str(len(body)))
+                if outer.honor_ranges:
+                    self.send_header("Accept-Ranges", "bytes")
+                self.end_headers()
+                self.wfile.write(body if cut is None else body[:cut])
+                self.wfile.flush()
+                if cut is not None:
+                    # the connection dropped: shut down first, so the client sees it end at once on every system
+                    # (a close alone can leave the socket open while the handler's files still refer to it, and
+                    # the client then waits out its timeout, as on macOS)
+                    self.close_connection = True
+                    try:
+                        self.connection.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+                    self.connection.close()
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        # (shutdown() waits for the serving loop's next look, half a second apart unless told otherwise)
+        threading.Thread(target=self.server.serve_forever, kwargs={"poll_interval": 0.01}, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/file.gz"
+
+    def close(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+
+@pytest.fixture
+def payload():
+    return bytes(range(256)) * 4000    # ~1 MB, position-dependent content
+
+
+@pytest.fixture(autouse=True)
+def short_download_timeout(monkeypatch):
+    """ the local test servers answer at once, so a download stuck waiting fails in seconds rather than minutes """
+    monkeypatch.setattr("bit.modules.ncbi.dl_ncbi_assemblies.DOWNLOAD_TIMEOUT", 5)
+
+
+def _serve(payload, **kwargs):
+    return _RangeServer(payload, **kwargs)
+
+
+def test_download_one_continues_from_where_a_dropped_connection_stopped(tmp_path, payload):
+    server = _serve(payload, cut_after=[300_000, 200_000])
+    dest = tmp_path / "a.gz"
+    try:
+        with patch("bit.modules.ncbi.dl_ncbi_assemblies.sleep_backoff"):
+            _, err, status = download_one(server.url, str(dest), retries=5)
+    finally:
+        server.close()
+    assert (err, status) == (None, "downloaded")
+    assert dest.read_bytes() == payload
+    # the second and third requests asked only for what was still missing
+    assert server.requests[0] is None
+    # (from the last whole piece received, so at or a little before where the server stopped sending)
+    first_resume, second_resume = (int(r.split("=")[1].rstrip("-")) for r in server.requests[1:3])
+    assert 0 < first_resume <= 300_000
+    assert first_resume < second_resume <= first_resume + 200_000
+    assert len(server.requests) == 3
+    assert not (tmp_path / "a.gz.tmp").exists()
+
+
+def test_download_one_starts_over_when_the_server_ignores_ranges(tmp_path, payload):
+    server = _serve(payload, cut_after=[300_000], honor_ranges=False)
+    dest = tmp_path / "b.gz"
+    try:
+        with patch("bit.modules.ncbi.dl_ncbi_assemblies.sleep_backoff"):
+            _, err, status = download_one(server.url, str(dest), retries=5)
+    finally:
+        server.close()
+    assert (err, status) == (None, "downloaded")
+    assert dest.read_bytes() == payload
+
+
+def test_download_one_reports_a_file_that_keeps_coming_up_short(tmp_path, payload):
+    server = _serve(payload, cut_after=[0, 0, 0])
+    dest = tmp_path / "c.gz"
+    try:
+        with patch("bit.modules.ncbi.dl_ncbi_assemblies.sleep_backoff"):
+            _, err, status = download_one(server.url, str(dest), retries=3)
+    finally:
+        server.close()
+    assert status == "failed_transient"
+    assert not dest.exists() and not (tmp_path / "c.gz.tmp").exists()
+
+
+def test_download_one_large_file_in_parts(tmp_path, payload):
+    server = _serve(payload)
+    dest = tmp_path / "d.gz"
+    try:
+        with patch("bit.modules.ncbi.dl_ncbi_assemblies.LARGE_FILE_BYTES", 1000):
+            _, err, status = download_one(server.url, str(dest), retries=3)
+    finally:
+        server.close()
+    assert (err, status) == (None, "downloaded")
+    assert dest.read_bytes() == payload
+    ranged = [r for r in server.requests if r]
+    assert len(ranged) == 4 and len(set(ranged)) == 4
+
+
+def test_download_one_large_file_parts_continue_after_drops(tmp_path, payload):
+    # the first request is the one that finds the file is large; the next four are its parts, two of them cut short
+    server = _serve(payload, cut_after=[None, 1000, None, 5000, None])
+    dest = tmp_path / "e.gz"
+    try:
+        with patch("bit.modules.ncbi.dl_ncbi_assemblies.LARGE_FILE_BYTES", 1000), \
+             patch("bit.modules.ncbi.dl_ncbi_assemblies.sleep_backoff"):
+            _, err, status = download_one(server.url, str(dest), retries=5)
+    finally:
+        server.close()
+    assert (err, status) == (None, "downloaded")
+    assert dest.read_bytes() == payload
+    assert len([r for r in server.requests if r]) == 6
+
+
+def test_download_one_large_file_uses_one_connection_when_no_extra_ones_are_free(tmp_path, payload):
+    import bit.modules.ncbi.dl_ncbi_assemblies as mod
+    server = _serve(payload)
+    dest = tmp_path / "f.gz"
+    try:
+        with patch.object(mod, "LARGE_FILE_BYTES", 1000), \
+             patch.object(mod, "_extra_connections", threading.BoundedSemaphore(1)):
+            mod._extra_connections.acquire()
+            _, err, status = download_one(server.url, str(dest), retries=3)
+    finally:
+        server.close()
+    assert (err, status) == (None, "downloaded")
+    assert dest.read_bytes() == payload
+    assert server.requests == [None]

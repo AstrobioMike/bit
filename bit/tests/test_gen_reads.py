@@ -5,12 +5,11 @@ import gzip
 import pytest # type: ignore
 from bit.modules.gen_reads import parse_proportions_file
 from bit.modules.general import get_package_path
-from bit.tests.utils import run_cli
+from bit.tests.utils import run_cli, run_cli_here
 from bit.modules.gen_reads import (preflight_checks,
                                    gen_reads,
                                    get_proportions,
                                    compute_reads_from_coverage,
-                                   extract_subsequence,
                                    parse_coverages_input,
                                    apportion_units,
                                    compute_id_offsets,
@@ -66,7 +65,7 @@ def test_gen_reads(tmp_path):
     cmd = [
         "bit", "gen-reads",
         "-i", str(tmp_path / "input.fasta"),
-        "-o", str(tmp_path / "perfect-reads"),
+        "-o", str(tmp_path / "generated-reads"),
         "-n", "2",
         "-r", "10",
         "-s", "9"
@@ -74,8 +73,8 @@ def test_gen_reads(tmp_path):
 
     run_cli(cmd)
 
-    R1_path = tmp_path / "perfect-reads_R1.fastq.gz"
-    R2_path = tmp_path / "perfect-reads_R2.fastq.gz"
+    R1_path = tmp_path / "generated-reads_R1.fastq.gz"
+    R2_path = tmp_path / "generated-reads_R2.fastq.gz"
     assert R1_path.exists(), f"R1 file not found at {R1_path}"
     assert R2_path.exists(), f"R2 file not found at {R2_path}"
 
@@ -200,7 +199,7 @@ def test_gen_reads_single_end(tmp_path):
         "--type", "single-end",
     ]
 
-    run_cli(cmd)
+    run_cli_here(cmd)
 
     se_path = tmp_path / "se-reads.fastq.gz"
     assert se_path.exists(), f"Single-end file not found at {se_path}"
@@ -323,7 +322,7 @@ def test_long_reads_cli(tmp_path):
         "-s", "1",
     ]
 
-    run_cli(cmd)
+    run_cli_here(cmd)
 
     # should produce single-end output (implied by --long)
     se_path = tmp_path / "long-reads.fastq.gz"
@@ -339,36 +338,6 @@ def test_long_reads_cli(tmp_path):
     # with default 50% range and read_length=100, expect reads from 50-150
     assert all(50 <= rl <= 150 for rl in read_lengths), \
         f"Read lengths outside expected range: min={min(read_lengths)}, max={max(read_lengths)}"
-
-
-def test_extract_subsequence_skips_Ns():
-
-    import random
-    random.seed(0)
-
-    # sequence with Ns only in the middle
-    seq = "ACGTACGT" + "NNNNNNNN" + "ACGTACGT"
-    seq_length = len(seq)
-    read_len = 8
-
-    # generate many reads; none should contain N when include_Ns=False
-    for _ in range(50):
-        subseq, _ = extract_subsequence(seq, seq_length, read_len, circularize=False, include_Ns=False)
-        assert 'N' not in subseq, f"Found N in read when include_Ns=False: {subseq}"
-
-
-def test_extract_subsequence_includes_Ns_when_flagged():
-
-    import random
-    random.seed(0)
-
-    # sequence that is entirely Ns — reads must contain Ns
-    seq = "N" * 20
-    seq_length = len(seq)
-    read_len = 8
-
-    subseq, _ = extract_subsequence(seq, seq_length, read_len, circularize=False, include_Ns=True)
-    assert 'N' in subseq, "Expected Ns in read when include_Ns=True"
 
 
 def test_gen_paired_reads_skips_Ns(tmp_path):
@@ -536,7 +505,7 @@ def test_coverage_cli_paired_end(tmp_path):
         "-s", "1",
     ]
 
-    run_cli(cmd)
+    run_cli_here(cmd)
 
     R1_path = tmp_path / "cov-reads_R1.fastq.gz"
     R2_path = tmp_path / "cov-reads_R2.fastq.gz"
@@ -559,7 +528,7 @@ def test_per_genome_summary_columns_and_values(tmp_path):
         "-r", "100",
         "-s", "1",
     ]
-    run_cli(cmd)
+    run_cli_here(cmd)
 
     summary = tmp_path / "sum-reads-per-genome-summary.tsv"
     assert summary.exists()
@@ -593,7 +562,7 @@ def test_coverage_cli_single_end(tmp_path):
         "-s", "1",
     ]
 
-    run_cli(cmd)
+    run_cli_here(cmd)
 
     se_path = tmp_path / "cov-se-reads.fastq.gz"
     assert se_path.exists(), f"Single-end file not found at {se_path}"
@@ -615,7 +584,7 @@ def test_coverage_tsv_cli(tmp_path):
         "-s", "1",
     ]
 
-    run_cli(cmd)
+    run_cli_here(cmd)
 
     R1_path = tmp_path / "cov-tsv-reads_R1.fastq.gz"
     R2_path = tmp_path / "cov-tsv-reads_R2.fastq.gz"
@@ -1181,7 +1150,7 @@ def test_gta_multi_genome_keeps_origins_distinct():
 def test_gta_cli_paired_end_writes_file(tmp_path):
     shutil.copy(test_fasta, tmp_path / "input.fasta")
     out = tmp_path / "gta-reads"
-    run_cli([
+    run_cli_here([
         "bit", "gen-reads",
         "-i", str(tmp_path / "input.fasta"),
         "-o", str(out),
@@ -1205,7 +1174,7 @@ def test_gta_cli_paired_end_writes_file(tmp_path):
 def test_gta_cli_off_by_default(tmp_path):
     shutil.copy(test_fasta, tmp_path / "input.fasta")
     out = tmp_path / "noreq"
-    run_cli([
+    run_cli_here([
         "bit", "gen-reads",
         "-i", str(tmp_path / "input.fasta"),
         "-o", str(out),
@@ -1216,24 +1185,133 @@ def test_gta_cli_off_by_default(tmp_path):
     assert not (tmp_path / "noreq-ground-truth-assembly.fasta").exists()
 
 
-@pytest.mark.parametrize("rtype", ["paired-end", "single-end", "long"])
-def test_compiled_and_python_loops_make_the_same_reads(tmp_path, monkeypatch, rtype):
-    # the compiled contig loop, the Python loop alone, and the two handing over to each other
-    # (the compiled loop leaves a contig it can't do, here one it's shown as non-ASCII, to the
-    # Python loop, which carries on from the same generator state, then takes the next one)
-    import bit.modules.gen_reads as gr
-    paths = _write_multi_genomes(tmp_path)
-    real = gr._native_gen_reads()
-    assert real is not None
+def test_the_compiled_generator_draws_as_pythons_random_does():
+    # gen-reads draws from the run's random.Random state in the compiled core, so a seed keeps giving the same reads:
+    # random(), randint() (over small and >32-bit ranges) and gauss() match Python's draw for draw
+    import random
+    from bit._native import rng_sample
+    rng = random.Random(20240521)
+    rng.random()
+    ops = []
+    for i in range(3000):
+        kind = i % 3
+        if kind == 1:
+            ops.append((1, 0.0, float((i * 7919) % 100_000 + (i % 5) * 2**33)))
+        elif kind == 2:
+            ops.append((2, 300.0 + i, 30.0 + i / 7))
+        else:
+            ops.append((0, 0.0, 0.0))
+    _, state, gauss_next = rng.getstate()
+    got, new_state, new_index, new_gauss = rng_sample(list(state[:624]), state[624], gauss_next, ops)
+    expected = [rng.random() if k == 0 else float(rng.randint(int(a), int(b))) if k == 1 else rng.gauss(a, b)
+                for k, a, b in ops]
+    assert got == expected
+    assert rng.getstate() == (3, tuple(new_state) + (new_index,), new_gauss)
 
-    def handing_over(seqs, *rest):
-        return real([s if i != 1 else s[:-1] + "\u00e9" for i, s in enumerate(seqs)], *rest)
 
-    outputs = {}
-    for name, native in (("compiled", real), ("python", None), ("mixed", handing_over)):
-        monkeypatch.setattr(gr, "_native_gen", [native])
-        a = _multi_args(paths, tmp_path / name, jobs=1, rtype=rtype, seed=31)
+def test_a_contig_that_isnt_a_nucleotide_sequence_is_an_error(tmp_path):
+    path = tmp_path / "bad.fasta"
+    path.write_text(">ok\n" + "ACGT" * 300 + "\n>bad\n" + "ACGT" * 299 + "AC\u00e9T\n", encoding="utf-8")
+    a = _multi_args([str(path)], tmp_path / "out", jobs=1, rtype="single-end", seed=3)
+    with pytest.raises(ValueError):     # (from reading the fasta, or from the compiled loop)
         gen_reads(a, get_proportions(a))
-        suffixes = [".fastq.gz"] if rtype != "paired-end" else ["_R1.fastq.gz", "_R2.fastq.gz"]
-        outputs[name] = [_read_text(str(tmp_path / name) + s) for s in suffixes + ["-read-sources.tsv.gz"]]
-    assert outputs["compiled"] == outputs["python"] == outputs["mixed"]
+
+
+def _write_short_contig_genome(tmp_path):
+    """ contigs shorter than the fragments (400 +/- 10%) and long reads, beside a longer one """
+    import random
+    rng = random.Random(7)
+    p = tmp_path / "short.fasta"
+    with open(p, "w") as f:
+        for i, L in enumerate((300, 120, 60, 2000)):
+            f.write(f">s_c{i}\n" + "".join(rng.choice("ACGT") for _ in range(L)) + "\n")
+    return str(p)
+
+
+@pytest.mark.parametrize("rtype", ["paired-end", "single-end", "long"])
+def test_contigs_shorter_than_the_fragments_give_no_slivers(tmp_path, rtype):
+    # a fragment (or read) reaching a contig's end is at least the run's shortest allowed length, or the whole contig
+    # when that's shorter
+    path = _write_short_contig_genome(tmp_path)
+    contig_len = {"s_c0": 300, "s_c1": 120, "s_c2": 60, "s_c3": 2000}
+    a = _multi_args([path], tmp_path / "out", jobs=1, rtype=rtype, seed=5)
+    a.read_length = 100 if rtype != "long" else 1000
+    gen_reads(a, get_proportions(a))
+
+    shortest = {"paired-end": 100, "single-end": 100, "long": 500}[rtype]   # (long: 1000 - 50%)
+    rows = [line.split("\t") for line in _read_text(str(tmp_path / "out") + "-read-sources.tsv.gz").splitlines()[1:]]
+    assert {row[2] for row in rows} == set(contig_len)
+    for read_id, _, contig, start, end, _, _ in rows:
+        assert int(end) - int(start) >= min(shortest, contig_len[contig]), (read_id, contig, start, end)
+
+
+def test_circular_contigs_still_start_anywhere(tmp_path):
+    path = _write_short_contig_genome(tmp_path)
+    a = _multi_args([path], tmp_path / "circ", jobs=1, rtype="single-end", seed=5)
+    a.circularize = True
+    gen_reads(a, get_proportions(a))
+    rows = [line.split("\t") for line in _read_text(str(tmp_path / "circ") + "-read-sources.tsv.gz").splitlines()[1:]]
+    starts = {int(row[3]) for row in rows if row[2] == "s_c1"}
+    # on the 120 bp contig, the 100 bp reads wrap the origin from starts spread over the whole contig
+    assert max(starts) > 100 and len(starts) > 20
+
+
+def test_mutation_rate_mutates_the_genomes_reads_are_made_from(tmp_path):
+    import random
+    rng = random.Random(9)
+    genome = "".join(rng.choice("ACGT") for _ in range(20000))
+    path = tmp_path / "g.fasta"
+    path.write_text(">g_c0\n" + genome + "\n")
+
+    def run(prefix, seed=4):
+        a = _multi_args([str(path)], tmp_path / prefix, jobs=1, rtype="single-end", seed=seed)
+        a.mutation_rate, a.ti_tv_ratio, a.indel_rate, a.quiet = 0.01, 1.0, 0.0, False
+        a.ground_truth_assembly = False
+        from bit.modules.gen_reads import generate_reads
+        generate_reads(a)
+        return (tmp_path / f"{prefix}-mutated-genomes" / "g.fasta").read_text().splitlines()[1]
+
+    mutated = run("m1")
+    differences = sum(x != y for x, y in zip(genome, mutated))
+    assert len(mutated) == len(genome) and 120 < differences < 280      # ~1% of 20,000, substitutions only
+    assert run("m2") == mutated                                           # the same seed, the same mutations
+
+    # the reads come from the mutated genome (their sources' positions hold exactly the read, on one strand or the other)
+    rc = str.maketrans("ACGT", "TGCA")
+    fastq = _read_text(str(tmp_path / "m1") + ".fastq.gz").splitlines()
+    rows = [line.split("\t") for line in _read_text(str(tmp_path / "m1") + "-read-sources.tsv.gz").splitlines()[1:]]
+    for seq, (_, source, _, start, end, strand, _) in list(zip(fastq[1::4], rows))[:200]:
+        piece = mutated[int(start):int(end)]
+        assert seq == (piece if strand == "+" else piece.translate(rc)[::-1])
+        assert source.endswith("m1-mutated-genomes/g.fasta")
+
+    summary = [l.split("\t") for l in (tmp_path / "m1-per-genome-summary.tsv").read_text().splitlines()]
+    assert summary[0][-3:] == ["mutated_fasta", "num_substitutions", "num_indels"]
+    assert summary[1][0] == str(path) and int(summary[1][-2]) == differences and summary[1][-1] == "0"
+
+
+def test_mutating_inputs_with_the_same_file_name(tmp_path):
+    import random
+    from bit.modules.gen_reads import generate_reads
+    rng = random.Random(3)
+    paths = []
+    for d in ("d1", "d2"):
+        (tmp_path / d).mkdir()
+        path = tmp_path / d / "g.fasta"
+        path.write_text(f">{d}_c0\n" + "".join(rng.choice("ACGT") for _ in range(5000)) + "\n")
+        paths.append(str(path))
+    a = _multi_args(paths, tmp_path / "same", jobs=1, rtype="single-end", seed=1)
+    a.mutation_rate, a.ti_tv_ratio, a.indel_rate, a.quiet = 0.01, 1.0, 0.0, False
+    a.ground_truth_assembly = False
+    generate_reads(a)
+    out = tmp_path / "same-mutated-genomes"
+    assert sorted(p.name for p in out.iterdir()) == ["g-2.fasta", "g.fasta"]
+    assert (out / "g.fasta").read_text().startswith(">d1_c0") and (out / "g-2.fasta").read_text().startswith(">d2_c0")
+    summary = [l.split("\t") for l in (tmp_path / "same-per-genome-summary.tsv").read_text().splitlines()[1:]]
+    assert [row[0] for row in summary] == paths
+
+
+def test_no_mutation_by_default(tmp_path):
+    a = _multi_args(_write_multi_genomes(tmp_path), tmp_path / "plain", jobs=1, rtype="single-end", seed=2)
+    gen_reads(a, get_proportions(a))
+    assert not (tmp_path / "plain-mutated-genomes").exists()

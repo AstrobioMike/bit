@@ -541,6 +541,15 @@ pub struct ReadRow {
     pub ref_end: i64,
 }
 
+/// whether a mapped alignment's gap-compressed percent identity is at least min_pid (false
+/// without an NM tag or CIGAR, as it can't be judged)
+fn passes_min_pid(r: &Record, min_pid: f64) -> bool {
+    match r.nm {
+        Some(nm) if !r.cigar.is_empty() => pids(&breakdown(&r.cigar), nm).1 >= min_pid,
+        _ => false,
+    }
+}
+
 /// for a read that's counted (mapped, primary unless include_non_primary, with NM): its
 /// breakdown, its pids, whether it's non-primary
 #[allow(clippy::type_complexity)]
@@ -807,12 +816,16 @@ impl Coverage {
 /// Coverage is counted as `mosdepth -x` does: every alignment not flagged with any of
 /// `exclude` adds 1 from its start to its end on the reference, whatever is between
 /// (deletions and skips included), and mates that overlap both count.
+///
+/// With `min_pid` above 0, alignments under that gap-compressed percent identity (and mapped
+/// ones without an NM tag or CIGAR, which can't be judged) add to neither.
 #[allow(clippy::type_complexity)]
 pub fn coverage_and_pids(
     path: &str,
     wanted: &[String],
     exclude: u16,
     pid: Option<(bool, bool)>, // (include_non_primary, gap_compressed)
+    min_pid: f64,
     progress: Option<&std::sync::Arc<crate::reads::Progress>>,
 ) -> io::Result<(Vec<Option<CovTotals>>, Option<Vec<(String, Acc)>>)> {
     let mut bam = Bam::open(path)?;
@@ -825,6 +838,9 @@ pub fn coverage_and_pids(
             && let Some(p) = progress
         {
             p.reads.store(n, std::sync::atomic::Ordering::Relaxed);
+        }
+        if min_pid > 0.0 && r.flag & 0x4 == 0 && !passes_min_pid(&r, min_pid) {
+            continue;
         }
         if r.flag & exclude == 0 && r.ref_id >= 0 && r.pos >= 0 {
             // htslib's bam_endpos: a span of 0 counts as 1

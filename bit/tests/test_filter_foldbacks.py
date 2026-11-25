@@ -1,12 +1,11 @@
 import gzip
 import random
-import subprocess
 
 import pytest # type: ignore
 
 from bit._native import scan_foldbacks
 from bit.modules.filter_foldbacks import filter_foldbacks, output_paths
-from bit.tests.utils import run_cli
+from bit.tests.utils import run_cli, run_cli_here
 
 
 _COMP = str.maketrans("ACGT", "TGCA")
@@ -139,18 +138,53 @@ def test_cli_prefixes_share_an_output_dir(tmp_path, template):
     out = tmp_path / "out"
     cmd = ["bit", "filter-foldbacks", "-i", str(tmp_path / "r1.fq"), "-I", str(tmp_path / "r2.fq"),
            "-o", str(out), "-j", "1"]
-    run_cli(cmd + ["-O", "s1"])
-    run_cli(cmd + ["-O", "s2"])
+    run_cli_here(cmd + ["-O", "s1"])
+    run_cli_here(cmd + ["-O", "s2"])
     names = sorted(p.name for p in out.iterdir())
     assert "s1-filtered_R1.fastq.gz" in names and "s2-filtered_R1.fastq.gz" in names
     # the same prefix again is refused; with -F only its own files are replaced
-    again = subprocess.run(cmd + ["-O", "s1"], capture_output=True, text=True)
+    again = run_cli_here(cmd + ["-O", "s1"], check=False)
     assert again.returncode != 0
     assert "already exist" in again.stdout
     (out / "s1-summary.tsv").write_text("old")
-    run_cli(cmd + ["-O", "s1", "-F"])
+    run_cli_here(cmd + ["-O", "s1", "-F"])
     assert (out / "s1-summary.tsv").read_text() != "old"
     assert sorted(p.name for p in out.iterdir()) == names
+
+
+def test_cli_force_overwrite_keeps_files_it_didnt_write(tmp_path, template):
+    pairs = [pair_from(template[i:i + 400], f"n{i}") for i in range(0, 2400, 300)]
+    write_fastq(tmp_path / "r1.fq", [p[0] for p in pairs])
+    write_fastq(tmp_path / "r2.fq", [p[1] for p in pairs])
+    out = tmp_path / "out"
+    cmd = ["bit", "filter-foldbacks", "-i", str(tmp_path / "r1.fq"), "-I", str(tmp_path / "r2.fq"),
+           "-o", str(out), "-j", "1"]
+    run_cli_here(cmd)
+    names = sorted(p.name for p in out.iterdir())
+    (out / "my-notes.txt").write_text("mine")
+    (out / "summary.tsv").write_text("old")
+    (out / "filtered.fastq.gz").write_text("from an earlier single-end run")
+
+    # without a prefix an existing output dir needs -F, which replaces this program's files only
+    assert run_cli_here(cmd, check=False).returncode != 0
+    assert (out / "summary.tsv").read_text() == "old"
+    run_cli_here(cmd + ["-F"])
+    assert sorted(p.name for p in out.iterdir()) == sorted(names + ["my-notes.txt"])
+    assert (out / "my-notes.txt").read_text() == "mine"
+    assert (out / "summary.tsv").read_text() != "old"
+
+    # input reads kept beside the outputs stay too
+    (out / "r1.fq").write_text((tmp_path / "r1.fq").read_text())
+    run_cli_here(["bit", "filter-foldbacks", "-i", str(out / "r1.fq"), "-o", str(out), "-F", "-j", "1"])
+    assert (out / "r1.fq").read_text() == (tmp_path / "r1.fq").read_text() and (out / "my-notes.txt").exists()
+
+    # with a prefix, its own files may be replaced in the current directory
+    (tmp_path / "work").mkdir()
+    write_fastq(tmp_path / "work" / "r.fq", [p[0] for p in pairs])
+    prefixed = ["bit", "filter-foldbacks", "-i", "r.fq", "-o", ".", "-O", "s1", "-j", "1"]
+    run_cli_here(prefixed, cwd=tmp_path / "work")
+    run_cli_here(prefixed + ["-F"], cwd=tmp_path / "work")
+    assert (tmp_path / "work" / "r.fq").exists() and (tmp_path / "work" / "s1-summary.tsv").exists()
 
 
 def test_output_spans_many_chunks_in_input_order(tmp_path, template):
@@ -174,8 +208,8 @@ def test_mismatched_mates_stop_the_run(tmp_path, template):
     pairs = [pair_from(template[i:i + 400], f"n{i}") for i in range(0, 2400, 300)]
     write_fastq(tmp_path / "r1.fq", [p[0] for p in pairs])
     write_fastq(tmp_path / "r2.fq", [p[1] for p in pairs[::-1]])
-    result = subprocess.run(["bit", "filter-foldbacks", "-i", str(tmp_path / "r1.fq"), "-I", str(tmp_path / "r2.fq"),
-                             "-o", str(tmp_path / "o"), "-j", "1"], capture_output=True, text=True)
+    result = run_cli_here(["bit", "filter-foldbacks", "-i", str(tmp_path / "r1.fq"), "-I", str(tmp_path / "r2.fq"),
+                           "-o", str(tmp_path / "o"), "-j", "1"], check=False)
     assert result.returncode != 0
     assert "Read names don't match" in result.stdout
 
@@ -274,18 +308,17 @@ def test_cli_hifi(tmp_path, long_template):
     folded = t[:3000] + rc(t[1500:2800])
     write_fastq(tmp_path / "hifi.fq", [("fold", folded, "I" * len(folded))])
     out = tmp_path / "cli"
-    result = run_cli(["bit", "filter-foldbacks", "--hifi", "-i", str(tmp_path / "hifi.fq"),
-                      "-o", str(out), "-j", "1"])
+    result = run_cli_here(["bit", "filter-foldbacks", "--hifi", "-i", str(tmp_path / "hifi.fq"),
+                           "-o", str(out), "-j", "1"])
     assert "reads cut at a fold" in result.stdout and "unpaired middle" in result.stdout
     assert sorted(p.name for p in out.iterdir()) == ["command-execution-info.txt",
                                                      "filtered.fastq.gz", "summary.tsv"]
 
 
 def test_cli_rejects_bad_kmer_size(tmp_path, template):
-    import subprocess
     write_fastq(tmp_path / "r.fq", [("a", template[:150], "I" * 150)])
-    result = subprocess.run(["bit", "filter-foldbacks", "-i", str(tmp_path / "r.fq"), "-o",
-                             str(tmp_path / "o"), "-k", "4"], capture_output=True, text=True)
+    result = run_cli_here(["bit", "filter-foldbacks", "-i", str(tmp_path / "r.fq"), "-o",
+                           str(tmp_path / "o"), "-k", "4"], check=False)
     assert result.returncode != 0 and "kmer-size" in result.stderr
 
 
@@ -296,9 +329,8 @@ def test_short_read_defaults():
 
 
 def test_cli_detailed_help_shows_fine_tuning():
-    import subprocess
-    plain = subprocess.run(["bit", "filter-foldbacks", "-h"], capture_output=True, text=True)
-    detailed = subprocess.run(["bit", "filter-foldbacks", "-H"], capture_output=True, text=True)
+    plain = run_cli_here(["bit", "filter-foldbacks", "-h"], check=False)
+    detailed = run_cli_here(["bit", "filter-foldbacks", "-H"], check=False)
     out_plain = plain.stdout + plain.stderr
     out_detailed = detailed.stdout + detailed.stderr
     assert "--kmer-size" not in out_plain and "HOW IT WORKS" not in out_plain

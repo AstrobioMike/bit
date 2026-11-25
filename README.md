@@ -23,10 +23,11 @@
     * [iToL helpers](#itol-helpers)
     * [bit-data management](#bit-data-management)
   * [**Workflows**](#workflows)
-    * [SRA-download](workflows/sra-download-wf)
-    * [Genome-summarize](workflows/genome-summarize-wf)
-    * [Metagenomics](workflows/metagenomics-wf)
-    * [Amplicon](workflows/amplicon-wf)
+    * [Metagenomics](workflows#metagenomics)
+    * [Magrec](workflows#magrec)
+    * [Amplicon](workflows#amplicon)
+    * [Characterize-genomes](workflows#characterize-genomes)
+    * [dl-sra-reads](workflows#dl-sra-reads)
 * [**Conda install**](#conda-install)
 * [**Citation info**](#citation-info)
 * [**Shameless plug**](#shameless-plug)
@@ -61,6 +62,7 @@ You can see an overview of available programs like below by running `bit` by its
 | `bit get-accs-from-gtdb` | search the [GTDB](https://gtdb.ecogenomic.org/) by taxonomy and retrieve NCBI accessions |
 | `bit get-accs-from-ncbi` | search the NCBI by taxonomy or taxid and retrieve NCBI accessions |
 | `bit dl-ncbi-assemblies` | download NCBI assemblies in different formats given input accessions |
+| `bit dl-sra-reads` | download reads from NCBI's SRA given run accessions, combining the runs of a sample if wanted (see [here](workflows#dl-sra-reads)) |
 
 ---
 
@@ -134,6 +136,8 @@ You can see an overview of available programs like below by running `bit` by its
 | ------- | ------- |
 | `bit assemble` | simple wrapper for assembly with optional quality trimming and normalization |
 | `bit summarize-assembly` | quickly summarize nucleotide assemblies |
+| `bit characterize-genomes` | summary stats, quality estimates and taxonomy of genomes in one table (see [here](workflows#characterize-genomes)) |
+| `bit classify-seqs` | assign taxonomy to contigs or high-quality long reads (e.g., HiFi), one table per input fasta |
 
 ---
 
@@ -224,18 +228,17 @@ Each subcommand has a help menu accessible by either entering the command alone 
 ---
 
 ### Workflows
-The [snakemake](https://snakemake.github.io/) workflows packaged with _bit_ are retrievable with `bit get-workflow` and currently include:
+The larger [snakemake](https://snakemake.github.io/) workflows packaged with _bit_ are run with `bit run-wf`, e.g., `bit run-wf metagenomics -r reads-dir/`; the smaller ones are commands of their own, e.g., `bit dl-sra-reads -a target-sra-accs.txt`. They currently include:
 
-| Workflow | Purpose |  
-| ------- | ------- |  
-| [sra-download](workflows/sra-download-wf) | downloads sra reads via prefetch and fasterq-dump, with helper program for combining run accessions if needed (see [here](workflows/sra-download-wf) for usage details) |  
-| [genome-summarize](workflows/genome-summarize-wf) | generates genome assembly stats, quality estimates, and taxonomy info (see [here](workflows/genome-summarize-wf) for usage details and overview) |
-| [metagenomics](workflows/metagenomics-wf) | processes short-read metagenomics data via assembly through to merged taxonomy and KO coverage tables, and recovers and characterizes MAGs (see [here](workflows/metagenomics-wf) for usage details and overview)
-| [amplicon](workflows/amplicon-wf) | processes short-read amplicon data through to ASVs, a count table, and a taxonomy table largely with dada2 (see [here](workflows/amplicon-wf) for usage details and overview)
+| Workflow | Run with | Purpose |
+| ------- | ------- | ------- |
+| [metagenomics](workflows#metagenomics) | `bit run-wf metagenomics` | processes short-read metagenomics data via assembly through to merged taxonomy and KO coverage tables, and recovers and characterizes MAGs |
+| [magrec](workflows#magrec) | `bit run-wf magrec` | recovers and characterizes MAGs from reads and assemblies made already (per-sample assemblies or a co-assembly) |
+| [amplicon](workflows#amplicon) | `bit run-wf amplicon` | processes short-read amplicon data through to ASVs, a count table, and a taxonomy table largely with dada2 |
+| [characterize-genomes](workflows#characterize-genomes) | `bit characterize-genomes` | generates genome assembly stats, quality estimates, and taxonomy info |
+| [dl-sra-reads](workflows#dl-sra-reads) | `bit dl-sra-reads` | downloads sra reads via prefetch and fasterq-dump, combining the runs of a sample if wanted |
 
-For greater detail and usage information, see the pages linked above for each workflow.
-
-> Note that workflows are versioned independently of the _bit_ package. When you pull one with `bit get-workflow`, the directory name will have the version, and it is also listed at the top of the Snakefile. 
+Each has a concise help menu (`-h`) and a detailed one listing every setting (`-H`). See the [workflows page](workflows) for usage details, outputs, and how to save a copy of a workflow to modify.
 
 ---
 

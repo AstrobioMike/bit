@@ -109,11 +109,19 @@ def run_cov_analyzer(
     print(captured.getvalue(), end="")
 
 
+# everything written into the output directory, whatever the settings (what -F/--force-overwrite replaces)
+OUTPUT_NAMES = ["mosdepth-files", "runlog.txt", "command-execution-info.txt",
+                "window-coverage-overview.tsv", "window-coverage-stats.tsv.gz", "window-coverage-histogram.png"] + \
+               [f"{kind}-coverage-regions-of-interest.{ext}" for kind in ("high", "low", "zero") for ext in ("tsv", "fasta")]
+
+
 def preflight_checks(reference_fasta, bam_file, output_dir, exclude_contigs, force_overwrite, log_file, full_cmd_executed):
 
-    check_if_output_dir_exists(output_dir, force_overwrite)
     paths_list = [reference_fasta, bam_file]
     check_files_are_found(paths_list)
+    check_if_output_dir_exists(output_dir, force_overwrite, OUTPUT_NAMES,
+                               os.path.basename(log_file) if log_file else "command-execution-info.txt",
+                               inputs=paths_list)
     os.makedirs(f"{output_dir}/mosdepth-files", exist_ok=True)
     bam_file = check_bam_file_is_indexed(bam_file)
     reference_fasta = check_fasta_file_is_indexed(reference_fasta, output_dir)

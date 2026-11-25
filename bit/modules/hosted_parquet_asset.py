@@ -146,6 +146,10 @@ class HostedParquetAsset:
         table_path = self.table_path(location)
         sidecar_path = self.sidecar_path(location)
 
+        # stops here, saying why, when the site can't be reached
+        from bit.modules.connectivity import require_internet
+        require_internet([self.data_url, self.sidecar_url], what="the data")
+
         print(color_text(f"\n    Downloading the prepared {self.display_name} "
                          "(only needs to be done once)...\n", "yellow"))
 

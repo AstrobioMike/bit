@@ -1,122 +1,70 @@
 from Bio import SeqIO # type: ignore
 import pandas as pd # type: ignore
 import gzip
+import os
+import sys
 from bit.modules.general import is_gzipped
 from statistics import mean, median
 import random
 
 
-def _native_fasta(fn_name, *args):
+def _fasta_path(input_fasta):
     """
-    Calls a FASTA pass in the compiled core (bit._native; see rust/src/fasta.rs, which follows
-    the parser the Python version here uses, so results are identical). Returns None when the
-    input calls for the Python path (anything non-ASCII, or a lone carriage return, which
-    Python's universal newlines would treat as a line break; or the core being unavailable).
+    A path the compiled core can read for `input_fasta`: the path itself, or for an open handle (e.g. stdin), a
+    temporary copy of what it holds (removed at exit). (The core reads plain or gzipped text, any line endings.)
     """
+    if isinstance(input_fasta, (str, os.PathLike)):
+        return str(input_fasta)
+    import atexit, tempfile
+    source = input_fasta.buffer if hasattr(input_fasta, "buffer") else input_fasta
+    fd, path = tempfile.mkstemp(suffix=".fasta")
+    with os.fdopen(fd, "wb") as out:
+        while block := source.read(1 << 20):
+            out.write(block.encode() if isinstance(block, str) else block)
+    atexit.register(lambda: os.path.exists(path) and os.remove(path))
+    return path
+
+
+def _fasta_pass(fn_name, *args):
+    """ a FASTA pass of the compiled core (bit._native; see rust/src/fasta.rs); a problem with the input stops the run """
+    from bit import _native
     try:
-        from bit import _native
         return getattr(_native, fn_name)(*args)
-    except (ImportError, ValueError, OverflowError, TypeError):
-        return None
+    except ValueError as e:
+        print(f"\n    {e}\n")
+        sys.exit(1)
 
 
 def calc_gc_per_seq(input_fasta):
 
-    if isinstance(input_fasta, str):
-        native = _native_fasta("fasta_records_summary", input_fasta)
-        if native is not None:
-            return [{"header": name,
-                     "length": length,
-                     "gc": round(gc / length, 2) if length else 0.0}
-                    for name, length, gc in native]
-
-    gc_stats = []
-    fasta_handle = input_fasta if hasattr(input_fasta, "read") else open(input_fasta, "r")
-    with fasta_handle as fasta_file:
-        for record in SeqIO.parse(fasta_file, "fasta"):
-            seq = record.seq
-            length = len(seq)
-            gc = round((seq.count("G") + seq.count("C")) / length, 2) if length else 0.0
-            gc_stats.append({
-                "header": record.name,
-                "length": length,
-                "gc": gc
-            })
-    return gc_stats
+    return [{"header": name, "length": length, "gc": round(gc / length, 2) if length else 0.0}
+            for name, length, gc in _fasta_pass("fasta_records_summary", _fasta_path(input_fasta))]
 
 
 def calc_gc_sliding_window(input_fasta, window, step):
 
-    if (isinstance(input_fasta, str) and isinstance(window, int) and isinstance(step, int)
-            and window > 0 and step > 0):
-        native = _native_fasta("fasta_gc_windows", input_fasta, window, step)
-        if native is not None:
-            # the same round() of each window's count, done once per distinct count
-            rounded = {}
-            def window_gc(c):
-                v = rounded.get(c)
-                if v is None:
-                    v = rounded[c] = round(c / window, 2)
-                return v
-            return [{"header": name,
-                     "length": length,
-                     "gc": round(gc / length, 2) if length else 0.0,
-                     "gc_of_windows": [window_gc(c) for c in counts]}
-                    for name, length, gc, counts in native]
+    # the same round() of each window's count, done once per distinct count
+    rounded = {}
+    def window_gc(c):
+        v = rounded.get(c)
+        if v is None:
+            v = rounded[c] = round(c / window, 2)
+        return v
 
-    window_gc_stats = []
-
-    fasta_handle = input_fasta if hasattr(input_fasta, "read") else open(input_fasta, "r")
-    with fasta_handle as fasta_file:
-        for record in SeqIO.parse(fasta_file, "fasta"):
-            seq = record.seq
-            length = len(seq)
-            gc = round((seq.count("G") + seq.count("C")) / length, 2) if length else 0.0
-
-            gc_of_windows = []
-            for i in range(0, length - window + 1, step):
-                window_seq = seq[i:i + window]
-                window_gc = round((window_seq.count("G") + window_seq.count("C")) / window, 2) if window else 0.0
-                gc_of_windows.append(window_gc)
-
-            window_gc_stats.append({
-                "header": record.name,
-                "length": length,
-                "gc": gc,
-                "gc_of_windows": gc_of_windows
-            })
-
-    return window_gc_stats
+    return [{"header": name,
+             "length": length,
+             "gc": round(gc / length, 2) if length else 0.0,
+             "gc_of_windows": [window_gc(c) for c in counts]}
+            for name, length, gc, counts in _fasta_pass("fasta_gc_windows", _fasta_path(input_fasta), window, step)]
 
 
 def filter_fasta_by_length(in_fasta, out_fasta, min_length, max_length):
 
-    import os
-    if (isinstance(in_fasta, str) and isinstance(out_fasta, str)
-            and not (os.path.exists(out_fasta) and os.path.samefile(in_fasta, out_fasta))):
-        native = _native_fasta("fasta_filter_by_length", in_fasta, out_fasta, min_length, max_length)
-        if native is not None:
-            return native
-
-    num_initial_seqs = 0
-    num_seqs_retained = 0
-    num_initial_bases = 0
-    num_bases_retained = 0
-
-    with open(in_fasta, "r") as in_file, open(out_fasta, "w") as out_file:
-
-        for seq_record in SeqIO.parse(in_file, "fasta"):
-
-            num_initial_seqs += 1
-            num_initial_bases += len(seq_record.seq)
-
-            if (min_length is None or len(seq_record.seq) >= min_length) and len(seq_record.seq) <= max_length:
-
-                num_seqs_retained += 1
-                num_bases_retained += len(seq_record.seq)
-                out_file.write(">" + str(seq_record.description) + "\n" + str(seq_record.seq) + "\n")
-
-    return (num_initial_seqs, num_seqs_retained, num_initial_bases, num_bases_retained)
+    in_path = _fasta_path(in_fasta)
+    if os.path.exists(out_fasta) and os.path.samefile(in_path, out_fasta):
+        print(f"\n    The output file can't be the input file ('{out_fasta}').\n")
+        sys.exit(1)
+    return _fasta_pass("fasta_filter_by_length", in_path, out_fasta, min_length, max_length)
 
 
 def modify_fasta_headers(args):
@@ -321,16 +269,9 @@ def parse_fasta_lengths(input_fasta):
     lengths_list = []
     seq_lengths = {}
 
-    native = _native_fasta("fasta_records_summary", input_fasta) if isinstance(input_fasta, str) else None
-    if native is not None:
-        for seq_id, length, _ in native:
-            seq_lengths[seq_id] = length
-            lengths_list.append(length)
-    else:
-        for seq_record in SeqIO.parse(input_fasta, "fasta"):
-            length = len(seq_record.seq)
-            seq_lengths[seq_record.id] = length
-            lengths_list.append(length)
+    for seq_id, length, _ in _fasta_pass("fasta_records_summary", _fasta_path(input_fasta)):
+        seq_lengths[seq_id] = length
+        lengths_list.append(length)
 
     stats = {
         "n_seqs": len(lengths_list),
@@ -480,31 +421,9 @@ def fasta_to_genbank(input_fasta):
 
 def remove_wraps(input_fasta, output):
 
-    # via the compiled core when the input is a path and the output a real file (not stdout,
-    # which bit wraps with colorama; writes there go through that wrapper, as always)
-    import sys
-    if isinstance(input_fasta, str) and output not in (sys.stdout, sys.__stdout__):
-        try:
-            fd = output.fileno()
-        except (AttributeError, OSError, ValueError):
-            fd = None
-        if fd is not None:
-            output.flush()
-            if _native_fasta("fasta_remove_wraps", input_fasta, fd) is not None:
-                return
-
-    fasta_handle = input_fasta if hasattr(input_fasta, "read") else open(input_fasta, "r")
-
-    with fasta_handle as f:
-        n = ""
-        for line in f:
-            if line.startswith(">"):
-                output.write(n + line)
-                n = ""
-            else:
-                output.write(line.rstrip("\n"))
-                n = "\n"
-        output.write(n)
+    # the compiled core writes to the output's file descriptor (stdout's included, flushed around it)
+    output.flush()
+    _fasta_pass("fasta_remove_wraps", _fasta_path(input_fasta), output.fileno())
 
 
 # includes IUPAC ambiguity codes, each mapping to the code for its complementary base set

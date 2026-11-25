@@ -11,6 +11,7 @@ from bit.modules.general import (report_message,
                        get_package_path,
                        color_text,
                        log_command_run)
+from bit.modules.snakemake import build_snakemake_cmd, run_snakemake as run_snakemake_cmd
 import sys
 import platform
 
@@ -93,6 +94,17 @@ def check_conda_env(config):
         report_failure("Please use linux-64 or osx-64.", "yellow")
 
     if not os.path.exists(conda_env_path):
+        from bit.modules.snakemake import conda_env_urls
+        if getattr(config, "dry_run", False):
+            # a dry run installs nothing, as snakemake's doesn't: it only says the environment would be created
+            print(f"\n    {color_text('The conda environment bit-assemble is not set up yet. The run would first create it at:', 'yellow')}"
+                  f"\n      {conda_env_path}\n")
+            config.conda_env = conda_env_path
+            return config
+        # creating the environment downloads its programs from the conda channels
+        from bit.modules.connectivity import require_internet, known_path_env_note
+        require_internet(conda_env_urls([yaml_path]), what=None,
+                         env_note=known_path_env_note(conda_env, yaml_path, conda_env_path))
         try:
             report_message(f"Creating conda environment for bit-assemble at {conda_env_path}...")
             print("")
@@ -106,35 +118,24 @@ def check_conda_env(config):
             print("\n" + str(e) + "\n")
             exit(1)
 
-    config.conda_env = conda_env
+    config.conda_env = conda_env_path   # the path, so activation works wherever the bit environment lives
     return config
 
 
 def run_snakemake(reads_dict, config):
     reads_json = json.dumps(reads_dict)
-    conda_env_area = os.path.expandvars("${CONDA_PREFIX}/envs")
 
-    cmd = [
-        "snakemake",
-        "--snakefile", str(get_package_path("smk/assemble.smk")),
-        "--cores", str(config.num_cores),
-        "--printshellcmds",
-        "--use-conda",
-        "--conda-prefix", str(conda_env_area),
-        "--directory", config.output_dir,
-        "--config", f'reads_json={reads_json}',
-        *config.key_value_pairs,
-    ]
+    cmd = build_snakemake_cmd(
+        snakefile=get_package_path("smk/assemble.smk"),
+        directory=config.output_dir,
+        cores=config.num_cores,
+        config_pairs=[f'reads_json={reads_json}', *config.key_value_pairs],
+        use_conda=True,
+        dry_run=config.dry_run,
+        rerun_incomplete=config.rerun_incomplete,
+    )
 
-    if config.dry_run:
-        cmd.append("--dry-run")
-    if config.rerun_incomplete:
-        cmd.append("--rerun-incomplete")
-
-    process = run(cmd)
-    if process.returncode != 0:
-        message = "Snakemake failed. Hopefully its output above can help you spot why."
-        report_failure(message)
+    run_snakemake_cmd(cmd)
 
 
 def report_finished(args):

@@ -331,7 +331,7 @@ def compute_pids(b, nm):
     return gap_aware, gap_compressed
 
 
-def get_per_contig_pid_stats(input_bam, include_non_primary=False, pid_metric="gap_compressed"):
+def get_per_contig_pid_stats(input_bam, include_non_primary=False, pid_metric="gap_compressed", min_pid=0):
     """
     Single-pass BAM scan that builds a PidStats object per contig (reference name).
     Returns a dict of {contig_name: PidStats}. No per-read data is stored.
@@ -339,17 +339,20 @@ def get_per_contig_pid_stats(input_bam, include_non_primary=False, pid_metric="g
 
     pid_metric selects which percent identity is accumulated:
         "gap_compressed" (default) or "gap_aware".
+    min_pid leaves out reads under that gap-compressed percent identity (0: none).
     """
     # via the compiled core when it can (it follows the loop below step for step); anything
     # in the BAM calling for pysam's handling comes back as a ValueError, and falls through
+    # (the compiled per-contig pass doesn't filter by percent identity)
     _check_opens_with_pysam(input_bam)
-    try:
-        from bit._native import bam_per_contig_pid_stats
-        accs = bam_per_contig_pid_stats(str(input_bam), include_non_primary,
-                                        pid_metric == "gap_compressed")
-        return {name: _pid_stats_from_native(acc) for name, acc in accs}
-    except (ImportError, ValueError):
-        pass
+    if not min_pid:
+        try:
+            from bit._native import bam_per_contig_pid_stats
+            accs = bam_per_contig_pid_stats(str(input_bam), include_non_primary,
+                                            pid_metric == "gap_compressed")
+            return {name: _pid_stats_from_native(acc) for name, acc in accs}
+        except (ImportError, ValueError):
+            pass
 
     decompression_threads = min(4, os.cpu_count() or 1)
 
@@ -370,6 +373,8 @@ def get_per_contig_pid_stats(input_bam, include_non_primary=False, pid_metric="g
             b = parse_cigar_breakdown(read.cigartuples)
             gap_aware, gap_compressed = compute_pids(b, nm)
             pid = gap_compressed if pid_metric == "gap_compressed" else gap_aware
+            if gap_compressed < min_pid:
+                continue
 
             contig_pid_stats[ref_name_map[read.reference_id]].add(pid)
 

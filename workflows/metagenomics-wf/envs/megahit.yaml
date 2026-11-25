@@ -1,9 +1,0 @@
-name: megahit
-channels:
-    - conda-forge
-    - bioconda
-    - defaults
-    - astrobiomike
-dependencies:
-    - megahit=1.2.9
-    - bit=1.8.65

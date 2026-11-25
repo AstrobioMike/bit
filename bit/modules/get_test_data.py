@@ -33,6 +33,9 @@ def dl_test_data(args):
         start_message=("Downloading and unpacking two tiny paired-end Illumina amplicon test samples (4 files, ~1 MB total) from here: ")
         end_message=("Successfully pulled in two tiny amplicon test samples.")
 
+    from bit.modules.connectivity import require_internet
+    require_internet([data_url], what="the data")
+
     report_message(start_message, trailing_newline=True)
     print(f"    {page_url}\n\n")
 

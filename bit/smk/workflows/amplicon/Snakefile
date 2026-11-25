@@ -1,0 +1,212 @@
+###################################################################################################
+## Snakefile for the "bit" amplicon processing workflow                                          ##
+## bit: https://github.com/AstrobioMike/bit                                                      ##
+##                                                                                               ##
+## If you use this workflow in a publication, please consider citing :)                          ##
+##   Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122.  ##
+##   https://doi.org/10.12688/f1000research.79530.1                                              ##
+###################################################################################################
+
+# Run with `bit run-wf amplicon` (see its -h, or -H for every setting).
+# If this is a copy made with --get-workflow, it can also be run directly with snakemake from
+# this directory after editing config.yaml, e.g.:
+#   snakemake --software-deployment-method conda --conda-prefix ${CONDA_PREFIX}/envs --cores 16 -p
+
+import os
+
+configfile: "config.yaml"
+
+# where the shared rules/, envs/ and scripts/ are: next to this file in a saved copy of the
+# workflow, or two levels up when run from within the bit package
+SMK = workflow.basedir if os.path.isdir(os.path.join(workflow.basedir, "envs")) else os.path.normpath(os.path.join(workflow.basedir, "..", ".."))
+
+include: os.path.join(SMK, "rules", "common.smk")
+
+# finding the input reads and samples (shared with the other read-based workflows)
+include: os.path.join(SMK, "rules", "reads.smk")
+
+scripts_dir = os.path.join(workflow.basedir, "scripts")
+
+# a "-" joins the prefix to the output names unless it already ends in "-" or "_"
+prefix = config["output_prefix"]
+if prefix and not prefix.endswith(("-", "_")):
+    prefix += "-"
+trim_primers = not config["skip_primer_trimming"]
+
+########################################
+######## Setting up directories ########
+########################################
+
+# everything is written within the directory the workflow is run in (the output directory)
+fastqc_out_dir = "fastqc-outputs/"
+raw_fastqc_dir = fastqc_out_dir + "raw-fastqc/"
+filtered_fastqc_dir = fastqc_out_dir + "filtered-fastqc/"
+trimmed_reads_dir = "trimmed-reads/"
+filtered_reads_dir = "filtered-reads/"
+final_outputs_dir = "final-outputs/"
+logs_dir = "logs/"
+benchmarks_dir = "benchmarks/"
+
+dirs_to_create = [fastqc_out_dir, raw_fastqc_dir, filtered_fastqc_dir, filtered_reads_dir, final_outputs_dir, logs_dir, benchmarks_dir]
+if trim_primers:
+    dirs_to_create.append(trimmed_reads_dir)
+
+for dir in dirs_to_create:
+    os.makedirs(dir, exist_ok = True)
+
+# the primer-trimmed reads are named like the filtered ones (see rules/reads.smk)
+trimmed_suffixes = [suffix.replace("filtered", "trimmed") for suffix in filtered_suffixes]
+
+# the reads the R step starts from: the primer-trimmed ones, or the input reads if primers aren't being trimmed
+if trim_primers:
+    R_start_dir, R_start_suffixes = trimmed_reads_dir, trimmed_suffixes
+else:
+    R_start_dir, R_start_suffixes = raw_reads_dir, input_suffixes
+
+########################################
+################ Primers ###############
+########################################
+
+_complements = str.maketrans("ACGTUMRWSYKVHDBN", "TGCAAKYWSRMBDHVN")
+
+def revcomp(seq):
+    return seq.upper().translate(_complements)[::-1]
+
+# by default each read is searched for its own primer at its start and, optionally following it, the reverse
+# complement of the other primer (cutadapt's "linked" adapters), which is there when the read is longer than the amplicon
+if config["primers_not_linked"]:
+    cutadapt_primers = f"-g {config['f_primer']}" + (f" -G {config['r_primer']}" if paired_end else "")
+else:
+    F_linked = config["f_primer"] + "..." + revcomp(config["r_primer"].lstrip("^"))
+    R_linked = config["r_primer"] + "..." + revcomp(config["f_primer"].lstrip("^"))
+    cutadapt_primers = f"-a {F_linked}" + (f" -A {R_linked}" if paired_end else "")
+
+########################################
+############# Rules start ##############
+########################################
+
+# the reference used for taxonomy (a DECIPHER training set per target region, `bit data get amplicon-refs`): in the
+# reference-database directory, or in the output directory when there is none (set up by bit before the run starts)
+ref_root_fallback = "ref-dbs/"
+include: os.path.join(SMK, "rules", "ref-dbs.smk")
+require_ref_dbs(["amplicon-refs"])
+from bit.modules.ref_dbs import AMPLICON_REF_FILES
+tax_ref = ref_db_dir("amplicon-refs") + AMPLICON_REF_FILES[config["target_region"]]
+
+# these don't do any real work, so they are run where snakemake itself is running
+localrules: all, combine_cutadapt_logs_and_summarize
+
+R_outputs = [final_outputs_dir + prefix + name for name in
+             ("taxonomy.tsv", "taxonomy-and-counts.biom", "ASVs.fasta", "read-count-tracking.tsv", "counts.tsv", "taxonomy-and-counts.tsv")]
+
+all_outputs = R_outputs + [
+    fastqc_out_dir + prefix + "raw_multiqc_report.zip",
+    fastqc_out_dir + prefix + "filtered_multiqc_report.zip"
+]
+
+if trim_primers:
+    all_outputs += [trimmed_reads_dir + prefix + "cutadapt.log", trimmed_reads_dir + prefix + "trimmed-read-counts.tsv"]
+
+rule all:
+    input:
+        all_outputs
+
+
+onsuccess:
+    combine_benchmarks()
+
+
+# quality filtering, ASV inference, chimera removal and taxonomy (DADA2 and DECIPHER; see the R scripts)
+rule run_R:
+    conda:
+        env("R.yaml")
+    input:
+        reads = expand(R_start_dir + "{ID}{suffix}", ID = sample_ID_list, suffix = R_start_suffixes),
+        trim_counts = trimmed_reads_dir + prefix + "trimmed-read-counts.tsv" if trim_primers else []
+    output:
+        expand(filtered_reads_dir + "{ID}{suffix}", ID = sample_ID_list, suffix = filtered_suffixes),
+        R_outputs
+    params:
+        tax_ref = tax_ref,
+        trim_primers = "TRUE" if trim_primers else "FALSE",
+        concatenate_reads_only = "TRUE" if config["concatenate_reads_only"] else "FALSE",
+        left_trunc = config["left_trunc"],
+        right_trunc = config["right_trunc"],
+        left_maxEE = config["left_maxEE"],
+        right_maxEE = config["right_maxEE"],
+        start_dir = R_start_dir,
+        start_suffixes = R_start_suffixes,
+        filtered_suffixes = filtered_suffixes,
+        filtered_reads_dir = filtered_reads_dir,
+        final_outputs_dir = final_outputs_dir,
+        target_region = config["target_region"],
+        output_prefix = prefix,
+        sample_IDs_file = sample_IDs_file
+    threads:
+        10
+    resources:
+        mem_mb = config["R_mem"],
+        cpus = 10
+    log:
+        logs_dir + "R-processing.log"
+    benchmark:
+        benchmarks_dir + "run_R-benchmarks.tsv"
+    shell:
+        (
+            """
+            Rscript {scripts_dir}/Illumina-PE-R-processing.R "{params.left_trunc}" "{params.right_trunc}" "{params.left_maxEE}" "{params.right_maxEE}" "{params.trim_primers}" "{params.sample_IDs_file}" "{params.start_dir}" "{params.filtered_reads_dir}" "{params.start_suffixes[0]}" "{params.start_suffixes[1]}" "{params.filtered_suffixes[0]}" "{params.filtered_suffixes[1]}" "{params.final_outputs_dir}" "{params.output_prefix}" "{params.target_region}" "{params.concatenate_reads_only}" "{params.tax_ref}" > {log} 2>&1
+            """
+            if paired_end else
+            """
+            Rscript {scripts_dir}/Illumina-SE-R-processing.R "{params.left_trunc}" "{params.left_maxEE}" "{params.trim_primers}" "{params.sample_IDs_file}" "{params.start_dir}" "{params.filtered_reads_dir}" "{params.start_suffixes[0]}" "{params.filtered_suffixes[0]}" "{params.final_outputs_dir}" "{params.output_prefix}" "{params.target_region}" "{params.tax_ref}" > {log} 2>&1
+            """
+        )
+
+
+rule combine_cutadapt_logs_and_summarize:
+    input:
+        counts = expand(trimmed_reads_dir + "{ID}-trimmed-counts.tsv", ID = sample_ID_list),
+        logs = expand(trimmed_reads_dir + "{ID}-cutadapt.log", ID = sample_ID_list)
+    output:
+        combined_log = trimmed_reads_dir + prefix + "cutadapt.log",
+        combined_counts = trimmed_reads_dir + prefix + "trimmed-read-counts.tsv"
+    shell:
+        r"""
+        cat {input.logs} > {output.combined_log}
+        cat <( printf "sample\traw_reads\tcutadapt_trimmed\n" ) <( cat {input.counts} ) > {output.combined_counts}
+        """
+
+
+# primer removal
+rule cutadapt:
+    conda:
+        env("cutadapt.yaml")
+    input:
+        [raw_reads_dir + "{ID}" + suffix for suffix in input_suffixes]
+    output:
+        reads = [trimmed_reads_dir + "{ID}" + suffix for suffix in trimmed_suffixes],
+        log = temp(trimmed_reads_dir + "{ID}-cutadapt.log"),
+        trim_counts = temp(trimmed_reads_dir + "{ID}-trimmed-counts.tsv")
+    params:
+        primers = cutadapt_primers,
+        out_args = lambda wildcards, output: f"-o {output.reads[0]}" + (f" -p {output.reads[1]}" if paired_end else ""),
+        discard_arg = "" if config["keep_untrimmed"] else "--discard-untrimmed",
+        min_len = config["min_cutadapt_len"],
+        # how cutadapt words its counts of reads in and out
+        in_label = "read pairs processed" if paired_end else "reads processed",
+        out_label = "Pairs written" if paired_end else "Reads written"
+    benchmark:
+        benchmarks_dir + "cutadapt-{ID}-benchmarks.tsv"
+    shell:
+        r"""
+        cutadapt {params.primers} {params.out_args} {params.discard_arg} -m {params.min_len} {input} > {output.log} 2>&1
+
+        # the counts are the first numbers on their lines of cutadapt's report (e.g., "Total read pairs processed:   1,000")
+        n_in=$(grep "{params.in_label}" {output.log} | grep -o "[0-9][0-9,]*" | head -n 1 | tr -d ",")
+        n_out=$(grep "{params.out_label}" {output.log} | grep -o "[0-9][0-9,]*" | head -n 1 | tr -d ",")
+        printf "{wildcards.ID}\t${{n_in}}\t${{n_out}}\n" > {output.trim_counts}
+        """
+
+
+# fastqc and multiqc of the raw and filtered reads (shared with the other read-based workflows)
+include: os.path.join(SMK, "rules", "read-qc.smk")

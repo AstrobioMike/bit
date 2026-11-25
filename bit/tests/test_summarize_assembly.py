@@ -73,3 +73,50 @@ def test_summarize_assembly_parallel_matches_serial(tmp_path):
     lines = parallel_tsv.read_text().splitlines()
     assert lines[0] == "Assembly\tasm-b\tempty\tasm-a\tasm-c"
     assert lines[1] == "Total contigs\t2\tNA\t2\t2"
+
+
+def test_assembly_stats_read_any_fasta_shape_the_same(tmp_path):
+    # plain, wrapped with CRLF or old-Mac line endings, gzipped, with blank lines and an empty record: the same stats
+    import gzip
+    from bit.modules.summarize_assembly import assembly_stats
+    records = [("a", "ACGTACGTNN" * 30), ("b", ""), ("c", "GGCCATAT" * 10)]
+    plain = "".join(f">{h}\n{s}\n" for h, s in records)
+    wrapped = "".join(f">{h}\n" + "".join(s[i:i + 60] + "\n" for i in range(0, len(s), 60)) + "\n" for h, s in records)
+    files = {"plain.fa": plain.encode(), "crlf.fa": wrapped.replace("\n", "\r\n").encode(),
+             "cr.fa": wrapped.replace("\n", "\r").encode(), "gz.fa.gz": gzip.compress(wrapped.encode())}
+    stats = []
+    for name, data in files.items():
+        (tmp_path / name).write_bytes(data)
+        stats.append(assembly_stats(str(tmp_path / name)))
+    assert all(s == stats[0] for s in stats)
+    assert stats[0]["Total contigs"] == 3 and stats[0]["Minimum contig length"] == 0 and stats[0]["Total length"] == 380
+    assert stats[0]["Ambiguous characters"] == 60
+
+    # spaces and tabs within sequence lines aren't sequence (as for `bit fasta count`)
+    (tmp_path / "ws.fa").write_text(plain.replace("ACGT", "AC GT", 3).replace("GGCC", "GG\tCC  ", 2))
+    assert assembly_stats(str(tmp_path / "ws.fa")) == stats[0]
+
+
+def test_assembly_stats_without_acgt_and_without_sequence(tmp_path, capsys):
+    import pytest # type: ignore
+    from bit.modules.summarize_assembly import assembly_stats
+    (tmp_path / "n.fa").write_text(">a\nNNNN\n")
+    assert assembly_stats(str(tmp_path / "n.fa"))["GC content"] == "NA"
+    (tmp_path / "h.fa").write_text(">a\n")
+    with pytest.raises(SystemExit):
+        assembly_stats(str(tmp_path / "h.fa"))
+    assert "holds no sequence" in capsys.readouterr().out
+
+
+def test_utf8_headers_are_read_and_other_non_ascii_text_is_refused(tmp_path, capsys):
+    import pytest # type: ignore
+    from bit.modules.summarize_assembly import assembly_stats
+    (tmp_path / "u.fa").write_bytes(">seq1 β-proteobacterium\r\nACGTACGTGG\r\n>seq2\r\nGGCC\r\n".encode())
+    stats = assembly_stats(str(tmp_path / "u.fa"))
+    assert stats["Total contigs"] == 2 and stats["Total length"] == 14
+    for name, data, message in (("seq.fa", ">s\nACβT\n".encode(), "isn't ASCII text outside the headers"),
+                                ("hdr.fa", b">s \xff\nACGT\n", "header line that isn't UTF-8")):
+        (tmp_path / name).write_bytes(data)
+        with pytest.raises(SystemExit):
+            assembly_stats(str(tmp_path / name))
+        assert message in capsys.readouterr().out

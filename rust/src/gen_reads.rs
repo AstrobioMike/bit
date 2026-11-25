@@ -1,9 +1,8 @@
-//! The per-read loops of `bit gen-reads` (gen_one_file_paired and gen_one_file_single in
-//! bit/modules/gen_reads.py), followed step for step, drawing from the same Mersenne Twister
-//! state as the Python random.Random they'd otherwise use (its state is passed in and back
-//! out via getstate()/setstate()), with the same derivations of random(), randint() and
-//! gauss(). So with the same seed, reads, headers and coordinates are identical. The Python
-//! side checks this generator against random.Random at runtime before using it.
+//! The per-read loops of `bit gen-reads` (called from gen_one_file_paired and gen_one_file_single in
+//! bit/modules/gen_reads.py), drawing from the run's Python random.Random state (passed in and back
+//! out via getstate()/setstate()) with Python's derivations of random(), randint() and gauss(), as the
+//! Python loops they replaced did. So a seed gives the reads, headers and coordinates it always has
+//! (the tests check this generator against random.Random, see rng_sample in lib.rs).
 
 use std::f64::consts::TAU;
 use std::fmt::Write;
@@ -126,11 +125,14 @@ fn revcomp(s: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-/// extract_subsequence(): (subsequence, start); None where Python raises
+/// extract_subsequence(): (subsequence, start); None where Python raises. When the wanted length reaches the contig's
+/// (and the contig isn't circular), the start is drawn so the piece runs to the contig's end and is at least min_len
+/// long (the whole contig if it's shorter than that).
 fn extract(
     rng: &mut Mt,
     seq: &[u8],
     subseq_len: usize,
+    min_len: usize,
     circular: bool,
     include_ns: bool,
 ) -> Option<(Vec<u8>, i64)> {
@@ -148,7 +150,7 @@ fn extract(
                 (s, start)
             }
         } else if subseq_len >= l {
-            let start = rng.randint(0, l as i64 - 1)? as usize;
+            let start = rng.randint(0, (l - min_len.min(l)) as i64)? as usize;
             (seq[start..].to_vec(), start)
         } else {
             let start = rng.randint(0, (l - subseq_len) as i64)? as usize;
@@ -248,9 +250,8 @@ pub fn merge(mut spans: Vec<(i64, i64)>) -> Vec<(i64, i64)> {
     out
 }
 
-/// `n` reads (or pairs) from one contig's sequence `seq` (already uppercased for paired, as
-/// Python does), numbered from read_count + 1. None where Python would raise (the caller then
-/// runs Python's loop for these reads from the same state).
+/// `n` reads (or pairs) from one contig's sequence `seq` (uppercased for paired), numbered from
+/// read_count + 1. None where the settings can't make reads from it (e.g. an empty contig).
 pub fn gen_chunk(rng: &mut Mt, seq: &[u8], n: u64, read_count: u64, p: &Params) -> Option<Chunk> {
     let l = seq.len() as i64;
     let mut c = Chunk::default();
@@ -262,7 +263,7 @@ pub fn gen_chunk(rng: &mut Mt, seq: &[u8], n: u64, read_count: u64, p: &Params) 
             if frag_len < 0 {
                 return None;
             }
-            let (mut fragment, start) = extract(rng, seq, frag_len as usize, p.circular, p.include_ns)?;
+            let (mut fragment, start) = extract(rng, seq, frag_len as usize, p.min_len.max(1) as usize, p.circular, p.include_ns)?;
             let strand = if rng.random() < 0.5 {
                 '+'
             } else {
@@ -323,7 +324,8 @@ pub fn gen_chunk(rng: &mut Mt, seq: &[u8], n: u64, read_count: u64, p: &Params) 
             if read_len < 0 {
                 return None;
             }
-            let (mut read, start) = extract(rng, seq, read_len as usize, p.circular, p.include_ns)?;
+            let shortest = if p.long { p.min_len } else { p.read_length }.max(1) as usize;
+            let (mut read, start) = extract(rng, seq, read_len as usize, shortest, p.circular, p.include_ns)?;
             let read_end = start + read.len() as i64;
             let wrapped = read_end > l;
             let strand = if rng.random() < 0.5 {

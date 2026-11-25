@@ -497,6 +497,15 @@ def resolve_input_driven_modes(args):
         args.auto_even_single = True
 
 
+def output_names(output_prefix):
+    """ everything a run can write into its output directory, whatever its settings (what -F/--force-overwrite replaces) """
+    return ["genomes", "mutated-genomes", "ground-truth", "runlog.txt", "selected-accessions.txt",
+            "per-genome-coverage.tsv", "reproducibility.tsv"] + \
+           [f"{output_prefix}{end}" for end in ("_R1.fastq.gz", "_R2.fastq.gz", ".fastq.gz", "-read-sources.tsv.gz",
+                                                "-ground-truth-assembly.fasta", "-per-genome-summary.tsv",
+                                                "-mutated-genomes")]
+
+
 def preflight_checks(args):
 
     if not args.num_genomes and not args.accessions:
@@ -505,7 +514,9 @@ def preflight_checks(args):
         notify_premature_exit()
 
     if args.output_dir:
-        check_if_output_dir_exists(args.output_dir, force_overwrite=args.force_overwrite)
+        check_if_output_dir_exists(args.output_dir, force_overwrite=args.force_overwrite,
+                                   outputs=output_names(getattr(args, "output_prefix", "mg")), run_record="runlog.txt",
+                                   inputs=[p for p in (getattr(args, "accessions", None),) if p])
 
     # let the input TSV's columns drive abundance/mutation modes (and reject
     # explicit settings that contradict the file) before the checks below, which

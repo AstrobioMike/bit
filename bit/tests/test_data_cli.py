@@ -27,6 +27,7 @@ HELP_AND_VERSION = {"-h", "--help", "-v", "--version"}
 # every `bit data get` source except test-data, which is a group of its own rather
 # than a leaf taking the common -q/-f flags
 GET_SOURCES = ["go-dbs", "gtdb-data", "ncbi-assembly-data", "ncbi-tax-data"]
+REF_DBS = ["tax-db", "checkm2-db", "gtdbtk-db", "kofamscan-db", "eukcc-db", "amplicon-refs"]
 
 
 def _subparsers_action(parser):
@@ -68,7 +69,7 @@ def test_data_get_is_a_real_subparser_level():
     """
     action = _subparsers_action(_node("get"))
     assert action is not None
-    assert set(action.choices) == set(GET_SOURCES) | {"test-data"}
+    assert set(action.choices) == set(GET_SOURCES) | set(REF_DBS) | {"test-data"}
 
 
 def test_group_nodes_hide_help_and_version_from_completion():
@@ -106,6 +107,12 @@ def test_every_source_takes_the_same_flags(source_name):
     """
     expected = HELP_AND_VERSION | {"-q", "--quiet", "-f", "--force-update"}
     assert _flags(_node("get", source_name)) == expected
+
+
+@pytest.mark.parametrize("db_name", REF_DBS)
+def test_every_reference_database_also_takes_a_directory(db_name):
+    expected = HELP_AND_VERSION | {"-q", "--quiet", "-f", "--force-update", "-d", "--ref-dbs-dir"}
+    assert _flags(_node("get", db_name)) == expected
 
 
 def test_test_data_is_a_real_subparser_level_too():

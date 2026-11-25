@@ -1,0 +1,6 @@
+name: gtdb-tk
+channels:
+    - conda-forge
+    - bioconda
+dependencies:
+    - gtdbtk=2.8.0

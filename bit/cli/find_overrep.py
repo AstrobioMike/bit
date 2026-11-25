@@ -254,9 +254,10 @@ def main():
     from bit.modules.find_overrep import setup_output_dir, write_outputs, summary_lines
 
     read_paths = [args.input_reads] + ([args.input_reads_2] if args.input_reads_2 else [])
-    check_files_are_found(read_paths + [p for p in (args.adapters, args.seqs_to_count) if p])
+    input_paths = read_paths + [p for p in (args.adapters, args.seqs_to_count) if p]
+    check_files_are_found(input_paths)
     setup_output_dir(args.output_dir, args.output_prefix, args.force_overwrite,
-                     reconstruct_invocation(parser, args))
+                     reconstruct_invocation(parser, args), inputs=input_paths)
 
     try:
         result = run(args, read_paths)

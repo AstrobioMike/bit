@@ -3,16 +3,17 @@
 //!   - Biopython's SeqIO "fasta" (FastaIterator): count, calc-gc, filter-by-length
 //!   - bit's own read_fasta() (seqs.py): extract-by-primers
 //!   - plain line handling: remove-wraps
-//!   - pyfastx: summarize-assembly
+//!   - summarize-assembly: as pyfastx read assemblies (see assembly_summary)
 //!
-//! Each only takes input whose handling is unambiguous (ASCII, and lines ending in "\n" or
-//! "\r\n"); anything else (non-ASCII bytes, a lone "\r", which Python's universal newlines
-//! would treat as a line break) is returned as an error, and the caller falls back to Python.
+//! Input is plain text or gzipped (told by its first two bytes), its lines ending in "\n", "\r\n" or
+//! a lone "\r" (as Python's text mode reads them). Header lines (">...") may hold any UTF-8 text; any
+//! other line that isn't ASCII is an error (it's no sequence file).
 
 use crate::edlib;
 use rayon::prelude::*;
+use std::collections::VecDeque;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, BufWriter, Write};
+use std::io::{self, BufRead, BufReader, BufWriter, Read, Write};
 
 pub fn bad(msg: &str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidData, msg.to_string())
@@ -53,22 +54,39 @@ fn first_word(title: &[u8]) -> &[u8] {
     &title[b..e]
 }
 
-/// lines as Python's text mode gives them ("\r\n" becomes "\n"), each with its "\n" if it
-/// had one
+/// a file's bytes, gunzipped if it's gzipped
+pub fn open_text(path: &str) -> io::Result<Box<dyn Read + Send>> {
+    let mut file = File::open(path)?;
+    let mut magic = [0u8; 2];
+    let n = file.read(&mut magic)?;
+    let start = io::Cursor::new(magic[..n].to_vec()).chain(file);
+    Ok(if n == 2 && magic == [0x1f, 0x8b] {
+        Box::new(flate2::read::MultiGzDecoder::new(BufReader::with_capacity(1 << 20, start)))
+    } else {
+        Box::new(start)
+    })
+}
+
+/// lines as Python's text mode gives them ("\r\n" and a lone "\r" become "\n"), each with its
+/// "\n" if it had one
 pub struct Lines {
-    rdr: BufReader<File>,
+    rdr: BufReader<Box<dyn Read + Send>>,
     buf: Vec<u8>,
+    // the further lines of a chunk holding lone "\r"s
+    queued: VecDeque<Vec<u8>>,
 }
 
 impl Lines {
     pub fn open(path: &str) -> io::Result<Self> {
-        Ok(Lines {
-            rdr: BufReader::with_capacity(1 << 20, File::open(path)?),
-            buf: Vec::new(),
-        })
+        Ok(Lines { rdr: BufReader::with_capacity(1 << 20, open_text(path)?), buf: Vec::new(), queued: VecDeque::new() })
     }
 
     pub fn next_line(&mut self) -> io::Result<Option<&[u8]>> {
+        if let Some(line) = self.queued.pop_front() {
+            check_text(&line)?;
+            self.buf = line;
+            return Ok(Some(&self.buf));
+        }
         self.buf.clear();
         let n = self.rdr.read_until(b'\n', &mut self.buf)?;
         if n == 0 {
@@ -79,11 +97,39 @@ impl Lines {
             self.buf.truncate(l - 2);
             self.buf.push(b'\n');
         }
-        if memchr::memchr(b'\r', &self.buf).is_some() || !self.buf.is_ascii() {
-            return Err(bad("non-ASCII or a lone carriage return"));
+        if memchr::memchr(b'\r', &self.buf).is_some() {
+            // old Mac line endings: each "\r" ends a line
+            let chunk = std::mem::take(&mut self.buf);
+            let pieces: Vec<&[u8]> = chunk.split(|&b| b == b'\r').collect();
+            let last = pieces.len() - 1;
+            for (i, piece) in pieces.into_iter().enumerate() {
+                if i < last {
+                    let mut line = piece.to_vec();
+                    line.push(b'\n');
+                    self.queued.push_back(line);
+                } else if !piece.is_empty() {
+                    self.queued.push_back(piece.to_vec());
+                }
+            }
+            return self.next_line();
         }
+        check_text(&self.buf)?;
         Ok(Some(&self.buf))
     }
+}
+
+/// a header line may hold any UTF-8 text (e.g. ">seq1 β-proteobacterium"); other lines need to be ASCII
+fn check_text(line: &[u8]) -> io::Result<()> {
+    if line.is_ascii() {
+        return Ok(());
+    }
+    if line.iter().find(|&&b| !py_ws(b)) == Some(&b'>') {
+        return match std::str::from_utf8(line) {
+            Ok(_) => Ok(()),
+            Err(_) => Err(bad("has a header line that isn't UTF-8 text")),
+        };
+    }
+    Err(bad("holds a line that isn't ASCII text outside the headers, so it isn't a plain-text sequence file"))
 }
 
 fn line_body(l: &[u8]) -> &[u8] {
@@ -207,8 +253,7 @@ pub fn filter_by_length(
     Ok((n, kept, bases, bases_kept))
 }
 
-/// checks a whole file is ASCII with no lone carriage returns (so its lines come out here
-/// as Python's text mode would give them)
+/// checks a whole file is readable here: ASCII outside its (UTF-8) headers
 pub fn check_plain(path: &str) -> io::Result<()> {
     let mut lines = Lines::open(path)?;
     while lines.next_line()?.is_some() {}
@@ -290,6 +335,19 @@ fn primer_sites(primer: &[u8], masked: &[u8], k: usize, eq: &[(u8, u8)]) -> io::
     Ok(sites)
 }
 
+/// each primer's sites in one sequence (uppercased, non-ACGT positions masked first; see primer_sites)
+pub fn seq_primer_sites(seq: &[u8], primers: &[Vec<u8>], k: usize, eq: &[(u8, u8)]) -> io::Result<Vec<Vec<(usize, usize)>>> {
+    if primers.iter().any(|p| p.len() <= k) {
+        return Err(bad("primers need to be longer than the allowed differences"));
+    }
+    let masked: Vec<u8> = seq
+        .iter()
+        .map(|b| b.to_ascii_uppercase())
+        .map(|b| if matches!(b, b'A' | b'C' | b'G' | b'T') { b } else { b'X' })
+        .collect();
+    primers.iter().map(|p| primer_sites(p, &masked, k, eq)).collect()
+}
+
 /// For extract-by-primers: each record of `path` (read_fasta), uppercased, with each primer's
 /// sites (see primer_sites; non-ACGT target positions masked first). Returns (header,
 /// uppercased sequence, [[(start, end exclusive), ...] per primer]) for records with at least
@@ -328,54 +386,32 @@ pub fn primer_hits(
     Ok(found.into_iter().flatten().collect())
 }
 
-/// For summarize-assembly (pyfastx's view of an assembly): (number of records, total
-/// length, count of each byte value in the sequences, each record's length). Only takes
-/// "clean" FASTA: first line a header, every other line a non-empty run of printable,
-/// non-space characters not starting with '>' (a header), '@' or '+' (which pyfastx's
-/// parser would treat specially), no empty records, no carriage returns, not gzipped.
+/// For summarize-assembly: (number of records, total length, count of each byte value in the
+/// sequences, each record's length). A record is a header line ('>') and the lines after it, every
+/// character of which counts except spaces and tabs (dropped, as Biopython drops them for `bit fasta
+/// count` and calc-gc; blank lines are skipped, and a record with no sequence has length 0). Plain
+/// or gzipped, any line endings. Text before the first header is an error.
 pub fn assembly_summary(path: &str) -> io::Result<(u64, u64, Vec<u64>, Vec<u64>)> {
-    let file = File::open(path)?;
-    let mut rdr = BufReader::with_capacity(1 << 20, file);
+    let mut lines = Lines::open(path)?;
     let mut comp = vec![0u64; 256];
     let mut lengths: Vec<u64> = Vec::new();
-    let mut line = Vec::new();
-    let mut first = true;
-    loop {
-        line.clear();
-        let n = rdr.read_until(b'\n', &mut line)?;
-        if n == 0 {
-            break;
-        }
-        let body = line_body(&line);
-        if first {
-            if body.first() != Some(&b'>') {
-                return Err(bad("not a plain FASTA"));
-            }
-            first = false;
-        }
+    while let Some(line) = lines.next_line()? {
+        let body = line_body(line);
         if body.first() == Some(&b'>') {
-            if !body.is_ascii() || body.contains(&b'\r') {
-                return Err(bad("unusual header"));
-            }
-            if lengths.last() == Some(&0) {
-                return Err(bad("empty record"));
-            }
             lengths.push(0);
             continue;
         }
-        if body.is_empty()
-            || matches!(body[0], b'@' | b'+')
-            || !body.iter().all(|&b| (0x21..=0x7e).contains(&b))
-        {
-            return Err(bad("not a plain FASTA"));
+        let mut bases = body.iter().filter(|&&b| b != b' ' && b != b'\t').peekable();
+        if bases.peek().is_none() {
+            continue;
         }
-        for &b in body {
+        let Some(length) = lengths.last_mut() else {
+            return Err(bad("isn't a fasta file (it doesn't start with a '>' header line)"));
+        };
+        for &b in bases {
             comp[b as usize] += 1;
+            *length += 1;
         }
-        *lengths.last_mut().unwrap() += body.len() as u64;
-    }
-    if lengths.last() == Some(&0) {
-        return Err(bad("empty record"));
     }
     let size = lengths.iter().sum();
     Ok((lengths.len() as u64, size, comp, lengths))

@@ -15,6 +15,7 @@ import pysam # type: ignore
 from collections import defaultdict
 import numpy as np # type: ignore
 from natsort import natsort_keygen # type: ignore
+from bit.modules.snakemake import build_snakemake_cmd, run_snakemake
 from bit.modules.input_parsing import get_input_reads_dict_from_dir
 from bit.modules.seqs import identify_seq_type
 from bit.modules.general import (report_message,
@@ -27,10 +28,9 @@ from bit.modules.general import (report_message,
 
 def run_assembly(args, full_cmd_executed):
     outputs_dir = args.output_prefix + "-outputs"
-    assembly_path_dict, targets_plan = assembly_preflight(args, outputs_dir)
+    assembly_path_dict, targets_plan = assembly_preflight(args, outputs_dir, full_cmd_executed)
     run_assembly_screen(args, assembly_path_dict, outputs_dir, targets_plan)
     report_assembly_screen_finished(args, outputs_dir)
-    log_command_run(full_cmd_executed, outputs_dir)
 
 
 def run_reads(args, full_cmd_executed):
@@ -41,13 +41,13 @@ def run_reads(args, full_cmd_executed):
     log_command_run(full_cmd_executed, reads_config.log_files_dir)
 
 
-def assembly_preflight(args, outputs_dir):
+def assembly_preflight(args, outputs_dir, full_cmd_executed):
 
     check_assembly_inputs(args.assemblies)
-
-    if os.path.exists(outputs_dir):
-        shutil.rmtree(outputs_dir)
-    os.makedirs(outputs_dir)
+    prepare_outputs_dir(outputs_dir, args.output_prefix + "-summary.tsv", getattr(args, "force_overwrite", False),
+                        inputs=list(args.assemblies) + list(args.targets))
+    # (the run is recorded up front, so an interrupted run's directory is still known to be bit's)
+    log_command_run(full_cmd_executed, outputs_dir)
 
     targets_plan = build_targets_plan(args.targets, outputs_dir)
 
@@ -60,6 +60,35 @@ def assembly_preflight(args, outputs_dir):
         assembly_path_dict = {assembly: os.path.splitext(os.path.basename(assembly))[0] for assembly in args.assemblies}
 
     return assembly_path_dict, targets_plan
+
+
+def prepare_outputs_dir(outputs_dir, summary_tsv, force_overwrite, inputs=()):
+    """
+    <prefix>-outputs/ and <prefix>-summary.tsv must be new, or with -F/--force-overwrite an earlier run's: then
+    they are replaced. A <prefix>-outputs/ without the record of an earlier bit run (command-execution-info.txt) is
+    left alone, as it may not be bit's, as is anything holding an input of this run.
+    """
+    from bit.modules.general import (color_text, notify_premature_exit, remove_previous_outputs,
+                                     _is_bit_run_record, _refuse_force_overwrite)
+    existing = [p for p in (outputs_dir, summary_tsv) if os.path.lexists(p)]
+    if existing and not force_overwrite:
+        print(f"\n    {color_text('Outputs with this prefix already exist:', 'yellow')}")
+        for p in existing:
+            print(f"      {p}")
+        print("\n    Please specify a different output prefix, or add the `-F/--force-overwrite` flag"
+              "\n    (which replaces only this program's earlier outputs).")
+        notify_premature_exit()
+    if os.path.isdir(outputs_dir) and os.listdir(outputs_dir):
+        if not _is_bit_run_record(os.path.join(outputs_dir, "command-execution-info.txt")):
+            _refuse_force_overwrite(
+                f"Not overwriting in the output directory: {outputs_dir}",
+                "It doesn't hold the record of an earlier run (command-execution-info.txt), so it may not be bit's "
+                "output. Please remove it yourself or specify a different output prefix.")
+        remove_previous_outputs(outputs_dir, os.listdir(outputs_dir), "command-execution-info.txt", inputs)
+    if os.path.lexists(summary_tsv):
+        remove_previous_outputs(os.path.dirname(summary_tsv) or ".", [os.path.basename(summary_tsv)], "", inputs,
+                                files_only=True)
+    os.makedirs(outputs_dir, exist_ok=True)
 
 
 def check_assembly_inputs(assemblies):
@@ -784,25 +813,16 @@ class ReadsRunConfiguration:
 def run_reads_snakemake(config, reads_dict):
     reads_json = json.dumps(reads_dict)
 
-    cmd = [
-        "snakemake",
-        "--snakefile", str(get_package_path("smk/ez-screen-reads.smk")),
-        "--cores", str(config.num_cores),
-        "--printshellcmds",
-        "--directory", config.mapping_output_dir,
-        "--config", f'reads_json={reads_json}',
-        *config.key_value_pairs,
-    ]
+    cmd = build_snakemake_cmd(
+        snakefile=get_package_path("smk/ez-screen-reads.smk"),
+        directory=config.mapping_output_dir,
+        cores=config.num_cores,
+        config_pairs=[f'reads_json={reads_json}', *config.key_value_pairs],
+        dry_run=config.dry_run,
+        rerun_incomplete=config.rerun_incomplete,
+    )
 
-    if config.dry_run:
-        cmd.append("--dry-run")
-    if config.rerun_incomplete:
-        cmd.append("--rerun-incomplete")
-
-    process = run(cmd)
-    if process.returncode != 0:
-        message = "Snakemake failed. Hopefully its output above can help you spot why."
-        report_failure(message)
+    run_snakemake(cmd)
 
 
 def gen_reads_summary_table(input_bam, input_global_dist_tab, outpath,

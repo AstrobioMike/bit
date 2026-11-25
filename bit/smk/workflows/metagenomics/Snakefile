@@ -1,0 +1,609 @@
+###################################################################################################
+## Snakefile for the "bit" assembly-based metagenomics processing workflow                       ##
+## bit: https://github.com/AstrobioMike/bit                                                      ##
+##                                                                                               ##
+## If you use this workflow in a publication, please consider citing :)                          ##
+##   Lee M. bit: a multipurpose collection of bioinformatics tools. F1000Research 2022, 11:122.  ##
+##   https://doi.org/10.12688/f1000research.79530.1                                              ##
+###################################################################################################
+
+
+# Run with `bit run-wf metagenomics` (see its -h, or -H for every setting).
+# If this is a copy made with --get-workflow, it can also be run directly with snakemake from
+# this directory after editing config.yaml, e.g.:
+#   snakemake --software-deployment-method conda --conda-prefix ${CONDA_PREFIX}/envs --cores 16 -p
+
+import os
+import re
+import sys
+
+configfile: "config.yaml"
+
+# where the shared rules/, envs/ and scripts/ are: next to this file in a saved copy of the
+# workflow, or two levels up when run from within the bit package
+SMK = workflow.basedir if os.path.isdir(os.path.join(workflow.basedir, "envs")) else os.path.normpath(os.path.join(workflow.basedir, "..", ".."))
+
+include: os.path.join(SMK, "rules", "common.smk")
+
+# finding the input reads and samples (shared with the other read-based workflows)
+include: os.path.join(SMK, "rules", "reads.smk")
+
+# {ID} is always one of the samples (so e.g. "read-mapping/{ID}.bam" can't also be read as another rule's output)
+wildcard_constraints:
+    ID = "|".join(re.escape(ID) for ID in sample_ID_list) or "[^/]+"
+
+# this workflow's own helper scripts
+scripts_dir = os.path.join(workflow.basedir, "scripts")
+
+do_binning = not config["skip_binning"]
+# --binning-only: reads QC'd and assembled, then binning and MAG recovery; no gene calls, KO annotation, contig and gene
+# taxonomy, or combined coverage tables (nor KEGG-Decoder, which works from the KO annotations)
+annotating = not config["binning_only"]
+if config["binning_only"] and config["skip_binning"]:
+    exit_with_message("--binning-only and --skip-binning can't both be given")
+# a "-" joins the prefix to the output names unless it already ends in "-" or "_"
+prefix = config["output_prefix"]
+if prefix and not prefix.endswith(("-", "_")):
+    prefix += "-"
+
+########################################
+######## Setting up directories ########
+########################################
+
+# everything is written within the directory the workflow is run in (the output directory)
+outputs_dir = ""
+
+fastqc_out_dir = outputs_dir + "fastqc-outputs/"
+raw_fastqc_dir = fastqc_out_dir + "raw-fastqc/"
+filtered_fastqc_dir = fastqc_out_dir + "filtered-fastqc/"
+filtered_reads_dir = outputs_dir + "filtered-reads/"
+assemblies_dir = outputs_dir + "assemblies/"
+genes_dir = outputs_dir + "predicted-genes/"
+annotations_and_tax_dir = outputs_dir + "annotations-and-taxonomy/"
+mapping_dir = outputs_dir + "read-mapping/"
+combined_outputs_dir = outputs_dir + "combined-outputs/"
+bins_dir = outputs_dir + "bins/"
+MAGs_dir = outputs_dir + "MAGs/"
+logs_dir = "logs/"
+benchmarks_dir = "benchmarks/"
+
+dirs_to_create = [fastqc_out_dir, raw_fastqc_dir, filtered_fastqc_dir, filtered_reads_dir,
+                  assemblies_dir, mapping_dir, logs_dir, benchmarks_dir]
+
+if annotating:
+    dirs_to_create += [genes_dir, annotations_and_tax_dir, combined_outputs_dir]
+
+for dir in dirs_to_create:
+    os.makedirs(dir, exist_ok = True)
+
+########################################
+######### Reference databases ##########
+########################################
+
+# the reference databases (set up by bit before the run starts; see rules/ref-dbs.smk)
+include: os.path.join(SMK, "rules", "ref-dbs.smk")
+from bit.smk.workflows.metagenomics.params import ref_dbs_needed
+require_ref_dbs(ref_dbs_needed(config))
+if do_binning:
+    note_gtdbtk_skipped()
+
+kofamscan_db_dir = ref_db_dir("kofamscan-db")
+
+# these don't do any real work, so they are run where snakemake itself is running rather than being submitted
+# anywhere if a job scheduler is being used
+localrules: all, tax_name_genes
+
+# each sample's reads mapped to its own assembly (rules/mapping.smk, shared with magrec)
+asm_of = lambda ID: ID
+asm_path = lambda name: assemblies_dir + name + "-assembly.fasta"
+reads_of = lambda ID: [filtered_reads_dir + ID + suffix for suffix in filtered_suffixes]
+
+include: os.path.join(SMK, "rules", "mapping.smk")
+
+# taxonomy of genes and contigs, all samples searched together (see rules/classify-seqs.smk)
+tax_IDs = sample_ID_list
+tax_seqs_path = lambda ID: assemblies_dir + ID + "-assembly.fasta"
+tax_genes_path = lambda ID: genes_dir + ID + "-genes.faa"
+tax_tables = {ID: annotations_and_tax_dir + ID + "-contig-tax.tsv" for ID in sample_ID_list}
+tax_gene_tables = {ID: annotations_and_tax_dir + ID + "-gene-tax.tsv" for ID in sample_ID_list}
+tax_whole_inputs = False
+tax_genes_after_kmers = False
+tax_work_dir = annotations_and_tax_dir
+tax_intermediate = temp
+
+include: os.path.join(SMK, "rules", "classify-seqs.smk")
+
+########################################
+############# Rules start ##############
+########################################
+
+all_outputs = [
+    assemblies_dir + prefix + "assembly-summaries.tsv",
+    fastqc_out_dir + prefix + "raw_multiqc_report.zip",
+    fastqc_out_dir + prefix + "filtered_multiqc_report.zip",
+    outputs_dir + prefix + "processing-overview.tsv"
+]
+
+if annotating:
+    all_outputs += [
+        combined_outputs_dir + prefix + "Combined-gene-level-KO-function-coverages.tsv",
+        combined_outputs_dir + prefix + "Combined-gene-level-taxonomy-coverages.tsv",
+        combined_outputs_dir + prefix + "Combined-contig-level-taxonomy-coverages.tsv",
+    ]
+
+# binning and MAG recovery (rules/magrec.smk, shared with the magrec workflow)
+if do_binning:
+    include: os.path.join(SMK, "rules", "magrec.smk")
+    all_outputs += magrec_outputs
+    if annotating:
+        all_outputs += [MAGs_dir + prefix + "MAG-KEGG-Decoder-out.tsv"]
+
+rule all:
+    input:
+        all_outputs
+
+
+onsuccess:
+    combine_benchmarks()
+
+
+rule summarize_MAG_KO_annots_with_KEGG_Decoder:
+    conda:
+        env("keggdecoder.yaml")
+    input:
+        MAGs_dir + prefix + "MAG-level-KO-annotations.tsv"
+    params:
+        MAGs_dir = MAGs_dir,
+        mod_input_annotations = MAGs_dir + "mod-MAG-level-KO-annotations.tmp",
+        temp_output = MAGs_dir + "MAG-KEGG-Decoder-out.tmp",
+        mapping_file = MAGs_dir + "MAG-ID-map.tmp",
+        orig_html_output = MAGs_dir + "MAG-KEGG-Decoder-out.html",
+        final_html_output = MAGs_dir + prefix + "MAG-KEGG-Decoder-out.html"
+    output:
+        MAGs_dir + prefix + "MAG-KEGG-Decoder-out.tsv"
+    benchmark:
+        benchmarks_dir + "summarize_MAG_KO_annots_with_KEGG_Decoder-benchmarks.tsv"
+    shell:
+        r"""
+        # getting number of MAGs recovered
+        num_mags_recovered=$(find {params.MAGs_dir} -name "*.fasta" | wc -l | sed 's/^ *//')
+        # only running if any MAGs were recovered, and they have KO annotations
+        if [ ${{num_mags_recovered}} -gt 0 ] && [ ! -s {input} ]; then
+
+            printf "None of the MAGs' genes had KO annotations.\n" > {output}
+
+        elif [ ${{num_mags_recovered}} -gt 0 ]; then
+
+            # KEGGDecoder splits on the first underscore to identify unique genome/MAG IDs
+                # this can be problematic with how things are named, so we are swapping them all to not have
+                # any "_" first, then afterwards we are changing the output table back to the original names so
+                # they match elsewhere (they will still be slightly different in the html output, but that is
+                # only manually explored anyway)
+
+            # making version of input for KEGGDecoder with no underscores
+            tr "_" "-" < {input} > {params.mod_input_annotations}
+
+            # making mapping file
+            paste <( cut -f 1 {input} ) <( cut -f 1 {params.mod_input_annotations} ) > {params.mapping_file}
+
+
+            # running KEGGDecoder
+                # can only create html output if there are more than 1
+            if [ ${{num_mags_recovered}} -gt 1 ]; then
+                KEGG-decoder -v interactive -i {params.mod_input_annotations} -o {params.temp_output}
+                ## adding additional prefix to html output if there is one
+                if [ {params.orig_html_output} != {params.final_html_output} ]; then
+                    mv {params.orig_html_output} {params.final_html_output}
+                fi
+            else
+                KEGG-decoder -i {params.mod_input_annotations} -o {params.temp_output}
+            fi
+
+
+            # swapping MAG IDs back in output tsv from KEGGDecoder
+            python {scripts_dir}/swap-MAG-IDs.py -i {params.temp_output} -m {params.mapping_file} -o {output}
+
+            # removing intermediate files
+            rm {params.mod_input_annotations} {params.mapping_file} {params.temp_output}
+
+        else
+
+            printf "There were no MAGs recovered.\n" > {output}
+
+        fi
+        """
+
+
+rule summarize_MAG_level_KO_annotations:
+    input:
+        MAG_overview = MAGs_dir + prefix + "MAGs-overview.tsv",
+        trigger = expand(annotations_and_tax_dir + "{ID}-gene-coverage-annotation-and-tax.tsv", ID = sample_ID_list)
+    params:
+        MAGs_dir = MAGs_dir,
+        annot_and_tax_dir = annotations_and_tax_dir,
+        tmp_contig_IDs = "curr-contig-ids.tmp"
+    output:
+        MAGs_dir + prefix + "MAG-level-KO-annotations.tsv"
+    benchmark:
+        benchmarks_dir + "summarize_MAG_level_KO_annotations-benchmarks.tsv"
+    shell:
+        r"""
+        # only running if any MAGs were recovered
+        if [ $(find {params.MAGs_dir} -name "*.fasta" | wc -l | sed 's/^ *//') -gt 0 ]; then
+
+            # (the parsing script appends, so starting from nothing)
+            rm -f {output}
+
+            for MAG in $(cut -f 1 {input.MAG_overview} | tail -n +2)
+            do
+
+                sample_ID=$(echo $MAG | sed 's/-MAG-[0-9]*$//')
+                # (the contig names: metabat adds depth fields after them in the headers)
+                grep "^>" {params.MAGs_dir}${{MAG}}.fasta | tr -d ">" | cut -d " " -f 1 > {params.tmp_contig_IDs}
+
+                python {scripts_dir}/parse-MAG-annots.py -i {params.annot_and_tax_dir}${{sample_ID}}-gene-coverage-annotation-and-tax.tsv -w {params.tmp_contig_IDs} -M ${{MAG}} -o {output}
+                rm {params.tmp_contig_IDs}
+
+            done
+
+            # (in case none of the MAGs had any KO annotations)
+            touch {output}
+
+        else
+
+            printf "There were no MAGs recovered.\n" > {output}
+
+        fi
+        """
+
+
+rule generate_assembly_processing_overview_table:
+    input:
+        assemblies = expand(assemblies_dir + "{ID}-assembly.fasta", ID = sample_ID_list),
+        genes = expand(genes_dir + "{ID}-genes.faa", ID = sample_ID_list) if annotating else [],
+        bams = expand(mapping_dir + "{ID}.bam", ID = sample_ID_list),
+        mapping_info = expand(mapping_dir + "{ID}-mapping-info.txt", ID = sample_ID_list),
+        contig_reads = expand(mapping_dir + "{ID}-mapped-reads-per-contig.tsv", ID = sample_ID_list),
+        # with binning: the bins and MAGs are final at this point; the intermediate tables are held until here
+        # (snakemake removes them once nothing else needs them)
+        binning = [MAGs_dir + prefix + "MAGs-overview.tsv", bins_dir + prefix + "bin-assembly-summaries.tsv",
+                   bins_dir + prefix + "bins-checkm-out.tsv", bins_dir + prefix + "bins-overview.tsv"] if do_binning else []
+    output:
+        outputs_dir + prefix + "processing-overview.tsv"
+    benchmark:
+        benchmarks_dir + "generate_assembly_processing_overview_table-benchmarks.tsv"
+    run:
+        # per sample: what each step produced, and the share of the reads that mapped to the assembly (and to its bins and MAGs)
+        from bit.modules.processing_overview import write_processing_overview
+        write_processing_overview(sample_ID_list, output[0], {ID: (ID, asm_path(ID)) for ID in sample_ID_list}, mapping_dir, paired_end,
+                                  genes_dir = genes_dir if annotating else None,
+                                  bins_dir = bins_dir if do_binning else None, MAGs_dir = MAGs_dir if do_binning else None)
+
+
+# coverages summed by lineage (and by KO for the genes) across samples, plus versions as coverage per million
+rule make_combined_contig_tax_tables:
+    input:
+        expand(annotations_and_tax_dir + "{ID}-contig-coverage-and-tax.tsv", ID = sample_ID_list)
+    output:
+        combined_tax = combined_outputs_dir + prefix + "Combined-contig-level-taxonomy-coverages.tsv",
+        norm_combined_tax = combined_outputs_dir + prefix + "Combined-contig-level-taxonomy-coverages-CPM.tsv"
+    benchmark:
+        benchmarks_dir + "make_combined_contig_tax_tables-benchmarks.tsv"
+    run:
+        from bit.modules.combine_coverage_tables import combine_contig_tables
+        combine_contig_tables(dict(zip(sample_ID_list, input)), output.combined_tax, output.norm_combined_tax)
+
+
+rule make_combined_gene_level_tables:
+    input:
+        expand(annotations_and_tax_dir + "{ID}-gene-coverage-annotation-and-tax.tsv", ID = sample_ID_list)
+    output:
+        combined_annots = combined_outputs_dir + prefix + "Combined-gene-level-KO-function-coverages.tsv",
+        norm_combined_annots = combined_outputs_dir + prefix + "Combined-gene-level-KO-function-coverages-CPM.tsv",
+        combined_tax = combined_outputs_dir + prefix + "Combined-gene-level-taxonomy-coverages.tsv",
+        norm_combined_tax = combined_outputs_dir + prefix + "Combined-gene-level-taxonomy-coverages-CPM.tsv"
+    benchmark:
+        benchmarks_dir + "make_combined_gene_level_tables-benchmarks.tsv"
+    run:
+        from bit.modules.combine_coverage_tables import combine_gene_tables
+        combine_gene_tables(dict(zip(sample_ID_list, input)), output.combined_annots, output.norm_combined_annots,
+                            output.combined_tax, output.norm_combined_tax)
+
+
+rule combine_contig_tax_and_coverage:
+    input:
+        cov = mapping_dir + "{ID}-contig-coverages.tsv",
+        tax = annotations_and_tax_dir + "{ID}-contig-tax.tsv"
+    output:
+        annotations_and_tax_dir + "{ID}-contig-coverage-and-tax.tsv"
+    benchmark:
+        benchmarks_dir + "combine_contig_tax_and_coverage-{ID}-benchmarks.tsv"
+    shell:
+        r"""
+        # the same contigs are in both (none if the assembly produced nothing)
+        paste <( head -n 1 {input.cov} ) <( head -n 1 {input.tax} | cut -f 2- ) > {output}
+        paste <( tail -n +2 {input.cov} | sort -V -k 1 ) <( tail -n +2 {input.tax} | sort -V -k 1 | cut -f 2- ) >> {output}
+        """
+
+
+rule combine_gene_annots_tax_and_coverage:
+    input:
+        cov = mapping_dir + "{ID}-gene-coverages.tsv",
+        annots = annotations_and_tax_dir + "{ID}-annotations.tsv",
+        tax = annotations_and_tax_dir + "{ID}-gene-tax.tsv"
+    params:
+        assembly = assemblies_dir + "{ID}-assembly.fasta",
+        AAs = genes_dir + "{ID}-genes.faa",
+        gene_tmp = annotations_and_tax_dir + "{ID}-gene.tmp",
+        header_tmp = annotations_and_tax_dir + "{ID}-gene-header.tmp"
+    output:
+        annotations_and_tax_dir + "{ID}-gene-coverage-annotation-and-tax.tsv"
+    benchmark:
+        benchmarks_dir + "combine_gene_annots_tax_and_coverage-{ID}-benchmarks.tsv"
+    shell:
+        r"""
+        # only running if the assembly produced anything and genes were identified (they are required for this)
+        if [ -s {params.assembly} ] && [ -s {params.AAs} ]; then
+
+            paste <( tail -n +2 {input.cov} | sort -V -k 1 ) <( tail -n +2 {input.annots} | sort -V -k 1 | cut -f 2- ) <( tail -n +2 {input.tax} | sort -V -k 1 | cut -f 2- ) > {params.gene_tmp}
+            paste <( head -n 1 {input.cov} ) <( head -n 1 {input.annots} | cut -f 2- ) <( head -n 1 {input.tax} | cut -f 2- ) > {params.header_tmp}
+
+            cat {params.header_tmp} {params.gene_tmp} > {output}
+
+            rm -rf {params.gene_tmp} {params.header_tmp}
+
+        else
+
+            printf "gene_ID\tcoverage\tKO_ID\tKO_function\tdomain\tphylum\tclass\torder\tfamily\tgenus\tspecies\n" > {output}
+
+        fi
+        """
+
+
+rule get_cov_and_det:
+    conda:
+        env("mapping.yaml")
+    input:
+        bam = mapping_dir + "{ID}.bam",
+        nt = genes_dir + "{ID}-genes.fasta"
+    params:
+        assembly = assemblies_dir + "{ID}-assembly.fasta",
+        gene_cov_and_det_tmp = mapping_dir + "{ID}-gene-cov-and-det.tmp",
+        contig_cov_and_det_tmp = mapping_dir + "{ID}-contig-cov-and-det.tmp",
+        gene_cov_tmp = mapping_dir + "{ID}-gene-cov.tmp",
+        contig_cov_tmp = mapping_dir + "{ID}-contig-cov.tmp",
+        pileup_mem = str(config["pileup_mem"]) + "m"
+    output:
+        gene_covs = temp(mapping_dir + "{ID}-gene-coverages.tsv"),
+        contig_covs = temp(mapping_dir + "{ID}-contig-coverages.tsv")
+    resources:
+        mem_mb = config["pileup_mem"]
+    log:
+        logs_dir + "{ID}-pileup.log"
+    benchmark:
+        benchmarks_dir + "get_cov_and_det-{ID}-benchmarks.tsv"
+    shell:
+        r"""
+        # only running if the assembly produced anything
+        if [ -s {params.assembly} ]; then
+
+            # only running on genes also if genes were identified
+            if [ -s {input.nt} ]; then
+
+                pileup.sh -Xmx{params.pileup_mem} in={input.bam} fastaorf={input.nt} outorf={params.gene_cov_and_det_tmp} out={params.contig_cov_and_det_tmp} overwrite=t > {log} 2>&1
+
+                # filtering coverages based on detection
+                    # genes
+                grep -v "#" {params.gene_cov_and_det_tmp} | awk -F $'\t' ' BEGIN {{OFS=FS}} {{ if ( $10 <= 0.5 ) $4 = 0 }} {{ print $1,$4 }} ' > {params.gene_cov_tmp}
+                cat <( printf "gene_ID\tcoverage\n" ) {params.gene_cov_tmp} > {output.gene_covs}
+
+                    # contigs
+                grep -v "#" {params.contig_cov_and_det_tmp} | awk -F $'\t' ' BEGIN {{OFS=FS}} {{ if ( $5 <= 50 ) $2 = 0 }} {{ print $1,$2 }} ' > {params.contig_cov_tmp}
+                cat <( printf "contig_ID\tcoverage\n" ) {params.contig_cov_tmp} > {output.contig_covs}
+
+                # removing intermediate files
+                rm {params.gene_cov_and_det_tmp} {params.contig_cov_and_det_tmp} {params.gene_cov_tmp} {params.contig_cov_tmp}
+
+            else
+
+                pileup.sh -Xmx{params.pileup_mem} in={input.bam} out={params.contig_cov_and_det_tmp} overwrite=t > {log} 2>&1
+
+                # filtering coverages based on detection
+                    # contigs
+                grep -v "#" {params.contig_cov_and_det_tmp} | awk -F $'\t' ' BEGIN {{OFS=FS}} {{ if ( $5 <= 50 ) $2 = 0 }} {{ print $1,$2 }} ' > {params.contig_cov_tmp}
+                cat <( printf "contig_ID\tcoverage\n" ) {params.contig_cov_tmp} > {output.contig_covs}
+
+                # writing out empty genes coverage file
+                printf "gene_ID\tcoverage\n" > {output.gene_covs}
+                printf "\n\nGene-level coverage info not recovered because the assembly didn't have any genes identified.\n" >> {log}
+
+                # removing intermediate files
+                rm {params.contig_cov_and_det_tmp} {params.contig_cov_tmp}
+
+            fi
+
+        else
+
+            printf "gene_ID\tcoverage\n" > {output.gene_covs}
+            printf "contig_ID\tcoverage\n" > {output.contig_covs}
+            printf "Coverage info not recovered because the assembly didn't produce anything.\n" > {log}
+
+        fi
+        """
+
+
+rule KO_annotation:
+    conda:
+        env("kofamscan.yaml")
+    input:
+        AAs = genes_dir + "{ID}-genes.faa"
+    output:
+        temp(annotations_and_tax_dir + "{ID}-annotations.tsv")
+    params:
+        assembly = assemblies_dir + "{ID}-assembly.fasta",
+        ko_db_dir = kofamscan_db_dir,
+        tmp_out = annotations_and_tax_dir + "{ID}-KO-tab.tmp",
+        tmp_dir = annotations_and_tax_dir + "{ID}-tmp-KO-dir"
+    threads:
+        config["threads"]
+    resources:
+        cpus = config["threads"],
+        mem_mb = config["kofamscan_mem"]
+    log:
+        logs_dir + "{ID}-kofamscan.log"
+    benchmark:
+        benchmarks_dir + "run_KO_annotation-{ID}-benchmarks.tsv"
+    shell:
+        r"""
+        # only running if assembly produced any contigs and genes were identified (they are required for this)
+        if [ -s {params.assembly} ] && [ -s {input.AAs} ]; then
+
+            exec_annotation -p "{params.ko_db_dir}/profiles/" -k "{params.ko_db_dir}/ko_list" --cpu {threads} -f detail-tsv -o {params.tmp_out} --tmp-dir {params.tmp_dir} --report-unannotated {input.AAs} > {log} 2>&1
+
+            bit filter-ko-results -i {params.tmp_out} -o {output} >> {log} 2>&1
+
+            rm -rf {params.tmp_out} {params.tmp_dir}
+
+        else
+
+            touch {output}
+            printf "Functional annotations not performed because the assembly didn't produce anything and/or no genes were identified.\n" > {log}
+
+        fi
+        """
+
+
+rule call_genes:
+    conda:
+        env("prodigal.yaml")
+    input:
+        assembly = assemblies_dir + "{ID}-assembly.fasta"
+    output:
+        AA = genes_dir + "{ID}-genes.faa",
+        nt = genes_dir + "{ID}-genes.fasta",
+        gff = genes_dir + "{ID}-genes.gff"
+    log:
+        logs_dir + "{ID}-prodigal.log"
+    benchmark:
+        benchmarks_dir + "call_genes-{ID}-benchmarks.tsv"
+    shell:
+        r"""
+        # only running if assembly produced any contigs
+        if [ -s {input.assembly} ]; then
+
+            prodigal -q -c -p meta -a {output.AA} -d {output.nt} -f gff -o {output.gff} -i {input.assembly} > {log} 2>&1
+
+            # removing line-wraps
+            bit fasta remove-wraps {output.AA} -o {output.AA}.tmp && mv {output.AA}.tmp {output.AA}
+            bit fasta remove-wraps {output.nt} -o {output.nt}.tmp && mv {output.nt}.tmp {output.nt}
+
+        else
+
+            touch {output}
+            printf "Gene-calling not performed because the assembly didn't produce anything.\n" > {log}
+
+        fi
+        """
+
+
+rule summarize_assemblies:
+    conda:
+        env("bit.yaml")
+    input:
+        expand(assemblies_dir + "{ID}-assembly.fasta", ID = sample_ID_list)
+    output:
+        assemblies_dir + prefix + "assembly-summaries.tsv"
+    benchmark:
+        benchmarks_dir + "summarize_assemblies-benchmarks.tsv"
+    shell:
+        """
+        bit summarize-assembly -o {output} {input}
+        """
+
+
+def megahit_mem(wildcards, attempt):
+    """
+    megahit's memory limit is a ceiling (it uses what the assembly needs, and stops if that's more than the limit), so a
+    failed assembly is retried with double the memory each time, but never more than the run has (memory_total_mb, set
+    by `bit run-wf` from --memory or the machine; absent on a cluster)
+    """
+    mb = config["megahit_mem"] * 2 ** (attempt - 1)
+    total = config.get("memory_total_mb")
+    return min(mb, total) if total else mb
+
+
+rule assemble:
+    conda:
+        env("megahit.yaml")
+    input:
+        reads = [filtered_reads_dir + "{ID}" + suffix for suffix in filtered_suffixes]
+    params:
+        megahit_out_dir = assemblies_dir + "{ID}-megahit-out",
+        reads_args = lambda wildcards, input: "-1 " + input.reads[0] + " -2 " + input.reads[1] if paired_end else "-r " + input.reads[0],
+        failed_assemblies_file = assemblies_dir + prefix + "Failed-assemblies.tsv"
+    threads:
+        config["threads"]
+    retries:
+        2
+    resources:
+        cpus = config["threads"],
+        mem_mb = megahit_mem
+    output:
+        assemblies_dir + "{ID}-assembly.fasta"
+    log:
+        logs_dir + "{ID}-assembly.log"
+    benchmark:
+        benchmarks_dir + "assemble-{ID}-benchmarks.tsv"
+    shell:
+        r"""
+        # removing output directory if exists already but rule still needs to be run (megahit won't write into an existing one)
+        rm -rf {params.megahit_out_dir}
+
+        # the memory limit is taken from the job's resources in the command itself (snakemake works params out once, not per retry)
+        megahit {params.reads_args} -m $(( {resources.mem_mb} * 1000000 )) -t {threads} --min-contig-len 500 -o {params.megahit_out_dir} > {log} 2>&1
+
+        # megahit can run, produce the output fasta, but it will be empty if no contigs were assembled
+        if [ -s {params.megahit_out_dir}/final.contigs.fa ]; then
+            bit fasta modify-headers -i {params.megahit_out_dir}/final.contigs.fa -w c_{wildcards.ID} -o {output} >> {log} 2>&1
+        else
+            touch {output}
+            printf "{wildcards.ID}\tNo contigs assembled\n" >> {params.failed_assemblies_file}
+        fi
+
+        rm -rf {params.megahit_out_dir}
+        """
+
+
+# quality trimming/filtering:
+    # adapters are trimmed off the 3' ends (ktrim=r) by matching 23-mers to bbtools' included adapter
+    # sequences, down to 11-mers at the very ends of the reads (mink=11), allowing one mismatch (hdist=1);
+    # with paired reads, adapters are also found from where the two reads overlap (tbo), and both reads
+    # are trimmed to the same length when one has an adapter found (tpe)
+    # `swift=t` is added if the data were generated with a Swift 1S library prep (set in config.yaml)
+rule bbduk:
+    conda:
+        env("qc.yaml")
+    input:
+        reads = [raw_reads_dir + "{ID}" + suffix for suffix in input_suffixes]
+    output:
+        reads = [filtered_reads_dir + "{ID}" + suffix for suffix in filtered_suffixes]
+    params:
+        io_args = lambda wildcards, input, output: ("in=" + input.reads[0] + " in2=" + input.reads[1] + " out=" + output.reads[0] + " out2=" + output.reads[1] + " tbo tpe") if paired_end else ("in=" + input.reads[0] + " out=" + output.reads[0]),
+        swift_arg = "swift=t" if config["swift_1s"] else ""
+    threads:
+        config["threads"]
+    resources:
+        cpus = config["threads"]
+    log:
+        logs_dir + "{ID}-bbduk.log"
+    benchmark:
+        benchmarks_dir + "bbduk-{ID}-benchmarks.tsv"
+    shell:
+        """
+        bbduk.sh {params.io_args} ref=adapters ktrim=r k=23 mink=11 hdist=1 ftm=5 qtrim=rl \
+                 trimq=10 minlen=50 maxns=0 threads={threads} overwrite=t {params.swift_arg} > {log} 2>&1
+        """
+
+
+# fastqc and multiqc of the raw and filtered reads (shared with the other read-based workflows)
+include: os.path.join(SMK, "rules", "read-qc.smk")

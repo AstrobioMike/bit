@@ -31,7 +31,6 @@ requirements:
     - diamond=2.2
     - entrez-direct
     - goatools
-    - mamba=1
     - matplotlib=3.10
     - miniprot=0.18
     - mosdepth=0.3.14
@@ -39,11 +38,10 @@ requirements:
     - numpy=1.26.4
     - pandas
     - parallel
+    - pigz
     - pip
-    - pulp=2.7.0
     - pyarrow=24
     - pybedtools
-    - pyfastx
     - pytest
     - pytest-cov
     - python=3.12
@@ -53,11 +51,12 @@ requirements:
     - samtools
     - setuptools<=80
     - scikit-bio
-    - snakemake=7.26.0
+    - snakemake-minimal=9.27
     - taxonkit>=0.20.0
     - tqdm>=4.66.5
     - unzip
     - zip
+    - zstd
 
 test:
   imports:
