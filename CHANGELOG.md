@@ -14,7 +14,7 @@
 
 -->
 
-## v2.15.0 (NOT YET RELEASED)
+## v2.15.0 (27-Nov-2026)
 
 ### Added
 - `bit run-wf`
