@@ -1,4 +1,4 @@
-<a href="https://github.com/AstrobioMike/bit#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-2,500+-blue" height="22"></a>
+<a href="https://github.com/AstrobioMike/bit#conda-install"><img align="right" alt="Conda installs" src="https://img.shields.io/badge/Conda%20installs-3,000+-blue" height="22"></a>
 <br>
 <a href="https://github.com/AstrobioMike/bit#citation-info"><img align="right" alt="Brief paper" src="https://img.shields.io/badge/Citation%20info-blue" height="22"></a>
 <br>
@@ -11,9 +11,10 @@
 * [**Overview**](#overview)
   * [**Programs**](#programs)
     * [NCBI/GTDB-related](#ncbigtdb-related)
-    * [Coverage/mapping-related](#coveragemapping-related)
     * [Sequence manipulation / read generation](#sequence-manipulation--read-generation)
+    * [Coverage/mapping-related](#coveragemapping-related)
     * [Sequence searching/comparing](#sequence-searchingcomparing)
+    * [Read QC](#read-qc)
     * [Fasta utilities](#fasta-utilities)
     * [Assembly-related](#assembly-related)
     * [GenBank-format utilities](#genbank-format-utilities)
@@ -24,10 +25,8 @@
     * [bit-data management](#bit-data-management)
   * [**Workflows**](#workflows)
     * [Metagenomics](workflows#metagenomics)
-    * [Magrec](workflows#magrec)
+    * [MAG recovery](workflows#magrec)
     * [Amplicon](workflows#amplicon)
-    * [Characterize-genomes](workflows#characterize-genomes)
-    * [dl-sra-reads](workflows#dl-sra-reads)
 * [**Conda install**](#conda-install)
 * [**Citation info**](#citation-info)
 * [**Shameless plug**](#shameless-plug)
@@ -37,7 +36,7 @@
 ## Overview 
 There are of course several great and widely used packages of bioinformatics helper programs out there. Some of these include the likes of [seqkit](https://github.com/shenwei356/seqkit), [seqtk](https://github.com/lh3/seqtk), [fastX-toolkit](http://hannonlab.cshl.edu/fastx_toolkit/), and [bbtools](https://jgi.doe.gov/data-and-tools/bbtools/) – all of which I use regularly and have helped me do things I was trying to get done. But there are always more tasks that crop up that may not yet have a helper program or script already written that we can find.  
 
-[*bit*](https://doi.org/10.12688/f1000research.79530.1) is a collection of [programs](#programs) and [workflows](#workflows) that I have been adding to over the years. Anytime I need to write something to perform a task that has more than a one-off, ad hoc use, I consider adding it here. 
+[*bit*](https://doi.org/10.12688/f1000research.79530.1) is a collection of [programs](#programs) and [workflows](#workflows) that I have been adding to over the years. If I need to write something to perform a task that has more than a one-off, ad hoc use, I consider adding it here. 
 
 *bit* runs in a Unix-like environment and is recommended to be installed with [conda](https://conda.io/docs/) as shown [below](#conda-install).  
 
@@ -53,16 +52,16 @@ conda activate bit
 
 ### Programs
 
-You can see an overview of available programs like below by running `bit` by itself at the command line once it's installed. 
+You can see an overview of available programs like below by running `bit` by itself at the command line once it's installed. All commands have regular help menus, some have detailed ones accessible by adding `-H`.
 
 #### NCBI/GTDB-related
 
 | Program | Purpose |
 | ------- | ------- |
+| `bit dl-ncbi-assemblies` | download NCBI assemblies in different formats given input accessions |
+| `bit dl-sra-reads` | download reads from NCBI's SRA given run accessions, combining multiple runs of a sample if wanted |
 | `bit get-accs-from-gtdb` | search the [GTDB](https://gtdb.ecogenomic.org/) by taxonomy and retrieve NCBI accessions |
 | `bit get-accs-from-ncbi` | search the NCBI by taxonomy or taxid and retrieve NCBI accessions |
-| `bit dl-ncbi-assemblies` | download NCBI assemblies in different formats given input accessions |
-| `bit dl-sra-reads` | download reads from NCBI's SRA given run accessions, combining the runs of a sample if wanted (see [here](workflows#dl-sra-reads)) |
 
 ---
 
@@ -71,17 +70,9 @@ You can see an overview of available programs like below by running `bit` by its
 | Program | Purpose |
 | ------- | ------- |
 | `bit gen-mg` | generate an in silico metagenome with ground-truth tables in GTDB and NCBI taxonomies |
-| `bit gen-reads` | generate reads from fasta files |
+| `bit gen-reads` | generate reads from fasta files, introducing variation if wanted |
 | `bit mutate-seqs` | introduce point mutations (substitutions/indels) into nucleotide or amino-acid fasta files |
 | `bit add-insertion` | add insertions into nucleotide or amino-acid fasta sequences |
-
----
-
-#### Read QC
-
-| Program | Purpose |
-| ------- | ------- |
-| `bit filter-foldbacks` | remove fold-back artifacts of whole-genome amplification (e.g., PTA or MDA) from reads. Short reads (default): reads cut at a fold, pairs folded between the mates split into single reads. Long reads (`--hifi`): each read cut at its folds as [shifia](https://github.com/AstrobioMike/shifia)'s `--pta` does |
 
 ---
 
@@ -111,6 +102,14 @@ You can see an overview of available programs like below by running `bit` by its
 
 ---
 
+#### Read QC
+
+| Program | Purpose |
+| ------- | ------- |
+| `bit filter-foldbacks` | remove fold-back artifacts of PTA/MDA from short or long reads |
+
+---
+
 #### Fasta utilities
 
 ##### Program: `bit fasta`
@@ -136,8 +135,8 @@ You can see an overview of available programs like below by running `bit` by its
 | ------- | ------- |
 | `bit assemble` | simple wrapper for assembly with optional quality trimming and normalization |
 | `bit summarize-assembly` | quickly summarize nucleotide assemblies |
-| `bit characterize-genomes` | summary stats, quality estimates and taxonomy of genomes in one table (see [here](workflows#characterize-genomes)) |
-| `bit classify-seqs` | assign taxonomy to contigs or high-quality long reads (e.g., HiFi), one table per input fasta |
+| `bit characterize-genomes` | get summary stats, quality estimates, and taxonomy of genomes |
+| `bit classify-seqs` | assign taxonomy to contigs or high-quality long reads (e.g., HiFi) |
 
 ---
 
@@ -228,15 +227,13 @@ Each subcommand has a help menu accessible by either entering the command alone 
 ---
 
 ### Workflows
-The larger [snakemake](https://snakemake.github.io/) workflows packaged with _bit_ are run with `bit run-wf`, e.g., `bit run-wf metagenomics -r reads-dir/`; the smaller ones are commands of their own, e.g., `bit dl-sra-reads -a target-sra-accs.txt`. They currently include:
+Larger [snakemake](https://snakemake.github.io/) workflows packaged with _bit_ are run with `bit run-wf`, e.g., `bit run-wf metagenomics -r reads-dir/`. They currently include:
 
 | Workflow | Run with | Purpose |
 | ------- | ------- | ------- |
 | [metagenomics](workflows#metagenomics) | `bit run-wf metagenomics` | processes short-read metagenomics data via assembly through to merged taxonomy and KO coverage tables, and recovers and characterizes MAGs |
-| [magrec](workflows#magrec) | `bit run-wf magrec` | recovers and characterizes MAGs from reads and assemblies made already (per-sample assemblies or a co-assembly) |
+| [magrec](workflows#magrec) | `bit run-wf magrec` | recovers and characterizes MAGs from reads and already-generated assemblies (per-sample assemblies or a co-assembly) |
 | [amplicon](workflows#amplicon) | `bit run-wf amplicon` | processes short-read amplicon data through to ASVs, a count table, and a taxonomy table largely with dada2 |
-| [characterize-genomes](workflows#characterize-genomes) | `bit characterize-genomes` | generates genome assembly stats, quality estimates, and taxonomy info |
-| [dl-sra-reads](workflows#dl-sra-reads) | `bit dl-sra-reads` | downloads sra reads via prefetch and fasterq-dump, combining the runs of a sample if wanted |
 
 Each has a concise help menu (`-h`) and a detailed one listing every setting (`-H`). See the [workflows page](workflows) for usage details, outputs, and how to save a copy of a workflow to modify.
 
@@ -264,7 +261,7 @@ If you happen to find *bit* useful in your work, please be sure to cite it 🙂
 
 You can get the version you are using by adding the `-v` or `--version` flag to any of the programs.
 
-If you are using a script in *bit* that also leverages another program, please be sure to cite them too. For instance, `bit-get-lineage-from-taxids` uses [TaxonKit](https://bioinf.shenwei.me/taxonkit/), and the `bit-go` subcommands use [goatools](https://github.com/tanghaibao/goatools). For cases where *bit* relies on other programs like those, it will be indicated in the help menu of that *bit* program.  
+If you are using a program in *bit* that also leverages another program, please be sure to cite them too. For instance, the `bit go` subcommands use [goatools](https://github.com/tanghaibao/goatools). For cases where *bit* relies on other programs like those, it will be indicated in the help menu of that *bit* program.  
 
 ---
 

@@ -1,18 +1,15 @@
 # [bit](https://github.com/AstrobioMike/bit) workflows
-The [snakemake](https://snakemake.github.io/) workflows that come with _bit_ are run with `bit run-wf` (metagenomics, magrec, amplicon) or as commands of their own (`bit characterize-genomes`, `bit classify-seqs`, `bit dl-sra-reads`). Unless noted, what's described here holds for all of them. There is nothing to download or edit first anymore, as the settings are all given on the command line (unless you want to download the full workflow for records/customization, available for the large ones with --get-workflow).
+The larger [snakemake](https://snakemake.github.io/) workflows that come with _bit_ are run with `bit run-wf` (metagenomics, magrec, amplicon). Unless noted, what's described here holds for all of them. There is nothing to download or edit first anymore, as the settings are all given on the command line (unless you want to download the full workflow for records/customization, you can do so by adding `--get-workflow`).
 
 * [**Running a workflow**](#running-a-workflow)
   * [Settings and help menus](#settings-and-help-menus)
   * [Config files](#config-files)
-  * [Jobs, threads and extra snakemake options](#jobs-threads-and-extra-snakemake-options)
+  * [Jobs, threads, and extra snakemake options](#jobs-threads-and-extra-snakemake-options)
   * [Saving a copy of a workflow to modify](#saving-a-copy-of-a-workflow-to-modify)
   * [Reference databases](#reference-databases)
 * [**metagenomics**](#metagenomics)
 * [**magrec**](#magrec)
 * [**amplicon**](#amplicon)
-* [**characterize-genomes**](#characterize-genomes)
-* [**classify-seqs**](#classify-seqs)
-* [**dl-sra-reads**](#dl-sra-reads)
 * [**Version info**](#version-info)
 
 ---
@@ -20,13 +17,11 @@ The [snakemake](https://snakemake.github.io/) workflows that come with _bit_ are
 ## Running a workflow
 _bit_ should be installed via conda as described [here](https://github.com/AstrobioMike/bit?tab=readme-ov-file#conda-install).
 
+Examples usage: 
 ```bash
 bit run-wf metagenomics -r reads-dir/
 bit run-wf magrec -r reads-dir/ -a assemblies-dir/
 bit run-wf amplicon -r reads-dir/ --target-region 16S
-bit characterize-genomes -g genomes-dir/
-bit classify-seqs -f contigs.fasta
-bit dl-sra-reads -a target-sra-accs.txt
 ```
 
 The reference databases these use are kept in one directory, set once with `bit data locations set` (see [Reference databases](#reference-databases)).
@@ -36,41 +31,39 @@ Everything a run writes goes in its output directory (`-o`, by default `<workflo
 - `config.yaml` – every setting the run used
 - `command-execution-info.txt` – the command as it was entered
 - `logs/` – the log files of the steps run
-- `benchmarks/` – time and memory used by each step, combined in `ALL-benchmarks.tsv`
+- `benchmarks/` – time and memory used by each step
 
 Running the same command again picks up where a stopped run left off (add `--rerun-incomplete` if it was interrupted mid-step). `--dry-run` shows what would be run without running anything.
 
 The programs each workflow uses are installed as conda environments the first time they are needed (inside the _bit_ environment by default), and re-used afterwards.
 
 ### Settings and help menus
-- `-h` shows the settings most runs need (e.g., `bit run-wf metagenomics -h`, `bit dl-sra-reads -h`)
-- `-H` shows every setting the workflow has, with defaults
+- The base help menue shows the settings most runs need (seen with e.g., `bit run-wf metagenomics` or `bit run-wf metagenomics -h`)
+- Adding `-H` shows every setting the workflow has available
 
 ### Config files
-Settings can also be given in a yaml file with `-c`, e.g., the `config.yaml` written by a previous run. Anything given on the command line takes precedence over the file, and the file over the defaults.
+Settings can also be given in a yaml file with `-c`, e.g., the `config.yaml` written by a previous run. Anything given on the command-line takes precedence over the file, and the file over the defaults, e.g.:
 
 ```bash
 bit run-wf metagenomics -c previous-run/config.yaml -o new-run/ --skip-binning
 ```
 
-### Jobs, threads and extra snakemake options
+### Jobs, threads, and extra snakemake options
 `-j` sets how many jobs may run at once, and each workflow's `-t` sets the threads per job, so up to `-j` x `-t` cores are used. With `bit run-wf`, anything after a `--` is passed to snakemake as-is, e.g.:
 
 ```bash
 bit run-wf metagenomics -r reads-dir/ -j 4 -t 8 -- --keep-going
 ```
 
-To submit jobs to a scheduler such as slurm, install snakemake's [executor plugin](https://snakemake.github.io/snakemake-plugin-catalog/) for it in the _bit_ environment and pass its options the same way (e.g., `-- --executor slurm --default-resources slurm_account=<account>`). The memory requests listed in each workflow's `-H` menu are what get passed along for each job.
+To submit jobs to a scheduler such as slurm, install snakemake's [executor plugin](https://snakemake.github.io/snakemake-plugin-catalog/) for it in the _bit_ environment and pass its options the same way you would to snakemake, placed at the end of the command following `--` (e.g., `-- --executor slurm`). The memory requests listed in each workflow's `-H` menu are what get passed along for each job.
 
 ### Memory
-On one machine, jobs are only started while the memory they need (the settings under "Memory" in the `-H` menu) fits in the machine's memory together, so steps that need a lot, such as GTDB-Tk, wait for room rather than all starting at once. `--memory <GB>` sets a smaller total, e.g. on a shared machine. If a step of the run needs more than that total, the run stops before anything starts and says which step. (Through a cluster executor or profile, none of this applies: each job's memory setting is its request to the scheduler.)
+On one machine, jobs are only started while the memory they need (the settings under "Memory" in the `-H` menu) fits in the machine's memory together, so steps that need a lot, such as GTDB-Tk, wait for room rather than all starting at once. `--memory <GB>` sets the amount you want to be the max instead of the machine's actual max. If a step of the run needs more than that total, the run stops before anything starts and says which step. (Through a cluster executor or profile, none of this applies: each job's memory setting is its request to the scheduler.)
 
-megahit is the exception: its memory setting (32 GB by default) is only the most it may use, so it's kept within the total, and an assembly that fails is retried twice with double the memory each time (64 GB, then 128 GB, never more than the total). Most metagenomes need well under 32 GB (a deep 106M read-pair gut sample peaked at 27 GB); very diverse samples such as soils can need more.
-
-GTDB-Tk (in the binning of the metagenomics and magrec workflows, and in `bit characterize-genomes`) needs about 150 GB of memory for bacterial genomes and only runs on Linux: one of the programs it depends on (pplacer) isn't built for macOS. On a Mac, the MAGs and genomes get their taxonomy from bit-tax-db instead (each classified as a whole, as eukaryotic genomes are; see [characterize-genomes](#characterize-genomes)), so the tax db is set up there in place of GTDB-Tk's reference, and a note says so.
+GTDB-Tk (used in the metagenomics and magrec workflows, and in `bit characterize-genomes`) can need over 150 GB of memory and only runs on Linux (due to a pplacer dependency). On a Mac, the MAGs and genomes get their taxonomy from `bit classify-seqs` instead, so the tax db is set up there in place of GTDB-Tk's reference. `bit classify-seqs` can also do eukaryotes (which generally in only at play when running `bit characterize-genomes`), but otherwise GTDB-Tk is much better for bacteria and archaea and is always used when possible.
 
 ### Saving a copy of a workflow to modify
-(`bit run-wf` only.) `--get-workflow <DIR>` writes a complete, standalone copy of a workflow (its Snakefile, rule files, conda environment files, scripts, and a `config.yaml` holding the settings given) and stops there. The directory has to be new or empty (nothing already there is written over; there is no `-F/--force-overwrite` for the workflows, and running one again with the same output directory carries on from where it stopped). The copy can be edited freely, and run either way:
+`--get-workflow <DIR>` writes a complete, standalone copy of a workflow (its Snakefile, rule files, conda environment files, scripts, and a `config.yaml` holding the settings given) and stops there. The directory has to be new or empty. The copy can be edited freely, and run either way:
 
 ```bash
 bit run-wf metagenomics -r reads-dir/ --get-workflow my-metagenomics-wf/
@@ -81,9 +74,9 @@ snakemake --software-deployment-method conda --conda-prefix ${CONDA_PREFIX}/envs
 ```
 
 ### Reference databases
-The reference databases are all kept in one directory, each in its own subdirectory (named for its version) with a `DB-INFO.txt` noting where it came from and when. Set the directory once with `bit data locations set` (it's stored in the `BIT_REF_DBS_DIR` variable of the conda environment; the databases can take a few hundred GB together, so pick somewhere with room), or give one for a run with `-d/--ref-dbs-dir`.
+The reference databases are all kept in one directory, each in its own subdirectory (named for its version) with a `DB-INFO.txt` noting where it came from and when. Set the directory once with `bit data locations set` (it's stored in the `BIT_REF_DBS_DIR` variable of the conda environment; the databases can take a few hundred GB together, so pick somewhere with room), or give the database location for a run with `-d/--ref-dbs-dir`.
 
-Before a run starts, any database it needs that isn't there yet is downloaded and set up, with a progress bar. Downloads are checked against the md5 their source publishes where there is one, and pick up where they left off if interrupted. They can also be set up on their own:
+Before a run starts, any database it needs that isn't there yet is downloaded and set up. They can also be set up on their own:
 
 | database | `bit data get ...` | used by | download |
 |---|---|---|---|
@@ -94,26 +87,26 @@ Before a run starts, any database it needs that isn't there yet is downloaded an
 | EukCC | `eukcc-db` | characterize-genomes `--euk` | ~6.3 GB |
 | DECIPHER training sets | `amplicon-refs` | amplicon | ~575 MB |
 
-To set up just what a run would use without running anything else (e.g., somewhere with internet access before submitting jobs), add `--setup-dbs-only`; the inputs aren't needed then:
+To set up just what a run would use without running anything else, add `--setup-dbs-only`, e.g.:
 
 ```bash
 bit run-wf metagenomics --setup-dbs-only
 bit characterize-genomes --euk --setup-dbs-only
 ```
 
-For the amplicon workflow, if no reference-database directory is set its references are downloaded into the output directory of each run instead.
-
-Before downloading anything (a database, or the conda environments the first time a workflow is run), a run checks that it can reach the sites it needs, and stops right away with a message if it can't, saying whether there is no internet connection at all or which site isn't answering. If databases are missing, the message lists them with the command to get each one, so they can be set up on another machine that has internet access (`bit data get <name> -d <dir>`), copied over (or put somewhere both machines can see), and pointed to with `BIT_REF_DBS_DIR` or `-d/--ref-dbs-dir`. A run that already has everything it needs doesn't check, and works without a connection.
-
-A saved copy of a workflow (`--get-workflow`) run with snakemake directly doesn't download anything: if a database it needs is missing, it stops and gives the `bit data get` command to run.
-
 ---
 
-## metagenomics
+## Metagenomics
 
 <p align="center">
 <a href="../images/bit-metagenomics-overview.pdf"><img src="../images/bit-metagenomics-overview.png"></a>
 </p>
+*I needs to update this figure, the changes are:
+
+- gene and contig classification is no longer done by CAT, it's done by `bit classify-seqs` with a custom GTDB and NCBI database
+- there are new steps that drep MAGs and map all samples to them to get their distrubutions across samples
+
+<br>
 
 An assembly-based workflow for short-read metagenomes, through to combined taxonomy and KO coverage tables across samples, and recovery and characterization of bacterial/archaeal MAGs. Each sample is assembled on its own (there is no co-assembly).
 
@@ -172,8 +165,8 @@ The read files are found in the reads directory the same way `bit assemble` find
 
 ---
 
-## magrec
-MAG recovery from reads and assemblies made already: the binning and MAG steps of the metagenomics workflow, on their own.
+## MAGrec
+MAG recovery from reads and already-generated assemblies.
 
   - [bowtie2](https://github.com/BenLangmead/bowtie2) for mapping the reads to the assemblies
   - [metabat2](https://bitbucket.org/berkeleylab/metabat/src) for binning
@@ -196,7 +189,7 @@ In the run's copy of each assembly, every contig name gets the assembly's name i
 
 ---
 
-## amplicon
+## Amplicon
 Processes short-read amplicon data (16S/18S/ITS) through to ASVs, a count table, and a taxonomy table.
 
   - [fastqc](https://www.bioinformatics.babraham.ac.uk/projects/fastqc/)/[multiqc](https://multiqc.info/) for read-quality assessment and summarization
@@ -228,6 +221,8 @@ The primers are given with `--f-primer` and `--r-primer` as cutadapt takes them 
   - taxonomy-and-counts.biom
 
 ---
+
+<!-- 
 
 ## characterize-genomes
 Summarizes genome assemblies in one table: assembly summary stats, estimated quality, and taxonomy.
@@ -291,7 +286,10 @@ Sample-2    SRR123458
 
 Here the SRR123456 and SRR123457 files are combined into "Sample-1_R1.fastq.gz" and "Sample-1_R2.fastq.gz" (or "Sample-1.fastq.gz" if single-end), and Sample-2's are just renamed. The runs' own files are removed once combined. Sample names can't start with SRR, ERR, or DRR, as their files would be confused with those of the runs.
 
----
+--- 
+
+-->
 
 ## Version info
-The workflows are part of the _bit_ package and share its version (`bit -v`). The versions of the programs they use are in the conda environment files in [bit/smk/envs/](../bit/smk/envs). The change logs from when the workflows were versioned separately are [here](CHANGELOG-standalone-versions.md).
+The workflows are part of the _bit_ package and share its version now (`bit -v`). The versions of the programs they use are in the conda environment files in [bit/smk/envs/](../bit/smk/envs). 
+

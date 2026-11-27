@@ -82,15 +82,6 @@ PROGRAM_GROUPS = [
         ],
     },
     {
-        "title": "Read QC",
-        "programs": [
-            {
-                "name": "filter-foldbacks",
-                "desc": "remove fold-back artifacts of PTA/MDA from short or long reads",
-            },
-        ],
-    },
-    {
         "title": "Coverage/mapping-related",
         "programs": [
             {
@@ -133,6 +124,15 @@ PROGRAM_GROUPS = [
         ],
     },
     {
+        "title": "Read QC",
+        "programs": [
+            {
+                "name": "filter-foldbacks",
+                "desc": "remove fold-back artifacts of PTA/MDA from short or long reads",
+            },
+        ],
+    },
+    {
         "title": "Fasta utilities",
         "programs": [
             {
@@ -171,7 +171,7 @@ PROGRAM_GROUPS = [
             },
             {
                 "name": "classify-seqs",
-                "desc": "assign taxonomy to contigs (or high-quality long reads)",
+                "desc": "assign taxonomy to contigs or high-quality long reads (e.g., HiFi)",
             },
         ],
     },
@@ -182,7 +182,7 @@ PROGRAM_GROUPS = [
                 "name": "genbank",
                 "desc": "",
                 "subcommands": [
-                    ("to-AA-seqs", "extract amino acid sequences"),
+                    ("to-AA-seqs", "extract amino-acid sequences"),
                     ("to-cds-tsv", "extract CDS info to a TSV"),
                     ("to-cds-seqs","extract CDS nucleotide sequences"),
                     ("to-fasta",   "extract nucleotide sequences"),
